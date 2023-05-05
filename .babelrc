@@ -1,6 +1,5 @@
 {
   "presets": [
-    // "solid",
     [
       "@babel/preset-env",
       {
@@ -13,8 +12,7 @@
   "plugins": [
     ["@babel/plugin-transform-react-jsx", {
       "pragma": "h",
-      "pragmaFrag": "Fragment"
+      "pragmaFrag": "Not supported"
     }],
-    // "@babel/plugin-syntax-jsx",
   ]
 }
