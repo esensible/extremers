@@ -1,0 +1,20 @@
+{
+  "presets": [
+    // "solid",
+    [
+      "@babel/preset-env",
+      {
+        "targets": {
+            "browsers": ["last 2 versions", "IE 11"],
+        },
+      }
+    ],
+  ],
+  "plugins": [
+    ["@babel/plugin-transform-react-jsx", {
+      "pragma": "h",
+      "pragmaFrag": "Fragment"
+    }],
+    // "@babel/plugin-syntax-jsx",
+  ]
+}
