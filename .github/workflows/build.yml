@@ -1,4 +1,4 @@
-name: Build and Store Artifacts
+name: Update "latest" release
 
 on:
   push:
@@ -9,27 +9,7 @@ on:
       - main
 
 jobs:
-  create_release:
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: latest
-          name: Latest Release
-          body: Auto-generated release with latest build artifacts.
-          prerelease: false
-          draft: false
-          replace: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
-    needs: create_release
     runs-on: ubuntu-latest
 
     steps:
@@ -51,12 +31,9 @@ jobs:
         run: |
           zip -r dist.zip dist/
 
-      - name: Upload artifacts to GitHub release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update release
+        uses: johnwbyrd/update-release@v1
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./artifact.zip
-          asset_name: artifact.zip
-          asset_content_type: application/zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ./dist.zip
+          release: "latest"
