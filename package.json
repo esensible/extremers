@@ -18,6 +18,7 @@
     "@babel/preset-env": "^7.21.5",
     "@rollup/plugin-babel": "^6.0.3",
     "@rollup/plugin-html": "^1.0.2",
+    "@rollup/plugin-image": "^3.0.2",
     "@rollup/plugin-node-resolve": "^15.0.2",
     "@rollup/plugin-terser": "^0.4.1",
     "esbuild": "^0.17.18",

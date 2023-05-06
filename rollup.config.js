@@ -5,6 +5,7 @@ import terser from '@rollup/plugin-terser';
 import resolve from '@rollup/plugin-node-resolve';
 import esbuild from 'esbuild';
 import { createFilter } from '@rollup/pluginutils';
+import image from '@rollup/plugin-image';
 
 function uuid(length) {
   return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
@@ -54,6 +55,7 @@ export default {
   plugins: [
     resolve(),
     silkJSX(),
+    image(),
     babel({
       presets: [
         [
@@ -70,6 +72,6 @@ export default {
       extract: true,
     }),
     html(),
-    terser()
+    terser(),
   ]
 };
