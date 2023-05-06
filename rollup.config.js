@@ -3,6 +3,7 @@ import babel from '@rollup/plugin-babel';
 import html from '@rollup/plugin-html';
 import postcss from 'rollup-plugin-postcss';
 import terser from '@rollup/plugin-terser';
+import resolve from '@rollup/plugin-node-resolve';
 
 function uuid(length) {
   return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
@@ -17,8 +18,9 @@ export default {
     file: 'dist/bundle-' + uuid(8) + '.js',
   },
   plugins: [
+    resolve(),
     babel({
-      exclude: 'node_modules/**',
+      // exclude: 'node_modules/**',
       presets: [
         [
           "@babel/preset-env",
