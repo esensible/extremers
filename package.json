@@ -11,7 +11,7 @@
   "author": "Andrew Beck",
   "license": "MIT",
   "dependencies": {
-    "silkjs": "github:esensible/silkjs"
+    "silkjs": "esensible/silkjs"
   },
   "devDependencies": {
     "@babel/core": "^7.21.8",
