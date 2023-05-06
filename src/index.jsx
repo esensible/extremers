@@ -3,15 +3,16 @@ import { Idle } from './idle.jsx';
 // import { Race } from './st_race.js';
 import { Setup, start as startSetup } from './setup.jsx';
 // import { Sequence } from './st_sequence.js';
+import { Confirm } from './confirm.jsx'
 
 import './style.css'
 
 export const Main = () => {
   switch (state()) {
     case STATE_INIT:
-      return <div><Setup/></div>;
+      return <Setup/>;
     case STATE_IDLE:
-      return <div><Idle/></div>;
+      return <Idle/>;
     // case STATE_SEQ:
     //   return <Sequence/>;
     // case STATE_RACE:
@@ -22,7 +23,7 @@ export const Main = () => {
 };
 
 const app = () => (
-  <div><Main/></div>
+  <div><Main/><Confirm/></div>
 );
 
 document.body.appendChild(app());

@@ -12,7 +12,7 @@ export const start = () => {
 function startSeq(seconds) {
     return () => {
         // startSeq(event["time"], seconds);
-        confirm(console.log("Start sequence"));
+        confirm(() => {console.log("Start sequence")});
 
     }
 }
