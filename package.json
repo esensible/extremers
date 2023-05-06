@@ -5,7 +5,7 @@
   "main": "rollup.config.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "rm -rf dist && rollup -c"
   },
   "keywords": [],
   "author": "Andrew Beck",
@@ -16,6 +16,11 @@
   "devDependencies": {
     "@babel/core": "^7.21.8",
     "@babel/plugin-transform-react-jsx": "^7.21.5",
-    "@babel/preset-env": "^7.21.5"
+    "@babel/preset-env": "^7.21.5",
+    "@rollup/plugin-babel": "^6.0.3",
+    "@rollup/plugin-html": "^1.0.2",
+    "@rollup/plugin-terser": "^0.4.1",
+    "rollup-plugin-postcss": "^4.0.2",
+    "vite": "^4.3.5"
   }
 }

@@ -1,28 +1,45 @@
-// import resolve from '@rollup/plugin-node-resolve';
-// import terser from '@rollup/plugin-terser';
-import getBabelOutputPlugin from '@rollup/plugin-babel';
+// import { babel } from '@rollup/plugin-babel';
+import babel from '@rollup/plugin-babel';
 import html from '@rollup/plugin-html';
-import css from 'rollup-plugin-css-only'
+import postcss from 'rollup-plugin-postcss';
+import terser from '@rollup/plugin-terser';
 
-
-
-let pluginOptions = [
-  html( ),
-  css(  {output: 'style.css'} ),
-  getBabelOutputPlugin({
-    exclude: 'node_modules/**',
-  }), 
-  // terser(),
-];
+function uuid(length) {
+  return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
+}
 
 export default {
   input: 'src/index.js',
+  base: 'static/',
   output: {
-    // name: 'index',   // for external calls (need exports)
-    dir: 'dist',
-    // file: 'dist/index.min.js',
     format: 'umd',
-    assetFileNames: 'assets/[name]-[hash][extname]',
+    name: 'main',
+    file: 'dist/bundle-' + uuid(8) + '.js',
   },
-  plugins: pluginOptions,
+  plugins: [
+    babel({
+      exclude: 'node_modules/**',
+      presets: [
+        [
+          "@babel/preset-env",
+          {
+            targets: {
+                browsers: ["last 2 versions", "IE 11"],
+            },
+          }
+        ],
+      ],
+      plugins: [
+        ["@babel/plugin-transform-react-jsx", {
+          pragma: "h",
+          pragmaFrag: "Not supported",
+        }],
+      ]
+    }),
+    postcss({
+      extract: true,
+    }),
+    html(),
+    terser()
+  ]
 };
