@@ -1,4 +1,4 @@
-import { createSignal, h } from './silkjs';
+import { createSignal } from 'silkjs';
 import './style.css'
 
 const [className, setClassName] = createSignal('');

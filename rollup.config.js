@@ -1,13 +1,47 @@
-// import { babel } from '@rollup/plugin-babel';
 import babel from '@rollup/plugin-babel';
 import html from '@rollup/plugin-html';
 import postcss from 'rollup-plugin-postcss';
 import terser from '@rollup/plugin-terser';
 import resolve from '@rollup/plugin-node-resolve';
+import esbuild from 'esbuild';
+import { createFilter } from '@rollup/pluginutils';
 
 function uuid(length) {
   return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
 }
+
+const silkJSX = () => {
+  const jsxExtensionsRE = /\.jsx?$/
+  const filter = createFilter(jsxExtensionsRE);
+  const importStatement = `import { h } from 'silkjs';\n`;
+  var injected = false;
+
+  return {
+    name: 'esbuild-jsx',
+    transform(code, id) {
+      if (!filter(id)) return;
+
+      return esbuild
+        .transform(code, {
+          loader: 'jsx',
+          sourcefile: id,
+          sourcemap: true,
+          target: 'es2015',
+          jsxFactory: 'h',
+          jsxFragment: 'Fragment',
+        })
+        .then((result) => {
+          if (!injected && jsxExtensionsRE.test(id)) {
+            result.code = importStatement + result.code;
+            injected = true;
+          }
+          return {
+            code: result.code,
+            map: result.map,
+        }});
+    },
+  };
+};
 
 export default {
   input: 'src/index.jsx',
@@ -19,8 +53,8 @@ export default {
   },
   plugins: [
     resolve(),
+    silkJSX(),
     babel({
-      // exclude: 'node_modules/**',
       presets: [
         [
           "@babel/preset-env",
@@ -31,12 +65,6 @@ export default {
           }
         ],
       ],
-      plugins: [
-        ["@babel/plugin-transform-react-jsx", {
-          pragma: "h",
-          pragmaFrag: "Not supported",
-        }],
-      ]
     }),
     postcss({
       extract: true,
