@@ -9,7 +9,7 @@ function uuid(length) {
 }
 
 export default {
-  input: 'src/index.js',
+  input: 'src/index.jsx',
   base: 'static/',
   output: {
     format: 'umd',
