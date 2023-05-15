@@ -1,12 +1,10 @@
 import { state, time } from './common.jsx';
-import { start as startIdle } from './idle.jsx';
 import pissingImg from "./assets/pissing.jpg";
+import {doPost} from "./api.js"
 
 // time_task = None
 
-export const start = () => {
-    console.log("setup.start()");
-}
+
 // def start():
 //     global time_task
 
@@ -18,10 +16,7 @@ export const start = () => {
 
 
 const push_off = () => {
-    // if time_task is not None:
-    //     time_task.cancel()
-    //     time_task = None
-    startIdle();
+    doPost("/click", {button: "setup/push_off"})
 }
 
 export const Setup = () => (

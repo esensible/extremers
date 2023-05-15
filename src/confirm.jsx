@@ -3,49 +3,65 @@ import { createSignal } from 'silkjs';
 const CONFIRM_SIZE = 100;
 const SCREEN_WIDTH = 1272;
 const SCREEN_HEIGHT = 1474 - 500;
-const CONFIRM_TIMEOUT = 50000;
+const CONFIRM_TIMEOUT = 5000;
 
-const [confirmArgs, setConfirmArgs] = createSignal(null);
+export const confirm = () => {
+    const [class_, setClass] = createSignal("confirm");
+    const [pos, setPos] = createSignal({});
+    var _count = -1;
+    var _callback = null;
+    var _removeTimeout = null;
 
-function confirmImpl(fn, count) {
-    const leftPosition = Math.random() * (SCREEN_WIDTH - 2 * CONFIRM_SIZE) + CONFIRM_SIZE;
-    const topPosition = Math.random() * (SCREEN_HEIGHT - 2 * CONFIRM_SIZE) + CONFIRM_SIZE; 
-    const removeTimeout = setTimeout(() => {setConfirmArgs(null);}, CONFIRM_TIMEOUT);
-    const lastClick = () => {
-        setConfirmArgs(null);
-        clearTimeout(removeTimeout); 
-        fn();
-    };
-    const clickFn = count <= 0 ? lastClick: () => (confirmImpl(fn, count-1));
+    function confirmFn(callback, count) {
+        _callback = callback;
+        _count = typeof count === "number" ? count: 1;
 
-    setConfirmArgs({
-        onClick: clickFn,
-        leftPosition: leftPosition,
-        topPosition: topPosition,
-    })
-}
-
-export const confirm = (fn, count) => {
-    if (typeof count === 'undefined') {{
-        count = 0;
-    }}
-    confirmImpl(fn, count-1);
-};
-
-
-export const Confirm = () => {
-    const args = confirmArgs();
-
-    if (args === null) {
-        return <button class="confirm"></button>
+        setClass("confirm active");    
+        onClickHandler();
     }
 
-    const style = {
-        left: args.leftPosition + 'px',
-        top: args.topPosition + 'px',
-        width: CONFIRM_SIZE + 'px',
-        height: CONFIRM_SIZE + 'px',
-
+    function cancelFn() {
+        if (_removeTimeout !== null) {
+            clearTimeout(_removeTimeout);
+            _removeTimeout = null;
+        }
+        setClass("confirm");
+        _count = -1;
+        _callback = null;
     }
-    return <button class="confirm active" style={style} onClick={args.onClick}></button>
+
+    function onClickHandler() {
+        if (_removeTimeout !== null) {
+            clearTimeout(_removeTimeout);
+            _removeTimeout = null;
+        }
+    
+        if (_count > 0) {
+
+            const leftPosition = Math.random() * (SCREEN_WIDTH - 2 * CONFIRM_SIZE) + CONFIRM_SIZE;
+            const topPosition = Math.random() * (SCREEN_HEIGHT - 2 * CONFIRM_SIZE) + CONFIRM_SIZE; 
+        
+            setPos({
+                left: leftPosition + 'px',
+                top: topPosition + 'px',
+                width: CONFIRM_SIZE + 'px',
+                height: CONFIRM_SIZE + 'px',
+            })
+            _removeTimeout = setTimeout(cancelFn, CONFIRM_TIMEOUT);
+        } else {
+            setClass("confirm");
+            _callback();
+        }      
+        _count -= 1;
+    }
+
+    return [
+            () => (
+                <button class={class_} style={pos} onClick={onClickHandler}></button>
+            ),
+            confirmFn,
+            cancelFn,
+        ]
 }
+
+
