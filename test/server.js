@@ -28,11 +28,10 @@ function raceStart() {
     sync();
 }
 
-// Define the POST /event route
-app.post('/event', (req, res) => {
+function handleEvent(event) {
     const now = new Date().getTime();
-    console.log(req.body);
-    switch (req.body.event) {
+    console.log(event);
+    switch (event.event) {
         case "setup/push_off":
             assert.strictEqual(state.state, STATE_INIT);
             state = {
@@ -43,10 +42,10 @@ app.post('/event', (req, res) => {
         case "idle/seq":
             assert.strictEqual(state.state, STATE_IDLE);
 
-            // assert.ok(Math.abs(now - req.body.timestamp < 6));
+            // assert.ok(Math.abs(now - event.timestamp < 6));
             state = {
                 state: STATE_SEQ,
-                startTime: req.body.timestamp + req.body.seconds * 1000,
+                startTime: event.timestamp + event.seconds * 1000,
             }
             const delta = state.startTime - now;
             console.log(`start in: ${delta}`);
@@ -58,10 +57,10 @@ app.post('/event', (req, res) => {
             clearTimeout(startTimeout);
             assert.strictEqual(state.state, STATE_SEQ);
 
-            if (req.body.seconds == 0) {
-                state.startTime -= (state.startTime - req.body.timestamp) % 60000;
+            if (event.seconds == 0) {
+                state.startTime -= (state.startTime - event.timestamp) % 60000;
             } else {
-                state.startTime -= req.body.seconds * 1000;
+                state.startTime -= event.seconds * 1000;
             }
 
             if (state.startTime <= now + 500) {
@@ -75,7 +74,7 @@ app.post('/event', (req, res) => {
                 startTimeout = setTimeout(raceStart, delta);
             }
             break;
-   
+
         case "race/finish":
             assert.strictEqual(state.state, STATE_RACE);
             state = {
@@ -88,12 +87,17 @@ app.post('/event', (req, res) => {
         case "line/port":
             break;
         default:
-            console.log(`Unknown event: ${req.body.event}`);
+            console.log(`Unknown event: ${event.event}`);
             assert.ok(false);
             break;
-           
+
     }
     sync();
+}
+
+// Define the POST /event route
+app.post('/event', (req, res) => {
+    handleEvent(req.body);
     res.status(200).json(state);
 });
 
@@ -114,5 +118,5 @@ app.get('/sync', (_, res) => {
 
 
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+    console.log(`Server running at http://localhost:${port}`);
 });
