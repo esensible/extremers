@@ -1,11 +1,13 @@
 import { speed, time, setState, LineButtons, STATE_IDLE} from './common.jsx';
 import { confirm } from './confirm.jsx';
+import {postEvent} from "./api.js"
 
 const [Confirm, doConfirm] = confirm();
 
 function seqClick(seconds) {
     return () => {
-        doConfirm(() => { doPost("/click", {button: "idle/seq", seconds: seconds}); });
+        const timestamp = new Date().getTime();
+        doConfirm(() => { postEvent("idle/seq", {timestamp: timestamp, seconds: seconds}) });
     }
 }
 

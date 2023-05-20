@@ -1,28 +1,55 @@
-import { speed, heading, setState, STATE_RACE} from './common.jsx';
-import { createSignal } from 'silkjs';
+import { startTime, speed, heading, state, STATE_RACE} from './common.jsx';
+import { createSignal, createEffect, onCleanup } from 'silkjs';
 import { confirm } from './confirm.jsx';
+import {postEvent} from "./api.js"
 
 const [raceTime, setRaceTime] = createSignal("0:00")
 const [Confirm, doConfirm] = confirm();
 
-// async def _timer():
-//     now = datetime.now()
-//     race_seconds = (now - _race_start).total_seconds()
-//     race_timer.value = str(int(race_seconds / 60))
+createEffect(() => {
+    if (state() !== STATE_RACE) {
+        return;
+    }
+    var timerId = null;
 
-//     while True:
-//         now = datetime.now()
-//         race_seconds = (now - _race_start).total_seconds()
-//         remaining_seconds = 60 - (race_seconds % 60)
+    onCleanup(() => {
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            timerId = null;
+        }
+    });
 
-//         await asyncio.sleep(remaining_seconds)
-//         race_timer.value = str(int(race_seconds / 60))
-//         await silkflow.sync_effects()
+    function raceTimerTask() {
+        const startTimestamp = startTime();
+        if (startTimestamp === null) {
+            return;
+        }
+        const now = new Date().getTime();
+        const elapsedTimeInMilliseconds = now - startTimestamp;
 
+        if (elapsedTimeInMilliseconds <= 0) {
+            timerId = null;
+            return; // End the function if the start time is in the future
+        }
+
+        const elapsedTimeInMinutes = Math.floor(elapsedTimeInMilliseconds / 60000);
+        const hours = Math.floor(elapsedTimeInMinutes / 60);
+        const minutes = elapsedTimeInMinutes % 60;
+
+        const time = ('0' + hours).slice(-2) + ':' + ('0' + minutes).slice(-2);
+        setRaceTime(time);
+
+        const delay = 60000 - (elapsedTimeInMilliseconds % 60000); // Time until the start of the next minute
+        timerId = setTimeout(raceTimerTask, delay);
+    }
+
+    raceTimerTask();
+})
 
 export const finishClick = () => {
-    doConfirm(() => {doPost("/click", {button: "race/finish"})}, 2);
+    doConfirm(() => {postEvent("race/finish")}, 2);
 };
+
 
 export const Race = () => (
     <div>

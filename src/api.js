@@ -2,9 +2,11 @@ import { setAll } from 'silkjs';
 
 const BASE_URL = "";
 
-export function doPost(endpoint, data, options) {
+export function postEvent(event, data, options) {
     options = options || {};
-  
+    data = data || {};
+    data.event = event;
+
     var requestOptions = {
       method: "POST",
       headers: {
@@ -20,9 +22,9 @@ export function doPost(endpoint, data, options) {
     }
   
     var xhr = new XMLHttpRequest();
-    xhr.open(requestOptions.method, BASE_URL + endpoint);
+    xhr.open(requestOptions.method, BASE_URL + "/event");
   
-    xhr.setRequestHeader("Content-Type", "application/json");
+    // xhr.setRequestHeader("Content-Type", "application/json");
   
     for (var header in requestOptions.headers) {
       if (requestOptions.headers.hasOwnProperty(header)) {
@@ -36,15 +38,15 @@ export function doPost(endpoint, data, options) {
   }
 
 
-// (async function poll() {
-// try {
-//     const response = await fetch('/sync');
-//     const data = await response.json();
-//     setAll(data, false);
-//     setTimeout(poll, 0); // reschedule immediately
-// } catch (error) {
-//     console.error('Long-polling request failed', error);
-//     setTimeout(poll, 5000); // retry after 5 seconds
-// }
-// })();
+(async function poll() {
+try {
+    const response = await fetch('/sync');
+    const data = await response.json();
+    setAll(data, true);
+    setTimeout(poll, 0); // reschedule immediately
+} catch (error) {
+    console.error('Long-polling request failed', error);
+    setTimeout(poll, 5000); // retry after 5 seconds
+}
+})();
   

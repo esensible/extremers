@@ -1,4 +1,4 @@
-import { state, STATE_INIT, STATE_IDLE, STATE_SEQ, STATE_RACE } from './common.jsx';
+import { state, setState, STATE_INIT, STATE_IDLE, STATE_SEQ, STATE_RACE } from './common.jsx';
 import { Idle } from './idle.jsx';
 import { Race } from './race.jsx';
 import { Setup } from './setup.jsx';

@@ -1,6 +1,6 @@
 import { state, time } from './common.jsx';
 import pissingImg from "./assets/pissing.jpg";
-import {doPost} from "./api.js"
+import {postEvent} from "./api.js"
 
 // time_task = None
 
@@ -16,12 +16,13 @@ import {doPost} from "./api.js"
 
 
 const push_off = () => {
-    doPost("/click", {button: "setup/push_off"})
+    postEvent("setup/push_off")
 }
+
+//        <img src={pissingImg} alt="Pissing on F18"/>
 
 export const Setup = () => (
     <div>
-        <img src={pissingImg} alt="Pissing on F18"/>
         <div class="z-index">{time}</div>
         <div class="buttons">
             <button onClick={push_off} class="finish">Push off</button>
