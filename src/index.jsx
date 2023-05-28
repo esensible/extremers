@@ -17,7 +17,7 @@ export const Main = () => {
     case STATE_RACE:
       return <Race/>;
     default:
-      return <div><h1>Unknown state</h1></div>;
+      return <div><h1>Loading...</h1></div>;
   }
 };
 

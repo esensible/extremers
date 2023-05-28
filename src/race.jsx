@@ -1,7 +1,7 @@
 import { startTime, speed, heading, state, STATE_RACE} from './common.jsx';
 import { createSignal, createEffect, onCleanup } from 'silkjs';
 import { confirm } from './confirm.jsx';
-import {postEvent} from "./api.js"
+import {postEvent, timestamp} from "./api.js"
 
 const [raceTime, setRaceTime] = createSignal("0:00")
 const [Confirm, doConfirm] = confirm();
@@ -24,7 +24,7 @@ createEffect(() => {
         if (startTimestamp === null) {
             return;
         }
-        const now = new Date().getTime();
+        const now = timestamp();
         const elapsedTimeInMilliseconds = now - startTimestamp;
 
         if (elapsedTimeInMilliseconds <= 0) {

@@ -2,6 +2,18 @@ import { setAll } from 'silkjs';
 
 const BASE_URL = "";
 
+var timestampOffset = 10000000;
+// initial value is large to force sync
+var timezoneOffset = 0;
+
+export function timestamp() {
+  return new Date().getTime() + timestampOffset
+}
+
+export function timezoneSecs() {
+  return timezoneOffset;
+}
+
 export function postEvent(event, data, options) {
     options = options || {};
     data = data || {};
@@ -38,15 +50,79 @@ export function postEvent(event, data, options) {
   }
 
 
-(async function poll() {
-try {
-    const response = await fetch('/sync');
-    const data = await response.json();
-    setAll(data, true);
-    setTimeout(poll, 0); // reschedule immediately
-} catch (error) {
-    console.error('Long-polling request failed', error);
-    setTimeout(poll, 5000); // retry after 5 seconds
+  function poll(state) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/sync?state=' + state + '&timestamp=' + timestamp(), true);
+    xhr.timeout = 10000; // Set timeout to 10 seconds
+
+    xhr.onload = function() {
+        if (this.status >= 200 && this.status < 300) {
+            var response = JSON.parse(xhr.responseText);
+
+            if (response.state == -1) {
+              timestampOffset += response.offset || 0;
+              timezoneOffset = response.tzOffset || 0;
+              // log("info", "update", {offset: response.offset, tzOffset: response.tzOffset});
+              setTimeout(() => poll(state), 0); // reschedule immediately 
+            } else {
+              setAll(response.update, true);
+              setTimeout(() => poll(response.state), 0); // reschedule immediately 
+            }
+        } else if (this.status == 408) {
+            // NOTE: This is basically a keep-alive 
+            // server times out after 5s, handle it gracefully
+            // console.error('Long-polling request timed out on the server');
+            setTimeout(() => poll(state), 0); // retry immediately with the same state
+        } else {
+             console.error('Long-polling request failed');
+            setTimeout(() => poll(0), 5000); // retry after 5 seconds
+        }
+    };
+
+    xhr.ontimeout = function() {
+        console.error('Long-polling request timed out');
+        setTimeout(() => poll(0), 5000); // retry after 5 seconds
+    };
+
+    xhr.onerror = function() {
+        console.error('Long-polling request failed');
+        setTimeout(() => poll(0), 5000); // retry after 5 seconds
+    };
+
+    xhr.send();
 }
-})();
-  
+
+document.addEventListener('DOMContentLoaded', () => {
+  trace("info", "start polling");
+  poll(0);
+ })
+
+window.onerror = function(message, source, lineno, colno, error) {
+  var info = "An error occurred: " + message;
+  info += "\nSource: " + source;
+  info += "\nLine Number: " + lineno;
+  info += "\nColumn Number: " + colno;
+
+  // Check if the browser supports error.stack and if so, add it to the info
+  if (error && error.stack) {
+      info += "\nStack trace: " + error.stack;
+  }
+
+  log(info);
+
+  return true; // If you return true, the error won't be reported in the console
+}
+
+export function trace(level, message, data) {
+  const now = new Date(timestamp());
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/log', true);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.send(JSON.stringify({
+      level: level,
+      message: message,
+      data: data || {},
+      // timestamp: new Date().getTime()
+      timestamp: now.toISOString()
+  }));
+}

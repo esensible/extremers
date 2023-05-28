@@ -29,6 +29,7 @@
     "esbuild": "^0.17.18",
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-smart-asset": "^2.1.2",
+    "silky_mocha": "github:esensible/silky_mocha",
     "vite": "^4.3.5",
     "whatwg-fetch": "^3.6.2"
   }

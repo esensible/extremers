@@ -1,11 +1,11 @@
 import {createSignal, createEffect, onCleanup} from "silkjs"
-import {postEvent} from "./api.js"
+import {postEvent, timestamp, timezoneSecs} from "./api.js"
 
 export const STATE_INIT = 0
 export const STATE_IDLE = 1
 export const STATE_SEQ = 2
 export const STATE_RACE = 3
-export const  [state, setState] = createSignal(STATE_INIT, "state");
+export const  [state, setState] = createSignal(null, "state");
 export const [speed, setSpeed] = createSignal("0", "speed");
 export const [time, setTime] = createSignal("00:00");
 export const [heading, setHeading] = createSignal("0", "heading");
@@ -23,7 +23,7 @@ const [lineCross, setLineCross] = createSignal(0, "cross");
 
 createEffect(() => {
     const _state = state();
-    if (_state !== STATE_INIT && _state !== STATE_SEQ ) {
+    if (_state !== STATE_INIT && _state !== STATE_IDLE ) {
         return;
     }
 
@@ -37,7 +37,7 @@ createEffect(() => {
     });
 
     function wallClockTask() {
-        const now = new Date();
+        const now = new Date(timestamp() + timezoneSecs() * 1000);
         var hours = now.getHours();
         hours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
         const time = ('0' + hours).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);

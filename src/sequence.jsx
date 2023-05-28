@@ -1,6 +1,7 @@
 import { createSignal, createEffect, onCleanup } from 'silkjs';
 import { speed, startTime, LineButtons, state, STATE_SEQ } from './common.jsx';
-import {postEvent} from "./api.js"
+import { postEvent, timestamp } from "./api.js"
+import { confirm } from './confirm.jsx';
 
 // disables the sync button for some seconds after the minute rollover
 // to prevent accidental syncs due to display latency
@@ -8,11 +9,13 @@ const SYNC_MASK_SECONDS = 10
 
 const [countdown, setCountdown] = createSignal("0:00");
 
+const [Confirm, doConfirm] = confirm();
+
 
 function bumpStart(seconds) {
     return () => {
-        // doConfirm(() => { postEvent("seq/bump", {seconds: seconds}) });
-        postEvent("seq/bump", {seconds: seconds});
+        const clickTime = timestamp();
+        doConfirm(() => { postEvent("seq/bump", {timestamp: clickTime, seconds: seconds}) });
     }
 }
 
@@ -35,7 +38,7 @@ createEffect(() => {
         if (startTimestamp === null) {
             return;
         }
-        const now = new Date().getTime();
+        const now = timestamp();
         const timeRemainingInMilliseconds = startTimestamp - now;
 
         if (timeRemainingInMilliseconds <= 0) {
@@ -61,6 +64,7 @@ export const Sequence = () => (
     <div>
         <div class="gps">{speed}</div>
         <div class="gps">{countdown}</div>
+        <Confirm/>
         <div class="Buttons">
             <LineButtons/>
             <div>
