@@ -17,8 +17,7 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
     let expanded = match &input.data {
         Data::Enum(_) => versioned_enum(input),
         Data::Struct(_) => versioned_struct(input),
-        // Data::Union(_) => panic!("Unions are not supported"),
-        _ => panic!("Only enums are supported"),
+        Data::Union(_) => panic!("Unions are not supported"),
     };
 
     expanded.into()
@@ -44,7 +43,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 #field_name: VersionedValue<VersionedType<#field_type>>
             });
             delta_fields.push(quote! {
-                // #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(skip_serializing_if = "Option::is_none")]
                 #field_name: DeltaType<#field_type>
             });
             new_initializers.push(quote! {
@@ -83,10 +82,10 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 }
             }
 
-            fn get(value: VersionedValue<Self::Value>, version: usize) -> Self::Delta {
-                Self::Delta {
+            fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
+                Some(Self::Delta {
                     #(#get_initializers),*
-                }
+                })
             }
         }
     };
@@ -123,7 +122,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             #field_name: VersionedValue<VersionedType<#field_type>>
                         });
                         delta_fields.push(quote! {
-                            // #[serde(skip_serializing_if = "Option::is_none")]
+                            #[serde(skip_serializing_if = "Option::is_none")]
                             #field_name: DeltaType<#field_type>
                         });
                         field_initializers.push(quote! {
@@ -145,7 +144,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         #name::#variant_name { #(#field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
                     });
                     get_match_arms.push(quote! {
-                        #versioned_name::#variant_name { #(#field_names),* } => #delta_name::#variant_name { #(#delta_initializers),* }
+                        #versioned_name::#variant_name { #(#field_names),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
                     });
                 }
                 Fields::Unit => {
@@ -159,7 +158,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         #name::#variant_name => #versioned_name::#variant_name
                     });
                     get_match_arms.push(quote! {
-                        #versioned_name::#variant_name => #delta_name::#variant_name
+                        #versioned_name::#variant_name => Some(#delta_name::#variant_name)
                     });
                 }
                 _ => {
@@ -195,7 +194,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 VersionedValue { value, version }
             }
 
-            fn get(value: VersionedValue<Self::Value>, version: usize) -> Self::Delta {
+            fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
                 match value.value {
                     #(#get_match_arms),*
                 }

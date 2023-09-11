@@ -3,11 +3,11 @@ pub trait Versioned {
     type Delta;
    
     fn new(value: Self, version: usize) -> VersionedValue<Self::Value>;
-    fn get(value: VersionedValue<Self::Value>, version: usize) -> Self::Delta;
+    fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self>;
 }
 
 pub type VersionedType<T> = <T as Versioned>::Value;
-pub type DeltaType<T> = <T as Versioned>::Delta;
+pub type DeltaType<T> = Option<<T as Versioned>::Delta>;
 
 pub struct VersionedValue<T> {
     pub value: T,
@@ -20,7 +20,7 @@ where
     T: Default,
 {
     type Value = T;
-    type Delta = Option<T>;
+    type Delta = T;
 
     fn new(value: T, version: usize) -> VersionedValue<Self::Value> {
         VersionedValue{
@@ -29,7 +29,7 @@ where
         }
     }
 
-    fn get(value: VersionedValue<Self::Value>, version: usize) -> Self::Delta {
+    fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
         Some(value.value).filter(|_| value.version >= version)
     }
 }
