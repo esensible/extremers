@@ -47,6 +47,6 @@ fn main() {
     let delta = MyStruct::get(my_struct, 2);
     let serialized = serde_json::to_string(&delta).unwrap();
     println!("{}", serialized);
-
+    // generates {"my_enum":{"E2":{"field1":42,"field2":42.23}}} as expected
 }
 

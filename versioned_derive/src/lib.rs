@@ -1,14 +1,15 @@
+//! This module provides procedural macros for deriving fine grained (per field) versioned data structures.
+
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Data, Fields};
 
 
-// use syn::{Variant, Ident};     DataEnum, DataStruct};
-
-
-
-
+/// The main procedural macro to derive the `Versioned` trait.
+///
+/// The macro supports both enums and structs and will generate the appropriate
+/// versioned and delta types, along with the required implementations for the `Versioned` trait.
 #[proc_macro_derive(Versioned)]
 pub fn derive_versioned(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
@@ -23,6 +24,11 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+
+/// Generates code for structs to implement the `Versioned` trait.
+///
+/// The generated code includes versioned structs with fields wrapped in `VersionedValue`,
+/// delta structs with fields wrapped in `DeltaType`, and the necessary methods of the `Versioned` trait.
 fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
@@ -93,6 +99,11 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     expanded.into()
 }
 
+
+/// Generates code for enums to implement the `Versioned` trait.
+///
+/// The generated code includes versioned enums with variants wrapped in `VersionedValue` (if necessary),
+/// delta enums with variants wrapped in `DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
 fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
