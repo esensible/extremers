@@ -199,7 +199,8 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                     let mut delta_fields = vec![];
                     let mut field_initializers = vec![];
                     let mut delta_initializers = vec![];
-                    let mut field_names = vec![];
+                    let mut versioned_field_names = vec![];
+                    let mut delta_field_names = vec![];
 
                     for field in &fields_named.named {
                         let field_name = &field.ident;
@@ -214,8 +215,10 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             }
                         }            
 
-                        field_names.push(field_name);
-                        
+                        let is_skip_field = field.attrs.iter().any(|attr| {
+                            attr.path.is_ident("versioned") && attr.tokens.to_string().contains("skip")
+                        });
+                       
                         versioned_fields.push(quote! {
                             #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
                         });
@@ -223,7 +226,10 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             #field_name: ::versioned::Versioned::new(#field_name, version)
                         });
 
-                        if !is_skip_fields {
+                        versioned_field_names.push(field_name);
+                        if !is_skip_fields && !is_skip_field{
+                            delta_field_names.push(field_name);
+
                             delta_fields.push(quote! {
                                 #(#serde_attrs)*
                                 #field_name: ::versioned::DeltaType<#field_type>
@@ -238,11 +244,10 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         #variant_name { #(#versioned_fields),* }
                     });
                     new_match_arms.push(quote! {
-                        #name::#variant_name { #(#field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
+                        #name::#variant_name { #(#versioned_field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
                     });
-                    let ref_fields: Vec<_> = field_names.iter().map(|f| quote! { ref #f }).collect();
 
-                    if is_skip_fields {
+                    if is_skip_fields || delta_field_names.is_empty() {
                         delta_variants.push(quote! {
                             #(#variant_serde_attrs)*
                             #variant_name
@@ -252,6 +257,11 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             #versioned_name::#variant_name { .. } => Some(#delta_name::#variant_name)
                         });    
                     } else {
+                        let mut ref_fields: Vec<_> = delta_field_names.iter().map(|f| quote! { ref #f }).collect();
+                        if delta_field_names.len() != versioned_field_names.len() {
+                            ref_fields.push(quote! { .. });
+                        }
+
                         delta_variants.push(quote! {
                             #(#variant_serde_attrs)*
                             #variant_name { #(#delta_fields),* }
@@ -317,6 +327,9 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             }
         }
     };
+
+    // println!("## {}", name);
+    // println!("{}", expanded.to_string());
 
     expanded.into()
 }

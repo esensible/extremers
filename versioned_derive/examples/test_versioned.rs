@@ -22,7 +22,6 @@ enum MyEnum {
     // #[serde(transparent)]
     E1,
 
-    #[versioned(skip_fields)]
     E2 {
         #[serde(serialize_with = "serialize_as_hex")]
         field1: i32,
@@ -32,9 +31,11 @@ enum MyEnum {
     // #[serde(skip_serializing)]
     // E3(i32, f64),
 
+    #[versioned(skip_fields)]
     E4 {
         // #[serde(skip_serializing_if = "Option::is_none")]
         // field_opt: Option<i32>,
+        // #[versioned(skip)]
         field_opt: i32,
 
         #[serde(rename = "field_three")]
@@ -98,6 +99,10 @@ fn main() {
     update!(my_struct.my_enum, MyEnum::E4 { field_opt: 10, field3: "hello".to_string() });
     update!(my_struct.my_hex, 0x2EEFCAFE);
     update!(my_struct.my_secret, "new secret".to_string());
+
+    let delta = MyStruct::get(&my_struct, 0);
+    let serialized = serde_json::to_string(&delta).unwrap();
+    println!("{}, {}", serialized, my_struct.version);
 
     let delta = MyStruct::get(&my_struct, 6);
     let serialized = serde_json::to_string(&delta).unwrap();
