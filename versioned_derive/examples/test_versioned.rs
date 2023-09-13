@@ -44,7 +44,7 @@ enum MyEnum {
     // E5(String),
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct AtomicStruct {
     my_int: i32,
     my_float: f64,
@@ -98,7 +98,18 @@ fn main() {
     update!(my_struct.my_hex, 0x2EEFCAFE);
     update!(my_struct.my_secret, "new secret".to_string());
 
-    let delta = MyStruct::get(my_struct, 0);
+    let delta = MyStruct::get(&my_struct, 6);
     let serialized = serde_json::to_string(&delta).unwrap();
     println!("{}", serialized);
+
+    let delta = MyStruct::get(&my_struct, 7);
+    let serialized = serde_json::to_string(&delta).unwrap();
+    println!("{}", serialized);
+
+    update!(my_struct.my_enum, MyEnum::E4 { field_opt: _ }, 11);
+
+    let delta = MyStruct::get(&my_struct, 7);
+    let serialized = serde_json::to_string(&delta).unwrap();
+    println!("{}", serialized);
+
 }

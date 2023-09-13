@@ -136,7 +136,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 #field_name: ::versioned::Versioned::new(value.#field_name, version)
             });
             get_initializers.push(quote! {
-                #field_name: #field_type::get(value.value.#field_name, version)
+                #field_name: #field_type::get(&value.value.#field_name, version)
             });
         }
 
@@ -150,7 +150,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             #(#versioned_fields),*
         }
 
-        #[derive(Serialize)]
+        #[derive(Serialize, Clone)]
         #(#type_serde_attrs)*
         struct #delta_name {
             #(#delta_fields),*
@@ -169,7 +169,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 }
             }
 
-            fn get(value: ::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
+            fn get(value: &::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
                 Some(Self::Delta {
                     #(#get_initializers),*
                 })
@@ -247,7 +247,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             #field_name: ::versioned::Versioned::new(#field_name, version)
                         });
                         delta_initializers.push(quote! {
-                            #field_name: #field_type::get(#field_name, version)
+                            #field_name: #field_type::get(&#field_name, version)
                         });
                         field_names.push(field_name);
                     }
@@ -262,8 +262,11 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                     new_match_arms.push(quote! {
                         #name::#variant_name { #(#field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
                     });
+
+                    let ref_fields: Vec<_> = field_names.iter().map(|f| quote! { ref #f }).collect();
+
                     get_match_arms.push(quote! {
-                        #versioned_name::#variant_name { #(#field_names),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
+                        #versioned_name::#variant_name { #(#ref_fields),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
                     });
                 }
                 Fields::Unit => {
@@ -297,7 +300,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             #(#versioned_variants),*
         }
 
-        #[derive(Serialize)]
+        #[derive(Serialize, Clone)]
         #(#type_serde_attrs)*
         enum #delta_name {
             #(#delta_variants),*
@@ -314,7 +317,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 ::versioned::VersionedValue { value, version }
             }
 
-            fn get(value: ::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
+            fn get(value: &::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
                 match value.value {
                     #(#get_match_arms),*
                 }

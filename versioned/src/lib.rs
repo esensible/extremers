@@ -1,8 +1,6 @@
 //! This crate provides types and traits to handle versioning of data structures.
 //! It allows for keeping track of changes in data over time.
 
-pub use versioned_derive::Versioned;
-
 pub trait Atomic {}
 impl Atomic for i8 {}
 impl Atomic for i16 {}
@@ -52,7 +50,7 @@ pub trait Versioned {
     ///
     /// * `value` - The versioned value to derive the delta from.
     /// * `version` - The version number to retrieve the delta for.    
-    fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self>;
+    fn get(value: &VersionedValue<Self::Value>, version: usize) -> DeltaType<Self>;
 }
 
 /// Represents the versioned type of a given type `T`.
@@ -75,7 +73,7 @@ pub struct VersionedValue<T> {
 /// Default implementation of the `Versioned` trait for types that implement `Atomic`.
 impl<T> Versioned for T
 where
-    T: Atomic,
+    T: Atomic + Clone,
 {
     type Value = T;
     type Delta = T;
@@ -87,8 +85,8 @@ where
         }
     }
 
-    fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
-        Some(value.value).filter(|_| value.version >= version)
+    fn get(value: &VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
+        Some(value.value.clone()).filter(|_| value.version >= version)
     }
 }
 
