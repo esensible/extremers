@@ -11,7 +11,7 @@ struct VersionedAttribute {
 }
 
 
-fn extract_versioned_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttribute> {
+fn extract_serde_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttribute> {
     let mut extracted_attrs = Vec::new();
 
     for attr in attrs {
@@ -48,40 +48,14 @@ fn extract_versioned_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttrib
 // }
 
 
-#[proc_macro_derive(Versioned, attributes(serde))]
+#[proc_macro_derive(Versioned, attributes(serde, versioned))]
 pub fn derive_versioned(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
-    // Check if the `atomic` attribute is present
-    let is_atomic = input.attrs.iter().any(|attr| {
-        if let Ok(meta) = attr.parse_meta() {
-            if let syn::Meta::List(meta_list) = meta {
-                if meta_list.path.is_ident("serde") {
-                    return meta_list.nested.iter().any(|nested_meta| {
-                        if let syn::NestedMeta::Meta(nested) = nested_meta {
-                            return nested.path().is_ident("atomic");
-                        }
-                        false
-                    });
-                }
-            }
-        }
-        false
-    });
-
-    let expanded = if is_atomic {
-        // If `atomic` was detected, just implement the Atomic trait
-        let name = &input.ident;
-        quote! {
-            impl Atomic for #name {}
-        }
-    } else {
-        // Otherwise, proceed with generating versioned code
-        match &input.data {
-            Data::Enum(_) => versioned_enum(input),
-            Data::Struct(_) => versioned_struct(input),
-            Data::Union(_) => panic!("Unions are not supported"),
-        }
+    let expanded = match &input.data {
+        Data::Enum(_) => versioned_enum(input),
+        Data::Struct(_) => versioned_struct(input),
+        Data::Union(_) => panic!("Unions are not supported"),
     };
 
     expanded.into()
@@ -98,7 +72,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let versioned_name = format_ident!("Versioned{}", name);
     let delta_name = format_ident!("Delta{}", name);
 
-    let attrs = extract_versioned_attributes(&input.attrs);
+    let attrs = extract_serde_attributes(&input.attrs);
     let mut type_serde_attrs = vec![];
     for attr in &attrs {
         // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
@@ -116,7 +90,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         for field in &data_struct.fields {
             let field_name = &field.ident;
             let field_type = &field.ty;
-            let field_attrs = extract_versioned_attributes(&field.attrs);
+            let field_attrs = extract_serde_attributes(&field.attrs);
 
             let mut serde_attrs = vec![quote! { #[serde(skip_serializing_if = "Option::is_none")] }];
             for attr in &field_attrs {
@@ -190,7 +164,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let versioned_name = format_ident!("Versioned{}", name);
     let delta_name = format_ident!("Delta{}", name);
 
-    let attrs = extract_versioned_attributes(&input.attrs);
+    let attrs = extract_serde_attributes(&input.attrs);
     let mut type_serde_attrs = vec![];
     for attr in &attrs {
         // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
@@ -207,13 +181,17 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
         for variant in &data_enum.variants {
             let variant_name = &variant.ident;
-            let variant_attrs = extract_versioned_attributes(&variant.attrs);
+            let variant_attrs = extract_serde_attributes(&variant.attrs);
             let mut variant_serde_attrs = vec![];
             for attr in &variant_attrs {
                 for nested_meta in &attr.meta {
                     variant_serde_attrs.push(quote! { #[serde(#nested_meta)] });
                 }
             }
+
+            let is_skip_fields = variant.attrs.iter().any(|attr| {
+                attr.path.is_ident("versioned") && attr.tokens.to_string().contains("skip_fields")
+            });
 
             match &variant.fields {
                 Fields::Named(fields_named) => {
@@ -226,7 +204,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                     for field in &fields_named.named {
                         let field_name = &field.ident;
                         let field_type = &field.ty;
-                        let field_attrs = extract_versioned_attributes(&field.attrs);
+                        let field_attrs = extract_serde_attributes(&field.attrs);
 
                         let mut serde_attrs = vec![quote! { #[serde(skip_serializing_if = "Option::is_none")] }];
                         for attr in &field_attrs {
@@ -235,50 +213,65 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                                 serde_attrs.push(quote! { #[serde(#nested_meta)] });
                             }
                         }            
-            
+
+                        field_names.push(field_name);
+                        
                         versioned_fields.push(quote! {
                             #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
-                        });
-                        delta_fields.push(quote! {
-                            #(#serde_attrs)*
-                            #field_name: ::versioned::DeltaType<#field_type>
                         });
                         field_initializers.push(quote! {
                             #field_name: ::versioned::Versioned::new(#field_name, version)
                         });
-                        delta_initializers.push(quote! {
-                            #field_name: #field_type::get(&#field_name, version)
-                        });
-                        field_names.push(field_name);
+
+                        if !is_skip_fields {
+                            delta_fields.push(quote! {
+                                #(#serde_attrs)*
+                                #field_name: ::versioned::DeltaType<#field_type>
+                            });
+                            delta_initializers.push(quote! {
+                                #field_name: #field_type::get(&#field_name, version)
+                            });
+                        }
                     }
 
                     versioned_variants.push(quote! {
                         #variant_name { #(#versioned_fields),* }
                     });
-                    delta_variants.push(quote! {
-                        #(#variant_serde_attrs)*
-                        #variant_name { #(#delta_fields),* }
-                    });
                     new_match_arms.push(quote! {
                         #name::#variant_name { #(#field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
                     });
-
                     let ref_fields: Vec<_> = field_names.iter().map(|f| quote! { ref #f }).collect();
 
-                    get_match_arms.push(quote! {
-                        #versioned_name::#variant_name { #(#ref_fields),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
-                    });
+                    if is_skip_fields {
+                        delta_variants.push(quote! {
+                            #(#variant_serde_attrs)*
+                            #variant_name
+                        });
+                        println!("Skipping fields for variant {}::{}", delta_name, variant_name);
+                        get_match_arms.push(quote! {
+                            #versioned_name::#variant_name { .. } => Some(#delta_name::#variant_name)
+                        });    
+                    } else {
+                        delta_variants.push(quote! {
+                            #(#variant_serde_attrs)*
+                            #variant_name { #(#delta_fields),* }
+                        });
+                        get_match_arms.push(quote! {
+                            #versioned_name::#variant_name { #(#ref_fields),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
+                        });
+                    }
                 }
                 Fields::Unit => {
                     versioned_variants.push(quote! {
                         #variant_name
                     });
+                    new_match_arms.push(quote! {
+                        #name::#variant_name => #versioned_name::#variant_name
+                    });
+
                     delta_variants.push(quote! {
                         #(#variant_serde_attrs)*
                         #variant_name
-                    });
-                    new_match_arms.push(quote! {
-                        #name::#variant_name => #versioned_name::#variant_name
                     });
                     get_match_arms.push(quote! {
                         #versioned_name::#variant_name => Some(#delta_name::#variant_name)

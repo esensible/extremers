@@ -22,6 +22,7 @@ enum MyEnum {
     // #[serde(transparent)]
     E1,
 
+    #[versioned(skip_fields)]
     E2 {
         #[serde(serialize_with = "serialize_as_hex")]
         field1: i32,
@@ -100,16 +101,16 @@ fn main() {
 
     let delta = MyStruct::get(&my_struct, 6);
     let serialized = serde_json::to_string(&delta).unwrap();
-    println!("{}", serialized);
+    println!("{}, {}", serialized, my_struct.version);
 
-    let delta = MyStruct::get(&my_struct, 7);
+    let delta = MyStruct::get(&my_struct, 8);
     let serialized = serde_json::to_string(&delta).unwrap();
-    println!("{}", serialized);
+    println!("{}, {}", serialized, my_struct.version);
 
     update!(my_struct.my_enum, MyEnum::E4 { field_opt: _ }, 11);
 
     let delta = MyStruct::get(&my_struct, 7);
     let serialized = serde_json::to_string(&delta).unwrap();
-    println!("{}", serialized);
+    println!("{}, {}", serialized, my_struct.version);
 
 }
