@@ -2,7 +2,7 @@ use serde::{Serialize, Serializer};
 use serde_json;
 
 use versioned_derive::{Versioned};
-use versioned::{Versioned, VersionedValue, DeltaType, VersionedType, update};
+use versioned::{Versioned, Atomic, update};
 
 fn serialize_as_hex<S>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -44,8 +44,18 @@ enum MyEnum {
     // E5(String),
 }
 
+#[derive(Serialize)]
+struct AtomicStruct {
+    my_int: i32,
+    my_float: f64,
+}
+
+impl Atomic for AtomicStruct {}
+
 #[derive(Versioned)]
 struct MyStruct {
+    my_atomic: AtomicStruct,
+
     my_int: i32,
     my_float: f64,
     
@@ -64,6 +74,10 @@ struct MyStruct {
 
 fn main() {
     let mut my_struct = Versioned::new(MyStruct {
+        my_atomic: AtomicStruct {
+            my_int: 42,
+            my_float: 3.14,
+        },
         my_int: 42,
         my_float: 3.14,
         my_enum: MyEnum::E1,
@@ -71,6 +85,11 @@ fn main() {
         my_secret: "secret".to_string(),
         // my_default: Some(10),
     }, 0);
+
+    update!(my_struct.my_atomic, AtomicStruct {
+        my_int: 43,
+        my_float: 42.23,
+    });
 
     update!(my_struct.my_int, 43);
     update!(my_struct.my_enum, MyEnum::E2 { field1: 23, field2: 3.14 });

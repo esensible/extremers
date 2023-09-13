@@ -33,15 +33,55 @@ fn extract_versioned_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttrib
 ///
 /// The macro supports both enums and structs and will generate the appropriate
 /// versioned and delta types, along with the required implementations for the `Versioned` trait.
+// #[proc_macro_derive(Versioned, attributes(serde))]
+// pub fn derive_versioned(input: TokenStream) -> TokenStream {
+//     let input = syn::parse_macro_input!(input as DeriveInput);
+
+//     // let name = &input.ident;
+//     let expanded = match &input.data {
+//         Data::Enum(_) => versioned_enum(input),
+//         Data::Struct(_) => versioned_struct(input),
+//         Data::Union(_) => panic!("Unions are not supported"),
+//     };
+
+//     expanded.into()
+// }
+
+
 #[proc_macro_derive(Versioned, attributes(serde))]
 pub fn derive_versioned(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
-    // let name = &input.ident;
-    let expanded = match &input.data {
-        Data::Enum(_) => versioned_enum(input),
-        Data::Struct(_) => versioned_struct(input),
-        Data::Union(_) => panic!("Unions are not supported"),
+    // Check if the `atomic` attribute is present
+    let is_atomic = input.attrs.iter().any(|attr| {
+        if let Ok(meta) = attr.parse_meta() {
+            if let syn::Meta::List(meta_list) = meta {
+                if meta_list.path.is_ident("serde") {
+                    return meta_list.nested.iter().any(|nested_meta| {
+                        if let syn::NestedMeta::Meta(nested) = nested_meta {
+                            return nested.path().is_ident("atomic");
+                        }
+                        false
+                    });
+                }
+            }
+        }
+        false
+    });
+
+    let expanded = if is_atomic {
+        // If `atomic` was detected, just implement the Atomic trait
+        let name = &input.ident;
+        quote! {
+            impl Atomic for #name {}
+        }
+    } else {
+        // Otherwise, proceed with generating versioned code
+        match &input.data {
+            Data::Enum(_) => versioned_enum(input),
+            Data::Struct(_) => versioned_struct(input),
+            Data::Union(_) => panic!("Unions are not supported"),
+        }
     };
 
     expanded.into()
@@ -50,8 +90,8 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
 
 /// Generates code for structs to implement the `Versioned` trait.
 ///
-/// The generated code includes versioned structs with fields wrapped in `VersionedValue`,
-/// delta structs with fields wrapped in `DeltaType`, and the necessary methods of the `Versioned` trait.
+/// The generated code includes versioned structs with fields wrapped in `::versioned::VersionedValue`,
+/// delta structs with fields wrapped in `::versioned::DeltaType`, and the necessary methods of the `Versioned` trait.
 fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
@@ -86,14 +126,14 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 }
             }            
             versioned_fields.push(quote! {
-                #field_name: VersionedValue<VersionedType<#field_type>>
+                #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
             });
             delta_fields.push(quote! {
                 #(#serde_attrs)*
-                #field_name: DeltaType<#field_type>
+                #field_name: ::versioned::DeltaType<#field_type>
             });
             new_initializers.push(quote! {
-                #field_name: Versioned::new(value.#field_name, version)
+                #field_name: ::versioned::Versioned::new(value.#field_name, version)
             });
             get_initializers.push(quote! {
                 #field_name: #field_type::get(value.value.#field_name, version)
@@ -116,12 +156,12 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             #(#delta_fields),*
         }
 
-        impl Versioned for #name {
+        impl ::versioned::Versioned for #name {
             type Value = #versioned_name;
             type Delta = #delta_name;
 
-            fn new(value: Self, version: usize) -> VersionedValue<Self::Value> {
-                VersionedValue {
+            fn new(value: Self, version: usize) -> ::versioned::VersionedValue<Self::Value> {
+                ::versioned::VersionedValue {
                     value: Self::Value {
                         #(#new_initializers),*
                     },
@@ -129,7 +169,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 }
             }
 
-            fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
+            fn get(value: ::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
                 Some(Self::Delta {
                     #(#get_initializers),*
                 })
@@ -143,8 +183,8 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
 /// Generates code for enums to implement the `Versioned` trait.
 ///
-/// The generated code includes versioned enums with variants wrapped in `VersionedValue` (if necessary),
-/// delta enums with variants wrapped in `DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
+/// The generated code includes versioned enums with variants wrapped in `::versioned::VersionedValue` (if necessary),
+/// delta enums with variants wrapped in `::versioned::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
 fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
     let versioned_name = format_ident!("Versioned{}", name);
@@ -197,14 +237,14 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         }            
             
                         versioned_fields.push(quote! {
-                            #field_name: VersionedValue<VersionedType<#field_type>>
+                            #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
                         });
                         delta_fields.push(quote! {
                             #(#serde_attrs)*
-                            #field_name: DeltaType<#field_type>
+                            #field_name: ::versioned::DeltaType<#field_type>
                         });
                         field_initializers.push(quote! {
-                            #field_name: Versioned::new(#field_name, version)
+                            #field_name: ::versioned::Versioned::new(#field_name, version)
                         });
                         delta_initializers.push(quote! {
                             #field_name: #field_type::get(#field_name, version)
@@ -263,18 +303,18 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             #(#delta_variants),*
         }
 
-        impl Versioned for #name {
+        impl ::versioned::Versioned for #name {
             type Value = #versioned_name;
             type Delta = #delta_name;
 
-            fn new(original: Self, version: usize) -> VersionedValue<Self::Value> {
+            fn new(original: Self, version: usize) -> ::versioned::VersionedValue<Self::Value> {
                 let value = match original {
                     #(#new_match_arms),*
                 };
-                VersionedValue { value, version }
+                ::versioned::VersionedValue { value, version }
             }
 
-            fn get(value: VersionedValue<Self::Value>, version: usize) -> DeltaType<Self> {
+            fn get(value: ::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
                 match value.value {
                     #(#get_match_arms),*
                 }
