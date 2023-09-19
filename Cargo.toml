@@ -2,4 +2,7 @@
 members = [
     "versioned",
     "versioned_derive",
+
+    # playground for testing
+    "test_app",
 ]
