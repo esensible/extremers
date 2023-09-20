@@ -3,7 +3,7 @@ use alloc::boxed::Box;
 use serde_derive::{Deserialize, Serialize};
 use std::result::Result;
 
-use crate::engine_traits::{EventHandler, EngineWrapper, EventSleepFn};
+use crate::engine_traits::{EventHandler, EventSleepFn};
 
 pub struct Race {
     data: u32,
@@ -49,5 +49,3 @@ impl EventHandler for Race {
         }
     }
 }
-
-pub type RaceEngine = EngineWrapper<Race>;

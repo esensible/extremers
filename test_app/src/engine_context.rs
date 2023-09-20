@@ -6,12 +6,14 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::String;
 
-use crate::engine_traits::{Engine, SleepCB};
+use crate::engine_traits::{EventHandler, EventSleepCB};
 
 type NotifyFn = dyn Fn(String) + Send + Sync;
+type SenderFn = dyn Fn(&str) -> Result<&'static str, &'static str> + Send + Sync;
+
 
 pub struct EngineContext {    
-    sender: Mutex<Option<Sender<String>>>,
+    sender: Mutex<Option<Box<SenderFn>>>,
     kill_channel: (Sender<bool>, Arc<Receiver<bool>>),
 }
 
@@ -27,14 +29,17 @@ impl Default for EngineContext {
 
 impl EngineContext {
 
-    pub fn handle_event(&self, event: String) {
+    pub fn handle_event(&self, event: &str) -> Result<&'static str, &'static str> {
         let sender_lock = self.sender.lock().unwrap();
-        if let Some(ref sender) = *sender_lock {
-            sender.send(event).expect("Failed to send event");
+        if let Some(sender) = &*sender_lock {
+            sender(event)
+        } else {
+            Err("No engine set")
         }
     }
 
-    pub fn set_engine<T: Engine + Send + 'static>(&self, engine: T, notify_cb: Box<NotifyFn>) {
+    pub fn set_engine<T: EventHandler + Send + 'static>(&self, engine: T, notify_cb: Box<NotifyFn>) 
+    where <T as EventHandler>::Event: Send {
         let engine = Arc::new(Mutex::new(engine));
         let notify_cb = Arc::new(notify_cb);
 
@@ -57,7 +62,7 @@ impl EngineContext {
                     let mut sm = engine.lock().unwrap();
                     match sm.handle_event(event, &*sleep_fn) {
                         Ok(Some(result)) => {
-                            (notify_cb)(result);
+                            (notify_cb)(serde_json::to_string(&result).unwrap());
                         },
                         Ok(None) => {},
                         Err(_error_msg) => {
@@ -69,8 +74,20 @@ impl EngineContext {
             });
         };
 
+        let sender_fn: Box<SenderFn> = Box::new(move |value: &str| {
+            match serde_json::from_str(value) {
+                Ok(event) => {
+                    if sender.send(event).is_ok() {
+                        Ok("Event scheduled")
+                    } else {
+                        Err("Failed to send send event")
+                    }
+                },
+                Err(_) => Err("Failed to deserialize event"),
+            }
+        });
         let mut sender_lock = self.sender.lock().unwrap();
-        *sender_lock = Some(sender);
+        *sender_lock = Some(sender_fn);
     }
 
     pub fn terminate(&self) {
@@ -81,11 +98,11 @@ impl EngineContext {
     }
 
     /// helper to generate a sleep handler
-    fn sleep<T: Engine + Send + 'static>(
+    fn sleep<T: EventHandler + Send + 'static>(
         engine: Arc<Mutex<T>>, 
         notify_cb: Arc<NotifyFn>, 
         duration: u32, 
-        cb: Box<SleepCB<T>>, 
+        cb: Box<EventSleepCB<T>>, 
         kill_receiver: Arc<Receiver<bool>>
     ) {
         thread::spawn(move || {
@@ -103,8 +120,8 @@ impl EngineContext {
                     // nominal case -> we slept, we woke up
                     let mut sm = engine.lock().unwrap();
                     if let Some(result) = cb(&mut *sm) {
-                        (notify_cb)(result);
-                    }
+                        (notify_cb)(serde_json::to_string(&result).unwrap());
+                    }                   
                 },
                 Err(RecvTimeoutError::Disconnected) => {
                     // wtf?
@@ -120,22 +137,3 @@ impl Drop for EngineContext {
         self.terminate();
     }
 }
-
-// implement a test like this
-// let notify_cb = |msg| println!("notify: {}", msg);
-// let engine = Arc::new(EngineContext::new());
-// engine.set_engine(RaceEngine { data: 0 }, Box::new(notify_cb));
-
-// engine.handle_event("hi".into());
-// engine.handle_event("sleep(3)".into());
-
-// let wc = engine.clone();
-// thread::spawn(
-//     move || {
-//         wc.handle_event("inc".into());
-//     }
-// );
-
-// engine.handle_event("other_event".into());
-// thread::sleep(std::time::Duration::from_secs(5));
-

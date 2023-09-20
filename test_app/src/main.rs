@@ -12,7 +12,7 @@ mod engine_context;
 mod race;
 
 use engine_context::EngineContext;
-use race::RaceEngine;
+use race::Race;
 
 
 #[tokio::main]
@@ -22,13 +22,13 @@ async fn main() {
 
     let cloned_tx = shared_tx.clone();
     let engine_context = Arc::new(EngineContext::default());
-    engine_context.set_engine(RaceEngine::default(), Box::new(move |message| {
+    engine_context.set_engine(Race::default(), Box::new(move |message| {
         release_states(cloned_tx.clone(), message);
     }));
     
     let events_engine = engine_context.clone();
     let app = Router::new()
-    .route("/events", post(move |body: String| handle_events(events_engine, body)))
+        .route("/events", post(move |body: String| handle_events(events_engine, body)))
         .route("/states", get(move || handle_states(shared_tx)));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
@@ -42,7 +42,7 @@ async fn main() {
 }
 
 async fn handle_events(engine: Arc<EngineContext>, body: String) -> impl axum::response::IntoResponse {
-    engine.handle_event(body);
+    let _ = engine.handle_event(&body);
     axum::response::Json(serde_json::json!({"status": "success"}))
 }
 
