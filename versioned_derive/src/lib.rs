@@ -40,7 +40,7 @@ fn extract_serde_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttribute>
 //     // let name = &input.ident;
 //     let expanded = match &input.data {
 //         Data::Enum(_) => versioned_enum(input),
-//         Data::Struct(_) => versioned_struct(input),
+//         Data::Struct(_) => delta_struct(input),
 //         Data::Union(_) => panic!("Unions are not supported"),
 //     };
 
@@ -48,13 +48,13 @@ fn extract_serde_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttribute>
 // }
 
 
-#[proc_macro_derive(Versioned, attributes(serde, versioned))]
+#[proc_macro_derive(Delta, attributes(serde, delta))]
 pub fn derive_versioned(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
     let expanded = match &input.data {
         Data::Enum(_) => versioned_enum(input),
-        Data::Struct(_) => versioned_struct(input),
+        Data::Struct(_) => delta_struct(input),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
@@ -66,10 +66,10 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
 ///
 /// The generated code includes versioned structs with fields wrapped in `::versioned::VersionedValue`,
 /// delta structs with fields wrapped in `::versioned::DeltaType`, and the necessary methods of the `Versioned` trait.
-fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
+fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
+    let visibility = &input.vis;
 
-    let versioned_name = format_ident!("Versioned{}", name);
     let delta_name = format_ident!("Delta{}", name);
 
     let attrs = extract_serde_attributes(&input.attrs);
@@ -81,11 +81,9 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         }
     }
 
-    let (versioned_fields, delta_fields, new_initializers, get_initializers) = if let Data::Struct(data_struct) = &input.data {
-        let mut versioned_fields = vec![];
+    let (delta_fields, delta_field_ctors) = if let Data::Struct(data_struct) = &input.data {
         let mut delta_fields = vec![];
-        let mut new_initializers = vec![];
-        let mut get_initializers = vec![];
+        let mut delta_field_ctors = vec![];
 
         for field in &data_struct.fields {
             let field_name = &field.ident;
@@ -99,57 +97,43 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                     serde_attrs.push(quote! { #[serde(#nested_meta)] });
                 }
             }            
-            versioned_fields.push(quote! {
-                #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
-            });
             delta_fields.push(quote! {
                 #(#serde_attrs)*
-                #field_name: ::versioned::DeltaType<#field_type>
+                #field_name: Option<<#field_type as ::versioned::DeltaTrait>::Type>
             });
-            new_initializers.push(quote! {
-                #field_name: ::versioned::Versioned::new(value.#field_name, version)
-            });
-            get_initializers.push(quote! {
-                #field_name: #field_type::get(&value.value.#field_name, version)
+            delta_field_ctors.push(quote! {
+                #field_name: <#field_type as ::versioned::DeltaTrait>::delta(&lhs.#field_name, &rhs.#field_name)
             });
         }
 
-        (versioned_fields, delta_fields, new_initializers, get_initializers)
+        (delta_fields, delta_field_ctors)
     } else {
-        panic!("versioned_struct can only be applied to structs");
+        panic!("delta_struct can only be applied to structs");
     };
 
     let expanded = quote! {
-        struct #versioned_name {
-            #(#versioned_fields),*
-        }
-
         #[derive(Serialize, Clone)]
         #(#type_serde_attrs)*
-        struct #delta_name {
+        #visibility struct #delta_name {
             #(#delta_fields),*
         }
 
-        impl ::versioned::Versioned for #name {
-            type Value = #versioned_name;
-            type Delta = #delta_name;
+        impl ::versioned::DeltaTrait for #name {
+            type Type = #delta_name;
 
-            fn new(value: Self, version: usize) -> ::versioned::VersionedValue<Self::Value> {
-                ::versioned::VersionedValue {
-                    value: Self::Value {
-                        #(#new_initializers),*
-                    },
-                    version: version,
+            fn delta(lhs: &#name, rhs: &#name) -> Option<Self::Type> {
+                if lhs == rhs {
+                    return None;
                 }
-            }
-
-            fn get(value: &::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
-                Some(Self::Delta {
-                    #(#get_initializers),*
+        
+                Some(Self::Type {
+                    #(#delta_field_ctors),*
                 })
             }
         }
     };
+    println!("## {}", name);
+    println!("{}", expanded.to_string());
 
     expanded.into()
 }
@@ -161,7 +145,7 @@ fn versioned_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 /// delta enums with variants wrapped in `::versioned::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
 fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
-    let versioned_name = format_ident!("Versioned{}", name);
+    let visibility = &input.vis;
     let delta_name = format_ident!("Delta{}", name);
 
     let attrs = extract_serde_attributes(&input.attrs);
@@ -173,11 +157,11 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         }
     }
 
-    let (versioned_variants, delta_variants, new_match_arms, get_match_arms) = if let Data::Enum(data_enum) = &input.data {
-        let mut versioned_variants = vec![];
+    let (delta_variants, delta_match_arms) = if let Data::Enum(data_enum) = &input.data {
         let mut delta_variants = vec![];
-        let mut new_match_arms = vec![];
-        let mut get_match_arms = vec![];
+        let mut delta_match_arms = vec![];
+        let mut lhs_cross_arms = vec![];
+        let mut rhs_cross_arms = vec![];
 
         for variant in &data_enum.variants {
             let variant_name = &variant.ident;
@@ -190,20 +174,18 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             }
 
             let is_skip_fields = variant.attrs.iter().any(|attr| {
-                attr.path.is_ident("versioned") && attr.tokens.to_string().contains("skip_fields")
+                attr.path.is_ident("delta") && attr.tokens.to_string().contains("skip_fields")
             });
 
             match &variant.fields {
                 Fields::Named(fields_named) => {
-                    let mut versioned_fields = vec![];
-                    let mut delta_fields = vec![];
-                    let mut field_initializers = vec![];
-                    let mut delta_initializers = vec![];
-                    let mut versioned_field_names = vec![];
                     let mut delta_field_names = vec![];
+                    let mut delta_fields = vec![];
+                    let mut delta_field_ctors = vec![];
+                    let mut delta_field_clones = vec![];
 
                     for field in &fields_named.named {
-                        let field_name = &field.ident;
+                        let field_name = field.ident.as_ref().unwrap();
                         let field_type = &field.ty;
                         let field_attrs = extract_serde_attributes(&field.attrs);
 
@@ -216,36 +198,29 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         }            
 
                         let is_skip_field = field.attrs.iter().any(|attr| {
-                            attr.path.is_ident("versioned") && attr.tokens.to_string().contains("skip")
+                            attr.path.is_ident("delta") && attr.tokens.to_string().contains("skip")
                         });
                        
-                        versioned_fields.push(quote! {
-                            #field_name: ::versioned::VersionedValue<::versioned::VersionedType<#field_type>>
-                        });
-                        field_initializers.push(quote! {
-                            #field_name: ::versioned::Versioned::new(#field_name, version)
-                        });
-
-                        versioned_field_names.push(field_name);
                         if !is_skip_fields && !is_skip_field{
                             delta_field_names.push(field_name);
 
                             delta_fields.push(quote! {
                                 #(#serde_attrs)*
-                                #field_name: ::versioned::DeltaType<#field_type>
+                                #field_name: Option<<#field_type as ::versioned::DeltaTrait>::Type>
                             });
-                            delta_initializers.push(quote! {
-                                #field_name: #field_type::get(&#field_name, version)
+               
+                            let field_name_lhs = format_ident!("lhs_{}", field_name);
+                            let field_name_rhs = format_ident!("rhs_{}", field_name);
+
+                            delta_field_ctors.push(quote! {
+                                #field_name: #field_type::delta(&#field_name_lhs, &#field_name_rhs)
+                            });
+                            
+                            delta_field_clones.push(quote! {
+                                #field_name: Some(#field_name_rhs.clone())
                             });
                         }
                     }
-
-                    versioned_variants.push(quote! {
-                        #variant_name { #(#versioned_fields),* }
-                    });
-                    new_match_arms.push(quote! {
-                        #name::#variant_name { #(#versioned_field_names),* } => #versioned_name::#variant_name { #(#field_initializers),* }
-                    });
 
                     if is_skip_fields || delta_field_names.is_empty() {
                         delta_variants.push(quote! {
@@ -253,39 +228,78 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             #variant_name
                         });
                         println!("Skipping fields for variant {}::{}", delta_name, variant_name);
-                        get_match_arms.push(quote! {
-                            #versioned_name::#variant_name { .. } => Some(#delta_name::#variant_name)
-                        });    
+                        delta_match_arms.push(quote! {
+                            (Self::#variant_name { .. }, Self::#variant_name { .. }) if (lhs == rhs) => None,
+                            (Self::#variant_name { .. }, Self::#variant_name { .. }) => Some(Self::Type::#variant_name)
+                        });
+
+                        lhs_cross_arms.push((variant_name, quote! {
+                            { .. }
+                        }));
+                        rhs_cross_arms.push((
+                            variant_name, 
+                            quote! {{ .. }},
+                            quote! {},
+                        ));
                     } else {
                         let mut ref_fields: Vec<_> = delta_field_names.iter().map(|f| quote! { ref #f }).collect();
-                        if delta_field_names.len() != versioned_field_names.len() {
+                        if delta_field_names.len() != fields_named.named.len() {
                             ref_fields.push(quote! { .. });
                         }
-
+                        // TODO: I think we should be using ref_fields below
                         delta_variants.push(quote! {
                             #(#variant_serde_attrs)*
                             #variant_name { #(#delta_fields),* }
                         });
-                        get_match_arms.push(quote! {
-                            #versioned_name::#variant_name { #(#ref_fields),* } => Some(#delta_name::#variant_name { #(#delta_initializers),* })
+
+                        let lhs_names: Vec<_> = delta_field_names.iter()
+                        .map(|name| {
+                            let lhs_name = format_ident!("lhs_{}", name);
+                            quote! { #name: #lhs_name }
+                        })
+                        .collect();
+                    
+                        let rhs_names: Vec<_> = delta_field_names.iter()
+                        .map(|name| {
+                            let rhs_name = format_ident!("rhs_{}", name);
+                            quote! { #name: #rhs_name }
+                        })
+                        .collect();
+
+                        delta_match_arms.push(quote! {
+                            (Self::#variant_name { .. }, Self::#variant_name { .. }) if (lhs == rhs) => None,
+
+                            (Self::#variant_name { #(#lhs_names),*  }, Self::#variant_name { #(#rhs_names),* }) => Some(Self::Type::#variant_name {
+                                #(#delta_field_ctors),*
+                            })
+                
                         });
+
+                        lhs_cross_arms.push((variant_name, quote! {
+                            { .. }
+                        }));
+                        rhs_cross_arms.push((
+                            variant_name, 
+                            quote! { { #(#rhs_names),* }},
+                            quote! { { #(#delta_field_clones),* } },
+                        ));
+
                     }
                 }
                 Fields::Unit => {
-                    versioned_variants.push(quote! {
-                        #variant_name
-                    });
-                    new_match_arms.push(quote! {
-                        #name::#variant_name => #versioned_name::#variant_name
-                    });
-
                     delta_variants.push(quote! {
                         #(#variant_serde_attrs)*
                         #variant_name
                     });
-                    get_match_arms.push(quote! {
-                        #versioned_name::#variant_name => Some(#delta_name::#variant_name)
+                    delta_match_arms.push(quote! {
+                        (Self::#variant_name, Self::#variant_name) => None
                     });
+                    lhs_cross_arms.push((variant_name, quote! { }));
+                    rhs_cross_arms.push((
+                        variant_name, 
+                        quote! {},
+                        quote! {},
+                    ));
                 }
                 _ => {
                     panic!("Unsupported variant type");
@@ -293,43 +307,42 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             }
         }
 
-        (versioned_variants, delta_variants, new_match_arms, get_match_arms)
+        for (lhs_name, lhs_match) in &lhs_cross_arms {
+            for (rhs_name, rhs_match, rhs_init) in &rhs_cross_arms {
+                if lhs_name != rhs_name {
+
+                    delta_match_arms.push(quote! {
+                        (Self::#rhs_name #rhs_match, Self::#lhs_name #lhs_match) => Some(Self::Type::#rhs_name #rhs_init)
+                    });
+                }
+            }
+        }
+        (delta_variants, delta_match_arms)
     } else {
         panic!("Versioned can only be derived for enums");
     };
 
     let expanded = quote! {
-        enum #versioned_name {
-            #(#versioned_variants),*
-        }
-
         #[derive(Serialize, Clone)]
         #(#type_serde_attrs)*
-        enum #delta_name {
+        #visibility enum #delta_name {
             #(#delta_variants),*
         }
 
-        impl ::versioned::Versioned for #name {
-            type Value = #versioned_name;
-            type Delta = #delta_name;
+        impl ::versioned::DeltaTrait for #name {
+            type Type = #delta_name;
 
-            fn new(original: Self, version: usize) -> ::versioned::VersionedValue<Self::Value> {
-                let value = match original {
-                    #(#new_match_arms),*
-                };
-                ::versioned::VersionedValue { value, version }
-            }
-
-            fn get(value: &::versioned::VersionedValue<Self::Value>, version: usize) -> ::versioned::DeltaType<Self> {
-                match value.value {
-                    #(#get_match_arms),*
+            fn delta(lhs: &E, rhs: &E) -> Option<Self::Type> {
+                match (lhs, rhs) {
+                    #(#delta_match_arms),*,
+                    (_, _) => None
                 }
-            }
+            }       
         }
     };
 
-    // println!("## {}", name);
-    // println!("{}", expanded.to_string());
+    println!("## {}", name);
+    println!("{}", expanded.to_string());
 
     expanded.into()
 }

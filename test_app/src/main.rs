@@ -1,57 +1,71 @@
-#![feature(associated_type_defaults)]
+// mod race;
+// mod engine_traits;
+// mod engine_context;
 
-use std::sync::Arc;
-use std::net::SocketAddr;
-use tokio::sync::broadcast;
-use axum::{Router, handler::{get, post}, response::IntoResponse};
-use hyper::{Server, Body, Response};
-use serde_json;
+// use crossbeam_channel::unbounded;
+// use engine_context::EngineContext;
+// use race::Race;
 
-mod engine_traits;
-mod engine_context;
-mod race;
-
-use engine_context::EngineContext;
-use race::Race;
-
-
-#[tokio::main]
-async fn main() {
-    let (tx, _rx) = broadcast::channel::<String>(100); // The broadcast channel for all requests
-    let shared_tx = Arc::new(tx);
-
-    let cloned_tx = shared_tx.clone();
-    let engine_context = Arc::new(EngineContext::default());
-    engine_context.set_engine(Race::default(), Box::new(move |message| {
-        release_states(cloned_tx.clone(), message);
-    }));
+// fn main() {
+//     let ctx = EngineContext::default();
     
-    let events_engine = engine_context.clone();
-    let app = Router::new()
-        .route("/events", post(move |body: String| handle_events(events_engine, body)))
-        .route("/states", get(move || handle_states(shared_tx)));
+//     let (notify_sender, notify_receiver) = unbounded::<String>();
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+//     let notify_fn = move |event: String| {
+//         notify_sender.send(event).unwrap();
+//     };
 
-    println!("Server listening on http://{}", addr);
+//     ctx.set_engine(Race::default(), Box::new(notify_fn));
 
-    Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .expect("Server failed");
+//     assert_eq!(ctx.handle_event("\"hello\""), Ok("Event scheduled"));
+
+// }
+
+use versioned_derive::Delta;
+use versioned::{Atomic, DeltaTrait};
+use serde_derive::Serialize;
+use serde_json as json;
+
+#[derive(Delta, Clone, PartialEq)]
+enum E {
+    A,
+    B{
+        b1: i32, b2: i32
+    }
 }
 
-async fn handle_events(engine: Arc<EngineContext>, body: String) -> impl axum::response::IntoResponse {
-    let _ = engine.handle_event(&body);
-    axum::response::Json(serde_json::json!({"status": "success"}))
+
+#[derive(Delta, Clone, PartialEq)]
+struct A {
+    a1: i32,
+    a2: i32,
+    a3: E,
 }
 
-async fn handle_states(shared_tx: Arc<broadcast::Sender<String>>) -> impl IntoResponse {
-    let mut rx = shared_tx.subscribe();
-    let response = rx.recv().await.expect("Failed to receive response");
-    Response::new(Body::from(response))
-}
+fn main () {
+    let mut a = A { a1: 1, a2: 2, a3: E::A };
+    let delta = <A as DeltaTrait>::delta(&a, &a);
 
-fn release_states(shared_tx: Arc<broadcast::Sender<String>>, message: String) {
-    let _ = shared_tx.send(message);  // Sends to all subscribers
-} 
+    println!("Delta: {:?}", json::to_string(&delta).unwrap());
+
+    let old_a = a.clone();
+    a.a2 += 1;
+    a.a3 = E::B{b1: 3, b2: 4};
+    let delta = <A as DeltaTrait>::delta(&a, &old_a);
+
+    println!("Delta: {:?}", json::to_string(&delta).unwrap());
+
+    let old_a = a.clone();
+    a.a1 += 1;
+    let delta = A::delta(&a, &old_a);
+    println!("Delta: {:?}", json::to_string(&delta).unwrap());
+
+    let old_a = a.clone();
+    if let E::B{b1, b2} = &mut a.a3 {
+        *b1 += 1;
+        // *b2 += 1;
+    }
+    let delta = A::delta(&a, &old_a);
+    println!("Delta: {:?}", json::to_string(&delta).unwrap());
+
+}

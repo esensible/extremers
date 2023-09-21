@@ -191,15 +191,10 @@ mod tests {
         ctx.set_engine(MockEventHandler, Box::new(notify_fn));
     
         assert_eq!(ctx.handle_event("\"hello\""), Ok("Event scheduled"));
-    
-        // Introducing sleep to allow the spawned thread to process the message.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    
+        std::thread::sleep(std::time::Duration::from_millis(100)); 
         assert_eq!(notify_receiver.recv().unwrap(), "\"hello\"");
     
         assert_eq!(ctx.handle_event("not JSON"), Err("Failed to deserialize event"));
-    
-        // Introducing sleep again for the same reason.
         std::thread::sleep(std::time::Duration::from_millis(100));
     
         // Here you could check for the expected outcome for the "error" event, if any.
