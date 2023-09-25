@@ -9,6 +9,6 @@ edition = "2021"
 [lib]
 path = "build.rs"
 
-[dependencies]
-# Point to local test_lib crate
-# test_lib = { path = "../test_lib" }
+[features]
+monitor = []
+

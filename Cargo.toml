@@ -6,7 +6,6 @@ members = [
     # playground for testing
     "test_app",
 
-    "test_lib",
-
-    "nano-sketch"
+    "nano_lib",
+    "nano-sketch",
 ]

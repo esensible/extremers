@@ -1,9 +1,11 @@
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     // Build test_lib crate
     let status = Command::new("cargo")
-        .args(&["build", "--target", "thumbv6m-none-eabi", "--release", "-p", "test_lib"])
+        .args(&["build", "--target", "thumbv6m-none-eabi", "--release", "-p", "nano_lib"])
         .current_dir("../")
         .status()
         .expect("Failed to start cargo build");
@@ -17,7 +19,7 @@ fn main() {
             "arduino:mbed_nano:nanorp2040connect",
             ".",
             "--build-property",
-            "compiler.libraries.ldflags=-ltest_lib -L../target/thumbv6m-none-eabi/release",
+            "compiler.libraries.ldflags=-lnano_lib -L../target/thumbv6m-none-eabi/release",
         ])
         .status()
         .expect("Failed to start arduino-cli compile");
@@ -51,4 +53,17 @@ fn main() {
         .status()
         .expect("Failed to start arduino-cli upload");
     assert!(status.success(), "Failed to upload Arduino sketch");
+
+    if cfg!(feature = "monitor") {
+        thread::sleep(Duration::from_secs(15));
+        let status = Command::new("arduino-cli")
+            .args(&[
+                "monitor", 
+                "-p", 
+                board_port
+            ])
+            .status()
+            .expect("Failed to start arduino-cli monitor");
+        assert!(status.success(), "Failed to monitor Arduino serial port");
+    }
 }
