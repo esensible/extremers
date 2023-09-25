@@ -1,0 +1,14 @@
+[package]
+name = "nano-sketch"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+# add build dependencies if you need any
+
+[lib]
+path = "build.rs"
+
+[dependencies]
+# Point to local test_lib crate
+# test_lib = { path = "../test_lib" }

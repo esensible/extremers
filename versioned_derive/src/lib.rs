@@ -332,7 +332,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         impl ::versioned::DeltaTrait for #name {
             type Type = #delta_name;
 
-            fn delta(lhs: &E, rhs: &E) -> Option<Self::Type> {
+            fn delta(lhs: &Self, rhs: &Self) -> Option<Self::Type> {
                 match (lhs, rhs) {
                     #(#delta_match_arms),*,
                     (_, _) => None
