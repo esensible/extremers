@@ -1,51 +1,11 @@
 //! This module provides procedural macros for deriving fine grained (per field) versioned data structures.
 
 extern crate proc_macro;
+// extern crate serde;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Data, Fields};
 
-
-struct VersionedAttribute {
-    meta: Vec<syn::NestedMeta>,
-}
-
-
-fn extract_serde_attributes(attrs: &[syn::Attribute]) -> Vec<VersionedAttribute> {
-    let mut extracted_attrs = Vec::new();
-
-    for attr in attrs {
-        if attr.path.is_ident("serde") {
-            if let Ok(meta) = attr.parse_meta() {
-                if let syn::Meta::List(meta_list) = meta {
-                    extracted_attrs.push(VersionedAttribute {
-                        meta: meta_list.nested.into_iter().collect(),
-                    });
-                }
-            }
-        }
-    }
-
-    extracted_attrs
-}
-
-/// The main procedural macro to derive the `Versioned` trait.
-///
-/// The macro supports both enums and structs and will generate the appropriate
-/// versioned and delta types, along with the required implementations for the `Versioned` trait.
-// #[proc_macro_derive(Versioned, attributes(serde))]
-// pub fn derive_versioned(input: TokenStream) -> TokenStream {
-//     let input = syn::parse_macro_input!(input as DeriveInput);
-
-//     // let name = &input.ident;
-//     let expanded = match &input.data {
-//         Data::Enum(_) => versioned_enum(input),
-//         Data::Struct(_) => delta_struct(input),
-//         Data::Union(_) => panic!("Unions are not supported"),
-//     };
-
-//     expanded.into()
-// }
 
 
 #[proc_macro_derive(Delta, attributes(serde, delta))]
@@ -68,76 +28,63 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
 /// delta structs with fields wrapped in `::versioned::DeltaType`, and the necessary methods of the `Versioned` trait.
 fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
-    let visibility = &input.vis;
 
-    let delta_name = format_ident!("Delta{}", name);
-
-    let attrs = extract_serde_attributes(&input.attrs);
-    let mut type_serde_attrs = vec![];
-    for attr in &attrs {
-        // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
-        for nested_meta in &attr.meta {
-            type_serde_attrs.push(quote! { #[serde(#nested_meta)] });
-        }
-    }
-
-    let (delta_fields, delta_field_ctors) = if let Data::Struct(data_struct) = &input.data {
-        let mut delta_fields = vec![];
-        let mut delta_field_ctors = vec![];
+    let (field_diffs, field_flattens, field_counts) = if let Data::Struct(data_struct) = &input.data {
+        let mut field_diffs = vec![];
+        let mut field_flattens = vec![];
+        let mut field_counts =  vec![];
 
         for field in &data_struct.fields {
             let field_name = &field.ident;
             let field_type = &field.ty;
-            let field_attrs = extract_serde_attributes(&field.attrs);
 
-            let mut serde_attrs = vec![quote! { #[serde(skip_serializing_if = "Option::is_none")] }];
-            for attr in &field_attrs {
-                // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
-                for nested_meta in &attr.meta {
-                    serde_attrs.push(quote! { #[serde(#nested_meta)] });
-                }
-            }            
-            delta_fields.push(quote! {
-                #(#serde_attrs)*
-                #field_name: Option<<#field_type as ::versioned::DeltaTrait>::Type>
+            field_diffs.push(quote! {
+                <#field_type as ::versioned::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
             });
-            delta_field_ctors.push(quote! {
-                #field_name: <#field_type as ::versioned::DeltaTrait>::delta(&lhs.#field_name, &rhs.#field_name)
+            field_flattens.push(quote! {
+                <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
+            });
+            field_counts.push(quote! {
+                count += <#field_type as ::versioned::FlatDiffSer>::count();
             });
         }
 
-        (delta_fields, delta_field_ctors)
+        (field_diffs, field_flattens, field_counts)
     } else {
         panic!("delta_struct can only be applied to structs");
     };
 
     let expanded = quote! {
-        #[derive(Serialize, Clone)]
-        #(#type_serde_attrs)*
-        #visibility struct #delta_name {
-            #(#delta_fields),*
-        }
-
-        impl ::versioned::DeltaTrait for #name {
-            type Type = #delta_name;
-
-            fn delta(lhs: &#name, rhs: &#name) -> Option<Self::Type> {
-                if lhs == rhs {
-                    return None;
-                }
-        
-                Some(Self::Type {
-                    #(#delta_field_ctors),*
-                })
+        impl  ::versioned::FlatDiffSer for #name
+        {
+            fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+            where
+                S: Serializer
+            {
+                #(#field_diffs)*
+                Ok(())
             }
-        }
+        
+            fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+            where
+                S: Serializer
+            {
+                #(#field_flattens)*
+                Ok(())
+            }
+        
+            fn count() -> usize {
+                let mut count = 0;
+                #(#field_counts)*
+                count
+            }
+        } 
     };
-    println!("## {}", name);
-    println!("{}", expanded.to_string());
+    // println!("## {}", name);
+    // println!("{}", expanded.to_string());
 
     expanded.into()
 }
-
 
 /// Generates code for enums to implement the `Versioned` trait.
 ///
@@ -145,161 +92,76 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 /// delta enums with variants wrapped in `::versioned::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
 fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
-    let visibility = &input.vis;
-    let delta_name = format_ident!("Delta{}", name);
 
-    let attrs = extract_serde_attributes(&input.attrs);
-    let mut type_serde_attrs = vec![];
-    for attr in &attrs {
-        // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
-        for nested_meta in &attr.meta {
-            type_serde_attrs.push(quote! { #[serde(#nested_meta)] });
-        }
-    }
-
-    let (delta_variants, delta_match_arms) = if let Data::Enum(data_enum) = &input.data {
-        let mut delta_variants = vec![];
-        let mut delta_match_arms = vec![];
-        let mut lhs_cross_arms = vec![];
-        let mut rhs_cross_arms = vec![];
+    let (diff_match_arms, flatten_match_arms) = if let Data::Enum(data_enum) = &input.data {
+        let mut diff_match_arms = vec![];
+        let mut flatten_match_arms = vec![];
+        let mut cross_terms = vec![];
 
         for variant in &data_enum.variants {
             let variant_name = &variant.ident;
-            let variant_attrs = extract_serde_attributes(&variant.attrs);
-            let mut variant_serde_attrs = vec![];
-            for attr in &variant_attrs {
-                for nested_meta in &attr.meta {
-                    variant_serde_attrs.push(quote! { #[serde(#nested_meta)] });
-                }
-            }
 
-            let is_skip_fields = variant.attrs.iter().any(|attr| {
-                attr.path.is_ident("delta") && attr.tokens.to_string().contains("skip_fields")
-            });
-
-            match &variant.fields {
+            match &variant.fields {               
                 Fields::Named(fields_named) => {
-                    let mut delta_field_names = vec![];
-                    let mut delta_fields = vec![];
-                    let mut delta_field_ctors = vec![];
-                    let mut delta_field_clones = vec![];
+                    // let mut field_names = vec![];
+                    // let mut delta_fields = vec![];
+                    let mut lhs_match_fields = vec![];
+                    let mut rhs_match_fields = vec![];
+                    let mut diff_fields = vec![];
+                    let mut cross_diff_fields = vec![];
+                    let mut flatten_fields = vec![];
 
                     for field in &fields_named.named {
                         let field_name = field.ident.as_ref().unwrap();
                         let field_type = &field.ty;
-                        let field_attrs = extract_serde_attributes(&field.attrs);
 
-                        let mut serde_attrs = vec![quote! { #[serde(skip_serializing_if = "Option::is_none")] }];
-                        for attr in &field_attrs {
-                            // For now, assuming the nested attributes from `serde` can be directly translated to `serde`.
-                            for nested_meta in &attr.meta {
-                                serde_attrs.push(quote! { #[serde(#nested_meta)] });
-                            }
-                        }            
+                        let field_name_lhs = format_ident!("lhs_{}", field_name);
+                        let field_name_rhs = format_ident!("rhs_{}", field_name);
 
-                        let is_skip_field = field.attrs.iter().any(|attr| {
-                            attr.path.is_ident("delta") && attr.tokens.to_string().contains("skip")
+                        lhs_match_fields.push(quote! { #field_name: #field_name_lhs });
+                        rhs_match_fields.push(quote! { #field_name: #field_name_rhs });
+
+                        diff_fields.push(quote! {
+                            <#field_type as ::versioned::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
                         });
-                       
-                        if !is_skip_fields && !is_skip_field{
-                            delta_field_names.push(field_name);
 
-                            delta_fields.push(quote! {
-                                #(#serde_attrs)*
-                                #field_name: Option<<#field_type as ::versioned::DeltaTrait>::Type>
-                            });
-               
-                            let field_name_lhs = format_ident!("lhs_{}", field_name);
-                            let field_name_rhs = format_ident!("rhs_{}", field_name);
+                        cross_diff_fields.push(quote! {
+                            <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(self, label, state)?;
+                        });
 
-                            delta_field_ctors.push(quote! {
-                                #field_name: #field_type::delta(&#field_name_lhs, &#field_name_rhs)
-                            });
-                            
-                            delta_field_clones.push(quote! {
-                                #field_name: Some(#field_name_rhs.clone())
-                            });
-                        }
+                        flatten_fields.push(quote! {
+                            <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
+                        });
                     }
 
-                    if is_skip_fields || delta_field_names.is_empty() {
-                        delta_variants.push(quote! {
-                            #(#variant_serde_attrs)*
-                            #variant_name
-                        });
-                        println!("Skipping fields for variant {}::{}", delta_name, variant_name);
-                        delta_match_arms.push(quote! {
-                            (Self::#variant_name { .. }, Self::#variant_name { .. }) if (lhs == rhs) => None,
-                            (Self::#variant_name { .. }, Self::#variant_name { .. }) => Some(Self::Type::#variant_name)
-                        });
-
-                        lhs_cross_arms.push((variant_name, quote! {
-                            { .. }
-                        }));
-                        rhs_cross_arms.push((
-                            variant_name, 
-                            quote! {{ .. }},
-                            quote! {},
-                        ));
-                    } else {
-                        let mut ref_fields: Vec<_> = delta_field_names.iter().map(|f| quote! { ref #f }).collect();
-                        if delta_field_names.len() != fields_named.named.len() {
-                            ref_fields.push(quote! { .. });
+                    flatten_match_arms.push(quote! {
+                        #name::#variant_name{#(#lhs_match_fields),*} => {
+                            state.serialize_field(label, stringify!(#variant_name))?;
+                            #(#flatten_fields)*
                         }
-                        // TODO: I think we should be using ref_fields below
-                        delta_variants.push(quote! {
-                            #(#variant_serde_attrs)*
-                            #variant_name { #(#delta_fields),* }
-                        });
+                    });                
 
-                        let lhs_names: Vec<_> = delta_field_names.iter()
-                        .map(|name| {
-                            let lhs_name = format_ident!("lhs_{}", name);
-                            quote! { #name: #lhs_name }
-                        })
-                        .collect();
-                    
-                        let rhs_names: Vec<_> = delta_field_names.iter()
-                        .map(|name| {
-                            let rhs_name = format_ident!("rhs_{}", name);
-                            quote! { #name: #rhs_name }
-                        })
-                        .collect();
+                    diff_match_arms.push(quote! {
+                        (#name::#variant_name{#(#lhs_match_fields),*}, #name::#variant_name{#(#rhs_match_fields),*}) => {
+                            #(#diff_fields)*
+                        }
+                    });
 
-                        delta_match_arms.push(quote! {
-                            (Self::#variant_name { .. }, Self::#variant_name { .. }) if (lhs == rhs) => None,
-
-                            (Self::#variant_name { #(#lhs_names),*  }, Self::#variant_name { #(#rhs_names),* }) => Some(Self::Type::#variant_name {
-                                #(#delta_field_ctors),*
-                            })
-                
-                        });
-
-                        lhs_cross_arms.push((variant_name, quote! {
-                            { .. }
-                        }));
-                        rhs_cross_arms.push((
-                            variant_name, 
-                            quote! { { #(#rhs_names),* }},
-                            quote! { { #(#delta_field_clones),* } },
-                        ));
-
-                    }
+                    cross_terms.push((variant_name, quote! { { .. } }));                           
                 }
                 Fields::Unit => {
-                    delta_variants.push(quote! {
-                        #(#variant_serde_attrs)*
-                        #variant_name
+
+                    flatten_match_arms.push(quote! {
+                        Self::#variant_name => {
+                            state.serialize_field(label, stringify!(#variant_name))?;
+                        }
                     });
-                    delta_match_arms.push(quote! {
-                        (Self::#variant_name, Self::#variant_name) => None
+
+                    diff_match_arms.push(quote! {
+                        (Self::#variant_name, Self::#variant_name) => {}
                     });
-                    lhs_cross_arms.push((variant_name, quote! { }));
-                    rhs_cross_arms.push((
-                        variant_name, 
-                        quote! {},
-                        quote! {},
-                    ));
+
+                    cross_terms.push((variant_name, quote! { }));        
                 }
                 _ => {
                     panic!("Unsupported variant type");
@@ -307,42 +169,62 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             }
         }
 
-        for (lhs_name, lhs_match) in &lhs_cross_arms {
-            for (rhs_name, rhs_match, rhs_init) in &rhs_cross_arms {
+        let mut cross_match_arms = vec![];
+        for (lhs_name, lhs_match) in &cross_terms {
+            for (rhs_name, rhs_match) in &cross_terms {
                 if lhs_name != rhs_name {
 
-                    delta_match_arms.push(quote! {
-                        (Self::#rhs_name #rhs_match, Self::#lhs_name #lhs_match) => Some(Self::Type::#rhs_name #rhs_init)
+                    cross_match_arms.push(quote! {
+                        (#name::#lhs_name #lhs_match, #name::#rhs_name #rhs_match)
                     });
                 }
             }
         }
-        (delta_variants, delta_match_arms)
+
+        diff_match_arms.push(quote! {
+            #(#cross_match_arms)|* => {
+                self.flatten::<S>(label, state)?;
+            }
+        });
+
+        (diff_match_arms, flatten_match_arms)
     } else {
         panic!("Versioned can only be derived for enums");
     };
 
     let expanded = quote! {
-        #[derive(Serialize, Clone)]
-        #(#type_serde_attrs)*
-        #visibility enum #delta_name {
-            #(#delta_variants),*
-        }
-
-        impl ::versioned::DeltaTrait for #name {
-            type Type = #delta_name;
-
-            fn delta(lhs: &Self, rhs: &Self) -> Option<Self::Type> {
-                match (lhs, rhs) {
-                    #(#delta_match_arms),*,
-                    (_, _) => None
-                }
-            }       
+        impl ::versioned::FlatDiffSer for #name
+        {
+            fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+            where
+                S: Serializer
+        
+            {
+                match (self, rhs) {
+                    #(#diff_match_arms),*
+                };
+                Ok(())
+            }
+        
+            fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+            where
+                S: Serializer
+            {
+                match self {
+                    #(#flatten_match_arms),*
+                };
+                Ok(())
+            }
+        
+            fn count() -> usize {
+                1
+            }
         }
     };
 
-    println!("## {}", name);
-    println!("{}", expanded.to_string());
+    // println!("## {}", name);
+    // println!("{}", expanded.to_string());
 
     expanded.into()
 }
+

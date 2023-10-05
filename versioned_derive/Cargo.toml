@@ -11,7 +11,5 @@ syn = "1.0"
 quote = "1.0"
 proc-macro2 = "1.0"
 versioned = { path = "../versioned" }
+serde = { version = "1.0.188", default-features = false }
 
-[dev-dependencies]
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"

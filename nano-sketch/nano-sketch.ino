@@ -8,8 +8,11 @@ extern "C" {
 }
 
 extern "C" {
-int parse_http_request(const char* request, char* response_buf, size_t buf_size);
+  extern void init_engine();
+  extern int32_t handle_request_ffi(const uint8_t* request, size_t request_len, uint8_t* response, size_t response_len, void (*sleep_fn)(size_t, size_t));
 }
+
+void sleep(size_t time, size_t pos) { }
 
 char ssid[] = "yournetwork";
 char pass[] = "yourpassword";
@@ -56,6 +59,7 @@ bool isClientNew(WiFiClient& client) {
   return true;
 }
 
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(115200);
@@ -76,6 +80,8 @@ void setup() {
   if (_sock != NO_SOCKET_AVAIL) {
     ServerDrv::startServer(_port, _sock);
   }
+
+  init_engine();
 
   Serial.println("setup complete");
 }
@@ -126,14 +132,12 @@ void loop() {
       it->currentOffset += bytesToRead;
 
       // Check for an empty line at the end of the HTTP header
-      if (it->currentOffset >= 4 && ((strncmp(&it->currentRequest[it->currentOffset - 4], "\r\n\r\n", 4) == 0) || 
-         (it->currentOffset >= 2 && strncmp(&it->currentRequest[it->currentOffset - 2], "\n\n", 2) == 0))) {
+      // if (it->currentOffset >= 4 && ((strncmp(&it->currentRequest[it->currentOffset - 4], "\r\n\r\n", 4) == 0) || 
+      //    (it->currentOffset >= 2 && strncmp(&it->currentRequest[it->currentOffset - 2], "\n\n", 2) == 0))) {
 
-          char response_buf[512];
-          int len = parse_http_request(it->currentRequest, response_buf, sizeof(response_buf));
-          if (len > 0) {
-            // use the response
-            response_buf[len] = '\0';  // Null-terminate the response
+          char response_buf[1024] = {0};
+          int result = handle_request_ffi((const uint8_t*)it->currentRequest, it->currentOffset, (uint8_t*)response_buf, bytesToRead, sleep);
+          if (result == 0) {
             Serial.println(response_buf);
           }
 
@@ -144,7 +148,7 @@ void loop() {
           startMillis = millis();
         }
         continue;
-      }
+      // }
     }
     ++it;
   }

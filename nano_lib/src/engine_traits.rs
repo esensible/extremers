@@ -1,15 +1,14 @@
-#![feature(const_generics)]
-#![feature(const_evaluatable_checked)]
 #![allow(incomplete_features)]
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use versioned::DeltaTrait;
-// use paste::paste;
+use versioned::FlatDiffSer;
 use serde_json_core::{from_slice, to_slice};
 
 use httparse::{Request, EMPTY_HEADER};
 
-pub trait EventHandler where Self::Event: Deserialize<'static> + DeserializeOwned  {
+pub trait EventHandler 
+where Self::Event: Deserialize<'static> + DeserializeOwned  
+{
 
     type Event;
     type Callbacks;
@@ -17,9 +16,8 @@ pub trait EventHandler where Self::Event: Deserialize<'static> + DeserializeOwne
     fn handle_event(&mut self, event: Self::Event, sleep: &dyn FnMut(u32, Self::Callbacks)) -> Result<(), &'static str>;
 }
 
-impl<T: EventHandler + DeltaTrait + Default, const N: usize> Default for EngineWrapper<T, N> 
+impl<T: EventHandler + ::versioned::FlatDiffSer + Default, const N: usize> Default for EngineWrapper<T, N> 
 where
-    <T as DeltaTrait>::Type: Serialize,
     <T as EventHandler>::Callbacks: Copy,
 {
     fn default() -> Self {
@@ -28,17 +26,17 @@ where
 }
 
 #[derive(Copy, Clone)]
-pub struct EngineWrapper<T: EventHandler + DeltaTrait, const N: usize>(T, [Option<T::Callbacks>; N]) where
-    <T as DeltaTrait>::Type: Serialize;
+pub struct EngineWrapper<T: EventHandler + FlatDiffSer, const N: usize>(T, [Option<T::Callbacks>; N]);
+
 
 impl<T, const N: usize> EngineWrapper<T, N> 
 where
-    T: EventHandler + DeltaTrait + Clone,
-    <T as DeltaTrait>::Type: Serialize {
+    T: EventHandler + FlatDiffSer + Clone,
+    <T as EventHandler>::Callbacks: CallbackTrait    
+{
 
-    pub fn handle_event(&mut self, event: &[u8], result: &mut [u8], sleep: &dyn Fn(usize, usize)) -> Result<(), &'static str> {
-
-        let (event, _): (T::Event, usize) = from_slice(event).map_err(|_| {"Invalid JSON event"})?;
+    pub fn handle_event(&mut self, event: &[u8], result: &mut [u8], sleep: &dyn Fn(usize, usize)) -> Result<usize, &'static str> {
+        let (event, _): (T::Event, usize) = from_slice(event).expect( "zzInvalid JSON event");
 
         let transformed_sleep = |time: u32, callback: T::Callbacks| {
             if let Some(pos) = self.1.iter_mut().position(|x| {x.is_none()}) {
@@ -51,13 +49,18 @@ where
 
         let old_value = self.0.clone();
         let update = self.0.handle_event(event, &transformed_sleep)?;
-        let delta = T::delta(&old_value, &self.0);
-        if let Some(delta) = delta {
-            to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
-        }
-        Ok(())
-
+        let delta = ::versioned::FlatDiff(&self.0, &old_value);
+        let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
+        Ok(len)
     }
+
+    // fn wakeup(&mut self, pos: usize) {
+    //     if let Some(callback) = self.1[pos] {
+    //         self.1[pos] = None;
+    //         let mut args = &self.0;
+    //         CallbackTrait::invoke(&callback, &mut args);
+    //     }
+    // }
 
     pub fn handle_request(&mut self, body: &[u8], response: &mut [u8], sleep: &dyn Fn(usize, usize)) -> Result<(), &'static str> {
         // Buffer to hold HTTP request headers
@@ -79,13 +82,17 @@ where
                 // Assuming the body starts right after the headers
                 let event_body = &body[offset..offset + content_length];
     
+                 // Manually constructing the HTTP response headers with a placeholder for Content-Length
+                let header = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length:     \r\n\r\n";  // 5 spaces as placeholder
+                response[..header.len()].copy_from_slice(header);
 
                 // Process the event
-                self.handle_event(event_body, response, sleep)?;
-    
-                // Set response
-                let response_str = "HTTP/1.1 200 OK\r\n\r\n";
-                response[0..response_str.len()].copy_from_slice(response_str.as_bytes());
+                let response_len = self.handle_event(event_body, &mut response[header.len()..], sleep)?;
+
+                // Update the Content-Length placeholder with the actual length of the response body
+                let content_length_offset = header.len() - 8;
+                itoa(response_len, &mut response[content_length_offset..content_length_offset + 5]);              
+                
                 Ok(())
             } else {
                 // Unsupported HTTP method or path
@@ -115,6 +122,11 @@ impl<M, T: Copy> Closure<M, T> {
     }
 }
 
+pub trait CallbackTrait {
+    type T;
+
+    fn invoke(&self, mut_val: &mut Self::T);
+}
 
 #[macro_export]
 macro_rules! closure {
@@ -126,8 +138,10 @@ macro_rules! closure {
             )*
         }
 
-        impl $enum_name {
-            fn invoke(&self, mut_val: &mut $mut_ty) {
+        impl crate::engine_traits::CallbackTrait for $enum_name {
+            type T = $mut_ty;
+            
+            fn invoke(&self, mut_val: &mut Self::T) {
                 match self {
                     $(
                         $enum_name::$variant(closure) => closure.invoke(mut_val),
@@ -151,4 +165,15 @@ macro_rules! closure {
             )*
         }
     };
+}
+
+
+fn itoa(n: usize, buf: &mut [u8]) {
+    let mut n = n;
+    let mut i = buf.len();
+    while n > 0 {
+        i -= 1;
+        buf[i] = (n % 10) as u8 + b'0';
+        n /= 10;
+    }
 }

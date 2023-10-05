@@ -1,11 +1,10 @@
 #![no_std]
-// extern crate alloc;
 
-use cty::{c_char, c_void};
-use core::slice;
-use core::str;
-use core::ptr::copy_nonoverlapping;
-use httparse::{Request, EMPTY_HEADER};
+
+mod race;
+use race::Race;
+mod engine_traits;
+use engine_traits::EngineWrapper;
 
 use core::panic::PanicInfo;
 
@@ -14,58 +13,70 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 
+
+type SleepFn = extern "C" fn(usize, usize);
+
+static mut ENGINE: Option<EngineWrapper<Race, 1>> = None;
+
 #[no_mangle]
-pub extern "C" fn parse_http_request(
-    request: *const c_char,
-    response_buf: *mut c_char,
-    buf_size: usize,
-) -> i32 {
-    if request.is_null() || response_buf.is_null() {
-        return -1;
+pub extern "C" fn init_engine() {
+    unsafe {
+        ENGINE = Some(EngineWrapper::default());
     }
-
-    let c_str_len = unsafe {
-        let mut len = 0;
-        while *request.add(len) != 0 {
-            len += 1;
-        }
-        len
-    };
-
-    let c_str = unsafe { slice::from_raw_parts(request as *const u8, c_str_len) };
-    let request_str = match str::from_utf8(c_str) {
-        Ok(s) => s,
-        Err(_) => return -2,
-    };
-
-    let mut headers = [EMPTY_HEADER; 16];
-    let mut req = Request::new(&mut headers);
-
-    if let Ok(_) = req.parse(request_str.as_bytes()) {
-        if let Some(path) = req.path {
-            let response_prefix = b"HTTP/1.1 200 OK\r\n\r\nYou requested ";
-            let response_len = response_prefix.len() + path.len();
-            
-            if response_len > buf_size {
-                return -3;
-            }
-
-            unsafe {
-                copy_nonoverlapping(
-                    response_prefix.as_ptr(),
-                    response_buf as *mut u8,
-                    response_prefix.len(),
-                );
-                copy_nonoverlapping(
-                    path.as_ptr(),
-                    response_buf.add(response_prefix.len()) as *mut u8,
-                    path.len(),
-                );
-            }
-
-            return response_len as i32;
-        }
-    }
-
-    0
 }
+
+#[no_mangle]
+pub extern "C" fn handle_request_ffi(
+    request: *const u8,
+    request_len: usize,
+    response: *mut u8,
+    response_len: usize,
+    sleep_fn: SleepFn,
+) -> i32 {
+    let request_slice = unsafe { core::slice::from_raw_parts(request, request_len) };
+    let response_slice = unsafe { core::slice::from_raw_parts_mut(response, response_len) };
+
+    let result = unsafe {
+        if let Some(engine) = ENGINE.as_mut() {
+            let sleep_closure: &dyn Fn(usize, usize) = &|time, pos| sleep_fn(time, pos);
+
+            engine.handle_request(request_slice, response_slice, &sleep_closure)
+        } else {
+            Err("Engine not initialized")
+        }
+    };
+
+    match result {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use serde_json_core::{from_slice, to_slice};
+
+//     #[test]
+//     fn test_handle_request() {
+//         let mut engine = EngineWrapper::<Race, 1>::default();
+        
+//         let request_payload = b"POST /events HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 39\r\n\r\n{\"timestamp\":32.4,\"event\":\"RaceFinish\"}\r\n";
+
+//         let mut response = [0u8; 1024];  // Assuming this is sufficient space
+
+//         let sleep_closure: &dyn Fn(usize, usize) = &|_time, _pos| {};  // No-op sleep function
+
+//         match engine.handle_request(request_payload, &mut response, sleep_closure) {
+//             Ok(()) => {
+//                 // Parse and validate the response
+//                 let response_str = core::str::from_utf8(&response).expect("Valid UTF-8");
+//                 assert!(response_str.starts_with("HTTP/1.1 200 OK"));
+//                 assert!(response_str.contains("Content-Type: application/json"));
+//                 println!("response: {}", response_str);
+//             },
+//             Err(e) => panic!("Request handling failed: {}", e),
+//         }
+//     }
+
+// }
