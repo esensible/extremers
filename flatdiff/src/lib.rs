@@ -4,6 +4,8 @@
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
 
+pub use flatdiff_derive::FlatDiffSer;
+
 pub trait Atomic {}
 impl Atomic for i8 {}
 impl Atomic for i16 {}
@@ -27,27 +29,6 @@ impl Atomic for bool {}
 impl Atomic for char {}
 impl Atomic for str {}
 
-
-pub trait DeltaTrait {
-    type Type;
-
-    fn delta(lhs: &Self, rhs: &Self) -> Option<Self::Type>;
-}
-
-impl<T> DeltaTrait for T
-where
-    T: Atomic + PartialEq + Copy,
-{
-    type Type = T;
-
-    fn delta(lhs: &T, rhs: &T) -> Option<Self::Type> {
-        if lhs == rhs {
-            return None;
-        }
-
-        Some(*rhs)
-    }
-}
 
 pub trait FlatDiffSer {
 
@@ -119,3 +100,4 @@ impl<'a, T: FlatDiffSer> Serialize for FlatDiff<'a, T> {
         state.end()
     }
 }
+

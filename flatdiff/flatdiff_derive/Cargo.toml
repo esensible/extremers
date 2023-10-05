@@ -1,5 +1,5 @@
 [package]
-name = "versioned_derive"
+name = "flatdiff_derive"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,6 +10,4 @@ proc-macro = true
 syn = "1.0"
 quote = "1.0"
 proc-macro2 = "1.0"
-versioned = { path = "../versioned" }
-serde = { version = "1.0.188", default-features = false }
 

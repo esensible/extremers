@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use versioned::FlatDiffSer;
+use flatdiff::FlatDiffSer;
 use serde_json_core::{from_slice, to_slice};
 
 use httparse::{Request, EMPTY_HEADER};
@@ -16,7 +16,7 @@ where Self::Event: Deserialize<'static> + DeserializeOwned
     fn handle_event(&mut self, event: Self::Event, sleep: &dyn FnMut(u32, Self::Callbacks)) -> Result<(), &'static str>;
 }
 
-impl<T: EventHandler + ::versioned::FlatDiffSer + Default, const N: usize> Default for EngineWrapper<T, N> 
+impl<T: EventHandler + ::flatdiff::FlatDiffSer + Default, const N: usize> Default for EngineWrapper<T, N> 
 where
     <T as EventHandler>::Callbacks: Copy,
 {
@@ -49,7 +49,7 @@ where
 
         let old_value = self.0.clone();
         let update = self.0.handle_event(event, &transformed_sleep)?;
-        let delta = ::versioned::FlatDiff(&self.0, &old_value);
+        let delta = ::flatdiff::FlatDiff(&self.0, &old_value);
         let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
         Ok(len)
     }

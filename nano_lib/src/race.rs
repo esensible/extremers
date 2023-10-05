@@ -1,19 +1,18 @@
 use serde::{Deserialize, Serialize, Serializer};
-use versioned_derive::Delta;
-use versioned::Atomic;
+use flatdiff::{Atomic, FlatDiffSer};
 
 use crate::engine_traits::EventHandler;
 use crate::closure;
 use ::serde::ser::SerializeStruct;
 
-#[derive(Delta, Copy, Clone, PartialEq, Default)]
+#[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
 pub struct Race {
     location: Location,
     line: Line,
     state: State,
 }
 
-#[derive(Delta, Default, Copy, Clone, PartialEq)]
+#[derive(FlatDiffSer, Default, Copy, Clone, PartialEq)]
 enum State {
     #[default]
     Setup,
@@ -30,7 +29,7 @@ pub struct Location {
 }
 impl Atomic for Location {}
 
-#[derive(Delta, Copy, Clone, PartialEq, Default)]
+#[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
 pub enum Line {
     #[default]
     None,

@@ -1,10 +1,9 @@
 [workspace]
 members = [
-    "versioned",
-    "versioned_derive",
+    "flatdiff",
 
     # playground for testing
-    "test_app",
+    #"test_app",
 
     "nano_lib",
     "nano-sketch",

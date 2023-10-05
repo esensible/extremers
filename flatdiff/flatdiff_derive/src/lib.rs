@@ -1,4 +1,4 @@
-//! This module provides procedural macros for deriving fine grained (per field) versioned data structures.
+//! This module provides procedural macros for deriving fine grained (per field) flatdiff data structures.
 
 extern crate proc_macro;
 // extern crate serde;
@@ -8,12 +8,12 @@ use syn::{DeriveInput, Data, Fields};
 
 
 
-#[proc_macro_derive(Delta, attributes(serde, delta))]
-pub fn derive_versioned(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(FlatDiffSer, attributes(serde, delta))]
+pub fn derive_flatdiff(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
     let expanded = match &input.data {
-        Data::Enum(_) => versioned_enum(input),
+        Data::Enum(_) => flatdiff_enum(input),
         Data::Struct(_) => delta_struct(input),
         Data::Union(_) => panic!("Unions are not supported"),
     };
@@ -24,8 +24,8 @@ pub fn derive_versioned(input: TokenStream) -> TokenStream {
 
 /// Generates code for structs to implement the `Versioned` trait.
 ///
-/// The generated code includes versioned structs with fields wrapped in `::versioned::VersionedValue`,
-/// delta structs with fields wrapped in `::versioned::DeltaType`, and the necessary methods of the `Versioned` trait.
+/// The generated code includes flatdiff structs with fields wrapped in `::flatdiff::VersionedValue`,
+/// delta structs with fields wrapped in `::flatdiff::DeltaType`, and the necessary methods of the `Versioned` trait.
 fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
@@ -39,13 +39,13 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             let field_type = &field.ty;
 
             field_diffs.push(quote! {
-                <#field_type as ::versioned::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
+                <#field_type as ::flatdiff::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
             });
             field_flattens.push(quote! {
-                <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
+                <#field_type as ::flatdiff::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
             });
             field_counts.push(quote! {
-                count += <#field_type as ::versioned::FlatDiffSer>::count();
+                count += <#field_type as ::flatdiff::FlatDiffSer>::count();
             });
         }
 
@@ -55,7 +55,7 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl  ::versioned::FlatDiffSer for #name
+        impl  ::flatdiff::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
@@ -88,9 +88,9 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
 /// Generates code for enums to implement the `Versioned` trait.
 ///
-/// The generated code includes versioned enums with variants wrapped in `::versioned::VersionedValue` (if necessary),
-/// delta enums with variants wrapped in `::versioned::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
-fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
+/// The generated code includes flatdiff enums with variants wrapped in `::flatdiff::VersionedValue` (if necessary),
+/// delta enums with variants wrapped in `::flatdiff::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
+fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
     let (diff_match_arms, flatten_match_arms) = if let Data::Enum(data_enum) = &input.data {
@@ -122,15 +122,15 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         rhs_match_fields.push(quote! { #field_name: #field_name_rhs });
 
                         diff_fields.push(quote! {
-                            <#field_type as ::versioned::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
+                            <#field_type as ::flatdiff::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
                         });
 
                         cross_diff_fields.push(quote! {
-                            <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(self, label, state)?;
+                            <#field_type as ::flatdiff::FlatDiffSer>::flatten::<S>(self, label, state)?;
                         });
 
                         flatten_fields.push(quote! {
-                            <#field_type as ::versioned::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
+                            <#field_type as ::flatdiff::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
                         });
                     }
 
@@ -193,7 +193,7 @@ fn versioned_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl ::versioned::FlatDiffSer for #name
+        impl ::flatdiff::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where

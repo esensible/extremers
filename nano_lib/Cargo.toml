@@ -22,8 +22,7 @@ paste = "1.0"
 #serde = { version = "1.0.188" }
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 
-versioned = { path = "../versioned" }
-versioned_derive = { path = "../versioned_derive" }
+flatdiff = { path = "../flatdiff" }
 
 #[dev-dependencies]
 #serde = { version = "1.0", features = ["derive"] }
