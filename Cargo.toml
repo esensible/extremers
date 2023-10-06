@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "flatdiff",
     "engine", 
 
     # playground for testing

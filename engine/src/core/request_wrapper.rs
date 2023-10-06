@@ -1,6 +1,5 @@
-use flatdiff::FlatDiffSer;
 use httparse::{Request, EMPTY_HEADER};
-use crate::core::{EngineCore, Engine};
+use crate::core::{EngineCore, Engine, FlatDiffSer};
 
 pub struct RequestWrapper<T: EngineCore + FlatDiffSer, const N: usize>(Engine<T, N>);
 
@@ -63,7 +62,7 @@ where
     }
 }
 
-impl<T: EngineCore + ::flatdiff::FlatDiffSer + Default, const N: usize> Default for RequestWrapper<T, N>
+impl<T: EngineCore + crate::core::FlatDiffSer + Default, const N: usize> Default for RequestWrapper<T, N>
 where
     <T as EngineCore>::Callbacks: Copy,
 {

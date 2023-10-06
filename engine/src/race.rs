@@ -1,9 +1,8 @@
 use ::serde::{Deserialize, Serialize, Serializer};
 use ::serde::ser::SerializeStruct;
 
-use flatdiff::{Atomic, FlatDiffSer};
 use crate::callbacks;
-use crate::core::EngineCore;
+use crate::core::{EngineCore, Atomic, FlatDiffSer};
 
 #[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
 pub struct Race {

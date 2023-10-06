@@ -1,7 +1,8 @@
-use flatdiff::FlatDiffSer;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json_core::{from_slice, to_slice};
+
+use crate::core::FlatDiffSer;
 
 
 pub trait EngineCore
@@ -44,7 +45,7 @@ where
 
         let old_value = self.0.clone();
         self.0.handle_event(event, &transformed_sleep)?;
-        let delta = ::flatdiff::FlatDiff(&self.0, &old_value);
+        let delta = crate::core::FlatDiff(&self.0, &old_value);
         let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
         Ok(len)
     }
@@ -61,7 +62,7 @@ where
 }
 
 
-impl<T: EngineCore + ::flatdiff::FlatDiffSer + Default, const N: usize> Default for Engine<T, N>
+impl<T: EngineCore + crate::core::FlatDiffSer + Default, const N: usize> Default for Engine<T, N>
 where
     <T as EngineCore>::Callbacks: Copy,
 {
