@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "flatdiff",
+    "engine", 
 
     # playground for testing
     #"test_app",
 
-    "nano_lib",
     "nano-sketch",
 ]

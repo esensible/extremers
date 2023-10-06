@@ -1,6 +1,6 @@
-pub mod core;
-pub use self::core::Engine;
-pub use self::core::EngineCore;
+pub mod event_core;
+pub use self::event_core::Engine;
+pub use self::event_core::EngineCore;
 
 pub mod callbacks;
 pub use self::callbacks::Callback;

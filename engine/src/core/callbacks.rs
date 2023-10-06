@@ -26,11 +26,11 @@ macro_rules! callbacks {
         #[derive(Copy, Clone)]
         $vis enum $enum_name {
             $(
-                $variant(crate::engine::Callback<$mut_ty, $ty>),
+                $variant(crate::core::Callback<$mut_ty, $ty>),
             )*
         }
 
-        impl crate::engine::CallbackTrait for $enum_name {
+        impl crate::core::CallbackTrait for $enum_name {
             type T = $mut_ty;
 
             fn invoke(&self, mut_val: &mut Self::T) {
@@ -51,7 +51,7 @@ macro_rules! callbacks {
             $(
                 impl [<_NewClosure $enum_name>] for $ty {
                     fn new(f: fn(&mut $mut_ty, &Self), value: Self) -> $enum_name {
-                        $enum_name::$variant(crate::engine::Callback::new(f, value))
+                        $enum_name::$variant(crate::core::Callback::new(f, value))
                     }
                 }
             )*

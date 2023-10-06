@@ -1,4 +1,3 @@
-#![allow(incomplete_features)]
 use flatdiff::FlatDiffSer;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;

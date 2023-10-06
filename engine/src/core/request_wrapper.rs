@@ -1,9 +1,6 @@
-#![allow(incomplete_features)]
 use flatdiff::FlatDiffSer;
-
 use httparse::{Request, EMPTY_HEADER};
-
-use crate::engine::{EngineCore, Engine};
+use crate::core::{EngineCore, Engine};
 
 pub struct RequestWrapper<T: EngineCore + FlatDiffSer, const N: usize>(Engine<T, N>);
 

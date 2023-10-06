@@ -2,10 +2,10 @@
 
 mod race;
 use race::Race;
-mod engine;
-use engine::RequestWrapper;
+mod core;
+use core::RequestWrapper;
 
-use core::panic::PanicInfo;
+use ::core::panic::PanicInfo;
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -31,8 +31,8 @@ pub extern "C" fn handle_request_ffi(
     response_len: usize,
     sleep_fn: SleepFn,
 ) -> i32 {
-    let request_slice = unsafe { core::slice::from_raw_parts(request, request_len) };
-    let response_slice = unsafe { core::slice::from_raw_parts_mut(response, response_len) };
+    let request_slice = unsafe { ::core::slice::from_raw_parts(request, request_len) };
+    let response_slice = unsafe { ::core::slice::from_raw_parts_mut(response, response_len) };
 
     let result = unsafe {
         if let Some(engine) = ENGINE.as_mut() {
