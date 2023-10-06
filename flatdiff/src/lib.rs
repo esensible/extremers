@@ -1,8 +1,8 @@
 //! This crate provides types and traits to handle versioning of data structures.
 //! It allows for keeping track of changes in data over time.
 #![no_std]
-use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 pub use flatdiff_derive::FlatDiffSer;
 
@@ -29,33 +29,47 @@ impl Atomic for bool {}
 impl Atomic for char {}
 impl Atomic for str {}
 
-
 pub trait FlatDiffSer {
-
-    fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+    fn flatten<S>(
+        &self,
+        label: &'static str,
+        state: &mut S::SerializeStruct,
+    ) -> Result<(), S::Error>
     where
         S: Serializer;
 
-    fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+    fn diff<S>(
+        &self,
+        rhs: &Self,
+        label: &'static str,
+        state: &mut S::SerializeStruct,
+    ) -> Result<(), S::Error>
     where
         S: Serializer;
 
     fn count() -> usize;
 }
 
-
-impl <T: Atomic + PartialEq + Serialize> FlatDiffSer for T {
-
-    fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+impl<T: Atomic + PartialEq + Serialize> FlatDiffSer for T {
+    fn flatten<S>(
+        &self,
+        label: &'static str,
+        state: &mut S::SerializeStruct,
+    ) -> Result<(), S::Error>
     where
         S: Serializer,
     {
         state.serialize_field(label, self)?;
-    
+
         Ok(())
     }
 
-    fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
+    fn diff<S>(
+        &self,
+        rhs: &Self,
+        label: &'static str,
+        state: &mut S::SerializeStruct,
+    ) -> Result<(), S::Error>
     where
         S: Serializer,
     {
@@ -74,7 +88,6 @@ impl <T: Atomic + PartialEq + Serialize> FlatDiffSer for T {
 pub struct Flat<'a, T: FlatDiffSer>(pub &'a T);
 
 impl<'a, T: FlatDiffSer> Serialize for Flat<'a, T> {
-
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -89,7 +102,6 @@ impl<'a, T: FlatDiffSer> Serialize for Flat<'a, T> {
 pub struct FlatDiff<'a, T: FlatDiffSer>(pub &'a T, pub &'a T);
 
 impl<'a, T: FlatDiffSer> Serialize for FlatDiff<'a, T> {
-
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -100,4 +112,3 @@ impl<'a, T: FlatDiffSer> Serialize for FlatDiff<'a, T> {
         state.end()
     }
 }
-

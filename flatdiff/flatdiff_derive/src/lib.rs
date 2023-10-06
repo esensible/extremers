@@ -4,9 +4,7 @@ extern crate proc_macro;
 // extern crate serde;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Data, Fields};
-
-
+use syn::{Data, DeriveInput, Fields};
 
 #[proc_macro_derive(FlatDiffSer, attributes(serde, delta))]
 pub fn derive_flatdiff(input: TokenStream) -> TokenStream {
@@ -21,7 +19,6 @@ pub fn derive_flatdiff(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-
 /// Generates code for structs to implement the `Versioned` trait.
 ///
 /// The generated code includes flatdiff structs with fields wrapped in `::flatdiff::VersionedValue`,
@@ -29,10 +26,11 @@ pub fn derive_flatdiff(input: TokenStream) -> TokenStream {
 fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
-    let (field_diffs, field_flattens, field_counts) = if let Data::Struct(data_struct) = &input.data {
+    let (field_diffs, field_flattens, field_counts) = if let Data::Struct(data_struct) = &input.data
+    {
         let mut field_diffs = vec![];
         let mut field_flattens = vec![];
-        let mut field_counts =  vec![];
+        let mut field_counts = vec![];
 
         for field in &data_struct.fields {
             let field_name = &field.ident;
@@ -64,7 +62,7 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 #(#field_diffs)*
                 Ok(())
             }
-        
+
             fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
                 S: Serializer
@@ -72,13 +70,13 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 #(#field_flattens)*
                 Ok(())
             }
-        
+
             fn count() -> usize {
                 let mut count = 0;
                 #(#field_counts)*
                 count
             }
-        } 
+        }
     };
     // println!("## {}", name);
     // println!("{}", expanded.to_string());
@@ -101,7 +99,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         for variant in &data_enum.variants {
             let variant_name = &variant.ident;
 
-            match &variant.fields {               
+            match &variant.fields {
                 Fields::Named(fields_named) => {
                     // let mut field_names = vec![];
                     // let mut delta_fields = vec![];
@@ -139,7 +137,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                             state.serialize_field(label, stringify!(#variant_name))?;
                             #(#flatten_fields)*
                         }
-                    });                
+                    });
 
                     diff_match_arms.push(quote! {
                         (#name::#variant_name{#(#lhs_match_fields),*}, #name::#variant_name{#(#rhs_match_fields),*}) => {
@@ -147,10 +145,9 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         }
                     });
 
-                    cross_terms.push((variant_name, quote! { { .. } }));                           
+                    cross_terms.push((variant_name, quote! { { .. } }));
                 }
                 Fields::Unit => {
-
                     flatten_match_arms.push(quote! {
                         Self::#variant_name => {
                             state.serialize_field(label, stringify!(#variant_name))?;
@@ -161,7 +158,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         (Self::#variant_name, Self::#variant_name) => {}
                     });
 
-                    cross_terms.push((variant_name, quote! { }));        
+                    cross_terms.push((variant_name, quote! {}));
                 }
                 _ => {
                     panic!("Unsupported variant type");
@@ -173,7 +170,6 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
         for (lhs_name, lhs_match) in &cross_terms {
             for (rhs_name, rhs_match) in &cross_terms {
                 if lhs_name != rhs_name {
-
                     cross_match_arms.push(quote! {
                         (#name::#lhs_name #lhs_match, #name::#rhs_name #rhs_match)
                     });
@@ -198,14 +194,14 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
                 S: Serializer
-        
+
             {
                 match (self, rhs) {
                     #(#diff_match_arms),*
                 };
                 Ok(())
             }
-        
+
             fn flatten<S>(&self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
                 S: Serializer
@@ -215,7 +211,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 };
                 Ok(())
             }
-        
+
             fn count() -> usize {
                 1
             }
@@ -227,4 +223,3 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
     expanded.into()
 }
-

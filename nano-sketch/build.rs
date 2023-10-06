@@ -5,7 +5,14 @@ use std::time::Duration;
 fn main() {
     // Build test_lib crate
     let status = Command::new("cargo")
-        .args(&["build", "--target", "thumbv6m-none-eabi", "--release", "-p", "nano_lib"])
+        .args(&[
+            "build",
+            "--target",
+            "thumbv6m-none-eabi",
+            "--release",
+            "-p",
+            "nano_lib",
+        ])
         .current_dir("../")
         .status()
         .expect("Failed to start cargo build");
@@ -57,11 +64,7 @@ fn main() {
     if cfg!(feature = "monitor") {
         thread::sleep(Duration::from_secs(15));
         let status = Command::new("arduino-cli")
-            .args(&[
-                "monitor", 
-                "-p", 
-                board_port
-            ])
+            .args(&["monitor", "-p", board_port])
             .status()
             .expect("Failed to start arduino-cli monitor");
         assert!(status.success(), "Failed to monitor Arduino serial port");

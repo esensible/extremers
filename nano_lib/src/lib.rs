@@ -1,10 +1,9 @@
 #![no_std]
 
-
 mod race;
 use race::Race;
-mod engine_traits;
-use engine_traits::EngineWrapper;
+mod engine;
+use engine::Engine;
 
 use core::panic::PanicInfo;
 
@@ -13,15 +12,14 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 
-
 type SleepFn = extern "C" fn(usize, usize);
 
-static mut ENGINE: Option<EngineWrapper<Race, 1>> = None;
+static mut ENGINE: Option<Engine<Race, 1>> = None;
 
 #[no_mangle]
 pub extern "C" fn init_engine() {
     unsafe {
-        ENGINE = Some(EngineWrapper::default());
+        ENGINE = Some(Engine::default());
     }
 }
 
@@ -60,7 +58,7 @@ pub extern "C" fn handle_request_ffi(
 //     #[test]
 //     fn test_handle_request() {
 //         let mut engine = EngineWrapper::<Race, 1>::default();
-        
+
 //         let request_payload = b"POST /events HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 39\r\n\r\n{\"timestamp\":32.4,\"event\":\"RaceFinish\"}\r\n";
 
 //         let mut response = [0u8; 1024];  // Assuming this is sufficient space

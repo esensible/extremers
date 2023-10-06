@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize, Serializer};
 use flatdiff::{Atomic, FlatDiffSer};
+use serde::{Deserialize, Serialize, Serializer};
 
-use crate::engine_traits::EventHandler;
-use crate::closure;
+use crate::callbacks;
+use crate::engine::EngineCore;
 use ::serde::ser::SerializeStruct;
 
 #[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
@@ -17,10 +17,13 @@ enum State {
     #[default]
     Setup,
     Idle,
-    InSequence{ start: f64 },
-    Racing{ start: f64 },
+    InSequence {
+        start: f64,
+    },
+    Racing {
+        start: f64,
+    },
 }
-
 
 #[derive(Serialize, Copy, Clone, PartialEq, Default)]
 pub struct Location {
@@ -35,23 +38,26 @@ pub enum Line {
     None,
 
     // #[delta(skip_fields)]
-    Stbd{location: Location},
+    Stbd {
+        location: Location,
+    },
 
     // #[delta(skip_fields)]
-    Port{location: Location},
+    Port {
+        location: Location,
+    },
 
-    Both{
-        time: f64, 
+    Both {
+        time: f64,
         point: u8,
 
         // #[delta(skip)]
-        stbd: Location, 
+        stbd: Location,
 
         // #[delta(skip)]
-        port: Location, 
+        port: Location,
     },
 }
-
 
 #[derive(Deserialize)]
 pub enum EventType {
@@ -72,47 +78,53 @@ pub struct Event {
     pub event: EventType,
 }
 
-closure! {Race,
+callbacks! {Race,
     pub RaceCallbacks {
         Start(()),
     }
 }
 
-impl EventHandler for Race {
+impl EngineCore for Race {
     type Event = Event;
     type Callbacks = RaceCallbacks;
 
-    fn handle_event(&mut self, event: Self::Event, sleep: &dyn FnMut(u32, RaceCallbacks)) -> Result<(), &'static str> {
+    fn handle_event(
+        &mut self,
+        event: Self::Event,
+        sleep: &dyn FnMut(u32, RaceCallbacks),
+    ) -> Result<(), &'static str> {
         match event.event {
             EventType::SetupPushOff => {
                 self.state = State::Idle;
                 Ok(())
-            },
+            }
             EventType::LineStbd => {
-                self.line = Line::Stbd{location: Location::default()};
+                self.line = Line::Stbd {
+                    location: Location::default(),
+                };
                 Ok(())
-            },
+            }
             EventType::LinePort => {
-                self.line = Line::Port{location: Location::default()};
+                self.line = Line::Port {
+                    location: Location::default(),
+                };
                 Ok(())
-            },
+            }
             EventType::IdleSeq { seconds } => {
-                self.state = State::InSequence{ start: seconds };
+                self.state = State::InSequence { start: seconds };
                 Ok(())
-            },
+            }
             EventType::SeqBump { seconds } => {
-                self.state = State::Racing{ start: seconds };
+                self.state = State::Racing { start: seconds };
                 Ok(())
-            },
+            }
             EventType::RaceFinish => {
                 self.state = State::Idle;
                 Ok(())
-            },
+            }
         }
     }
 }
-
-
 
 // #[cfg(test)]
 // // #[cfg(feature = "std")]
@@ -134,17 +146,17 @@ impl EventHandler for Race {
 //         }
 
 //         // let ctx = EngineContext::default();
-    
+
 //         // let (notify_sender, notify_receiver) = unbounded::<String>();
-    
+
 //         // let notify_fn = move |event: String| {
 //         //     notify_sender.send(event).unwrap();
 //         // };
-    
+
 //         // ctx.set_engine(Versioned::new(Race::default(), 0), Box::new(notify_fn));
-    
+
 //         // assert_eq!(ctx.handle_event("{\"timestamp\": 0.0, \"event\": \"setup_push_off\"}"), Ok("Event scheduled"));
-//         // std::thread::sleep(std::time::Duration::from_millis(100)); 
+//         // std::thread::sleep(std::time::Duration::from_millis(100));
 //         // assert_eq!(notify_receiver.recv().unwrap(), "\"hello\"");
 
 //     }
