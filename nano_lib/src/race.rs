@@ -126,38 +126,4 @@ impl EngineCore for Race {
     }
 }
 
-// #[cfg(test)]
-// // #[cfg(feature = "std")]
-// mod tests {
-//     use super::*;
-//     use serde_json;
 
-//     #[test]
-//     fn test_default() {
-//         let event = Event{timestamp: 32.4, event: EventType::SetupPushOff};
-//         match serde_json::to_string(&event) {
-//             Ok(json_str) => {
-//                 // Print the serialized event
-//                 println!("{}", json_str);
-//             },
-//             Err(e) => {
-//                 panic!("Failed to serialize event: {}", e);
-//             },
-//         }
-
-//         // let ctx = EngineContext::default();
-
-//         // let (notify_sender, notify_receiver) = unbounded::<String>();
-
-//         // let notify_fn = move |event: String| {
-//         //     notify_sender.send(event).unwrap();
-//         // };
-
-//         // ctx.set_engine(Versioned::new(Race::default(), 0), Box::new(notify_fn));
-
-//         // assert_eq!(ctx.handle_event("{\"timestamp\": 0.0, \"event\": \"setup_push_off\"}"), Ok("Event scheduled"));
-//         // std::thread::sleep(std::time::Duration::from_millis(100));
-//         // assert_eq!(notify_receiver.recv().unwrap(), "\"hello\"");
-
-//     }
-// }
