@@ -1,7 +1,9 @@
 use axum::http::header;
 use axum::response::IntoResponse;
 use axum::{
+    body::Bytes,
     extract::Json,
+    extract::Path,
     extract::Query,
     routing::{get, post},
     Router,
@@ -16,7 +18,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{watch, Mutex as TokioMutex};
-use tower_http::services::ServeDir;
 
 use tokio::time::{timeout, Duration};
 
@@ -67,12 +68,30 @@ async fn main() {
                 }
             }),
         )
-        .nest_service("/", ServeDir::new("dist"));
+        .route("/:file", get(static_files_handler));
 
     let server = Server::bind(&addr).serve(app.into_make_service());
     println!("Server running on http://{}", addr);
     if let Err(e) = server.await {
         eprintln!("Server error: {}", e);
+    }
+}
+
+use race_client::lookup;
+
+async fn static_files_handler(Path(file): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    println!("file: {}", file);
+    match lookup(&file) {
+        Some(data) => {
+            let bytes = Bytes::copy_from_slice(data);
+
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(bytes))
+                .unwrap();
+            Ok(response)
+        }
+        None => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -132,7 +151,6 @@ async fn updates_handler(
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(response_data.to_string()))
             .unwrap();
-        println!("Response1: {:?}", &response);
         return Ok(response);
     }
 

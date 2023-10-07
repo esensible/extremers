@@ -26,7 +26,7 @@ fn main() {
             "arduino:mbed_nano:nanorp2040connect",
             ".",
             "--build-property",
-            "compiler.libraries.ldflags=-lengine -L../target/thumbv6m-none-eabi/release",
+            "compiler.libraries.ldflags=-lengine -lrace_client -L../target/thumbv6m-none-eabi/release",
         ])
         .status()
         .expect("Failed to start arduino-cli compile");
