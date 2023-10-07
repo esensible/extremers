@@ -15,7 +15,7 @@ pub trait EngineCore: FlatDiffSer {
 }
 
 pub trait EventEngineTrait {
-    type State;
+    type State: FlatDiffSer;
     type Event: DeserializeOwned;
 
     fn handle_event(
@@ -31,7 +31,7 @@ pub struct EventEngine<T: EngineCore, const N: usize>(T, [Option<T::Callbacks>; 
 where
     T::Event: DeserializeOwned;
 
-impl<T: EngineCore + Clone, const N: usize> EventEngineTrait for EventEngine<T, N>
+impl<T: EngineCore + Default + Clone, const N: usize> EventEngineTrait for EventEngine<T, N>
 where
     T::Event: DeserializeOwned,
 {
@@ -61,24 +61,26 @@ pub trait SerdeEngineTrait {
         event: &[u8],
         result: &mut [u8],
         sleep: &dyn Fn(usize, usize),
-    ) -> Result<usize, &'static str>;
+    ) -> Result<Option<usize>, &'static str>;
 
     fn get_state(&self, state: usize, result: &mut [u8]) -> Result<Option<usize>, &'static str>;
 }
 
 pub struct SerdeEngine<T: EventEngineTrait>(T, usize);
 
-impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T>
-where
-    T::State: FlatDiffSer,
-    T::Event: DeserializeOwned,
-{
+impl<T: EventEngineTrait + Default> Default for SerdeEngine<T> {
+    fn default() -> Self {
+        SerdeEngine(T::default(), 1)
+    }
+}
+
+impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
     fn handle_event(
         &mut self,
         event: &[u8],
         result: &mut [u8],
         sleep: &dyn Fn(usize, usize),
-    ) -> Result<usize, &'static str> {
+    ) -> Result<Option<usize>, &'static str> {
         let (event, _): (T::Event, usize) = from_slice(event).expect("Invalid JSON event");
 
         let old_state = self.0.get_state();
@@ -89,9 +91,9 @@ where
                 crate::UpdateResp::new(self.1, crate::core::FlatDiff(&new_state, &old_state));
             let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
             self.1 += 1;
-            Ok(len)
+            Ok(Some(len))
         } else {
-            Ok(0)
+            Ok(None)
         }
     }
 

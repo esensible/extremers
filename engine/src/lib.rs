@@ -11,6 +11,8 @@ use serde::Serialize;
 
 pub type RaceEngine = EventEngine<Race, 1>;
 pub use crate::core::EventEngineTrait;
+pub use crate::core::SerdeEngine;
+pub use crate::core::SerdeEngineTrait;
 
 pub use crate::core::{Flat, FlatDiff};
 

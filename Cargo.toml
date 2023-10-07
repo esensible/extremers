@@ -4,6 +4,7 @@ members = [
     "engine", 
     # httpd implementation for std environment
     "std_httpd",
+    "lib_httpd", 
     
     "race_client",
 

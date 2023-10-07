@@ -10,10 +10,3 @@ pub fn lookup(key: &str) -> Option<&'static [u8]> {
     }
     None
 }
-
-// use ::core::panic::PanicInfo;
-
-// #[panic_handler]
-// fn panic(_info: &PanicInfo) -> ! {
-//     loop {}
-// }
