@@ -1,13 +1,11 @@
+use crate::core::SerdeEngineTrait;
 use httparse::{Request, EMPTY_HEADER};
-use crate::core::{EngineCore, Engine, FlatDiffSer};
 
-pub struct RequestWrapper<T: EngineCore + FlatDiffSer, const N: usize>(Engine<T, N>);
+pub struct RequestWrapper<T: SerdeEngineTrait>(T);
 
-impl<T, const N: usize> RequestWrapper<T, N>
+impl<T> RequestWrapper<T>
 where
-    T: EngineCore + FlatDiffSer + Clone,
-    <T as EngineCore>::Callbacks: super::CallbackTrait,
-
+    T: SerdeEngineTrait,
 {
     pub fn handle_request(
         &mut self,
@@ -42,7 +40,8 @@ where
 
                 // Process the event
                 let response_len =
-                    self.0.handle_event(event_body, &mut response[header.len()..], sleep)?;
+                    self.0
+                        .handle_event(event_body, &mut response[header.len()..], sleep)?;
 
                 // Update the Content-Length placeholder with the actual length of the response body
                 let content_length_offset = header.len() - 8;
@@ -62,15 +61,14 @@ where
     }
 }
 
-impl<T: EngineCore + crate::core::FlatDiffSer + Default, const N: usize> Default for RequestWrapper<T, N>
-where
-    <T as EngineCore>::Callbacks: Copy,
-{
-    fn default() -> Self {
-        RequestWrapper(Engine::default())
-    }
-}
-
+// impl<T: CallbackEngine> Default for RequestWrapper<T>
+// where
+//     <T as EngineCore>::Callbacks: Copy,
+// {
+//     fn default() -> Self {
+//         RequestWrapper(Engine::default())
+//     }
+// }
 
 fn itoa(n: usize, buf: &mut [u8]) {
     let mut n = n;

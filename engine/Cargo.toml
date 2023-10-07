@@ -4,14 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
-
-[profile.release]
-lto = true
-
-[build]
-target = "thumbv6m-none-eabi"
-# target = "thumbv7em-none-eabihf"
+crate-type = ["lib"]
 
 [dependencies]
 serde_derive = "1.0.188"

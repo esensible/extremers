@@ -1,6 +1,5 @@
 //! This crate provides types and traits to handle versioning of data structures.
 //! It allows for keeping track of changes in data over time.
-#![no_std]
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -93,7 +92,7 @@ impl<'a, T: FlatDiffSer> Serialize for Flat<'a, T> {
         S: Serializer,
     {
         let num_fields = T::count();
-        let mut state = serializer.serialize_struct("Race", num_fields)?;
+        let mut state = serializer.serialize_struct("Race", num_fields + 1)?;
         self.0.flatten::<S>(stringify!(self), &mut state)?;
         state.end()
     }

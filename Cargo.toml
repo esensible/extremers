@@ -1,9 +1,9 @@
 [workspace]
 members = [
+    # where the magic happens
     "engine", 
-
-    # playground for testing
-    #"test_app",
+    # httpd implementation for std environment
+    "std_httpd",
 
     "nano-sketch",
 ]
