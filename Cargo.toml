@@ -4,6 +4,8 @@ members = [
     "engine", 
     # httpd implementation for std environment
     "std_httpd",
+    
+    "race_client",
 
     "nano-sketch",
 ]
