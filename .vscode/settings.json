@@ -1,0 +1,31 @@
+{
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "bash",
+      "args": ["--login", "-c", "PATH=\"${workspaceFolder}/node_modules/.bin:${PATH}\" exec bash"]
+    }
+  },
+  "terminal.integrated.profiles.osx": {
+    "bash": {
+      "path": "bash",
+      "args": ["--login", "-c", "PATH=\"${workspaceFolder}/node_modules/.bin:${PATH}\" exec bash"]
+    },
+    "zsh": {
+      "path": "zsh",
+      "args": ["--login", "-c", "PATH=\"${workspaceFolder}/node_modules/.bin:${PATH}\" exec zsh"]
+    }
+  },
+  "terminal.integrated.profiles.windows": {
+    "PowerShell": {
+      "path": "powershell.exe",
+      "args": ["-NoExit", "-Command", "$env:Path = '${workspaceFolder}\\node_modules\\.bin;' + $env:Path"]
+    },
+    "Command Prompt": {
+      "path": "cmd.exe",
+      "args": ["/K", "set PATH=%PATH%;%workspaceFolder%\\node_modules\\.bin"]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.defaultProfile.osx": "bash",
+  "terminal.integrated.defaultProfile.windows": "PowerShell"
+}
