@@ -47,7 +47,7 @@ createEffect(() => {
 })
 
 export const finishClick = () => {
-    doConfirm(() => {postEvent("race/finish")}, 2);
+    doConfirm(() => {postEvent("Idle")}, 2);
 };
 
 

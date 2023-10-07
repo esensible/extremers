@@ -7,11 +7,11 @@ const [Confirm, doConfirm] = confirm();
 function seqClick(seconds) {
     return () => {
         const clickTime = timestamp();
-        doConfirm(() => { postEvent("idle/seq", {timestamp: clickTime, seconds: seconds}) });
+        doConfirm(() => { postEvent({"BumpSeq": {timestamp: clickTime, seconds: seconds}}) });
     }
 }
 
-export const Idle = () => (
+export const Active = () => (
     <div>
         <div class="gps">{speed}</div>
         <div class="gps">{time}</div>

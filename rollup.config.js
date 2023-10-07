@@ -22,7 +22,7 @@ export default {
   cache: false,
   plugins: [
     resolve(),
-    image(),
+    // image(),
     // smartAsset({mode: "copy"}),
     babel({
       babelHelpers: 'bundled',
@@ -40,6 +40,7 @@ export default {
     }),
     postcss({
       extract: true,
+      minimize:true,
     }),
     html(),
     // terser(),

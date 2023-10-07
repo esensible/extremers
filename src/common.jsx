@@ -1,11 +1,12 @@
-import {createSignal, createEffect, onCleanup} from "silkjs"
-import {postEvent, timestamp, timezoneSecs} from "./api.js"
+import { createSignal, createEffect, onCleanup } from "silkjs"
+import { postEvent, timestamp, timezoneSecs } from "./api.js"
 
-export const STATE_INIT = 0
-export const STATE_IDLE = 1
-export const STATE_SEQ = 2
-export const STATE_RACE = 3
-export const  [state, setState] = createSignal(null, "state");
+export const STATE_IDLE = "Idle";
+export const STATE_ACTIVE = "Active";
+export const STATE_SEQ = "InSequence";
+export const STATE_RACE = "Racing";
+
+export const [state, setState] = createSignal(null, "state");
 export const [speed, setSpeed] = createSignal("0", "speed");
 export const [time, setTime] = createSignal("00:00");
 export const [heading, setHeading] = createSignal("0", "heading");
@@ -15,7 +16,7 @@ export const LINE_STBD = 2;
 export const LINE_BOTH = LINE_PORT | LINE_STBD;
 export const [line, setLine] = createSignal(LINE_NONE, "line");
 
-export const [startTime, setStartTime] = createSignal(null, "startTime");
+export const [startTime, setStartTime] = createSignal(null, "start_time");
 
 // const [lineSeconds, setLineSeconds] = createSignal(0);
 const [lineCross, setLineCross] = createSignal(0, "cross");
@@ -23,12 +24,12 @@ const [lineCross, setLineCross] = createSignal(0, "cross");
 
 createEffect(() => {
     const _state = state();
-    if (_state !== STATE_INIT && _state !== STATE_IDLE ) {
+    if (_state !== STATE_IDLE && _state !== STATE_ACTIVE) {
         return;
     }
 
     var timerId = null;
-    
+
     onCleanup(() => {
         if (timerId !== null) {
             clearTimeout(timerId);
@@ -38,15 +39,15 @@ createEffect(() => {
 
     function wallClockTask() {
         const now = new Date(timestamp() + timezoneSecs() * 1000);
-        var hours = now.getHours();
+        var hours = now.getUTCHours();
         hours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
-        const time = ('0' + hours).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+        const time = ('0' + hours).slice(-2) + ':' + ('0' + now.getUTCMinutes()).slice(-2);
         setTime(time);
 
         const secondsUntilNextMinute = 60 - now.getSeconds();
         const millisecondsUntilNextMinute = secondsUntilNextMinute * 1000 - now.getMilliseconds();
 
-        timerId = setTimeout(function() {
+        timerId = setTimeout(function () {
             wallClockTask();  // restart for the next minute
         }, millisecondsUntilNextMinute);
     }
@@ -84,7 +85,7 @@ const MARGIN = 5;
 
 const crossStyle = () => {
     const value = int(lineCross());
-    return value < 50 - MARGIN ? {left: value} : {right: 100-value};
+    return value < 50 - MARGIN ? { left: value } : { right: 100 - value };
 }
 
 export const LineButtons = () => {

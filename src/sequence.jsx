@@ -15,7 +15,7 @@ const [Confirm, doConfirm] = confirm();
 function bumpStart(seconds) {
     return () => {
         const clickTime = timestamp();
-        doConfirm(() => { postEvent("seq/bump", {timestamp: clickTime, seconds: seconds}) });
+        doConfirm(() => { postEvent({"BumpSeq": {timestamp: clickTime, seconds: seconds}}) });
     }
 }
 
