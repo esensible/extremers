@@ -8,6 +8,11 @@ crate-type = ["lib"]
 
 [features]
 std = []
+staticlib = []
+
+[target.'cfg(feature = "staticlib")'.lib]
+crate-type = ["staticlib", "lib"]
+
 
 [dependencies]
 serde-json-core = "0.5"
@@ -18,4 +23,4 @@ engine = { path = "../engine" }
 race_client = { path = "../race_client" }
 
 [dev-dependencies]
-serde_json = "1.0"
+#serde_json = "1.0"

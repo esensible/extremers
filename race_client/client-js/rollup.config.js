@@ -32,7 +32,7 @@ export default {
           "@babel/preset-env",
           {
             targets: {
-                browsers: ["last 2 versions", "IE 11"],
+              browsers: ["last 2 versions", "IE 11"],
             },
           },
         ],
@@ -40,9 +40,9 @@ export default {
     }),
     postcss({
       extract: true,
-      minimize:true,
+      minimize: true,
     }),
     html(),
-    // terser(),
+    terser(),
   ]
 };

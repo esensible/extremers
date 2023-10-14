@@ -10,8 +10,10 @@ fn main() {
             "--target",
             "thumbv6m-none-eabi",
             "--release",
+            "--features",
+            "staticlib",
             "-p",
-            "engine",
+            "lib_httpd",
         ])
         .current_dir("../")
         .status()
@@ -26,7 +28,7 @@ fn main() {
             "arduino:mbed_nano:nanorp2040connect",
             ".",
             "--build-property",
-            "compiler.libraries.ldflags=-lengine -lrace_client -L../target/thumbv6m-none-eabi/release",
+            "compiler.libraries.ldflags=-llib_httpd -L../target/thumbv6m-none-eabi/release",
         ])
         .status()
         .expect("Failed to start arduino-cli compile");

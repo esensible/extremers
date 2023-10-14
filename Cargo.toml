@@ -3,10 +3,11 @@ members = [
     # where the magic happens
     "engine", 
     # httpd implementation for std environment
-    "std_httpd",
     "lib_httpd", 
-    
     "race_client",
 
+    # apps
     "nano-sketch",
+    "std_httpd",
+    "rpi",
 ]

@@ -3,7 +3,7 @@ use httparse::{Request, EMPTY_HEADER};
 use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait};
 use race_client::lookup;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum Response {
     // response length (excludes additional), update length, additional response
     Complete(Option<usize>, Option<usize>, Option<&'static [u8]>),
@@ -147,8 +147,13 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                 }
             }
             (Some("GET"), Some(path)) if path.starts_with("/updates?") => {
-                let (timestamp, cnt) = parse_query(&path["/updates?".len()..])
-                    .map_err(|_| respond(response, BAD_REQUEST, Some(b"Invalid query")))?;
+                let query_args = parse_query(&path["/updates?".len()..]);
+
+                if let Err(err) = query_args {
+                    return Err(respond(response, BAD_REQUEST, Some(err)));
+                    // Err(respond(response, BAD_REQUEST, Some(err)))
+                }
+                let (timestamp, cnt) = query_args.unwrap();
 
                 match (timestamp, cnt) {
                     (Some(timestamp), Some(cnt)) => {
@@ -174,8 +179,8 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
                         let update_len = self
                             .0
-                            .get_state(cnt, &mut response[response_offs..])
-                            .map_err(|_| respond(response, BAD_REQUEST, Some(b"Invalid query")))?;
+                            .get_state(cnt as usize, &mut response[response_offs..])
+                            .map_err(|_| respond(response, BAD_REQUEST, Some(b"Invalid query2")))?;
 
                         if let Some(update_len) = update_len {
                             itoa(
@@ -192,7 +197,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                             Ok(Response::None)
                         }
                     }
-                    _ => Err(respond(response, BAD_REQUEST, Some(b"Invalid query"))),
+                    _ => Err(respond(response, BAD_REQUEST, Some(b"Invalid query3"))),
                 }
             }
 
@@ -221,18 +226,21 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
     }
 }
 
-fn str_to_usize(s: &str) -> Result<(usize, &str), ()> {
-    let mut result = 0usize;
+fn str_to_usize(s: &str) -> Result<(u64, &str), &'static [u8]> {
+    let mut result = 0u64;
     let bytes = s.as_bytes();
     let mut i = 0;
 
     while i < bytes.len() && (bytes[i] as char).is_digit(10) {
         match (bytes[i] as char).to_digit(10) {
             Some(digit) => {
-                result = result
+                result = match result
                     .checked_mul(10)
-                    .and_then(|res| res.checked_add(digit as usize))
-                    .ok_or(())?;
+                    .and_then(|res| res.checked_add(digit as u64))
+                {
+                    Some(tmp) => tmp,
+                    None => return Err(b"str_to_usize>2"),
+                }
             }
             None => break,
         }
@@ -247,9 +255,9 @@ fn str_to_usize(s: &str) -> Result<(usize, &str), ()> {
     Ok((result, &s[i..]))
 }
 
-fn parse_query(query: &str) -> Result<(Option<usize>, Option<usize>), ()> {
+fn parse_query(query: &str) -> Result<(Option<u64>, Option<u64>), &'static [u8]> {
     let mut slice = query;
-    let mut result: (Option<usize>, Option<usize>) = (None, None);
+    let mut result: (Option<u64>, Option<u64>) = (None, None);
 
     while slice.len() > 0 {
         if slice.starts_with("timestamp=") {
@@ -261,7 +269,7 @@ fn parse_query(query: &str) -> Result<(Option<usize>, Option<usize>), ()> {
             result.1 = Some(value);
             slice = new_slice;
         } else {
-            return Err(());
+            return Err(b"parse_query>2");
         }
     }
 
