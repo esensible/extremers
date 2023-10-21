@@ -5,6 +5,11 @@ mod tests {
     use crate::engine_httpd::{EngineHttpdTrait, Response};
     use crate::RaceHttpd;
 
+    macro_rules! lines {
+        ($($element:expr),+ $(,)? ) => {
+            concat!($( $element, "\r\n", )+).as_bytes()
+        };
+    }
     fn sleep(_: usize, _: usize) {}
 
     #[test]
@@ -40,11 +45,6 @@ mod tests {
                 response,
                 String::from_utf8_lossy(&result[..response])
             );
-            // println!(
-            //     "updates[{}], {:?}",
-            //     extra.len(),
-            //     String::from_utf8_lossy(&extra[..extra.len()])
-            // );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
@@ -58,27 +58,43 @@ mod tests {
 
         let event = b"GET /index.html HTTP/1.1\r\n\r\n";
 
-        println!("hwllo");
         let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
 
         let response = response.unwrap();
         if let Response::Complete(response, updates, extra) = response {
-            let response = response.unwrap();
-            let extra = extra.unwrap();
+            assert!(response.unwrap() > 0);
+            assert!(extra.is_some());
             assert_eq!(updates, None);
-            println!(
-                "response[{}], {:?}",
-                response,
-                String::from_utf8_lossy(&result[..response])
-            );
-            println!(
-                "updates[{}], {:?}",
-                extra.len(),
-                String::from_utf8_lossy(&extra[..extra.len()])
-            );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
+    }
+
+    #[test]
+    fn test_partial() {
+        let mut httpd = RaceHttpd::default();
+        let mut result = [0u8; 2048];
+        let mut update = [0u8; 2048];
+
+        let event = lines!(
+            "POST /events HTTP/1.1",
+            "Host: 169.254.1.1",
+            "Origin: http://169.254.1.1",
+            "Referer: http://169.254.1.1/index.html",
+            "Content-Type: application/json",
+            "Accept: */*",
+            "Accept-Encoding: gzip",
+            "Accept-Language: en-GB",
+            "Connection: Keep-Alive",
+            "User-Agent: Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+",
+            "Content-Length: 20",
+        );
+
+        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+
+        assert!(response.is_err());
+        let response = response.expect_err("Expected error");
+        println!("Response: {:?}", core::str::from_utf8(&result[..response]));
     }
 
     #[test]

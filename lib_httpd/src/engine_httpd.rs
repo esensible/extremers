@@ -4,10 +4,11 @@ use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait};
 use race_client::lookup;
 
 #[derive(PartialEq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub enum Response {
     // response length (excludes additional), update length, additional response
     Complete(Option<usize>, Option<usize>, Option<&'static [u8]>),
-    // Partial(usize),
+    Partial(usize),
     None,
 }
 
@@ -102,6 +103,10 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                         Some(b"Content-Length not found or invalid"),
                     ))?;
 
+                if offset + content_length > request.len() {
+                    return Ok(Response::Partial(request.len() - (offset + content_length)));
+                }
+
                 // Assuming the body starts right after the headers
                 let event_body = &request[offset..offset + content_length];
 
@@ -151,7 +156,6 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
                 if let Err(err) = query_args {
                     return Err(respond(response, BAD_REQUEST, Some(err)));
-                    // Err(respond(response, BAD_REQUEST, Some(err)))
                 }
                 let (timestamp, cnt) = query_args.unwrap();
 
@@ -204,11 +208,33 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
             (Some("GET"), Some(path)) if path.starts_with("/") => {
                 let path = &path[1..];
                 if let Some(file) = self.get_static_file(path) {
+                    let ext = path.split('.').last();
+                    let content_type: Option<&[u8]> = if let Some(ext) = ext {
+                        match ext {
+                            "html" => Some(b"text/html"),
+                            "css" => Some(b"text/css"),
+                            "js" => Some(b"application/javascript"),
+                            "png" => Some(b"image/png"),
+                            "jpg" | "jpeg" => Some(b"image/jpeg"),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+
                     let mut offs: usize = 0;
                     response[offs..offs + HTTP_VERSION.len()].copy_from_slice(HTTP_VERSION);
                     offs += HTTP_VERSION.len();
                     response[offs..offs + 8].copy_from_slice(OK);
                     offs += OK.len();
+                    if let Some(content_type) = content_type {
+                        response[offs..offs + CONTENT_TYPE.len()].copy_from_slice(CONTENT_TYPE);
+                        offs += CONTENT_TYPE.len();
+                        response[offs..offs + content_type.len()].copy_from_slice(content_type);
+                        offs += content_type.len();
+                        response[offs..offs + 2].copy_from_slice(b"\r\n");
+                        offs += 2;
+                    }
                     response[offs..offs + CONTENT_LENGTH.len()].copy_from_slice(CONTENT_LENGTH);
                     offs += CONTENT_LENGTH.len();
                     itoa(file.len(), &mut response[offs..offs + 5]);
@@ -218,10 +244,10 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
                     Ok(Response::Complete(Some(offs), None, Some(file)))
                 } else {
-                    Err(respond(response, NOT_FOUND, None))
+                    Err(respond(response, NOT_FOUND, Some(b"bummer")))
                 }
             }
-            _ => Err(respond(response, NOT_FOUND, None)),
+            _ => Err(respond(response, NOT_FOUND, Some(b"Ooops"))),
         }
     }
 }
@@ -311,9 +337,12 @@ fn respond(response: &mut [u8], status: &[u8], body: Option<&[u8]>) -> usize {
             offs + body.len()
         }
         None => {
-            response[offs..offs + 2].copy_from_slice(b"\r\n");
+            response[offs..offs + CONTENT_LENGTH.len()].copy_from_slice(CONTENT_LENGTH);
+            offs += CONTENT_LENGTH.len();
 
-            offs + 2
+            response[offs..offs + 6].copy_from_slice(b"0 \r\n\r\n");
+
+            offs + 6
         }
     }
 }

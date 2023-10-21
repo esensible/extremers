@@ -13,6 +13,9 @@ use crate::engine_httpd::EngineHttpd;
 use engine::RaceEngine;
 
 pub type RaceHttpd = EngineHttpd<RaceEngine>;
+pub use engine_httpd::EngineHttpdTrait;
+pub use engine_httpd::Response;
+pub use engine_httpd::Response::Complete;
 
 #[cfg(feature = "staticlib")]
 mod ffi {

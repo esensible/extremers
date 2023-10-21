@@ -16,11 +16,11 @@ crate-type = ["staticlib", "lib"]
 
 [dependencies]
 serde-json-core = "0.5"
-httparse = {version="1", default-features = false }
+httparse = { version = "1", default-features = false }
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 
 engine = { path = "../engine" }
 race_client = { path = "../race_client" }
 
 [dev-dependencies]
-#serde_json = "1.0"
+serde_json = "1.0"
