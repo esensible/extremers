@@ -1,5 +1,4 @@
 #[cfg(test)]
-#[cfg(feature = "std")]
 mod tests {
     use super::*;
     use crate::engine_httpd::{EngineHttpdTrait, Response};

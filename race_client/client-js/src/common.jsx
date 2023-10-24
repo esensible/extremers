@@ -7,9 +7,9 @@ export const STATE_SEQ = "InSequence";
 export const STATE_RACE = "Racing";
 
 export const [state, setState] = createSignal(null, "state");
-export const [speed, setSpeed] = createSignal("0", "speed");
+export const [speed, setSpeed] = createSignal(0.0, "speed");
 export const [time, setTime] = createSignal("00:00");
-export const [heading, setHeading] = createSignal("0", "heading");
+export const [heading, setHeading] = createSignal(0.0, "heading");
 export const LINE_NONE = 0;
 export const LINE_PORT = 1;
 export const LINE_STBD = 2;

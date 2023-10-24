@@ -2,6 +2,11 @@ use httparse::{Request, EMPTY_HEADER};
 
 use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait};
 use race_client::lookup;
+use serde::Serialize;
+use serde_json_core::to_slice;
+
+const TIMESTAMP_TOLERANCE_MS: i64 = 50;
+const TIMEZONE_OFFSET: i64 = (10 * 60 + 30) * 60; // ACDT (s)
 
 #[derive(PartialEq)]
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -13,22 +18,23 @@ pub enum Response {
 }
 
 pub trait EngineHttpdTrait {
-    fn handle_event(
-        &mut self,
-        event: &[u8],
-        result: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
-    ) -> Result<Option<usize>, &'static str>;
-
-    fn get_static_file(&self, key: &str) -> Option<&'static [u8]>;
-
     fn handle_request(
         &mut self,
+        timestamp: u64,
         request: &[u8],
         response: &mut [u8],
         updates: &mut [u8],
         sleep: &dyn Fn(usize, usize),
     ) -> Result<Response, usize>;
+
+    fn update_location(
+        &mut self,
+        location: Option<(f32, f32)>,
+        heading: Option<(f32, f32)>,
+        updates: &mut [u8],
+    ) -> Option<usize>;
+
+    fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize>;
 }
 
 const HTTP_VERSION: &[u8] = b"HTTP/1.1 ";
@@ -38,27 +44,17 @@ const NOT_FOUND: &[u8] = b"404 Not Found\r\n";
 const SERVER_ERROR: &[u8] = b"500 Internal Server Error\r\n";
 const CONTENT_TYPE: &[u8] = b"Content-Type: ";
 const APP_JSON: &[u8] = b"application/json\r\n";
+const TEXT_HTML: &[u8] = b"text/html\r\n";
+
 const CONTENT_LENGTH: &[u8] = b"Content-Length: ";
 
 #[derive(Default)]
 pub struct EngineHttpd<T: EventEngineTrait>(SerdeEngine<T>);
 
 impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
-    fn handle_event(
-        &mut self,
-        event: &[u8],
-        result: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
-    ) -> Result<Option<usize>, &'static str> {
-        self.0.handle_event(event, result, sleep)
-    }
-
-    fn get_static_file(&self, key: &str) -> Option<&'static [u8]> {
-        lookup(key)
-    }
-
     fn handle_request(
         &mut self,
+        timestamp: u64,
         request: &[u8],
         response: &mut [u8],
         updates: &mut [u8],
@@ -110,23 +106,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                 // Assuming the body starts right after the headers
                 let event_body = &request[offset..offset + content_length];
 
-                let mut update_offs: usize = 0;
-                updates[update_offs..update_offs + HTTP_VERSION.len()]
-                    .copy_from_slice(HTTP_VERSION);
-                update_offs += HTTP_VERSION.len();
-                updates[update_offs..update_offs + 8].copy_from_slice(OK);
-                update_offs += OK.len();
-                updates[update_offs..update_offs + CONTENT_TYPE.len()]
-                    .copy_from_slice(CONTENT_TYPE);
-                update_offs += CONTENT_TYPE.len();
-                updates[update_offs..update_offs + APP_JSON.len()].copy_from_slice(APP_JSON);
-                update_offs += APP_JSON.len();
-                updates[update_offs..update_offs + CONTENT_LENGTH.len()]
-                    .copy_from_slice(CONTENT_LENGTH);
-                update_offs += CONTENT_LENGTH.len();
-                let content_len_offs = update_offs;
-                updates[update_offs + 5..update_offs + 5 + 4].copy_from_slice(b"\r\n\r\n");
-                update_offs += 5 + 4;
+                let (update_offs, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
 
                 let update_len = self
                     .0
@@ -157,34 +137,46 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                 if let Err(err) = query_args {
                     return Err(respond(response, BAD_REQUEST, Some(err)));
                 }
-                let (timestamp, cnt) = query_args.unwrap();
+                let (query_timestamp, cnt) = query_args.unwrap();
 
-                match (timestamp, cnt) {
-                    (Some(timestamp), Some(cnt)) => {
-                        let mut response_offs: usize = 0;
-                        response[response_offs..response_offs + HTTP_VERSION.len()]
-                            .copy_from_slice(HTTP_VERSION);
-                        response_offs += HTTP_VERSION.len();
-                        response[response_offs..response_offs + 8].copy_from_slice(OK);
-                        response_offs += OK.len();
-                        response[response_offs..response_offs + CONTENT_TYPE.len()]
-                            .copy_from_slice(CONTENT_TYPE);
-                        response_offs += CONTENT_TYPE.len();
-                        response[response_offs..response_offs + APP_JSON.len()]
-                            .copy_from_slice(APP_JSON);
-                        response_offs += APP_JSON.len();
-                        response[response_offs..response_offs + CONTENT_LENGTH.len()]
-                            .copy_from_slice(CONTENT_LENGTH);
-                        response_offs += CONTENT_LENGTH.len();
-                        let content_len_offs = response_offs;
-                        response[response_offs + 5..response_offs + 5 + 4]
-                            .copy_from_slice(b"\r\n\r\n");
-                        response_offs += 5 + 4;
+                match (query_timestamp, cnt) {
+                    (Some(query_timestamp), Some(cnt)) => {
+                        let (response_offs, content_len_offs) =
+                            fill_header(response, OK, Some(APP_JSON));
 
-                        let update_len = self
-                            .0
-                            .get_state(cnt as usize, &mut response[response_offs..])
-                            .map_err(|_| respond(response, BAD_REQUEST, Some(b"Invalid query2")))?;
+                        let time_offset: i64 = if timestamp >= query_timestamp {
+                            (timestamp.wrapping_sub(query_timestamp)) as i64
+                        } else {
+                            -(query_timestamp.wrapping_sub(timestamp) as i64)
+                        };
+
+                        let update_len = if query_timestamp != 0
+                            && time_offset.abs() > TIMESTAMP_TOLERANCE_MS
+                        {
+                            #[derive(Serialize)]
+                            struct OffsetResponse {
+                                tzOffset: i64,
+                                offset: i64,
+                                cnt: i8,
+                            }
+                            let offset_response = OffsetResponse {
+                                offset: time_offset,
+                                tzOffset: TIMEZONE_OFFSET, // seconds
+                                cnt: -1,
+                            };
+                            let len = to_slice(&offset_response, &mut response[response_offs..])
+                                .map_err(|_| {
+                                    respond(response, SERVER_ERROR, Some(b"Offset update failed"))
+                                })?;
+
+                            Some(len)
+                        } else {
+                            self.0
+                                .get_state(cnt as usize, &mut response[response_offs..])
+                                .map_err(|_| {
+                                    respond(response, BAD_REQUEST, Some(b"Invalid query2"))
+                                })?
+                        };
 
                         if let Some(update_len) = update_len {
                             itoa(
@@ -207,47 +199,67 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
             (Some("GET"), Some(path)) if path.starts_with("/") => {
                 let path = &path[1..];
-                if let Some(file) = self.get_static_file(path) {
+                if let Some(file) = lookup(path) {
                     let ext = path.split('.').last();
                     let content_type: Option<&[u8]> = if let Some(ext) = ext {
                         match ext {
-                            "html" => Some(b"text/html"),
-                            "css" => Some(b"text/css"),
-                            "js" => Some(b"application/javascript"),
-                            "png" => Some(b"image/png"),
-                            "jpg" | "jpeg" => Some(b"image/jpeg"),
+                            "html" => Some(b"text/html\r\n"),
+                            "css" => Some(b"text/css\r\n"),
+                            "js" => Some(b"application/javascript\r\n"),
+                            "png" => Some(b"image/png\r\n"),
+                            "jpg" | "jpeg" => Some(b"image/jpeg\r\n"),
                             _ => None,
                         }
                     } else {
                         None
                     };
 
-                    let mut offs: usize = 0;
-                    response[offs..offs + HTTP_VERSION.len()].copy_from_slice(HTTP_VERSION);
-                    offs += HTTP_VERSION.len();
-                    response[offs..offs + 8].copy_from_slice(OK);
-                    offs += OK.len();
-                    if let Some(content_type) = content_type {
-                        response[offs..offs + CONTENT_TYPE.len()].copy_from_slice(CONTENT_TYPE);
-                        offs += CONTENT_TYPE.len();
-                        response[offs..offs + content_type.len()].copy_from_slice(content_type);
-                        offs += content_type.len();
-                        response[offs..offs + 2].copy_from_slice(b"\r\n");
-                        offs += 2;
-                    }
-                    response[offs..offs + CONTENT_LENGTH.len()].copy_from_slice(CONTENT_LENGTH);
-                    offs += CONTENT_LENGTH.len();
-                    itoa(file.len(), &mut response[offs..offs + 5]);
-                    offs += 5;
-                    response[offs..offs + 4].copy_from_slice(b"\r\n\r\n");
-                    offs += 4;
+                    let (header_len, content_len_offs) = fill_header(response, OK, content_type);
 
-                    Ok(Response::Complete(Some(offs), None, Some(file)))
+                    itoa(
+                        file.len(),
+                        &mut response[content_len_offs..content_len_offs + 5],
+                    );
+
+                    Ok(Response::Complete(Some(header_len), None, Some(file)))
                 } else {
                     Err(respond(response, NOT_FOUND, Some(b"bummer")))
                 }
             }
             _ => Err(respond(response, NOT_FOUND, Some(b"Ooops"))),
+        }
+    }
+
+    fn update_location(
+        &mut self,
+        location: Option<(f32, f32)>,
+        speed: Option<(f32, f32)>,
+        updates: &mut [u8],
+    ) -> Option<usize> {
+        let (header_len, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
+
+        let len = self
+            .0
+            .update_location(location, speed, &mut updates[header_len..]);
+
+        if let Some(len) = len {
+            itoa(len, &mut updates[content_len_offs..content_len_offs + 5]);
+            Some(header_len + len)
+        } else {
+            None
+        }
+    }
+
+    fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize> {
+        let (header_len, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
+
+        let len = self.0.handle_sleep(callback, &mut updates[header_len..]);
+
+        if let Some(len) = len {
+            itoa(len, &mut updates[content_len_offs..content_len_offs + 5]);
+            Some(header_len + len)
+        } else {
+            None
         }
     }
 }
@@ -313,6 +325,30 @@ fn itoa(n: usize, buf: &mut [u8]) {
     for j in 0..i {
         buf[j] = b' ';
     }
+}
+
+fn fill_header(buffer: &mut [u8], status: &[u8], content_type: Option<&[u8]>) -> (usize, usize) {
+    let mut offset: usize = 0;
+
+    buffer[offset..offset + HTTP_VERSION.len()].copy_from_slice(HTTP_VERSION);
+    offset += HTTP_VERSION.len();
+    buffer[offset..offset + status.len()].copy_from_slice(status);
+    offset += status.len();
+    if let Some(content_type) = content_type {
+        buffer[offset..offset + CONTENT_TYPE.len()].copy_from_slice(CONTENT_TYPE);
+        offset += CONTENT_TYPE.len();
+        buffer[offset..offset + content_type.len()].copy_from_slice(content_type);
+        offset += content_type.len();
+    }
+    buffer[offset..offset + CONTENT_LENGTH.len()].copy_from_slice(CONTENT_LENGTH);
+    offset += CONTENT_LENGTH.len();
+
+    let content_length_offset = offset;
+
+    buffer[offset + 5..offset + 5 + 4].copy_from_slice(b"\r\n\r\n");
+    offset += 5 + 4;
+
+    (offset, content_length_offset)
 }
 
 fn respond(response: &mut [u8], status: &[u8], body: Option<&[u8]>) -> usize {

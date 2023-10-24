@@ -1,17 +1,20 @@
 use serde::de::DeserializeOwned;
 use serde_json_core::{from_slice, to_slice};
 
+use crate::core::callbacks::CallbackTrait;
 use crate::core::FlatDiffSer;
 
 pub trait EngineCore: FlatDiffSer {
     type Event: DeserializeOwned;
-    type Callbacks;
+    type Callbacks: CallbackTrait;
 
     fn handle_event(
         &mut self,
         event: Self::Event,
         sleep: &dyn FnMut(usize, Self::Callbacks),
     ) -> Result<bool, &'static str>;
+
+    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
 }
 
 pub trait EventEngineTrait {
@@ -25,6 +28,10 @@ pub trait EventEngineTrait {
     ) -> Result<bool, &'static str>;
 
     fn get_state(&self) -> Self::State;
+
+    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
+
+    fn handle_sleep(&mut self, callback: usize) -> bool;
 }
 
 pub struct EventEngine<T: EngineCore, const N: usize>(T, [Option<T::Callbacks>; N])
@@ -53,6 +60,20 @@ where
         };
         self.0.handle_event(event, &sleep_fn)
     }
+
+    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool {
+        self.0.update_location(location, speed)
+    }
+
+    fn handle_sleep(&mut self, callback: usize) -> bool {
+        if let Some(callback) = self.1[callback] {
+            self.1[callback] = None;
+            CallbackTrait::invoke(&callback, &self.0);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub trait SerdeEngineTrait {
@@ -64,6 +85,15 @@ pub trait SerdeEngineTrait {
     ) -> Result<Option<usize>, &'static str>;
 
     fn get_state(&self, state: usize, result: &mut [u8]) -> Result<Option<usize>, &'static str>;
+
+    fn update_location(
+        &mut self,
+        location: Option<(f32, f32)>,
+        speed: Option<(f32, f32)>,
+        result: &mut [u8],
+    ) -> Option<usize>;
+
+    fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize>;
 }
 
 pub struct SerdeEngine<T: EventEngineTrait>(T, usize);
@@ -105,6 +135,45 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
             Ok(Some(len))
         } else {
             Ok(None)
+        }
+    }
+
+    fn update_location(
+        &mut self,
+        location: Option<(f32, f32)>,
+        speed: Option<(f32, f32)>,
+        result: &mut [u8],
+    ) -> Option<usize> {
+        let old_state = self.0.get_state();
+
+        let mut updated = self.0.update_location(location, speed);
+
+        if updated {
+            let new_state = self.0.get_state();
+            let delta =
+                crate::UpdateResp::new(self.1, crate::core::FlatDiff(&new_state, &old_state));
+            let len = to_slice(&delta, result).ok()?;
+            self.1 += 1;
+            Some(len)
+        } else {
+            None
+        }
+    }
+
+    fn handle_sleep(&mut self, result: &mut [u8], callback: usize) -> Option<usize> {
+        let old_state = self.0.get_state();
+
+        let mut updated = self.0.handle_sleep(callback);
+
+        if updated {
+            let new_state = self.0.get_state();
+            let delta =
+                crate::UpdateResp::new(self.1, crate::core::FlatDiff(&new_state, &old_state));
+            let len = to_slice(&delta, result).ok()?;
+            self.1 += 1;
+            Some(len)
+        } else {
+            None
         }
     }
 }

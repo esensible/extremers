@@ -1,7 +1,7 @@
-import { startTime, speed, heading, state, STATE_RACE} from './common.jsx';
+import { startTime, speed, heading, state, STATE_RACE } from './common.jsx';
 import { createSignal, createEffect, onCleanup } from 'silkjs';
 import { confirm } from './confirm.jsx';
-import {postEvent, timestamp} from "./api.js"
+import { postEvent, timestamp } from "./api.js"
 
 const [raceTime, setRaceTime] = createSignal("0:00")
 const [Confirm, doConfirm] = confirm();
@@ -47,15 +47,15 @@ createEffect(() => {
 })
 
 export const finishClick = () => {
-    doConfirm(() => {postEvent("Idle")}, 2);
+    doConfirm(() => { postEvent("Idle") }, 2);
 };
 
 
 export const Race = () => (
     <div>
-        <div class="gps">{speed}</div>
-        <div class="gps">{heading}</div>
-        <Confirm/>
+        <div class="gps">{() => speed().toFixed(1)}</div>
+        <div class="gps">{() => heading().toFixed(0)}</div>
+        <Confirm />
         <div class="buttons">
             <button class="refresh finish" onClick={finishClick}>{raceTime}</button>
         </div>

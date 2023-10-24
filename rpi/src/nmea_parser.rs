@@ -19,18 +19,18 @@ pub enum Mode {
 
 #[derive(Default, Debug)]
 pub struct GNRMC {
-    utc_time: Option<f32>,
-    status: Option<Status>,
-    latitude: Option<f32>,
-    ns_indicator: Option<char>,
-    longitude: Option<f32>,
-    ew_indicator: Option<char>,
-    speed_over_ground: Option<f32>,
-    course_over_ground: Option<u16>,
-    date: Option<u64>,
-    magnetic_variation: Option<f32>,
-    ew_indicator_mag: Option<char>,
-    mode: Option<Mode>,
+    pub utc_time: Option<u32>,
+    pub status: Option<Status>,
+    pub latitude: Option<f32>,
+    pub ns_indicator: Option<char>,
+    pub longitude: Option<f32>,
+    pub ew_indicator: Option<char>,
+    pub speed_over_ground: Option<f32>,
+    pub course_over_ground: Option<f32>,
+    pub date: Option<u32>,
+    pub magnetic_variation: Option<f32>,
+    pub ew_indicator_mag: Option<char>,
+    pub mode: Option<Mode>,
 }
 
 pub enum NMEAMessage {
@@ -99,6 +99,37 @@ impl<const N: usize> RingBuffer<N> {
 
 pub struct NMEAParser<const N: usize>(RingBuffer<N>);
 
+fn date_to_epoch(date_str: &str) -> Option<u32> {
+    if date_str.len() != 6 {
+        return None;
+    }
+
+    static MONTH_DAY: [u16; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+
+    let day: u32 = date_str[0..2].parse().ok()?;
+    let month: u32 = date_str[2..4].parse().ok()?;
+    let year: u32 = date_str[4..6].parse().ok()?;
+
+    // Calculate the number of days for each month assuming all months have 30 days
+    // This is a simplification and will not yield accurate results
+    let days_in_months = if year % 4 == 0 && month > 2 {
+        (MONTH_DAY[(month - 1) as usize] + 1) as u32
+    } else {
+        (MONTH_DAY[(month - 1) as usize]) as u32
+    };
+
+    // Calculate the number of days for each year assuming all years have 365 days
+    let days_in_years = (year + 2000 - 1970) * 365;
+
+    // Calculate the number of leap years since 1972
+    let leap_years = ((year + 2000 - 1) - 1972) / 4 + 1;
+
+    // Now add all the days together and convert to seconds
+    let total_days = days_in_years + days_in_months + day + leap_years - 1;
+
+    Some(total_days)
+}
+
 impl<const N: usize> NMEAParser<N> {
     pub fn new(rx: UartRx<'static, UART1, Async>) -> Self {
         Self(RingBuffer::new(rx))
@@ -126,7 +157,24 @@ impl<const N: usize> NMEAParser<N> {
 
                 NMEAMessage::GNRMC(gnrmc) => {
                     match field {
-                        0 => gnrmc.utc_time = token.parse::<f32>().ok(),
+                        0 => {
+                            gnrmc.utc_time = if token.len() >= 9 {
+                                let hours = token[0..2].parse::<u32>().ok()?;
+                                let minutes = token[2..4].parse::<u32>().ok()?;
+                                let seconds = token[4..6].parse::<u32>().ok()?;
+                                let milliseconds = token[7..].parse::<u32>().ok()?;
+
+                                Some(
+                                    hours * 60 * 60_000
+                                        + minutes * 60_000
+                                        + seconds * 1_000
+                                        + milliseconds,
+                                )
+                            } else {
+                                None
+                            }
+                        }
+
                         1 => {
                             gnrmc.status = Some(match token {
                                 "A" => Status::Active,
@@ -134,13 +182,35 @@ impl<const N: usize> NMEAParser<N> {
                                 _ => Status::Unknown,
                             })
                         }
-                        2 => gnrmc.latitude = token.parse::<f32>().ok(),
+                        2 => {
+                            gnrmc.latitude = if token.len() >= 7 {
+                                let degrees = token[0..2].parse::<f32>().ok()?;
+                                let minutes = token[2..].parse::<f32>().ok()?;
+                                Some(degrees + minutes / 60.0)
+                            } else {
+                                None
+                            }
+                        }
                         3 => gnrmc.ns_indicator = token.chars().next(),
-                        4 => gnrmc.longitude = token.parse::<f32>().ok(),
+                        4 => {
+                            gnrmc.longitude = if token.len() >= 7 {
+                                let degrees = token[0..3].parse::<f32>().ok()?;
+                                let minutes = token[3..].parse::<f32>().ok()?;
+                                Some(degrees + minutes / 60.0)
+                            } else {
+                                None
+                            }
+                        }
                         5 => gnrmc.ew_indicator = token.chars().next(),
-                        6 => gnrmc.speed_over_ground = token.parse::<f32>().ok(),
-                        7 => gnrmc.course_over_ground = token.parse::<u16>().ok(),
-                        8 => gnrmc.date = token.parse::<u64>().ok(),
+                        6 => {
+                            // log::info!("speed: {}", token);
+                            gnrmc.speed_over_ground = token.parse::<f32>().ok()
+                        }
+                        7 => {
+                            // log::info!("course: {}", token);
+                            gnrmc.course_over_ground = token.parse::<f32>().ok()
+                        }
+                        8 => gnrmc.date = date_to_epoch(&token),
                         9 => gnrmc.magnetic_variation = token.parse::<f32>().ok(),
                         10 => gnrmc.ew_indicator_mag = token.chars().next(),
                         11 => {

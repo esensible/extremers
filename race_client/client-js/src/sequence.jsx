@@ -15,7 +15,7 @@ const [Confirm, doConfirm] = confirm();
 function bumpStart(seconds) {
     return () => {
         const clickTime = timestamp();
-        doConfirm(() => { postEvent({"BumpSeq": {timestamp: clickTime, seconds: seconds}}) });
+        doConfirm(() => { postEvent({ "BumpSeq": { timestamp: clickTime, seconds: seconds } }) });
     }
 }
 
@@ -62,11 +62,11 @@ createEffect(() => {
 
 export const Sequence = () => (
     <div>
-        <div class="gps">{speed}</div>
+        <div class="gps">{() => speed().toFixed(1)}</div>
         <div class="gps">{countdown}</div>
-        <Confirm/>
+        <Confirm />
         <div class="Buttons">
-            <LineButtons/>
+            <LineButtons />
             <div>
                 <button class="five" onClick={bumpStart(-300)}>5</button>
                 <button class="one" onClick={bumpStart(-60)}>1</button>

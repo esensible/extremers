@@ -19,16 +19,16 @@ enum State {
     #[default]
     Idle,
     Active {
-        speed: f64,
+        speed: f32,
     },
     InSequence {
         start_time: u64,
-        speed: f64,
+        speed: f32,
     },
     Racing {
         start_time: u64,
-        speed: f64,
-        heading: f64,
+        speed: f32,
+        heading: f32,
     },
 }
 
@@ -39,16 +39,7 @@ pub enum EventType {
     LineStbd,
     LinePort,
 
-    BumpSeq {
-        timestamp: u64,
-        seconds: u64,
-    },
-
-    SetLocation {
-        location: Location,
-        speed: f64,
-        heading: f64,
-    },
+    BumpSeq { timestamp: u64, seconds: u64 },
 
     RaceFinish,
 }
@@ -128,40 +119,44 @@ impl EngineCore for Race {
                     Ok(false)
                 }
             }
-            EventType::SetLocation {
-                location,
-                speed,
-                heading,
-            } => {
-                self.location = location;
-                match self.state {
-                    State::Active {
-                        speed: mut current_speed,
-                    } => {
-                        current_speed = speed;
-                        Ok(true)
-                    }
-                    State::InSequence {
-                        speed: mut current_speed,
-                        ..
-                    } => {
-                        current_speed = speed;
-                        // TODO: Update line stuff
-                        Ok(true)
-                    }
-                    State::Racing {
-                        speed: mut current_speed,
-                        heading: mut current_heading,
-                        ..
-                    } => {
-                        current_speed = speed;
-                        current_heading = heading;
-                        Ok(true)
-                    }
+        }
+    }
 
-                    _ => Ok(false),
+    fn update_location(
+        &mut self,
+        new_location: Option<(f32, f32)>,
+        new_speed: Option<(f32, f32)>,
+    ) -> bool {
+        let mut updated = false;
+
+        if let Some((new_lat, new_lon)) = new_location {
+            self.location = Location {
+                lat: new_lat,
+                lon: new_lon,
+            };
+            updated = true;
+        }
+
+        if let Some((new_speed, new_heading)) = new_speed {
+            match &mut self.state {
+                State::Active { speed } => {
+                    *speed = new_speed;
+                    updated = true;
                 }
+                State::InSequence { speed, .. } => {
+                    *speed = new_speed;
+                    // TODO: Update line stuff
+                    updated = true;
+                }
+                State::Racing { speed, heading, .. } => {
+                    *speed = new_speed;
+                    *heading = new_heading;
+                    updated = true;
+                }
+                _ => {}
             }
         }
+
+        updated
     }
 }

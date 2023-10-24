@@ -1,13 +1,22 @@
 //! This example uses the RP Pico W board Wifi chip (cyw43).
 //! Creates an Access point Wifi network and creates a TCP endpoint on port 1234.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(async_fn_in_trait)]
 #![allow(incomplete_features)]
 
-use core::str::from_utf8;
+#[cfg(test)]
+mod tests;
+
+mod consts;
+use consts::*;
+mod nmea_parser;
+use nmea_parser::*;
+mod task_gps;
+mod task_httpd;
+mod task_sleeper;
 
 // use {defmt_rtt as _, panic_probe as _};
 use ::core::panic::PanicInfo;
@@ -26,20 +35,18 @@ use embassy_rp::uart::{
 };
 use embassy_time::{with_timeout, Duration, Timer};
 use lib_httpd::{EngineHttpdTrait, RaceHttpd, Response};
+
 // use embedded_io::Read;
 use defmt::*;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::pubsub::{DynSubscriber, PubSubChannel, Subscriber};
 use embedded_io_async::Read;
 use embedded_io_async::Write;
 use static_cell::make_static;
-use {defmt_rtt as _, panic_probe as _};
 
-mod nmea_parser;
-use nmea_parser::{NMEAMessage, NMEAParser};
+use {defmt_rtt as _, panic_probe as _};
 
 // #[panic_handler]
 // fn panic(_info: &PanicInfo) -> ! {
@@ -69,146 +76,6 @@ async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
     stack.run().await
 }
 
-const PORT: u16 = 80;
-const TIMEOUT: Duration = Duration::from_secs(10);
-const RX_BUF_SIZE: usize = 2048;
-const TX_BUF_SIZE: usize = 2048;
-const READ_BUF_SIZE: usize = 4096;
-const RESPONSE_BUF_SIZE: usize = 4096;
-const UPDATE_BUF_SIZE: usize = 4096;
-
-const MAX_SOCKETS: usize = 4;
-
-#[derive(Clone)]
-struct UpdateMessage([u8; UPDATE_BUF_SIZE], usize);
-
-impl Default for UpdateMessage {
-    fn default() -> Self {
-        Self([0; UPDATE_BUF_SIZE], 0)
-    }
-}
-
-static UPDATES_BUS: PubSubChannel<ThreadModeRawMutex, UpdateMessage, 1, 2, 1> =
-    PubSubChannel::new();
-
-#[embassy_executor::task(pool_size = MAX_SOCKETS)]
-async fn httpd_task(
-    httpd_mutex: &'static Mutex<ThreadModeRawMutex, RaceHttpd>,
-    stack: &'static Stack<cyw43::NetDriver<'static>>,
-) -> ! {
-    let mut rx_buffer = [0; RX_BUF_SIZE];
-    let mut tx_buffer = [0; TX_BUF_SIZE];
-    let mut read_buffer = [0; READ_BUF_SIZE];
-    let mut response_buffer = [0; RESPONSE_BUF_SIZE];
-    let mut update = UpdateMessage::default();
-
-    loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        // socket.set_timeout(Some(Duration::from_secs(10)));
-
-        log::info!("Listening...");
-        if let Err(e) = socket.accept(PORT).await {
-            warn!("accept error: {:?}", e);
-            continue;
-        }
-
-        log::info!("Connect");
-
-        let mut partial_offs = 0;
-        loop {
-            match socket.read(&mut read_buffer[partial_offs..]).await {
-                Ok(0) => {
-                    log::warn!("read EOF");
-                    break;
-                }
-                Ok(n) => {
-                    unsafe {
-                        log::info!("Received");
-                    }
-                    let sleep_closure: &dyn Fn(usize, usize) = &|time, pos| {};
-
-                    let response = {
-                        let mut engine = httpd_mutex.lock().await;
-
-                        (*engine).handle_request(
-                            &read_buffer[..partial_offs + n],
-                            &mut response_buffer,
-                            &mut update.0,
-                            &sleep_closure,
-                        )
-                    };
-
-                    if let Err(len) = response {
-                        log::warn!("handle_request error: {:?}", len);
-                        socket.write_all(&response_buffer[..len]).await;
-                        partial_offs = 0;
-                        continue;
-                    }
-
-                    let response = response.unwrap();
-
-                    match response {
-                        Response::Partial(to_go) => {
-                            partial_offs = n;
-                            continue;
-                        }
-
-                        Response::Complete(r_len, up_len, ex) => {
-                            log::info!("handle_request -> {:?}, {:?}", r_len, up_len);
-
-                            if let Some(r_len) = r_len {
-                                socket.write_all(&response_buffer[..r_len]).await;
-                            }
-                            if let Some(ex) = ex {
-                                socket.write_all(ex).await;
-                            }
-                            if let Some(up_len) = up_len {
-                                let publisher = UPDATES_BUS.publisher();
-                                match publisher {
-                                    Ok(publisher) => {
-                                        update.1 = up_len;
-                                        publisher.publish_immediate(update.clone());
-                                    }
-                                    Err(_) => {
-                                        log::warn!("Error obtaining publisher");
-                                    }
-                                }
-                            }
-                        }
-                        Response::None => {
-                            log::info!("handle_request -> None");
-                            let mut message_subscriber = UPDATES_BUS.dyn_subscriber().unwrap();
-                            match with_timeout(
-                                Duration::from_secs(5),
-                                message_subscriber.next_message_pure(),
-                            )
-                            .await
-                            {
-                                Ok(message) => {
-                                    log::info!("update: {:?}", message.1);
-                                    socket.write_all(&message.0[..message.1]).await;
-                                }
-                                Err(_) => {
-                                    socket.write_all(b"HTTP/1.1 204 Timeout\r\n\r\n").await;
-                                }
-                            }
-                        }
-                        _ => {
-                            log::warn!("Invalid response type");
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("read error: {:?}", e);
-                    break;
-                }
-            };
-            partial_offs = 0;
-        }
-    }
-}
-
 #[embassy_executor::task]
 async fn logger_task(driver: Driver<'static, USB>) {
     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
@@ -229,7 +96,7 @@ async fn main(spawner: Spawner) {
     config.baudrate = 9600;
     let uart_rx = UartRx::new(p.UART1, p.PIN_9, Irqs, p.DMA_CH1, config);
 
-    spawner.spawn(reader(uart_rx)).unwrap();
+    spawner.spawn(task_gps::gps_task(httpd, uart_rx)).unwrap();
 
     //
     // BEGIN WIFI SETUP
@@ -295,32 +162,13 @@ async fn main(spawner: Spawner) {
     control.start_ap_wpa2("nacra17", "password", 1).await;
     // control.start_ap_open("cyw43", 1).await;
 
+    spawner.spawn(task_sleeper::sleeper_task(httpd));
+
     for _ in 0..MAX_SOCKETS {
-        spawner.spawn(httpd_task(httpd, stack));
+        spawner.spawn(task_httpd::httpd_task(httpd, stack));
     }
     loop {
         Timer::after(Duration::from_secs(3)).await;
         log::info!("done");
-    }
-}
-
-#[embassy_executor::task]
-async fn reader(rx: UartRx<'static, UART1, Async>) {
-    log::info!("Reading...");
-    let mut parser = NMEAParser::<32>::new(rx);
-    loop {
-        let token = parser.next_token().await;
-        match token {
-            Some(NMEAMessage::GNRMC(gnrmc)) => {
-                // log::info!("{:?}", gnrmc);
-            }
-            Some(NMEAMessage::Unknown) => {
-                log::info!("Unknown");
-            }
-            None => {
-                Timer::after(Duration::from_secs(1)).await;
-                // log::info!("None");
-            }
-        }
     }
 }

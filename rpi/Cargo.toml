@@ -71,8 +71,11 @@ embedded-io-async = { version = "0.6.0", features = ["defmt-03"] }
 static_cell = { version = "1.1", features = ["nightly"] }
 log = "0.4"
 
+portable-atomic = { version = "0.3", default-features = false }
+
 
 lib_httpd = { path = "../lib_httpd/" }
+
 
 [profile.release]
 debug = 2
