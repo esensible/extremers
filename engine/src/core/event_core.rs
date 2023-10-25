@@ -17,6 +17,8 @@ pub trait EngineCore: FlatDiffSer {
     fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
 }
 
+pub type SleepFn = dyn Fn(usize, usize) -> Result<(), &'static str>;
+
 pub trait EventEngineTrait {
     type State: FlatDiffSer;
     type Event: DeserializeOwned;
@@ -24,7 +26,7 @@ pub trait EventEngineTrait {
     fn handle_event(
         &mut self,
         event: Self::Event,
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<bool, &'static str>;
 
     fn get_state(&self) -> Self::State;
@@ -54,7 +56,7 @@ where
     fn handle_event(
         &mut self,
         event: Self::Event,
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<bool, &'static str> {
         let sleep_fn = |time, callback| {
             self.1[0] = Some(callback);
@@ -84,7 +86,7 @@ pub trait SerdeEngineTrait {
         &mut self,
         event: &[u8],
         result: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<Option<usize>, &'static str>;
 
     fn get_state(&self, state: usize, result: &mut [u8]) -> Result<Option<usize>, &'static str>;
@@ -112,7 +114,7 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
         &mut self,
         event: &[u8],
         result: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<Option<usize>, &'static str> {
         let (event, _): (T::Event, usize) = from_slice(event).expect("Invalid JSON event");
 
@@ -166,7 +168,7 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
     fn handle_sleep(&mut self, result: &mut [u8], callback: usize) -> Option<usize> {
         let old_state = self.0.get_state();
 
-        let mut updated = self.0.handle_sleep(callback);
+        let updated = self.0.handle_sleep(callback);
 
         if updated {
             let new_state = self.0.get_state();
@@ -180,15 +182,6 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
         }
     }
 }
-//     // fn wakeup(&mut self, pos: usize) {
-//     //     if let Some(callback) = self.1[pos] {
-//     //         self.1[pos] = None;
-//     //         let mut args = &self.0;
-//     //         CallbackTrait::invoke(&callback, &mut args);
-//     //     }
-//     // }
-
-// }
 
 impl<T: EngineCore + crate::core::FlatDiffSer + Default, const N: usize> Default
     for EventEngine<T, N>

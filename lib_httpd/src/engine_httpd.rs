@@ -1,6 +1,6 @@
 use httparse::{Request, EMPTY_HEADER};
 
-use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait};
+use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait, SleepFn};
 use race_client::lookup;
 use serde::Serialize;
 use serde_json_core::to_slice;
@@ -24,7 +24,7 @@ pub trait EngineHttpdTrait {
         request: &[u8],
         response: &mut [u8],
         updates: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<Response, usize>;
 
     fn update_location(
@@ -58,7 +58,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
         request: &[u8],
         response: &mut [u8],
         updates: &mut [u8],
-        sleep: &dyn Fn(usize, usize),
+        sleep: &SleepFn,
     ) -> Result<Response, usize> {
         // Buffer to hold HTTP request headers
         let mut headers = [EMPTY_HEADER; 16];
