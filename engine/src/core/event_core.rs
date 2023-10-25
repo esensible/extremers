@@ -6,7 +6,7 @@ use crate::core::FlatDiffSer;
 
 pub trait EngineCore: FlatDiffSer {
     type Event: DeserializeOwned;
-    type Callbacks: CallbackTrait;
+    type Callbacks;
 
     fn handle_event(
         &mut self,
@@ -36,11 +36,13 @@ pub trait EventEngineTrait {
 
 pub struct EventEngine<T: EngineCore, const N: usize>(T, [Option<T::Callbacks>; N])
 where
-    T::Event: DeserializeOwned;
+    T::Event: DeserializeOwned,
+    T::Callbacks: CallbackTrait<T>;
 
 impl<T: EngineCore + Default + Clone, const N: usize> EventEngineTrait for EventEngine<T, N>
 where
     T::Event: DeserializeOwned,
+    T::Callbacks: CallbackTrait<T>
 {
     type Event = T::Event;
     type State = T;
@@ -66,13 +68,14 @@ where
     }
 
     fn handle_sleep(&mut self, callback: usize) -> bool {
-        if let Some(callback) = self.1[callback] {
-            self.1[callback] = None;
-            CallbackTrait::invoke(&callback, &self.0);
+        let result = if let Some(callback) = &self.1[callback] {
+            CallbackTrait::invoke(callback, &mut self.0);
             true
         } else {
             false
-        }
+        };
+        self.1[0] = None;
+        result
     }
 }
 
@@ -190,7 +193,7 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
 impl<T: EngineCore + crate::core::FlatDiffSer + Default, const N: usize> Default
     for EventEngine<T, N>
 where
-    <T as EngineCore>::Callbacks: Copy,
+    T::Callbacks: Copy + CallbackTrait<T>,
 {
     fn default() -> Self {
         EventEngine(T::default(), [None; N])

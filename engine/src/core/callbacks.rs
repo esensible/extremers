@@ -1,10 +1,12 @@
+use super::EngineCore;
+
 #[derive(Copy, Clone)]
-pub struct Callback<M, T: Copy> {
+pub struct Callback<M: EngineCore, T: Copy> {
     f: fn(&mut M, &T),
     value: T,
 }
 
-impl<M, T: Copy> Callback<M, T> {
+impl<M: EngineCore, T: Copy> Callback<M, T> {
     pub fn new(f: fn(&mut M, &T), value: T) -> Self {
         Self { f, value }
     }
@@ -14,10 +16,8 @@ impl<M, T: Copy> Callback<M, T> {
     }
 }
 
-pub trait CallbackTrait {
-    type T;
-
-    fn invoke(&self, mut_val: &mut Self::T);
+pub trait CallbackTrait<T: EngineCore> {
+    fn invoke(&self, mut_val: &mut T);
 }
 
 #[macro_export]
@@ -30,10 +30,8 @@ macro_rules! callbacks {
             )*
         }
 
-        impl crate::core::CallbackTrait for $enum_name {
-            type T = $mut_ty;
-
-            fn invoke(&self, mut_val: &mut Self::T) {
+        impl crate::core::CallbackTrait<$mut_ty> for $enum_name {
+            fn invoke(&self, mut_val: &mut $mut_ty) {
                 match self {
                     $(
                         $enum_name::$variant(closure) => closure.invoke(mut_val),
