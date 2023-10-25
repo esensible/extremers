@@ -253,7 +253,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
     fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize> {
         let (header_len, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
 
-        let len = self.0.handle_sleep(callback, &mut updates[header_len..]);
+        let len = self.0.handle_sleep(&mut updates[header_len..], callback);
 
         if let Some(len) = len {
             itoa(len, &mut updates[content_len_offs..content_len_offs + 5]);

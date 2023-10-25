@@ -10,12 +10,27 @@ use lib_httpd::{EngineHttpdTrait, RaceHttpd, Response};
 
 use crate::consts::*;
 
-fn sleep_fn(timeout: usize, callback: usize) {
+fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
+    // Confirm we have a GPS reading first
+    // Critical because pending sleeps are not adjusted on GPS time updates
+    let offset: u64 = unsafe {
+        let offset_msb = OFFSET_MSB.load(Ordering::Relaxed) as u64;
+        let offset_lsb = OFFSET_LSB.load(Ordering::Relaxed) as u64;
+
+        (offset_msb << 32) + offset_lsb
+    };
+
+    if offset == 0 {
+        return Err("No GPS time");
+    }
+
     let message = SleepMessage {
-        time: timeout,
+        wake_time: timeout,
         callback,
     };
+
     SLEEP_BUS.publish_immediate(message);
+    Ok(())
 }
 
 #[embassy_executor::task(pool_size = MAX_SOCKETS)]
@@ -36,26 +51,22 @@ pub async fn httpd_task(
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         // socket.set_timeout(Some(Duration::from_secs(10)));
 
-        log::info!("Listening...");
+        // log::info!("Listening...");
         if let Err(e) = socket.accept(PORT).await {
             log::warn!("accept error: {:?}", e);
             continue;
         }
 
-        log::info!("Connect");
+        // log::info!("Connect");
 
         let mut partial_offs = 0;
         loop {
             match socket.read(&mut read_buffer[partial_offs..]).await {
                 Ok(0) => {
-                    log::warn!("read EOF");
+                    // log::warn!("read EOF");
                     break;
                 }
                 Ok(n) => {
-                    unsafe {
-                        log::info!("Received");
-                    }
-
                     let response = {
                         let mut engine = httpd_mutex.lock().await;
 
@@ -68,6 +79,7 @@ pub async fn httpd_task(
 
                         let now = embassy_time::Instant::now().as_millis() + offset;
 
+                        // log::info!("offset: {:?}", core::str::from_utf8(&read_buffer[..n]));
                         (*engine).handle_request(
                             now,
                             &read_buffer[..partial_offs + n],
@@ -93,7 +105,7 @@ pub async fn httpd_task(
                         }
 
                         Response::Complete(r_len, up_len, ex) => {
-                            log::info!("handle_request -> {:?}, {:?}", r_len, up_len);
+                            // log::info!("handle_request -> {:?}, {:?}", r_len, up_len);
 
                             if let Some(r_len) = r_len {
                                 socket.write_all(&response_buffer[..r_len]).await;
@@ -107,7 +119,7 @@ pub async fn httpd_task(
                             }
                         }
                         Response::None => {
-                            log::info!("handle_request -> None");
+                            // log::info!("handle_request -> None");
                             let mut message_subscriber = UPDATES_BUS.dyn_subscriber().unwrap();
                             match embassy_time::with_timeout(
                                 Duration::from_secs(5),
@@ -116,7 +128,7 @@ pub async fn httpd_task(
                             .await
                             {
                                 Ok(message) => {
-                                    log::info!("update: {:?}", message.1);
+                                    // log::info!("update: {:?}", message.1);
                                     socket.write_all(&message.0[..message.1]).await;
                                 }
                                 Err(_) => {

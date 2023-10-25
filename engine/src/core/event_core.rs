@@ -11,23 +11,19 @@ pub trait EngineCore: FlatDiffSer {
     fn handle_event(
         &mut self,
         event: Self::Event,
-        sleep: &dyn FnMut(usize, Self::Callbacks),
+        sleep: &mut dyn FnMut(u64, Self::Callbacks),
     ) -> Result<bool, &'static str>;
 
     fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
 }
 
-pub type SleepFn = dyn Fn(usize, usize) -> Result<(), &'static str>;
+pub type SleepFn = dyn Fn(u64, usize) -> Result<(), &'static str>;
 
 pub trait EventEngineTrait {
     type State: FlatDiffSer;
     type Event: DeserializeOwned;
 
-    fn handle_event(
-        &mut self,
-        event: Self::Event,
-        sleep: &SleepFn,
-    ) -> Result<bool, &'static str>;
+    fn handle_event(&mut self, event: Self::Event, sleep: &SleepFn) -> Result<bool, &'static str>;
 
     fn get_state(&self) -> Self::State;
 
@@ -44,7 +40,7 @@ where
 impl<T: EngineCore + Default + Clone, const N: usize> EventEngineTrait for EventEngine<T, N>
 where
     T::Event: DeserializeOwned,
-    T::Callbacks: CallbackTrait<T>
+    T::Callbacks: CallbackTrait<T>,
 {
     type Event = T::Event;
     type State = T;
@@ -53,16 +49,12 @@ where
         self.0.clone()
     }
 
-    fn handle_event(
-        &mut self,
-        event: Self::Event,
-        sleep: &SleepFn,
-    ) -> Result<bool, &'static str> {
-        let sleep_fn = |time, callback| {
+    fn handle_event(&mut self, event: Self::Event, sleep: &SleepFn) -> Result<bool, &'static str> {
+        let mut sleep_fn = |time, callback| {
             self.1[0] = Some(callback);
             sleep(time, 0);
         };
-        self.0.handle_event(event, &sleep_fn)
+        self.0.handle_event(event, &mut sleep_fn)
     }
 
     fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool {
@@ -151,7 +143,7 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
     ) -> Option<usize> {
         let old_state = self.0.get_state();
 
-        let mut updated = self.0.update_location(location, speed);
+        let updated = self.0.update_location(location, speed);
 
         if updated {
             let new_state = self.0.get_state();

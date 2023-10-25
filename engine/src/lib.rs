@@ -3,18 +3,16 @@
 mod race;
 pub use race::Race;
 mod core;
-// use core::RequestWrapper;
-pub use crate::core::EventEngine;
 mod line;
 mod types;
 use serde::Serialize;
 
-pub type RaceEngine = EventEngine<Race, 1>;
-pub use crate::core::EventEngineTrait;
-pub use crate::core::SerdeEngine;
-pub use crate::core::SerdeEngineTrait;
-
+pub use crate::core::SleepFn;
+pub use crate::core::{EventEngine, EventEngineTrait};
 pub use crate::core::{Flat, FlatDiff};
+pub use crate::core::{SerdeEngine, SerdeEngineTrait};
+
+pub type RaceEngine = EventEngine<Race, 1>;
 
 #[derive(Serialize)]
 pub struct UpdateResp<T: Serialize> {

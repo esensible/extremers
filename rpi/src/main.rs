@@ -83,8 +83,6 @@ async fn logger_task(driver: Driver<'static, USB>) {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    // info!("Hello World!");
-
     let httpd = make_static!(Mutex::<ThreadModeRawMutex, _>::new(RaceHttpd::default()));
 
     let p = embassy_rp::init(Default::default());
@@ -158,9 +156,7 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(net_task(stack));
 
-    //control.start_ap_open("cyw43", 5).await;
     control.start_ap_wpa2("nacra17", "password", 1).await;
-    // control.start_ap_open("cyw43", 1).await;
 
     spawner.spawn(task_sleeper::sleeper_task(httpd));
 

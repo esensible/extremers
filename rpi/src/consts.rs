@@ -39,7 +39,7 @@ pub static UPDATES_BUS: PubSubChannel<
 
 #[derive(Default, Clone)]
 pub struct SleepMessage {
-    pub time: usize,
+    pub wake_time: u64,
     pub callback: usize,
 }
 
