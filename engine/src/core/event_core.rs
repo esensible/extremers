@@ -11,7 +11,7 @@ pub trait EngineCore: FlatDiffSer {
     fn handle_event(
         &mut self,
         event: Self::Event,
-        sleep: &mut dyn FnMut(u64, Self::Callbacks),
+        sleep: &mut dyn FnMut(u64, Self::Callbacks) -> Result<(), &'static str>,
     ) -> Result<bool, &'static str>;
 
     fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
@@ -50,9 +50,9 @@ where
     }
 
     fn handle_event(&mut self, event: Self::Event, sleep: &SleepFn) -> Result<bool, &'static str> {
-        let mut sleep_fn = |time, callback| {
+        let mut sleep_fn = |time, callback| -> Result<(), &'static str> {
             self.1[0] = Some(callback);
-            sleep(time, 0);
+            sleep(time, 0)
         };
         self.0.handle_event(event, &mut sleep_fn)
     }

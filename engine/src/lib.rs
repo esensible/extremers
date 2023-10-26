@@ -1,7 +1,8 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 mod race;
 pub use race::Race;
+
 mod core;
 mod line;
 mod types;

@@ -44,7 +44,7 @@ const NOT_FOUND: &[u8] = b"404 Not Found\r\n";
 const SERVER_ERROR: &[u8] = b"500 Internal Server Error\r\n";
 const CONTENT_TYPE: &[u8] = b"Content-Type: ";
 const APP_JSON: &[u8] = b"application/json\r\n";
-const TEXT_HTML: &[u8] = b"text/html\r\n";
+// const TEXT_HTML: &[u8] = b"text/html\r\n";
 
 const CONTENT_LENGTH: &[u8] = b"Content-Length: ";
 
@@ -155,13 +155,14 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                         {
                             #[derive(Serialize)]
                             struct OffsetResponse {
-                                tzOffset: i64,
+                                #[serde(rename = "tzOffset")]
+                                tz_offset: i64,
                                 offset: i64,
                                 cnt: i8,
                             }
                             let offset_response = OffsetResponse {
                                 offset: time_offset,
-                                tzOffset: TIMEZONE_OFFSET, // seconds
+                                tz_offset: TIMEZONE_OFFSET, // seconds
                                 cnt: -1,
                             };
                             let len = to_slice(&offset_response, &mut response[response_offs..])
@@ -197,7 +198,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
                 }
             }
 
-            (Some("GET"), Some(path)) if path.starts_with("/") => {
+            (Some("GET"), Some(path)) if path.starts_with('/') => {
                 let path = &path[1..];
                 if let Some(file) = lookup(path) {
                     let ext = path.split('.').last();
@@ -269,7 +270,7 @@ fn str_to_usize(s: &str) -> Result<(u64, &str), &'static [u8]> {
     let bytes = s.as_bytes();
     let mut i = 0;
 
-    while i < bytes.len() && (bytes[i] as char).is_digit(10) {
+    while i < bytes.len() && (bytes[i] as char).is_ascii_digit() {
         match (bytes[i] as char).to_digit(10) {
             Some(digit) => {
                 result = match result
@@ -297,7 +298,7 @@ fn parse_query(query: &str) -> Result<(Option<u64>, Option<u64>), &'static [u8]>
     let mut slice = query;
     let mut result: (Option<u64>, Option<u64>) = (None, None);
 
-    while slice.len() > 0 {
+    while !slice.is_empty() {
         if slice.starts_with("timestamp=") {
             let (value, new_slice) = str_to_usize(&slice["timestamp=".len()..])?;
             result.0 = Some(value);
@@ -322,8 +323,8 @@ fn itoa(n: usize, buf: &mut [u8]) {
         buf[i] = (n % 10) as u8 + b'0';
         n /= 10;
     }
-    for j in 0..i {
-        buf[j] = b' ';
+    for byte in buf[0..i].iter_mut().take(i) {
+        *byte = b' ';
     }
 }
 

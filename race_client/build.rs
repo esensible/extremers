@@ -9,7 +9,7 @@ use std::process::Command;
 fn main() -> io::Result<()> {
     // Step 1: Run `npm run build` in the `client-js/` directory.
     let output = Command::new("npm")
-        .args(&["run", "build"])
+        .args(["run", "build"])
         .current_dir("client-js")
         .output()?;
     if !output.status.success() {
@@ -24,11 +24,11 @@ fn main() -> io::Result<()> {
     // Step 2: Read the files from `client-js/dist/` and create STATIC_FILES array.
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("static_files.rs");
-    let mut f = File::create(&dest_path)?;
+    let mut f = File::create(dest_path)?;
 
     write!(
         &mut f,
-        "static STATIC_FILES: [(&'static str, &'static [u8]); {}] = [\n",
+        "static STATIC_FILES: [(&str, &[u8]); {}] = [",
         file_count
     )?;
 
@@ -51,6 +51,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    write!(&mut f, "];\n")?;
+    writeln!(&mut f, "];")?;
     Ok(())
 }

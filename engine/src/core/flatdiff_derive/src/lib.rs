@@ -81,7 +81,7 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     // println!("## {}", name);
     // println!("{}", expanded.to_string());
 
-    expanded.into()
+    expanded
 }
 
 /// Generates code for enums to implement the `Versioned` trait.
@@ -221,5 +221,5 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     // println!("## {}", name);
     // println!("{}", expanded.to_string());
 
-    expanded.into()
+    expanded
 }

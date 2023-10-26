@@ -6,12 +6,15 @@ edition = "2021"
 [lib]
 crate-type = ["lib"]
 
+[features]
+# for testing
+std = []
+
 [dependencies]
 serde_derive = "1.0.188"
 serde-json-core = "0.5"
-httparse = {version="1", default-features = false }
+httparse = { version = "1", default-features = false }
 cty = "0.2.2"
 paste = "1.0"
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 flatdiff_derive = { path = "src/core/flatdiff_derive" }
-

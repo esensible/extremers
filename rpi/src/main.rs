@@ -165,6 +165,6 @@ async fn main(spawner: Spawner) {
     }
     loop {
         Timer::after(Duration::from_secs(3)).await;
-        log::info!("done");
+        log::info!(".");
     }
 }

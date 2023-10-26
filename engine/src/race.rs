@@ -56,7 +56,7 @@ callbacks! {Race,
 }
 
 impl Race {
-    fn start(&mut self, arg: &()) {
+    fn start(&mut self, _: &()) {
         let start_time = if let State::InSequence { start_time, .. } = self.state {
             start_time
         } else {
@@ -64,7 +64,7 @@ impl Race {
         };
 
         self.state = State::Racing {
-            start_time: start_time,
+            start_time,
             speed: 0.0,
             heading: 0.0,
         };
@@ -78,7 +78,7 @@ impl EngineCore for Race {
     fn handle_event(
         &mut self,
         event: Self::Event,
-        sleep: &mut dyn FnMut(u64, RaceCallbacks),
+        sleep: &mut dyn FnMut(u64, RaceCallbacks) -> Result<(), &'static str>,
     ) -> Result<bool, &'static str> {
         match event.event {
             EventType::Activate => {
@@ -100,41 +100,40 @@ impl EngineCore for Race {
                 )
             }
             EventType::BumpSeq { timestamp, seconds } => {
-                let new_start = match &mut self.state {
+                match &mut self.state {
                     State::InSequence { start_time, .. } => {
                         if seconds == 0 {
                             // round down to nearest minute
                             *start_time -= (*start_time - timestamp) % 60000;
                         } else {
                             // apply offset
-                            let abs_seconds = seconds.abs() as u64;
+                            let abs_seconds = seconds.unsigned_abs() as u64;
                             if seconds.is_negative() {
                                 *start_time += abs_seconds * 1000;
                             } else {
                                 *start_time -= abs_seconds * 1000;
                             }
                         }
-                        *start_time
+                        sleep(*start_time, <()>::new(Race::start, ()))?;
                     }
 
                     _ => {
                         // changing states - set absolute start time
-                        let abs_seconds = seconds.abs() as u64;
+                        let abs_seconds = seconds.unsigned_abs() as u64;
                         let new_start = if seconds.is_negative() {
                             timestamp - abs_seconds * 1000
                         } else {
                             timestamp + abs_seconds * 1000
                         };
+                        sleep(new_start, <()>::new(Race::start, ()))?;
+
+                        // update now that start is scheduled
                         self.state = State::InSequence {
                             start_time: new_start,
                             speed: 0.0,
                         };
-                        new_start
                     }
                 };
-                // FIXME: This is bad if GPS hasn't been fixed for the first time
-                // should detect return type and refuse to change state if it's false
-                sleep(new_start, <()>::new(Race::start, ()));
                 Ok(true)
             }
             EventType::RaceFinish => {
@@ -186,3 +185,7 @@ impl EngineCore for Race {
         updated
     }
 }
+
+#[cfg(test)]
+#[path = "./race_tests.rs"]
+mod race_tests;
