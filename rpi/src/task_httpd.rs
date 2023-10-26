@@ -91,7 +91,11 @@ pub async fn httpd_task(
 
                     if let Err(len) = response {
                         log::warn!("handle_request error: {:?}", len);
-                        socket.write_all(&response_buffer[..len]).await;
+                        let result = socket.write_all(&response_buffer[..len]).await;
+                        if result.is_err() {
+                            log::warn!("write error: {:?}", result);
+                            break;
+                        }
                         partial_offs = 0;
                         continue;
                     }
@@ -99,7 +103,7 @@ pub async fn httpd_task(
                     let response = response.unwrap();
 
                     match response {
-                        Response::Partial(to_go) => {
+                        Response::Partial(_to_go) => {
                             partial_offs = n;
                             continue;
                         }
@@ -108,10 +112,18 @@ pub async fn httpd_task(
                             // log::info!("handle_request -> {:?}, {:?}", r_len, up_len);
 
                             if let Some(r_len) = r_len {
-                                socket.write_all(&response_buffer[..r_len]).await;
+                                let result = socket.write_all(&response_buffer[..r_len]).await;
+                                if result.is_err() {
+                                    log::warn!("write error: {:?}", result);
+                                    break;
+                                }
                             }
                             if let Some(ex) = ex {
-                                socket.write_all(ex).await;
+                                let result = socket.write_all(ex).await;
+                                if result.is_err() {
+                                    log::warn!("write error: {:?}", result);
+                                    break;
+                                }
                             }
                             if let Some(up_len) = up_len {
                                 update.1 = up_len;
@@ -129,16 +141,21 @@ pub async fn httpd_task(
                             {
                                 Ok(message) => {
                                     // log::info!("update: {:?}", message.1);
-                                    socket.write_all(&message.0[..message.1]).await;
+                                    let result = socket.write_all(&message.0[..message.1]).await;
+                                    if result.is_err() {
+                                        log::warn!("write error: {:?}", result);
+                                        break;
+                                    }
                                 }
                                 Err(_) => {
-                                    socket.write_all(b"HTTP/1.1 204 Timeout\r\n\r\n").await;
+                                    let result =
+                                        socket.write_all(b"HTTP/1.1 204 Timeout\r\n\r\n").await;
+                                    if result.is_err() {
+                                        log::warn!("write error: {:?}", result);
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        _ => {
-                            log::warn!("Invalid response type");
-                            break;
                         }
                     }
                 }

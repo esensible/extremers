@@ -5,8 +5,7 @@ use embassy_time::{with_timeout, Duration};
 use lib_httpd::{EngineHttpdTrait, RaceHttpd};
 
 use crate::consts::{
-    SleepMessage, UpdateMessage, MAX_SOCKETS, OFFSET_LSB, OFFSET_MSB, SLEEP_BUS, UPDATES_BUS,
-    UPDATE_BUF_SIZE,
+    SleepMessage, UpdateMessage, OFFSET_LSB, OFFSET_MSB, SLEEP_BUS, UPDATES_BUS, UPDATE_BUF_SIZE,
 };
 
 #[embassy_executor::task]
@@ -59,7 +58,7 @@ pub async fn sleeper_task(
                     //
                     // !!!! sleep timed out - nominal case !!!!
                     //
-                    Err(TimeoutError) => {
+                    Err(_timeout_error) => {
                         // log::info!("sleep timed out");
 
                         let mut buffer = [0u8; UPDATE_BUF_SIZE];
@@ -71,12 +70,6 @@ pub async fn sleeper_task(
                             let update = UpdateMessage(buffer, len);
                             UPDATES_BUS.publish_immediate(update);
                         }
-                        sleep_time = None;
-                    }
-
-                    // something not good happened
-                    Err(_) => {
-                        log::warn!("Error waiting on sleep bus");
                         sleep_time = None;
                     }
                 }

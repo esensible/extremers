@@ -66,7 +66,7 @@ impl<const N: usize> RingBuffer<N> {
                 cursor = partial_len;
                 let result = self.reader.read(&mut self.buf[cursor..]).await;
                 if result.is_err() {
-                    log::info!("RX error");
+                    // log::info!("RX error");
                     return None;
                 }
                 self.read_ptr = 0;
@@ -142,7 +142,7 @@ impl<const N: usize> NMEAParser<N> {
         loop {
             let token = self.0.next_token().await;
             if token.is_none() {
-                continue;
+                return None;
             }
             let token = token.unwrap();
             match &mut message {

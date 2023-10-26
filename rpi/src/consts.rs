@@ -1,10 +1,9 @@
 use core::sync::atomic::AtomicU32;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
-use embassy_time::Duration;
 
 pub const PORT: u16 = 80;
-pub const TIMEOUT: Duration = Duration::from_secs(10);
+// pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub const RX_BUF_SIZE: usize = 2048;
 pub const TX_BUF_SIZE: usize = 2048;
 pub const READ_BUF_SIZE: usize = 4096;

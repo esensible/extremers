@@ -13,51 +13,34 @@ mod tests;
 mod consts;
 use consts::*;
 mod nmea_parser;
-use nmea_parser::*;
 mod task_gps;
 mod task_httpd;
 mod task_sleeper;
 
-// use {defmt_rtt as _, panic_probe as _};
-use ::core::panic::PanicInfo;
 use cyw43_pio::PioSpi;
-// use defmt::*;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::UART1;
+use embassy_rp::peripherals::USB;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::uart::{
-    Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx, UartTx,
-};
-use embassy_time::{with_timeout, Duration, Timer};
-use lib_httpd::{EngineHttpdTrait, RaceHttpd, Response};
-
-// use embedded_io::Read;
-use defmt::*;
-use embassy_rp::peripherals::USB;
+use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embedded_io_async::Read;
-use embedded_io_async::Write;
+use embassy_time::{Duration, Timer};
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
-// #[panic_handler]
-// fn panic(_info: &PanicInfo) -> ! {
-//     loop {}
-// }
+use lib_httpd::RaceHttpd;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     UART1_IRQ => UartInterruptHandler<UART1>;
-
 });
 
 #[embassy_executor::task]
@@ -88,13 +71,19 @@ async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
     let driver = Driver::new(p.USB, Irqs);
-    spawner.spawn(logger_task(driver)).unwrap();
+    let result = spawner.spawn(logger_task(driver));
+    if result.is_err() {
+        log::warn!("failed to spawn logger task");
+    }
 
     let mut config = UartConfig::default();
     config.baudrate = 9600;
     let uart_rx = UartRx::new(p.UART1, p.PIN_9, Irqs, p.DMA_CH1, config);
 
-    spawner.spawn(task_gps::gps_task(httpd, uart_rx)).unwrap();
+    let result = spawner.spawn(task_gps::gps_task(httpd, uart_rx));
+    if result.is_err() {
+        log::warn!("failed to spawn gps task");
+    }
 
     //
     // BEGIN WIFI SETUP
@@ -124,14 +113,17 @@ async fn main(spawner: Spawner) {
 
     let state = make_static!(cyw43::State::new());
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    spawner.spawn(wifi_task(runner));
+    let result = spawner.spawn(wifi_task(runner));
+    if result.is_err() {
+        log::warn!("failed to spawn wifi task");
+    }
 
     control.init(clm).await;
     control
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let config = Config::dhcpv4(Default::default());
+    // let config = Config::dhcpv4(Default::default());
     // Use a link-local address for communication without DHCP server
     let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
         address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
@@ -154,14 +146,24 @@ async fn main(spawner: Spawner) {
         seed
     ));
 
-    spawner.spawn(net_task(stack));
+    let result = spawner.spawn(net_task(stack));
+    if result.is_err() {
+        log::warn!("failed to spawn net task");
+    }
 
     control.start_ap_wpa2("nacra17", "password", 1).await;
 
-    spawner.spawn(task_sleeper::sleeper_task(httpd));
+    let result = spawner.spawn(task_sleeper::sleeper_task(httpd));
+    if result.is_err() {
+        log::warn!("failed to spawn sleeper task");
+    }
 
     for _ in 0..MAX_SOCKETS {
-        spawner.spawn(task_httpd::httpd_task(httpd, stack));
+        let result = spawner.spawn(task_httpd::httpd_task(httpd, stack));
+        if result.is_err() {
+            log::warn!("failed to spawn httpd task");
+            break;
+        }
     }
     loop {
         Timer::after(Duration::from_secs(3)).await;
