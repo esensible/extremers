@@ -14,6 +14,7 @@ mod tests {
 
         let result = race.handle_event(event, &mut |time, _| {
             assert_eq!(time, expected_start);
+            Ok(())
         });
 
         assert_eq!(result, Ok(true));
@@ -31,32 +32,63 @@ mod tests {
         let event = Event {
             event: EventType::Activate,
         };
-        race.handle_event(event, &mut |_, _| {});
+        race.handle_event(event, &mut |_, _| Ok(()));
         assert!(
             matches!(race.state, State::Active { speed: 0.0 }),
             "State was not Active as expected",
         );
     }
 
-    // #[test]
-    // fn test_line_stbd() {
-    //     let mut race = Race::default();
-    //     let event = Event {
-    //         event: EventType::LineStbd,
-    //     };
-    //     race.handle_event(event, &mut |_, _| {});
-    //     assert!(matches!(race.line, Line::Stbd { .. }) || matches!(race.line, Line::Both { .. }));
-    // }
+    #[test]
+    fn test_line() {
+        let mut race = Race::default();
+        let loc1 = (38.3, -134.2);
+        let loc2 = (32.3, -113.2);
 
-    // #[test]
-    // fn test_line_port() {
-    //     let mut race = Race::default();
-    //     let event = Event {
-    //         event: EventType::LinePort,
-    //     };
-    //     race.handle_event(event, &mut |_, _| {});
-    //     assert!(matches!(race.line, Line::Port { .. }) || matches!(race.line, Line::Both { .. }));
-    // }
+        let speed = (18.0, 358.1);
+
+        // set a location for stbd
+        let result = race.update_location(Some(loc1), Some(speed));
+        assert_eq!(result, true);
+
+        let event = Event {
+            event: EventType::LineStbd,
+        };
+        let result = race.handle_event(event, &mut |_, _| Ok(()));
+        assert_eq!(result, Ok(true));
+        assert!(matches!(
+            race.line,
+            Line::Stbd {
+                location: Location { .. }
+            }
+        ));
+
+        // set a new location for stbd
+        let result = race.update_location(Some(loc2), Some(speed));
+        assert_eq!(result, true);
+        let event = Event {
+            event: EventType::LineStbd,
+        };
+        assert!(matches!(race.line, Line::Stbd { .. }));
+
+        // set port and check that line is Both
+        let result = race.update_location(Some(loc1), Some(speed));
+        assert_eq!(result, true);
+        let event = Event {
+            event: EventType::LinePort,
+        };
+        let result = race.handle_event(event, &mut |_, _| Ok(()));
+        assert_eq!(result, Ok(true));
+        assert!(matches!(race.line, Line::Both { .. }));
+
+        // set a new location for port
+        let result = race.update_location(Some(loc2), Some(speed));
+        assert_eq!(result, true);
+        let event = Event {
+            event: EventType::LinePort,
+        };
+        assert!(matches!(race.line, Line::Both { .. }));
+    }
 
     #[test]
     fn test_bump_sequence() {
@@ -98,7 +130,7 @@ mod tests {
         let event = Event {
             event: EventType::RaceFinish,
         };
-        race.handle_event(event, &mut |_, _| {});
+        race.handle_event(event, &mut |_, _| Ok(()));
         assert!(
             matches!(race.state, State::Idle),
             "State was not Idle as expected",

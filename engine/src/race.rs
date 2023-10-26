@@ -9,7 +9,7 @@ use crate::types::Location;
 
 #[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
 pub struct Race {
-    // #[delta(skip)]
+    #[delta(skip)]
     location: Location,
     line: Line,
     state: State,

@@ -9,24 +9,20 @@ pub enum Line {
     #[default]
     None,
 
-    // #[delta(skip_fields)]
-    Stbd {
-        location: Location,
-    },
+    #[delta(skip_fields)]
+    Stbd { location: Location },
 
-    // #[delta(skip_fields)]
-    Port {
-        location: Location,
-    },
+    #[delta(skip_fields)]
+    Port { location: Location },
 
     Both {
         time: f64,
         point: u8,
 
-        // #[delta(skip)]
+        #[delta(skip)]
         stbd: Location,
 
-        // #[delta(skip)]
+        #[delta(skip)]
         port: Location,
     },
 }
@@ -34,6 +30,9 @@ pub enum Line {
 impl Line {
     pub fn set_stbd(&mut self, location: Location) {
         match self {
+            Line::None => {
+                *self = Line::Stbd { location };
+            }
             Line::Stbd { location: loc } => {
                 *loc = location;
             }
@@ -48,12 +47,14 @@ impl Line {
             Line::Both { stbd, .. } => {
                 *stbd = location;
             }
-            _ => {}
         }
     }
 
     pub fn set_port(&mut self, location: Location) {
         match self {
+            Line::None => {
+                *self = Line::Port { location };
+            }
             Line::Port { location: loc } => {
                 *loc = location;
             }
@@ -68,7 +69,6 @@ impl Line {
             Line::Both { port, .. } => {
                 *port = location;
             }
-            _ => {}
         }
     }
 }
