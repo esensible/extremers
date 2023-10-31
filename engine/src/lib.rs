@@ -4,6 +4,7 @@ mod race;
 pub use race::Race;
 
 mod core;
+mod geo_math;
 mod line;
 mod types;
 use serde::Serialize;

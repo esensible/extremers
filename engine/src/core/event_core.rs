@@ -14,7 +14,12 @@ pub trait EngineCore: FlatDiffSer {
         sleep: &mut dyn FnMut(u64, Self::Callbacks) -> Result<(), &'static str>,
     ) -> Result<bool, &'static str>;
 
-    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
+    fn update_location(
+        &mut self,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
+    ) -> bool;
 }
 
 pub type SleepFn = dyn Fn(u64, usize) -> Result<(), &'static str>;
@@ -27,7 +32,12 @@ pub trait EventEngineTrait {
 
     fn get_state(&self) -> Self::State;
 
-    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool;
+    fn update_location(
+        &mut self,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
+    ) -> bool;
 
     fn handle_sleep(&mut self, callback: usize) -> bool;
 }
@@ -57,8 +67,13 @@ where
         self.0.handle_event(event, &mut sleep_fn)
     }
 
-    fn update_location(&mut self, location: Option<(f32, f32)>, speed: Option<(f32, f32)>) -> bool {
-        self.0.update_location(location, speed)
+    fn update_location(
+        &mut self,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
+    ) -> bool {
+        self.0.update_location(timestamp, location, speed)
     }
 
     fn handle_sleep(&mut self, callback: usize) -> bool {
@@ -85,8 +100,9 @@ pub trait SerdeEngineTrait {
 
     fn update_location(
         &mut self,
-        location: Option<(f32, f32)>,
-        speed: Option<(f32, f32)>,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
         result: &mut [u8],
     ) -> Option<usize>;
 
@@ -137,13 +153,14 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
 
     fn update_location(
         &mut self,
-        location: Option<(f32, f32)>,
-        speed: Option<(f32, f32)>,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
         result: &mut [u8],
     ) -> Option<usize> {
         let old_state = self.0.get_state();
 
-        let updated = self.0.update_location(location, speed);
+        let updated = self.0.update_location(timestamp, location, speed);
 
         if updated {
             let new_state = self.0.get_state();

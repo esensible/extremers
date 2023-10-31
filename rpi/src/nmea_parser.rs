@@ -21,14 +21,14 @@ pub enum Mode {
 pub struct GNRMC {
     pub utc_time: Option<u32>,
     pub status: Option<Status>,
-    pub latitude: Option<f32>,
+    pub latitude: Option<f64>,
     pub ns_indicator: Option<char>,
-    pub longitude: Option<f32>,
+    pub longitude: Option<f64>,
     pub ew_indicator: Option<char>,
-    pub speed_over_ground: Option<f32>,
-    pub course_over_ground: Option<f32>,
+    pub speed_over_ground: Option<f64>,
+    pub course_over_ground: Option<f64>,
     pub date: Option<u32>,
-    pub magnetic_variation: Option<f32>,
+    pub magnetic_variation: Option<f64>,
     pub ew_indicator_mag: Option<char>,
     pub mode: Option<Mode>,
 }
@@ -184,8 +184,8 @@ impl<const N: usize> NMEAParser<N> {
                         }
                         2 => {
                             gnrmc.latitude = if token.len() >= 7 {
-                                let degrees = token[0..2].parse::<f32>().ok()?;
-                                let minutes = token[2..].parse::<f32>().ok()?;
+                                let degrees = token[0..2].parse::<f64>().ok()?;
+                                let minutes = token[2..].parse::<f64>().ok()?;
                                 Some(degrees + minutes / 60.0)
                             } else {
                                 None
@@ -194,8 +194,8 @@ impl<const N: usize> NMEAParser<N> {
                         3 => gnrmc.ns_indicator = token.chars().next(),
                         4 => {
                             gnrmc.longitude = if token.len() >= 7 {
-                                let degrees = token[0..3].parse::<f32>().ok()?;
-                                let minutes = token[3..].parse::<f32>().ok()?;
+                                let degrees = token[0..3].parse::<f64>().ok()?;
+                                let minutes = token[3..].parse::<f64>().ok()?;
                                 Some(degrees + minutes / 60.0)
                             } else {
                                 None
@@ -204,14 +204,14 @@ impl<const N: usize> NMEAParser<N> {
                         5 => gnrmc.ew_indicator = token.chars().next(),
                         6 => {
                             // log::info!("speed: {}", token);
-                            gnrmc.speed_over_ground = token.parse::<f32>().ok()
+                            gnrmc.speed_over_ground = token.parse::<f64>().ok()
                         }
                         7 => {
                             // log::info!("course: {}", token);
-                            gnrmc.course_over_ground = token.parse::<f32>().ok()
+                            gnrmc.course_over_ground = token.parse::<f64>().ok()
                         }
                         8 => gnrmc.date = date_to_epoch(&token),
-                        9 => gnrmc.magnetic_variation = token.parse::<f32>().ok(),
+                        9 => gnrmc.magnetic_variation = token.parse::<f64>().ok(),
                         10 => gnrmc.ew_indicator_mag = token.chars().next(),
                         11 => {
                             gnrmc.mode = Some(match token {

@@ -7,6 +7,7 @@ import esbuild from 'esbuild';
 import { createFilter } from '@rollup/pluginutils';
 import image from '@rollup/plugin-image';
 import smartAsset from "rollup-plugin-smart-asset"
+import gzipPlugin from 'rollup-plugin-gzip';  // Import the plugin here
 
 function uuid(length) {
   return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
@@ -43,6 +44,7 @@ export default {
       minimize: true,
     }),
     html(),
-    terser(),
+    // terser(),
+    // gzipPlugin(),
   ]
 };

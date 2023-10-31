@@ -22,6 +22,7 @@ pub async fn gps_task(
     let mut parser = NMEAParser::<32>::new(rx);
     loop {
         let token = parser.next_token().await;
+        static mut OFFSET: u64 = 0;
         match token {
             Some(NMEAMessage::GNRMC(gnrmc)) => {
                 if let (Some(time), Some(date)) = (&gnrmc.utc_time, &gnrmc.date) {
@@ -29,9 +30,9 @@ pub async fn gps_task(
                         if OFFSET_MSB.load(Ordering::Relaxed) == 0 {
                             let gps_now = *time as u64 + *date as u64 * 24 * 60 * 60_000;
                             let uptime = embassy_time::Instant::now().as_millis() as u64;
-                            let offset = gps_now - uptime;
-                            let offset_msb = (offset >> 32) as u32;
-                            let offset_lsb = (offset & 0xFFFF_FFFF) as u32;
+                            OFFSET = gps_now - uptime;
+                            let offset_msb = (OFFSET >> 32) as u32;
+                            let offset_lsb = (OFFSET & 0xFFFF_FFFF) as u32;
 
                             OFFSET_MSB.store(offset_msb, Ordering::Relaxed);
                             OFFSET_LSB.store(offset_lsb, Ordering::Relaxed);
@@ -72,10 +73,12 @@ pub async fn gps_task(
 
                 let mut update = UpdateMessage::default();
 
+                let timestamp = unsafe { OFFSET } + embassy_time::Instant::now().as_millis() as u64;
+
                 let len = {
                     let mut engine = httpd_mutex.lock().await;
 
-                    (*engine).update_location(location, speed, &mut update.0)
+                    (*engine).update_location(timestamp, location, speed, &mut update.0)
                 };
 
                 if let Some(len) = len {

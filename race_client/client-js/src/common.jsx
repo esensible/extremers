@@ -10,16 +10,16 @@ export const [state, setState] = createSignal(null, "state");
 export const [speed, setSpeed] = createSignal(0.0, "speed");
 export const [time, setTime] = createSignal("00:00");
 export const [heading, setHeading] = createSignal(0.0, "heading");
-export const LINE_NONE = 0;
-export const LINE_PORT = 1;
-export const LINE_STBD = 2;
-export const LINE_BOTH = LINE_PORT | LINE_STBD;
+export const LINE_NONE = "None";
+export const LINE_PORT = "Port";
+export const LINE_STBD = "Stbd";
+export const LINE_BOTH = "Both";
 export const [line, setLine] = createSignal(LINE_NONE, "line");
 
 export const [startTime, setStartTime] = createSignal(null, "start_time");
 
-// const [lineSeconds, setLineSeconds] = createSignal(0);
-const [lineCross, setLineCross] = createSignal(0, "cross");
+const [lineTimestamp, _setLineTimestamp] = createSignal(0, "line_timestamp");
+const [lineCross, _setLineCross] = createSignal(50, "line_cross");
 
 
 createEffect(() => {
@@ -56,55 +56,54 @@ createEffect(() => {
 });
 
 function clickPort() {
-    postEvent("line/port")
+    postEvent("LinePort")
 }
 
 function clickStbd() {
-    postEvent("lin/stbd")
+    postEvent("LineStbd")
 }
 
-// @silkflow.effect
-// def time_to_line():
-//     seconds = line_cross_seconds.value
-//     # if state.value == STATE_SEQ:
-//     #     #FIXME: this is a foot gun
-//     #     seconds -= seq_secs.value
+const crossTime = () => {
+    const seconds = (
+        (state() == STATE_SEQ) ?
+            // -ve = early
+            lineTimestamp() - startTime() :
+            // always positive
+            lineTimestamp() - timestamp()
+    ) / 1000.0;
 
-//     neg = True if seconds < 0 else False
-//     seconds = abs(seconds)
-
-//     return (
-//         "~"
-//         if seconds > 3600
-//         else f"{'-' if neg else ''}{int(seconds/60)}:{int(abs(seconds))%60:02}"
-//     )
-
+    const neg = seconds < 0;
+    const absSeconds = Math.abs(seconds);
+    if (absSeconds > 3600) {
+        return "~";
+    }
+    return `${neg ? "-" : ""}${Math.floor(absSeconds / 60)}:${Math.floor(absSeconds) % 60}`;
+}
 
 const MARGIN = 5;
 
 
 const crossStyle = () => {
-    const value = int(lineCross());
+    const value = lineCross();
     return value < 50 - MARGIN ? { left: value } : { right: 100 - value };
 }
 
 export const LineButtons = () => {
     if (line() == LINE_BOTH) {
         return <div class="wrapper">
-            <div class="z-index"><span class="center-text">{time}</span></div>
-            <div class="floating-square" style={crossStyle}>
-                <button class="line trans" onClick={clickPort}>
-                    <span class="bottom-left">Port</span>
-                </button>
-                <button class="line trans" onClick={clickStbd}>
-                    <span class="bottom-right">Stbd</span>
-                </button>
-            </div>
+            <div class="z-index"><span class="center-text">{crossTime}</span></div>
+            <div class="floating-square" style={crossStyle}></div>
+            <button class="line trans" onClick={clickPort}>
+                <span class="bottom-left">Port</span>
+            </button>
+            <button class="line trans" onClick={clickStbd}>
+                <span class="bottom-right">Stbd</span>
+            </button>
         </div>
     }
 
-    const portClass = (line() & LINE_PORT) ? "line refresh" : "line";
-    const stbdClass = (line() & LINE_STBD) ? "line refresh" : "line";
+    const portClass = () => (line() == LINE_PORT) ? "line refresh" : "line";
+    const stbdClass = () => (line() == LINE_STBD) ? "line refresh" : "line";
 
     return <div class="wrapper">
         <button class={portClass} onClick={clickPort}>

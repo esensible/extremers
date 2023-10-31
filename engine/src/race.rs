@@ -1,6 +1,7 @@
 use ::serde::ser::SerializeStruct;
 use ::serde::Deserialize;
 use ::serde::Serializer;
+use core::f64::consts::PI;
 
 use crate::callbacks;
 use crate::core::{EngineCore, FlatDiffSer};
@@ -20,16 +21,16 @@ enum State {
     #[default]
     Idle,
     Active {
-        speed: f32,
+        speed: f64,
     },
     InSequence {
         start_time: u64,
-        speed: f32,
+        speed: f64,
     },
     Racing {
         start_time: u64,
-        speed: f32,
-        heading: f32,
+        speed: f64,
+        heading: f64,
     },
 }
 
@@ -150,11 +151,17 @@ impl EngineCore for Race {
 
     fn update_location(
         &mut self,
-        new_location: Option<(f32, f32)>,
-        new_speed: Option<(f32, f32)>,
+        timestamp: u64,
+        new_location: Option<(f64, f64)>,
+        new_speed: Option<(f64, f64)>,
     ) -> bool {
         let mut updated = false;
 
+        let new_location = if let Some((lat, lon)) = new_location {
+            Some((lat * PI / 180.0, lon * PI / 180.0))
+        } else {
+            None
+        };
         if let Some((new_lat, new_lon)) = new_location {
             self.location = Location {
                 lat: new_lat,
@@ -183,6 +190,13 @@ impl EngineCore for Race {
             }
         }
 
+        if let Some(location) = new_location {
+            if let Some((speed, heading)) = new_speed {
+                let heading = heading * PI / 180.0;
+                self.line
+                    .update_location(timestamp, location, heading, speed);
+            }
+        }
         updated
     }
 }

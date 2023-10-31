@@ -29,8 +29,9 @@ pub trait EngineHttpdTrait {
 
     fn update_location(
         &mut self,
-        location: Option<(f32, f32)>,
-        heading: Option<(f32, f32)>,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        heading: Option<(f64, f64)>,
         updates: &mut [u8],
     ) -> Option<usize>;
 
@@ -233,15 +234,16 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
     fn update_location(
         &mut self,
-        location: Option<(f32, f32)>,
-        speed: Option<(f32, f32)>,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
         updates: &mut [u8],
     ) -> Option<usize> {
         let (header_len, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
 
         let len = self
             .0
-            .update_location(location, speed, &mut updates[header_len..]);
+            .update_location(timestamp, location, speed, &mut updates[header_len..]);
 
         if let Some(len) = len {
             itoa(len, &mut updates[content_len_offs..content_len_offs + 5]);
