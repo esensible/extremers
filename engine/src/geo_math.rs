@@ -160,6 +160,7 @@ pub fn seconds_to_line(
     const KNOTS_TO_MPS: f64 = 0.514444; // conversion factor from knots to meters per second
 
     let boat_speed = fmax(boat_speed, 1e-5) * KNOTS_TO_MPS;
+    let line_length = fmax(line_length, 1.0);
 
     let stbd_heading = bearing(boat_lat, boat_lon, stbd_lat, stbd_lon);
     let port_heading = bearing(boat_lat, boat_lon, port_lat, port_lon);
