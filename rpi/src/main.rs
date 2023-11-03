@@ -120,7 +120,7 @@ async fn main(spawner: Spawner) {
 
     control.init(clm).await;
     control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
+        .set_power_management(cyw43::PowerManagementMode::Performance)
         .await;
 
     // let config = Config::dhcpv4(Default::default());
@@ -166,7 +166,7 @@ async fn main(spawner: Spawner) {
         }
     }
     loop {
-        Timer::after(Duration::from_secs(3)).await;
+        Timer::after(Duration::from_secs(10)).await;
         log::info!(".");
     }
 }

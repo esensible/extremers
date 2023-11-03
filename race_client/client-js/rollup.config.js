@@ -23,8 +23,8 @@ export default {
   cache: false,
   plugins: [
     resolve(),
-    // image(),
-    // smartAsset({mode: "copy"}),
+    image(),
+    // smartAsset({ mode: "copy" }),
     babel({
       babelHelpers: 'bundled',
       presets: [
@@ -44,7 +44,7 @@ export default {
       minimize: true,
     }),
     html(),
-    // terser(),
+    terser(),
     // gzipPlugin(),
   ]
 };

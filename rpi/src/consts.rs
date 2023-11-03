@@ -6,11 +6,11 @@ pub const PORT: u16 = 80;
 // pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub const RX_BUF_SIZE: usize = 2048;
 pub const TX_BUF_SIZE: usize = 2048;
-pub const READ_BUF_SIZE: usize = 4096;
-pub const RESPONSE_BUF_SIZE: usize = 4096;
-pub const UPDATE_BUF_SIZE: usize = 4096;
+pub const READ_BUF_SIZE: usize = 1024;
+pub const RESPONSE_BUF_SIZE: usize = 1024;
+pub const UPDATE_BUF_SIZE: usize = 1024;
 
-pub const MAX_SOCKETS: usize = 4;
+pub const MAX_SOCKETS: usize = 6;
 
 // offset between tick timer and GPS time in ms
 // this isn't super safe, but realistically, the MSB will only change every 50 days
