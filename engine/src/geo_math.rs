@@ -7,7 +7,7 @@ use core::f64::consts::PI;
 
 use libm::{asin, atan2, cos, fmax, fmod, pow, sin, sqrt};
 
-fn local_radius(lat: f64) -> f64 {
+fn _local_radius(lat: f64) -> f64 {
     let wgs_ellipsoid = (6378137.0, 6356752.314);
 
     let f1 = pow(wgs_ellipsoid.0 * wgs_ellipsoid.0 * cos(lat), 2.0);
@@ -153,7 +153,7 @@ pub fn seconds_to_line(
     stbd_lon: f64,
     port_lat: f64,
     port_lon: f64,
-    line_heading: f64,
+    _line_heading: f64,
     line_length: f64,
     r: f64,
 ) -> (bool, f64, f64) {

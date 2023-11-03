@@ -119,7 +119,7 @@ impl Line {
                 length,
                 ..
             } => {
-                let (on_line, new_point, new_time) = seconds_to_line(
+                let (_on_line, new_point, new_time) = seconds_to_line(
                     location.0, location.1, heading, speed, stbd.lat, stbd.lon, port.lat, port.lon,
                     *bearing, *length, R,
                 );

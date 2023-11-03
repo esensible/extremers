@@ -201,3 +201,7 @@ where
         EventEngine(T::default(), [None; N])
     }
 }
+
+#[cfg(test)]
+#[path = "./event_core_tests.rs"]
+mod event_core_tests;

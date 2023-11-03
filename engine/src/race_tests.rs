@@ -2,7 +2,7 @@
 mod tests {
     use crate::core::*;
     use crate::race::*;
-
+    
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
         let event = Event {
             event: EventType::BumpSeq {
@@ -205,9 +205,9 @@ mod tests {
     #[test]
     fn field_test() {
         let mut race = Race::default();
-        const start_time: u64 = 1000;
+        const START_TIME: u64 = 1000;
 
-        bump(&mut race, start_time, 30, 31_000);
+        bump(&mut race, START_TIME, 30, 31_000);
         race.start(&());
 
 
