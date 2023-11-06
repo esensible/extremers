@@ -2,11 +2,10 @@
 
 pub mod callbacks;
 mod event_core;
-mod flatdiff;
 mod serde_engine;
 use serde::Serialize;
 
-pub use crate::flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
+pub use flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
 pub use flatdiff_derive::FlatDiffSer;
 
 pub use crate::event_core::SleepFn;
@@ -25,3 +24,8 @@ impl<T: Serialize> UpdateResp<T> {
         Self { cnt, update }
     }
 }
+
+pub mod test_engine;
+
+#[cfg(test)]
+mod test_flatdiff;

@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 
 use crate::callbacks::CallbackTrait;
-use crate::flatdiff::FlatDiffSer;
+use flatdiff::FlatDiffSer;
 
 pub trait EngineCore: FlatDiffSer {
     type Event: DeserializeOwned;
@@ -41,7 +41,7 @@ pub trait EventEngineTrait {
     fn handle_sleep(&mut self, callback: usize) -> bool;
 }
 
-pub struct EventEngine<T: EngineCore, const N: usize>(T, [Option<T::Callbacks>; N])
+pub struct EventEngine<T: EngineCore, const N: usize>(pub T, [Option<T::Callbacks>; N])
 where
     T::Event: DeserializeOwned,
     T::Callbacks: CallbackTrait<T>;

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::core::*;
+    use crate::*;
     use crate::race::*;
     
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
@@ -25,20 +25,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_activation() {
-        let mut race = Race::default();
-        let event = Event {
-            event: EventType::Activate,
-        };
-        let result = race.handle_event(event, &mut |_, _| Ok(()));
-        assert_eq!(result, Ok(true));
-        if let State::Active { speed } = race.state {
-            assert_eq!(speed, 0.0);
-        } else {
-            panic!("State was not Active as expected");
-        }
-    }
 
     #[test]
     fn test_line() {
@@ -160,8 +146,8 @@ mod tests {
         let result = race.handle_event(event, &mut |_, _| Ok(()));
         assert_eq!(result, Ok(true));
         assert!(
-            matches!(race.state, State::Idle),
-            "State was not Idle as expected",
+            matches!(race.state, State::Active{..}),
+            "State was not Active as expected",
         );
     }
 

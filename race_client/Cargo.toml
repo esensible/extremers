@@ -20,3 +20,4 @@ engine = {path = '../engine'}
 lib_httpd = {path = '../lib_httpd' }
 
 flatdiff_derive = { path = "../engine/src/flatdiff_derive" }
+flatdiff = { path = "../engine/src/flatdiff" }

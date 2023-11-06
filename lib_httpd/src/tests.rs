@@ -1,19 +1,38 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::engine_httpd::{EngineHttpdTrait, Response};
-    use crate::RaceHttpd;
+    use crate::*;
+    use engine::test_engine::*;
+    use engine::EventEngine;
+
+    #[derive(Default)]
+    pub struct StaticFiles { }
+
+    impl StaticHttpTrait for StaticFiles {
+        fn lookup(key: &str) -> Option<&'static [u8]> {
+            if key == "index.html" {
+                Some(b"<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Test</h1></body></html>")
+            } else {
+                None
+            }
+        }
+
+    }
+
+    type AnEngine = EngineHttpd<EventEngine<ACore, 1>, StaticFiles>;
 
     macro_rules! lines {
         ($($element:expr),+ $(,)? ) => {
             concat!($( $element, "\r\n", )+).as_bytes()
         };
     }
-    fn sleep(_: usize, _: usize) {}
+    fn sleep(_: u64, _: usize) -> Result<(), &'static str> {
+        Ok(())
+    }
 
     #[test]
     fn test_nano_fail1() {
-        let mut httpd = RaceHttpd::default();
+        let mut httpd = AnEngine::default(); 
+    
         let mut result = [0u8; 2048];
         let mut update = [0u8; 2048];
 
@@ -31,7 +50,8 @@ mod tests {
             "Accept-Language: en-GB,en-US;q=0.9,en;q=0.8\r\n",
             "\r\n"
         );
-        let response = httpd.handle_request(event.as_bytes(), &mut result, &mut update, &sleep);
+        let response =
+            httpd.handle_request(0, event.as_bytes(), &mut result, &mut update, &mut sleep);
 
         let response = response.unwrap();
         if let Response::Complete(response, updates, extra) = response {
@@ -39,11 +59,11 @@ mod tests {
             assert_eq!(extra, None);
             assert_eq!(updates, None);
 
-            println!(
-                "response[{}], {:?}",
-                response,
-                String::from_utf8_lossy(&result[..response])
-            );
+            // println!(
+            //     "response[{}], {:?}",
+            //     response,
+            //     String::from_utf8_lossy(&result[..response])
+            // );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
@@ -51,13 +71,13 @@ mod tests {
 
     #[test]
     fn test_static() {
-        let mut httpd = RaceHttpd::default();
+        let mut httpd = AnEngine::default(); 
         let mut result = [0u8; 2048];
         let mut update = [0u8; 2048];
 
         let event = b"GET /index.html HTTP/1.1\r\n\r\n";
 
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &mut sleep);
 
         let response = response.unwrap();
         if let Response::Complete(response, updates, extra) = response {
@@ -71,7 +91,7 @@ mod tests {
 
     #[test]
     fn test_partial() {
-        let mut httpd = RaceHttpd::default();
+        let mut httpd = AnEngine::default(); 
         let mut result = [0u8; 2048];
         let mut update = [0u8; 2048];
 
@@ -89,27 +109,27 @@ mod tests {
             "Content-Length: 20",
         );
 
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &mut sleep);
 
         assert!(response.is_err());
         let response = response.expect_err("Expected error");
-        println!("Response: {:?}", core::str::from_utf8(&result[..response]));
+        // println!("Response: {:?}", core::str::from_utf8(&result[..response]));
     }
 
     #[test]
     fn test_engine() {
-        let mut httpd = RaceHttpd::default();
+        let mut httpd = AnEngine::default(); 
         let mut result = [0u8; 2048];
         let mut update = [0u8; 2048];
 
         let event = b"GET /updates?timestamp=23&cnt=1000 HTTP/1.1\r\n\r\n";
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &mut sleep);
 
         let response = response.unwrap();
         assert_eq!(response, Response::None);
 
         let event = b"GET /updates?timestamp=23&cnt=0 HTTP/1.1\r\n\r\n";
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &mut sleep);
 
         let response = response.unwrap();
 
@@ -117,11 +137,11 @@ mod tests {
             assert_eq!(updates, None);
             assert_eq!(extra, None);
             if let Some(response) = response {
-                println!(
-                    "response[{}], {:?}",
-                    response,
-                    String::from_utf8_lossy(&result[..response])
-                );
+                // println!(
+                //     "response[{}], {:?}",
+                //     response,
+                //     String::from_utf8_lossy(&result[..response])
+                // );
             } else {
                 panic!("Unexpected response: {:?}", response);
             }
@@ -130,7 +150,7 @@ mod tests {
         }
 
         let payload = json!({
-            "event": "Activate"
+            "event": {"Event1" : {"value": 23}}
         })
         .to_string();
 
@@ -146,24 +166,24 @@ mod tests {
             payload,
         );
 
-        let response = httpd.handle_request(event.as_bytes(), &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event.as_bytes(), &mut result, &mut update, &mut sleep);
         let response = response.unwrap();
 
         if let Response::Complete(response, updates, extra) = response {
             let updates = updates.unwrap();
-            assert_eq!(updates, 123);
+            assert_eq!(updates, 102);
             assert_eq!(extra, None);
             let response = response.unwrap();
-            println!(
-                "response[{}], {:?}",
-                response,
-                String::from_utf8_lossy(&result[..response])
-            );
-            println!(
-                "updates[{}], {:?}",
-                updates,
-                String::from_utf8_lossy(&update[..updates])
-            );
+            // println!(
+            //     "response[{}], {:?}",
+            //     response,
+            //     String::from_utf8_lossy(&result[..response])
+            // );
+            // println!(
+            //     "updates[{}], {:?}",
+            //     updates,
+            //     String::from_utf8_lossy(&update[..updates])
+            // );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
