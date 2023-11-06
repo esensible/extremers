@@ -4,7 +4,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-#![feature(async_fn_in_trait)]
 #![allow(incomplete_features)]
 
 #[cfg(test)]
@@ -35,7 +34,7 @@ use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
-use race_client::RaceHttpd;
+use engine_race::RaceHttpd;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;

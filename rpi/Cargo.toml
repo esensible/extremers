@@ -74,7 +74,7 @@ portable-atomic = { version = "0.3", default-features = false }
 
 
 lib_httpd = { path = "../lib_httpd/" }
-race_client = { path = "../race_client/" }
+engine_race = { path = "../engine_race/" }
 
 
 [profile.release]

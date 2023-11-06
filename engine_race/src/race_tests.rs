@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use crate::*;
     use crate::race::*;
     
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {

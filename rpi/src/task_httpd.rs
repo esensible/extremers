@@ -7,7 +7,7 @@ use embassy_sync::pubsub::PubSubBehavior;
 use embedded_io_async::Write;
 
 use lib_httpd::Response;
-use race_client::RaceHttpd;
+use engine_race::RaceHttpd;
 
 use crate::consts::*;
 

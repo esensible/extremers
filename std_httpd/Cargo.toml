@@ -24,4 +24,4 @@ tower-http = { version = "0.4.0", features = ["fs", "trace"] }
 
 chrono = "0.4"
 
-race_client= {path="../race_client" }
+engine_race= {path="../engine_race" }

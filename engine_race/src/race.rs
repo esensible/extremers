@@ -1,6 +1,5 @@
 use ::serde::ser::SerializeStruct;
 use ::serde::Deserialize;
-use ::serde::Serializer;
 use core::f64::consts::PI;
 
 use engine::engine_callbacks;
