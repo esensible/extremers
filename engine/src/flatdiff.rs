@@ -3,8 +3,6 @@
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-pub use flatdiff_derive::FlatDiffSer;
-
 pub trait Atomic {}
 impl Atomic for i8 {}
 impl Atomic for i16 {}
@@ -119,6 +117,7 @@ mod tests {
     use super::*;
     use ::serde::{Deserialize, Serialize};
     use serde_json::json;
+    use flatdiff_derive::FlatDiffSer;
 
     #[test]
     fn test_simple() {

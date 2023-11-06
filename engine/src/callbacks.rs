@@ -1,4 +1,4 @@
-use super::EngineCore;
+use crate::event_core::EngineCore;
 
 #[derive(Copy, Clone)]
 pub struct Callback<M: EngineCore, T: Copy> {
@@ -26,11 +26,11 @@ macro_rules! callbacks {
         #[derive(Copy, Clone)]
         $vis enum $enum_name {
             $(
-                $variant($crate::core::Callback<$mut_ty, $ty>),
+                $variant($crate::callbacks::Callback<$mut_ty, $ty>),
             )*
         }
 
-        impl $crate::core::CallbackTrait<$mut_ty> for $enum_name {
+        impl $crate::callbacks::CallbackTrait<$mut_ty> for $enum_name {
             fn invoke(&self, mut_val: &mut $mut_ty) {
                 match self {
                     $(
@@ -49,7 +49,7 @@ macro_rules! callbacks {
             $(
                 impl [<_NewClosure $enum_name>] for $ty {
                     fn new(f: fn(&mut $mut_ty, &Self), value: Self) -> $enum_name {
-                        $enum_name::$variant($crate::core::Callback::new(f, value))
+                        $enum_name::$variant($crate::callbacks::Callback::new(f, value))
                     }
                 }
             )*

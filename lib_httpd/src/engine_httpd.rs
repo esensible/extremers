@@ -1,12 +1,17 @@
 use httparse::{Request, EMPTY_HEADER};
 
-use engine::{EventEngineTrait, SerdeEngine, SerdeEngineTrait, SleepFn};
-use race_client::lookup;
+use engine::{EventEngineTrait, SerdeEngine, SleepFn};
 use serde::Serialize;
 use serde_json_core::to_slice;
 
 const TIMESTAMP_TOLERANCE_MS: i64 = 50;
 const TIMEZONE_OFFSET: i64 = (10 * 60 + 30) * 60; // ACDT (s)
+
+
+pub trait StaticHttpTrait {
+    fn lookup(key: &str) -> Option<&'static [u8]>;
+}
+
 
 #[derive(PartialEq)]
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -17,26 +22,6 @@ pub enum Response {
     None,
 }
 
-pub trait EngineHttpdTrait {
-    fn handle_request(
-        &mut self,
-        timestamp: u64,
-        request: &[u8],
-        response: &mut [u8],
-        updates: &mut [u8],
-        sleep: &SleepFn,
-    ) -> Result<Response, usize>;
-
-    fn update_location(
-        &mut self,
-        timestamp: u64,
-        location: Option<(f64, f64)>,
-        heading: Option<(f64, f64)>,
-        updates: &mut [u8],
-    ) -> Option<usize>;
-
-    fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize>;
-}
 
 const HTTP_VERSION: &[u8] = b"HTTP/1.1 ";
 const OK: &[u8] = b"200 OK\r\n";
@@ -49,17 +34,19 @@ const APP_JSON: &[u8] = b"application/json\r\n";
 
 const CONTENT_LENGTH: &[u8] = b"Content-Length: ";
 
-#[derive(Default)]
-pub struct EngineHttpd<T: EventEngineTrait>(SerdeEngine<T>);
+use core::marker::PhantomData;
 
-impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
-    fn handle_request(
+#[derive(Default)]
+pub struct EngineHttpd<T: EventEngineTrait, S: StaticHttpTrait>(SerdeEngine<T>, PhantomData<S>);
+
+impl<T: EventEngineTrait, S: StaticHttpTrait> EngineHttpd<T, S> {
+    pub fn handle_request(
         &mut self,
         timestamp: u64,
         request: &[u8],
         response: &mut [u8],
         updates: &mut [u8],
-        sleep: &SleepFn,
+        sleep: &mut SleepFn,
     ) -> Result<Response, usize> {
         // Buffer to hold HTTP request headers
         let mut headers = [EMPTY_HEADER; 16];
@@ -201,7 +188,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
 
             (Some("GET"), Some(path)) if path.starts_with('/') => {
                 let path = &path[1..];
-                if let Some(file) = lookup(path) {
+                if let Some(file) = S::lookup(path) {
                     let ext = path.split('.').last();
                     let content_type: Option<&[u8]> = if let Some(ext) = ext {
                         match ext {
@@ -232,7 +219,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
         }
     }
 
-    fn update_location(
+    pub fn update_location(
         &mut self,
         timestamp: u64,
         location: Option<(f64, f64)>,
@@ -253,7 +240,7 @@ impl<T: EventEngineTrait> EngineHttpdTrait for EngineHttpd<T> {
         }
     }
 
-    fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize> {
+    pub fn handle_sleep(&mut self, updates: &mut [u8], callback: usize) -> Option<usize> {
         let (header_len, content_len_offs) = fill_header(updates, OK, Some(APP_JSON));
 
         let len = self.0.handle_sleep(&mut updates[header_len..], callback);

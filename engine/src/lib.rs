@@ -1,20 +1,18 @@
 #![cfg_attr(not(test), no_std)]
 
-mod race;
-pub use race::Race;
-
-mod core;
-mod geo_math;
-mod line;
-mod types;
+pub mod callbacks;
+mod event_core;
+mod flatdiff;
+mod serde_engine;
 use serde::Serialize;
 
-pub use crate::core::SleepFn;
-pub use crate::core::{EventEngine, EventEngineTrait};
-pub use crate::core::{Flat, FlatDiff};
-pub use crate::core::{SerdeEngine, SerdeEngineTrait};
+pub use crate::flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
+pub use flatdiff_derive::FlatDiffSer;
 
-pub type RaceEngine = EventEngine<Race, 1>;
+pub use crate::event_core::SleepFn;
+pub use crate::event_core::{EngineCore, EventEngine, EventEngineTrait};
+pub use crate::serde_engine::SerdeEngine;
+pub use callbacks as engine_callbacks;
 
 #[derive(Serialize)]
 pub struct UpdateResp<T: Serialize> {

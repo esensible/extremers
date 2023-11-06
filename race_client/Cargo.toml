@@ -9,3 +9,14 @@ crate-type = ["lib"]
 
 [build-dependencies]
 include_dir = { version="0.6", default-features = false}
+
+[dependencies]
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+serde_derive = "1.0.188"
+libm = "0.2"
+paste = "1.0"
+
+engine = {path = '../engine'}
+lib_httpd = {path = '../lib_httpd' }
+
+flatdiff_derive = { path = "../engine/src/flatdiff_derive" }

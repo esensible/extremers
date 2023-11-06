@@ -2,7 +2,7 @@ use core::sync::atomic::Ordering;
 use embassy_sync::pubsub::PubSubBehavior;
 use embassy_time::{with_timeout, Duration};
 
-use lib_httpd::{EngineHttpdTrait, RaceHttpd};
+use race_client::RaceHttpd;
 
 use crate::consts::{
     SleepMessage, UpdateMessage, OFFSET_LSB, OFFSET_MSB, SLEEP_BUS, UPDATES_BUS, UPDATE_BUF_SIZE,

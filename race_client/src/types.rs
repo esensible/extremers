@@ -1,6 +1,6 @@
 use ::serde::{Deserialize, Serialize};
 
-use crate::core::Atomic;
+use engine::Atomic;
 
 #[derive(Serialize, Deserialize, Copy, Clone, PartialEq, Default)]
 pub struct Location {

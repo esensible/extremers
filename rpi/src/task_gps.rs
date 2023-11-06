@@ -4,7 +4,7 @@ use embassy_rp::uart::{Async, UartRx};
 use embassy_sync::pubsub::PubSubBehavior;
 use embassy_time::{Duration, Timer};
 
-use lib_httpd::{EngineHttpdTrait, RaceHttpd};
+use race_client::RaceHttpd;
 
 use crate::consts::{UpdateMessage, OFFSET_LSB, OFFSET_MSB, UPDATES_BUS};
 use crate::nmea_parser::{NMEAMessage, NMEAParser};

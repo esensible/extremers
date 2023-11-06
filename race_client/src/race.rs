@@ -3,8 +3,8 @@ use ::serde::Deserialize;
 use ::serde::Serializer;
 use core::f64::consts::PI;
 
-use crate::callbacks;
-use crate::core::{EngineCore, FlatDiffSer};
+use engine::engine_callbacks;
+use engine::{EngineCore, FlatDiffSer};
 use crate::line::Line;
 use crate::types::Location;
 
@@ -16,10 +16,8 @@ pub struct Race {
     state: State,
 }
 
-#[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
+#[derive(FlatDiffSer, Copy, Clone, PartialEq)]
 enum State {
-    #[default]
-    Idle,
     Active {
         speed: f64,
     },
@@ -34,10 +32,14 @@ enum State {
     },
 }
 
+impl Default for State {
+    fn default() -> Self {
+        State::Active { speed: 0.0 }
+    }
+}
+
 #[derive(Deserialize)]
 pub enum EventType {
-    Activate,
-
     LineStbd,
     LinePort,
 
@@ -51,7 +53,7 @@ pub struct Event {
     pub event: EventType,
 }
 
-callbacks! {Race,
+engine_callbacks! {Race,
     pub RaceCallbacks {
         Start(()),
     }
@@ -76,17 +78,13 @@ impl Race {
 impl EngineCore for Race {
     type Event = Event;
     type Callbacks = RaceCallbacks;
-
+   
     fn handle_event(
         &mut self,
         event: Self::Event,
         sleep: &mut dyn FnMut(u64, RaceCallbacks) -> Result<(), &'static str>,
     ) -> Result<bool, &'static str> {
         match event.event {
-            EventType::Activate => {
-                self.state = State::Active { speed: 0.0 };
-                Ok(true)
-            }
             EventType::LineStbd => {
                 self.line.set_stbd(self.location);
                 Ok(
@@ -139,8 +137,8 @@ impl EngineCore for Race {
                 Ok(true)
             }
             EventType::RaceFinish => {
-                if !matches!(self.state, State::Idle) {
-                    self.state = State::Idle {};
+                if !matches!(self.state, State::Active{..}) {
+                    self.state = State::Active {speed: 0.0};
                     Ok(true)
                 } else {
                     Ok(false)
@@ -186,7 +184,6 @@ impl EngineCore for Race {
                     *heading = new_heading;
                     updated = true;
                 }
-                _ => {}
             }
         }
 

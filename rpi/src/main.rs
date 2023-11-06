@@ -35,7 +35,7 @@ use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
-use lib_httpd::RaceHttpd;
+use race_client::RaceHttpd;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -88,8 +88,8 @@ async fn main(spawner: Spawner) {
     //
     // BEGIN WIFI SETUP
     //
-    let fw = include_bytes!("/Users/esensible/src/extremers/rpi/cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("/Users/esensible/src/extremers/rpi/cyw43-firmware/43439A0_clm.bin");
+    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
+    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:

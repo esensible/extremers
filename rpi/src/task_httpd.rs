@@ -6,7 +6,8 @@ use embassy_time::Duration;
 use embassy_sync::pubsub::PubSubBehavior;
 use embedded_io_async::Write;
 
-use lib_httpd::{EngineHttpdTrait, RaceHttpd, Response};
+use lib_httpd::Response;
+use race_client::RaceHttpd;
 
 use crate::consts::*;
 
@@ -85,7 +86,7 @@ pub async fn httpd_task(
                             &read_buffer[..partial_offs + n],
                             &mut response_buffer,
                             &mut update.0,
-                            &sleep_fn,
+                            &mut sleep_fn,
                         )
                     };
 

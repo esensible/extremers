@@ -1,7 +1,6 @@
 //! This module provides procedural macros for deriving fine grained (per field) flatdiff data structures.
 
 extern crate proc_macro;
-// extern crate serde;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields};
@@ -21,8 +20,8 @@ pub fn derive_flatdiff(input: TokenStream) -> TokenStream {
 
 /// Generates code for structs to implement the `Versioned` trait.
 ///
-/// The generated code includes flatdiff structs with fields wrapped in `crate::core::VersionedValue`,
-/// delta structs with fields wrapped in `crate::core::DeltaType`, and the necessary methods of the `Versioned` trait.
+/// The generated code includes flatdiff structs with fields wrapped in `engine::VersionedValue`,
+/// delta structs with fields wrapped in `engine::DeltaType`, and the necessary methods of the `Versioned` trait.
 fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
@@ -37,13 +36,13 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             let field_type = &field.ty;
 
             field_diffs.push(quote! {
-                <#field_type as crate::core::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
+                <#field_type as engine::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
             });
             field_flattens.push(quote! {
-                <#field_type as crate::core::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
+                <#field_type as engine::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
             });
             field_counts.push(quote! {
-                count += <#field_type as crate::core::FlatDiffSer>::count();
+                count += <#field_type as engine::FlatDiffSer>::count();
             });
         }
 
@@ -53,7 +52,7 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl  crate::core::FlatDiffSer for #name
+        impl  engine::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
@@ -86,8 +85,8 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
 /// Generates code for enums to implement the `Versioned` trait.
 ///
-/// The generated code includes flatdiff enums with variants wrapped in `crate::core::VersionedValue` (if necessary),
-/// delta enums with variants wrapped in `crate::core::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
+/// The generated code includes flatdiff enums with variants wrapped in `engine::VersionedValue` (if necessary),
+/// delta enums with variants wrapped in `engine::DeltaType` (if necessary), and the necessary methods of the `Versioned` trait.
 fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
 
@@ -120,15 +119,15 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         rhs_match_fields.push(quote! { #field_name: #field_name_rhs });
 
                         diff_fields.push(quote! {
-                            <#field_type as crate::core::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
+                            <#field_type as engine::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
                         });
 
                         cross_diff_fields.push(quote! {
-                            <#field_type as crate::core::FlatDiffSer>::flatten::<S>(self, label, state)?;
+                            <#field_type as engine::FlatDiffSer>::flatten::<S>(self, label, state)?;
                         });
 
                         flatten_fields.push(quote! {
-                            <#field_type as crate::core::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
+                            <#field_type as engine::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
                         });
                     }
 
@@ -189,7 +188,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl crate::core::FlatDiffSer for #name
+        impl engine::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where

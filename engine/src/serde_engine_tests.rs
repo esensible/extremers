@@ -1,12 +1,9 @@
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    use crate::core::*;
-    // for callbacks!
     use crate::*;
     use ::serde::Deserialize;
     use ::serde::Serializer;
-
+    
     #[test]
     fn test_serde() {
         type AnEngine = EventEngine<ACore, 1>;
@@ -169,7 +166,7 @@ mod tests {
     }
     
 
-    fn handle_event<T: SerdeEngineTrait>(engine: &mut T, event: serde_json::Value, expected_response: serde_json::Value, _expected_sleep: Option<u64>) {
+    fn handle_event<T>(engine: &mut T, event: serde_json::Value, expected_response: serde_json::Value, _expected_sleep: Option<u64>) {
         let event = serde_json::to_vec(&event).unwrap();
         let event = event.as_slice();
 
