@@ -1,8 +1,7 @@
-
 #[cfg(test)]
 mod tests {
-    use crate::*;
     use crate::test_engine::*;
+    use crate::*;
 
     #[test]
     fn test_serde() {
@@ -32,7 +31,7 @@ mod tests {
                     }
                 }
             ),
-            serde_json::json!({"cnt": 1, "update": {"f1": 23}}),
+            serde_json::json!({"cnt": 2, "update": {"f1": 23}}),
             None,
         );
 
@@ -60,7 +59,7 @@ mod tests {
                     }
                 }
             ),
-            serde_json::json!({"cnt": 2, "update": {}}),
+            serde_json::json!({"cnt": 3, "update": {}}),
             None,
         );
 
@@ -82,7 +81,7 @@ mod tests {
             panic!("Expected Some(len)");
         };
         let result: serde_json::Value = serde_json::from_slice(&response[..len]).unwrap();
-        assert_eq!(result, serde_json::json!({"cnt": 3, "update": {"f2": 42}}));
+        assert_eq!(result, serde_json::json!({"cnt": 4, "update": {"f2": 42}}));
 
         assert_eq!(
             engine.0 .0,
@@ -107,7 +106,7 @@ mod tests {
         let result: serde_json::Value = serde_json::from_slice(&response[..len]).unwrap();
         assert_eq!(
             result,
-            serde_json::json!({"cnt": 4, "update": {"loc": true}})
+            serde_json::json!({"cnt": 5, "update": {"loc": true}})
         );
 
         assert_eq!(
@@ -133,7 +132,7 @@ mod tests {
                     }
                 }
             ),
-            serde_json::json!({"cnt": 5, "update": {"f1": 69}}),
+            serde_json::json!({"cnt": 6, "update": {"f1": 69}}),
             None,
         );
 
@@ -156,10 +155,9 @@ mod tests {
         let result: serde_json::Value = serde_json::from_slice(&response[..len]).unwrap();
         assert_eq!(
             result,
-            serde_json::json!({"cnt": 5, "update": {"f1": 69, "f2": 42, "loc": true}})
+            serde_json::json!({"cnt": 6, "update": {"f1": 69, "f2": 42, "loc": true}})
         );
     }
-
 
     fn handle_event<T: EventEngineTrait>(
         engine: &mut SerdeEngine<T>,
@@ -169,9 +167,9 @@ mod tests {
     ) {
         let event = serde_json::to_vec(&event).unwrap();
         let event = event.as_slice();
-    
+
         let mut response = [0u8; 1024];
-    
+
         // let mut sleep_called = false;
         let result = engine.handle_event(event, &mut response, &mut |_time, _cb| {
             // assert_eq!(time, expected_sleep.unwrap());
@@ -185,7 +183,7 @@ mod tests {
         };
         let result: serde_json::Value = serde_json::from_slice(&response[..len]).unwrap();
         assert_eq!(result, expected_response);
-    
+
         // assert_eq!(sleep_called, expected_sleep.is_some());
     }
 }

@@ -1,6 +1,6 @@
 use crate::event_core::{EventEngineTrait, SleepFn};
-use serde_json_core::{from_slice, to_slice};
 use flatdiff::{Flat, FlatDiff};
+use serde_json_core::{from_slice, to_slice};
 
 pub struct SerdeEngine<T: EventEngineTrait>(T, usize);
 
@@ -24,8 +24,7 @@ impl<T: EventEngineTrait> SerdeEngine<T> {
         let updated = self.0.handle_event(event, sleep)?;
         if updated {
             let new_state = self.0.get_state();
-            let delta =
-                crate::UpdateResp::new(self.1 - 1, flatdiff::FlatDiff(&new_state, &old_state));
+            let delta = crate::UpdateResp::new(self.1, flatdiff::FlatDiff(&new_state, &old_state));
             let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
             self.1 += 1;
             Ok(Some(len))
@@ -34,8 +33,12 @@ impl<T: EventEngineTrait> SerdeEngine<T> {
         }
     }
 
-    pub fn get_state(&self, state: usize, result: &mut [u8]) -> Result<Option<usize>, &'static str> {
-        if state + 1 < self.1 {
+    pub fn get_state(
+        &self,
+        state: usize,
+        result: &mut [u8],
+    ) -> Result<Option<usize>, &'static str> {
+        if state < self.1 - 1 {
             let state = self.0.get_state();
             let state = crate::UpdateResp::new(self.1 - 1, Flat(&state));
             let len = to_slice(&state, result).map_err(|_| "Failed to serialize state")?;
@@ -58,8 +61,7 @@ impl<T: EventEngineTrait> SerdeEngine<T> {
 
         if updated {
             let new_state = self.0.get_state();
-            let delta =
-                crate::UpdateResp::new(self.1 - 1, FlatDiff(&new_state, &old_state));
+            let delta = crate::UpdateResp::new(self.1, FlatDiff(&new_state, &old_state));
             let len = to_slice(&delta, result).ok()?;
             self.1 += 1;
             Some(len)
@@ -75,8 +77,7 @@ impl<T: EventEngineTrait> SerdeEngine<T> {
 
         if updated {
             let new_state = self.0.get_state();
-            let delta =
-                crate::UpdateResp::new(self.1 - 1, FlatDiff(&new_state, &old_state));
+            let delta = crate::UpdateResp::new(self.1, FlatDiff(&new_state, &old_state));
             let len = to_slice(&delta, result).ok()?;
             self.1 += 1;
             Some(len)
