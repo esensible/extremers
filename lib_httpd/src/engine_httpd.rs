@@ -9,7 +9,7 @@ const TIMESTAMP_TOLERANCE_MS: i64 = 50;
 const TIMEZONE_OFFSET: i64 = (10 * 60 + 30) * 60; // ACDT (s)
 
 #[derive(PartialEq)]
-#[cfg_attr(feature = "std", derive(Debug))]
+#[cfg_attr(test, derive(Debug))]
 pub enum Response {
     // response length (excludes additional), update length, additional response
     Complete(Option<usize>, Option<usize>, Option<&'static [u8]>),

@@ -113,7 +113,9 @@ pub struct SerdeEngine<T: EventEngineTrait>(T, usize);
 
 impl<T: EventEngineTrait + Default> Default for SerdeEngine<T> {
     fn default() -> Self {
-        // cnt starts higher to force the client to "catch up" initially
+        // self.1 is the NEXT state number
+        // initialize the NEXT state to 2 so the CURRENT state is 1
+        // the client begins with state of 0, so this forces the initial update
         SerdeEngine(T::default(), 2)
     }
 }
@@ -144,7 +146,7 @@ impl<T: EventEngineTrait> SerdeEngineTrait for SerdeEngine<T> {
     fn get_state(&self, state: usize, result: &mut [u8]) -> Result<Option<usize>, &'static str> {
         if state + 1 < self.1 {
             let state = self.0.get_state();
-            let state = crate::UpdateResp::new(self.1, crate::core::Flat(&state));
+            let state = crate::UpdateResp::new(self.1 - 1, crate::core::Flat(&state));
             let len = to_slice(&state, result).map_err(|_| "Failed to serialize state")?;
             Ok(Some(len))
         } else {

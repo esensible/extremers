@@ -7,7 +7,6 @@ edition = "2021"
 crate-type = ["lib"]
 
 [features]
-std = []
 staticlib = []
 
 [target.'cfg(feature = "staticlib")'.lib]

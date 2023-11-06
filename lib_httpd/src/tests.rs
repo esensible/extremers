@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::engine_httpd::{EngineHttpdTrait, Response};
     use crate::RaceHttpd;
 
@@ -9,7 +8,9 @@ mod tests {
             concat!($( $element, "\r\n", )+).as_bytes()
         };
     }
-    fn sleep(_: usize, _: usize) {}
+    fn sleep(_: u64, _: usize) -> Result<(), &'static str> {
+        Ok(())
+    }
 
     #[test]
     fn test_nano_fail1() {
@@ -31,7 +32,8 @@ mod tests {
             "Accept-Language: en-GB,en-US;q=0.9,en;q=0.8\r\n",
             "\r\n"
         );
-        let response = httpd.handle_request(event.as_bytes(), &mut result, &mut update, &sleep);
+        let response =
+            httpd.handle_request(0, event.as_bytes(), &mut result, &mut update, &mut sleep);
 
         let response = response.unwrap();
         if let Response::Complete(response, updates, extra) = response {
@@ -39,11 +41,11 @@ mod tests {
             assert_eq!(extra, None);
             assert_eq!(updates, None);
 
-            println!(
-                "response[{}], {:?}",
-                response,
-                String::from_utf8_lossy(&result[..response])
-            );
+            // println!(
+            //     "response[{}], {:?}",
+            //     response,
+            //     String::from_utf8_lossy(&result[..response])
+            // );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
@@ -57,7 +59,7 @@ mod tests {
 
         let event = b"GET /index.html HTTP/1.1\r\n\r\n";
 
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &sleep);
 
         let response = response.unwrap();
         if let Response::Complete(response, updates, extra) = response {
@@ -89,11 +91,11 @@ mod tests {
             "Content-Length: 20",
         );
 
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &sleep);
 
         assert!(response.is_err());
         let response = response.expect_err("Expected error");
-        println!("Response: {:?}", core::str::from_utf8(&result[..response]));
+        // println!("Response: {:?}", core::str::from_utf8(&result[..response]));
     }
 
     #[test]
@@ -103,13 +105,13 @@ mod tests {
         let mut update = [0u8; 2048];
 
         let event = b"GET /updates?timestamp=23&cnt=1000 HTTP/1.1\r\n\r\n";
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &sleep);
 
         let response = response.unwrap();
         assert_eq!(response, Response::None);
 
         let event = b"GET /updates?timestamp=23&cnt=0 HTTP/1.1\r\n\r\n";
-        let response = httpd.handle_request(event, &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event, &mut result, &mut update, &sleep);
 
         let response = response.unwrap();
 
@@ -117,11 +119,11 @@ mod tests {
             assert_eq!(updates, None);
             assert_eq!(extra, None);
             if let Some(response) = response {
-                println!(
-                    "response[{}], {:?}",
-                    response,
-                    String::from_utf8_lossy(&result[..response])
-                );
+                // println!(
+                //     "response[{}], {:?}",
+                //     response,
+                //     String::from_utf8_lossy(&result[..response])
+                // );
             } else {
                 panic!("Unexpected response: {:?}", response);
             }
@@ -146,7 +148,7 @@ mod tests {
             payload,
         );
 
-        let response = httpd.handle_request(event.as_bytes(), &mut result, &mut update, &sleep);
+        let response = httpd.handle_request(0, event.as_bytes(), &mut result, &mut update, &sleep);
         let response = response.unwrap();
 
         if let Response::Complete(response, updates, extra) = response {
@@ -154,16 +156,16 @@ mod tests {
             assert_eq!(updates, 123);
             assert_eq!(extra, None);
             let response = response.unwrap();
-            println!(
-                "response[{}], {:?}",
-                response,
-                String::from_utf8_lossy(&result[..response])
-            );
-            println!(
-                "updates[{}], {:?}",
-                updates,
-                String::from_utf8_lossy(&update[..updates])
-            );
+            // println!(
+            //     "response[{}], {:?}",
+            //     response,
+            //     String::from_utf8_lossy(&result[..response])
+            // );
+            // println!(
+            //     "updates[{}], {:?}",
+            //     updates,
+            //     String::from_utf8_lossy(&update[..updates])
+            // );
         } else {
             panic!("Unexpected response: {:?}", response);
         }
