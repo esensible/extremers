@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 
 use crate::callbacks::CallbackTrait;
-use flatdiff::FlatDiffSer;
+use crate::flatdiff::FlatDiffSer;
 
 pub trait EngineCore: FlatDiffSer {
     type Event: DeserializeOwned;

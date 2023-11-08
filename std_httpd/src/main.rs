@@ -77,7 +77,7 @@ async fn main() {
     }
 }
 
-use race_client::lookup;
+use engine_race::lookup;
 
 async fn static_files_handler(Path(file): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     println!("file: {}", file);

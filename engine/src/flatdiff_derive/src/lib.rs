@@ -36,13 +36,13 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
             let field_type = &field.ty;
 
             field_diffs.push(quote! {
-                <#field_type as flatdiff::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
+                <#field_type as engine::FlatDiffSer>::diff::<S>(&self.#field_name, &rhs.#field_name, stringify!(#field_name), state)?;
             });
             field_flattens.push(quote! {
-                <#field_type as flatdiff::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
+                <#field_type as engine::FlatDiffSer>::flatten::<S>(&self.#field_name, stringify!(#field_name), state)?;
             });
             field_counts.push(quote! {
-                count += <#field_type as flatdiff::FlatDiffSer>::count();
+                count += <#field_type as engine::FlatDiffSer>::count();
             });
         }
 
@@ -52,7 +52,7 @@ fn delta_struct(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl  flatdiff::FlatDiffSer for #name
+        impl  engine::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where
@@ -119,21 +119,21 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                         rhs_match_fields.push(quote! { #field_name: #field_name_rhs });
 
                         diff_fields.push(quote! {
-                            <#field_type as flatdiff::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
+                            <#field_type as engine::FlatDiffSer>::diff::<S>(#field_name_lhs, #field_name_rhs, stringify!(#field_name), state)?;
                         });
 
                         cross_diff_fields.push(quote! {
-                            <#field_type as flatdiff::FlatDiffSer>::flatten::<S>(self, label, state)?;
+                            <#field_type as engine::FlatDiffSer>::flatten::<S>(self, label, state)?;
                         });
 
                         flatten_fields.push(quote! {
-                            <#field_type as flatdiff::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
+                            <#field_type as engine::FlatDiffSer>::flatten::<S>(#field_name_lhs, stringify!(#field_name), state)?;
                         });
                     }
 
                     flatten_match_arms.push(quote! {
                         #name::#variant_name{#(#lhs_match_fields),*} => {
-                            state.serialize_field(label, stringify!(#variant_name))?;
+                            <S::SerializeStruct as serde::ser::SerializeStruct>::serialize_field(state, label, stringify!(#variant_name))?;
                             #(#flatten_fields)*
                         }
                     });
@@ -149,7 +149,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 Fields::Unit => {
                     flatten_match_arms.push(quote! {
                         Self::#variant_name => {
-                            state.serialize_field(label, stringify!(#variant_name))?;
+                            <S::SerializeStruct as serde::ser::SerializeStruct>::serialize_field(state, label, stringify!(#variant_name))?;
                         }
                     });
 
@@ -188,7 +188,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
     };
 
     let expanded = quote! {
-        impl flatdiff::FlatDiffSer for #name
+        impl engine::FlatDiffSer for #name
         {
             fn diff<S>(&self, rhs: &Self, label: &'static str, state: &mut S::SerializeStruct) -> Result<(), S::Error>
             where

@@ -1,13 +1,11 @@
 #[cfg(test)]
 mod tests {
-    #[warn(unused_imports)]
     use ::serde::{Deserialize, Serialize};
     use serde_json::json;
     use flatdiff_derive::FlatDiffSer;
-    use flatdiff::*;
-
-    use serde::ser::SerializeStruct;
-
+    use crate::*;
+    use crate as engine;
+   
     #[test]
     fn test_simple() {
         #[derive(FlatDiffSer, PartialEq, Default)]

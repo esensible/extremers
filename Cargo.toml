@@ -6,10 +6,14 @@ members = [
     "engine", 
     # httpd implementation for std environment
     "lib_httpd", 
+
+    # engines
     "engine_race",
+    "engine_tune",
 
     # apps
     "nano-sketch",
     "std_httpd",
+
     "rpi",
 ]

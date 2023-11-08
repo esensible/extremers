@@ -3,9 +3,11 @@
 pub mod callbacks;
 mod event_core;
 mod serde_engine;
+mod flatdiff;
+
 use serde::Serialize;
 
-pub use flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
+pub use crate::flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
 pub use flatdiff_derive::FlatDiffSer;
 
 pub use crate::event_core::SleepFn;

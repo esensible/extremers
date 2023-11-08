@@ -1,5 +1,5 @@
 use crate::event_core::{EventEngineTrait, SleepFn};
-use flatdiff::{Flat, FlatDiff};
+use crate::flatdiff::{Flat, FlatDiff};
 use serde_json_core::{from_slice, to_slice};
 
 pub struct SerdeEngine<T: EventEngineTrait>(T, usize);
@@ -24,7 +24,7 @@ impl<T: EventEngineTrait> SerdeEngine<T> {
         let updated = self.0.handle_event(event, sleep)?;
         if updated {
             let new_state = self.0.get_state();
-            let delta = crate::UpdateResp::new(self.1, flatdiff::FlatDiff(&new_state, &old_state));
+            let delta = crate::UpdateResp::new(self.1, FlatDiff(&new_state, &old_state));
             let len = to_slice(&delta, result).map_err(|_| "Failed to serialize delta")?;
             self.1 += 1;
             Ok(Some(len))

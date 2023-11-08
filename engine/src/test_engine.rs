@@ -2,6 +2,7 @@ use ::serde::Deserialize;
 use flatdiff_derive::FlatDiffSer;
 
 use crate::*;
+use crate as engine;
 
 #[derive(FlatDiffSer, Copy, Clone, PartialEq, Default, Debug)]
 pub struct ACore {

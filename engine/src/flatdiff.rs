@@ -1,5 +1,3 @@
-#![no_std]
-
 //! This crate provides types and traits to handle versioning of data structures.
 //! It allows for keeping track of changes in data over time.
 use serde::ser::SerializeStruct;

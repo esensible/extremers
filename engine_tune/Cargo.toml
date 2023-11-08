@@ -1,17 +1,18 @@
 [package]
-name = "engine_race"
+name = "engine_tune"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
+# build = "build.rs"
 
 [lib]
 crate-type = ["lib"]
 
-[build-dependencies]
-include_dir = { version="0.6", default-features = false}
+# [build-dependencies]
+# include_dir = { version="0.6", default-features = false}
 
 [dependencies]
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+serde_derive = "1.0.188"
 libm = "0.2"
 paste = "1.0"
 

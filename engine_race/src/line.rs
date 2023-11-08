@@ -1,5 +1,3 @@
-use ::serde::ser::SerializeStruct;
-
 use engine::FlatDiffSer;
 use crate::geo_math::{bearing, distance, seconds_to_line};
 use crate::types::Location;
