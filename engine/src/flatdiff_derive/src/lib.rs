@@ -133,7 +133,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
 
                     flatten_match_arms.push(quote! {
                         #name::#variant_name{#(#lhs_match_fields),*} => {
-                            <S::SerializeStruct as serde::ser::SerializeStruct>::serialize_field(state, label, stringify!(#variant_name))?;
+                            serde::ser::SerializeStruct::serialize_field(state, label, stringify!(#variant_name))?;
                             #(#flatten_fields)*
                         }
                     });
@@ -149,7 +149,7 @@ fn flatdiff_enum(input: syn::DeriveInput) -> proc_macro2::TokenStream {
                 Fields::Unit => {
                     flatten_match_arms.push(quote! {
                         Self::#variant_name => {
-                            <S::SerializeStruct as serde::ser::SerializeStruct>::serialize_field(state, label, stringify!(#variant_name))?;
+                            serde::ser::SerializeStruct::serialize_field(state, label, stringify!(#variant_name))?;
                         }
                     });
 

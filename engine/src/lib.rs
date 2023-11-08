@@ -1,13 +1,17 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod exports {
+    pub use paste;
+}
+
 pub mod callbacks;
 mod event_core;
-mod serde_engine;
 mod flatdiff;
+mod serde_engine;
 
 use serde::Serialize;
 
-pub use crate::flatdiff::{Flat, FlatDiff, FlatDiffSer, Atomic};
+pub use crate::flatdiff::{Atomic, Flat, FlatDiff, FlatDiffSer};
 pub use flatdiff_derive::FlatDiffSer;
 
 pub use crate::event_core::SleepFn;

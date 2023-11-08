@@ -1,10 +1,10 @@
 use ::serde::Deserialize;
 use core::f64::consts::PI;
 
-use engine::engine_callbacks;
-use engine::{EngineCore, FlatDiffSer};
 use crate::line::Line;
 use crate::types::Location;
+use engine::engine_callbacks;
+use engine::{EngineCore, FlatDiffSer};
 
 #[derive(FlatDiffSer, Copy, Clone, PartialEq, Default)]
 pub struct Race {
@@ -76,7 +76,7 @@ impl Race {
 impl EngineCore for Race {
     type Event = Event;
     type Callbacks = RaceCallbacks;
-   
+
     fn handle_event(
         &mut self,
         event: Self::Event,
@@ -135,8 +135,8 @@ impl EngineCore for Race {
                 Ok(true)
             }
             EventType::RaceFinish => {
-                if !matches!(self.state, State::Active{..}) {
-                    self.state = State::Active {speed: 0.0};
+                if !matches!(self.state, State::Active { .. }) {
+                    self.state = State::Active { speed: 0.0 };
                     Ok(true)
                 } else {
                     Ok(false)

@@ -1,6 +1,6 @@
-use engine::FlatDiffSer;
 use crate::geo_math::{bearing, distance, seconds_to_line};
 use crate::types::Location;
+use engine::FlatDiffSer;
 
 const R: f64 = 6371e3; // radius of earth in meters
 

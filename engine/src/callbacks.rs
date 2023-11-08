@@ -40,7 +40,7 @@ macro_rules! callbacks {
             }
         }
 
-        paste::paste! {
+        $crate::exports::paste::paste! {
             $vis trait [<_NewClosure $enum_name>] {
                 fn new(f: fn(&mut $mut_ty, &Self), value: Self) -> $enum_name;
             }

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::race::*;
-    
+
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
         let event = Event {
             event: EventType::BumpSeq {
@@ -23,7 +23,6 @@ mod tests {
             panic!("State was not InSequence as expected");
         }
     }
-
 
     #[test]
     fn test_line() {
@@ -145,7 +144,7 @@ mod tests {
         let result = race.handle_event(event, &mut |_, _| Ok(()));
         assert_eq!(result, Ok(true));
         assert!(
-            matches!(race.state, State::Active{..}),
+            matches!(race.state, State::Active { .. }),
             "State was not Active as expected",
         );
     }
@@ -195,7 +194,6 @@ mod tests {
         bump(&mut race, START_TIME, 30, 31_000);
         race.start(&());
 
-
         fn to_deg(rad: f64) -> f64 {
             rad * 180.0 / PI
         }
@@ -221,7 +219,6 @@ mod tests {
 
         let boat_loc = (to_deg(-0.6098849320603855), to_deg(2.4193031292124503));
         expect_cross(&mut race, &boat_loc, &boat_velocity, 100, 1938);
-
     }
 
     fn to_rad(deg: f64) -> f64 {
