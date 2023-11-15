@@ -16,6 +16,10 @@ mod task_gps;
 mod task_httpd;
 mod task_sleeper;
 
+mod flash;
+use flash::PicoFlash;
+use littlefs2::fs::Filesystem;
+
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
@@ -134,6 +138,7 @@ async fn main(spawner: Spawner) {
         // gateway: None,
     });
 
+    
     // Generate random seed
     let seed = 0x0123_a5a7_83a4_fdef; // chosen by fair dice roll. guarenteed to be random.
 
@@ -156,6 +161,54 @@ async fn main(spawner: Spawner) {
     if result.is_err() {
         log::warn!("failed to spawn sleeper task");
     }
+
+
+
+    // int err = lfs_mount(&lfs, &cfg);
+
+    // // reformat if we can't mount the filesystem
+    // // this should only happen on the first boot
+    // if (err) {
+    //     lfs_format(&lfs, &cfg);
+    //     lfs_mount(&lfs, &cfg);
+    // }
+
+    // // read current count
+    // uint32_t boot_count = 0;
+    // lfs_file_open(&lfs, &file, "boot_count", LFS_O_RDWR | LFS_O_CREAT);
+    // lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
+
+    let mut storage = PicoFlash {};
+    let mut alloc_fs = Filesystem::allocate();
+    
+    let result = Filesystem::mount(&mut alloc_fs, &mut storage);
+    let fs = match result {
+        Ok(fs) => fs,
+        Err(_) => {
+            log::warn!("failed to mount filesystem");
+            let result = Filesystem::format(&mut storage);
+            if result.is_err() {
+                log::warn!("failed to format filesystem");
+            }
+            let result = Filesystem::mount(&mut alloc_fs, &mut storage);
+            if result.is_err() {
+                log::warn!("failed to mount filesystem");
+            }
+            result.unwrap()
+        }
+    };
+
+    let _result = fs.create_file_and_then(b"/tmp/test_open.txt\0".try_into().unwrap(), |file| {
+
+        // can write to files
+        assert!(file.write(&[0u8, 1, 2]).unwrap() == 3);
+        file.sync()?;
+        // surprise surprise, inline files!
+//        assert_eq!(fs.available_blocks()?, 512 - 2 - 2);
+        // no longer exists!
+        // file.close()?;
+        Ok(())
+    });
 
     for _ in 0..MAX_SOCKETS {
         let result = spawner.spawn(task_httpd::httpd_task(httpd, stack));

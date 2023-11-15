@@ -6,13 +6,6 @@ edition = "2021"
 [lib]
 crate-type = ["lib"]
 
-[features]
-staticlib = []
-
-[target.'cfg(feature = "staticlib")'.lib]
-crate-type = ["staticlib", "lib"]
-
-
 [dependencies]
 serde-json-core = "0.5"
 httparse = { version = "1", default-features = false }
