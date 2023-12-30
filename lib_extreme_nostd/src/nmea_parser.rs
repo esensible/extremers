@@ -37,10 +37,12 @@ pub enum NMEAMessage {
     Unknown,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait AsyncReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()>;
 }
 
+#[allow(async_fn_in_trait)]
 pub trait Tokeniser {
     async fn next_token(&mut self) -> Option<&str>;
 }

@@ -6,17 +6,9 @@
 #![feature(type_alias_impl_trait)]
 #![allow(incomplete_features)]
 
-mod consts;
-use consts::*;
-mod nmea_parser;
-mod task_gps;
-mod task_httpd;
-mod task_sleeper;
-
 // mod flash;
 // use flash::PicoFlash;
 // use littlefs2::fs::Filesystem;
-
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
@@ -33,7 +25,12 @@ use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
+use heapless::Vec;
 use static_cell::make_static;
+
+use lib_extreme_nostd::{
+    gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
+};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -67,7 +64,7 @@ async fn logger_task(driver: Driver<'static, USB>) {
 }
 
 struct UartReader(UartRx<'static, UART1, Async>);
-impl nmea_parser::AsyncReader for UartReader {
+impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
         match self.0.read(buf).await {
             Ok(_) => Ok(buf.len()),
@@ -84,8 +81,8 @@ pub async fn gps_task(
     >,
     rx: UartRx<'static, UART1, Async>,
 ) {
-    let mut ring_buffer = nmea_parser::RingBuffer::<UartReader, 32>::new(UartReader(rx));
-    task_gps::gps_task_impl(httpd_mutex, &mut ring_buffer).await;
+    let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
+    gps_task_impl(httpd_mutex, &mut ring_buffer).await;
 }
 
 #[embassy_executor::task(pool_size = MAX_SOCKETS)]
@@ -96,7 +93,17 @@ pub async fn httpd_task(
     >,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
 ) -> ! {
-    task_httpd::httpd_task_impl(httpd_mutex, stack).await
+    httpd_task_impl(httpd_mutex, stack).await
+}
+
+#[embassy_executor::task]
+pub async fn sleeper_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        RaceHttpd,
+    >,
+) {
+    sleeper_task_impl(httpd_mutex).await;
 }
 
 #[embassy_executor::main]
@@ -158,17 +165,19 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::Performance)
         .await;
 
-    // let config = Config::dhcpv4(Default::default());
+    let mut dns_servers: Vec<_, 3> = Vec::new();
+    dns_servers
+        .push(embassy_net::Ipv4Address::new(169, 254, 1, 100))
+        .unwrap();
+
+    let config = Config::default();
     // Use a link-local address for communication without DHCP server
-    let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
-        dns_servers: heapless::Vec::from_slice(&[
-            embassy_net::Ipv4Address::new(169, 254, 1, 100).into()
-        ])
-        .unwrap(),
-        gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
-        // gateway: None,
-    });
+    // let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
+    //     address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
+    //     dns_servers: dns_servers,
+    //     gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
+    //     // gateway: None,
+    // });
 
     // Generate random seed
     let seed = 0x0123_a5a7_83a4_fdef; // chosen by fair dice roll. guarenteed to be random.
@@ -188,7 +197,7 @@ async fn main(spawner: Spawner) {
 
     control.start_ap_wpa2("nacra17", "password", 1).await;
 
-    let result = spawner.spawn(task_sleeper::sleeper_task(httpd));
+    let result = spawner.spawn(sleeper_task(httpd));
     if result.is_err() {
         log::warn!("failed to spawn sleeper task");
     }

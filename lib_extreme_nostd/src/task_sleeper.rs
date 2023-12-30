@@ -8,8 +8,7 @@ use crate::consts::{
     SleepMessage, UpdateMessage, OFFSET_LSB, OFFSET_MSB, SLEEP_BUS, UPDATES_BUS, UPDATE_BUF_SIZE,
 };
 
-#[embassy_executor::task]
-pub async fn sleeper_task(
+pub async fn sleeper_task_impl(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,

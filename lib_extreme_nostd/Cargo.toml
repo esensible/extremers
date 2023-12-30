@@ -1,0 +1,22 @@
+[package]
+name = "lib_extreme_nostd"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+embassy-sync = { workspace = true }
+embassy-time = { workspace = true }
+embassy-rp = { workspace = true }
+embassy-net = { workspace = true }
+
+embedded-io = { version = "0.6.0" }
+embedded-io-async = { version = "0.6.1" }
+
+log = { workspace = true }
+
+
+lib_httpd = { path = "../lib_httpd/" }
+engine_race = { path = "../engine_race/" }
