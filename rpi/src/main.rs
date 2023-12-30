@@ -1,13 +1,10 @@
 //! This example uses the RP Pico W board Wifi chip (cyw43).
 //! Creates an Access point Wifi network and creates a TCP endpoint on port 1234.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![allow(incomplete_features)]
-
-#[cfg(test)]
-mod tests;
 
 mod consts;
 use consts::*;
@@ -29,7 +26,9 @@ use embassy_rp::peripherals::UART1;
 use embassy_rp::peripherals::USB;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx};
+use embassy_rp::uart::{
+    Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
+};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -67,6 +66,39 @@ async fn logger_task(driver: Driver<'static, USB>) {
     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 }
 
+struct UartReader(UartRx<'static, UART1, Async>);
+impl nmea_parser::AsyncReader for UartReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+        match self.0.read(buf).await {
+            Ok(_) => Ok(buf.len()),
+            Err(_) => Err(()),
+        }
+    }
+}
+
+#[embassy_executor::task]
+pub async fn gps_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        RaceHttpd,
+    >,
+    rx: UartRx<'static, UART1, Async>,
+) {
+    let mut ring_buffer = nmea_parser::RingBuffer::<UartReader, 32>::new(UartReader(rx));
+    task_gps::gps_task_impl(httpd_mutex, &mut ring_buffer).await;
+}
+
+#[embassy_executor::task(pool_size = MAX_SOCKETS)]
+pub async fn httpd_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        RaceHttpd,
+    >,
+    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+) -> ! {
+    task_httpd::httpd_task_impl(httpd_mutex, stack).await
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let httpd = make_static!(Mutex::<ThreadModeRawMutex, _>::new(RaceHttpd::default()));
@@ -83,7 +115,7 @@ async fn main(spawner: Spawner) {
     config.baudrate = 9600;
     let uart_rx = UartRx::new(p.UART1, p.PIN_9, Irqs, p.DMA_CH1, config);
 
-    let result = spawner.spawn(task_gps::gps_task(httpd, uart_rx));
+    let result = spawner.spawn(gps_task(httpd, uart_rx));
     if result.is_err() {
         log::warn!("failed to spawn gps task");
     }
@@ -211,7 +243,7 @@ async fn main(spawner: Spawner) {
     });
 
     for _ in 0..MAX_SOCKETS {
-        let result = spawner.spawn(task_httpd::httpd_task(httpd, stack));
+        let result = spawner.spawn(httpd_task(httpd, stack));
         if result.is_err() {
             log::warn!("failed to spawn httpd task");
             break;

@@ -1,5 +1,4 @@
-use embassy_rp::peripherals::UART1;
-use embassy_rp::uart::{Async, UartRx};
+use embassy_time::{Duration, Timer};
 
 #[derive(Debug)]
 pub enum Status {
@@ -38,22 +37,41 @@ pub enum NMEAMessage {
     Unknown,
 }
 
-pub struct RingBuffer<const N: usize> {
-    reader: UartRx<'static, UART1, Async>,
+pub trait AsyncReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()>;
+}
+
+pub trait Tokeniser {
+    async fn next_token(&mut self) -> Option<&str>;
+}
+
+pub struct RingBuffer<Reader, const N: usize>
+where
+    Reader: AsyncReader,
+{
+    reader: Reader,
     buf: [u8; N],
     read_ptr: usize,
 }
 
-impl<const N: usize> RingBuffer<N> {
-    pub fn new(reader: UartRx<'static, UART1, Async>) -> Self {
+impl<Reader, const N: usize> RingBuffer<Reader, N>
+where
+    Reader: AsyncReader,
+{
+    pub fn new(reader: Reader) -> Self {
         Self {
             reader,
             buf: [0; N],
             read_ptr: N,
         }
     }
+}
 
-    pub async fn next_token(&mut self) -> Option<&str> {
+impl<Reader, const N: usize> Tokeniser for RingBuffer<Reader, N>
+where
+    Reader: AsyncReader,
+{
+    async fn next_token(&mut self) -> Option<&str> {
         let mut cursor = self.read_ptr;
         let old_ptr = self.read_ptr;
 
@@ -69,6 +87,7 @@ impl<const N: usize> RingBuffer<N> {
                     // log::info!("RX error");
                     return None;
                 }
+                // TODO: Handle partial read here
                 self.read_ptr = 0;
             }
             if cursor > 0
@@ -97,9 +116,9 @@ impl<const N: usize> RingBuffer<N> {
     }
 }
 
-pub struct NMEAParser<const N: usize>(RingBuffer<N>);
-
 fn date_to_epoch(date_str: &str) -> Option<u32> {
+    // translate GPS date string to number of whole days since 1970-01-01
+
     if date_str.len() != 6 {
         return None;
     }
@@ -110,8 +129,6 @@ fn date_to_epoch(date_str: &str) -> Option<u32> {
     let month: u32 = date_str[2..4].parse().ok()?;
     let year: u32 = date_str[4..6].parse().ok()?;
 
-    // Calculate the number of days for each month assuming all months have 30 days
-    // This is a simplification and will not yield accurate results
     let days_in_months = if year % 4 == 0 && month > 2 {
         (MONTH_DAY[(month - 1) as usize] + 1) as u32
     } else {
@@ -120,118 +137,174 @@ fn date_to_epoch(date_str: &str) -> Option<u32> {
 
     // Calculate the number of days for each year assuming all years have 365 days
     let days_in_years = (year + 2000 - 1970) * 365;
+    // Calculate additional days from leap years since 1972
+    let leap_days = ((year + 2000 - 1) - 1972) / 4 + 1;
 
-    // Calculate the number of leap years since 1972
-    let leap_years = ((year + 2000 - 1) - 1972) / 4 + 1;
-
-    // Now add all the days together and convert to seconds
-    let total_days = days_in_years + days_in_months + day + leap_years - 1;
-
-    Some(total_days)
+    Some(days_in_years + leap_days + days_in_months + day - 1)
 }
 
-impl<const N: usize> NMEAParser<N> {
-    pub fn new(rx: UartRx<'static, UART1, Async>) -> Self {
-        Self(RingBuffer::new(rx))
+pub async fn next_message<T>(tokeniser: &mut T) -> Option<NMEAMessage>
+where
+    T: Tokeniser,
+{
+    let mut message = NMEAMessage::Unknown;
+    let mut field = -1;
+
+    loop {
+        let token = tokeniser.next_token().await;
+        if token.is_none() {
+            return None;
+        }
+        let token = token.unwrap();
+        match &mut message {
+            NMEAMessage::Unknown => {
+                if token == "$GNRMC" {
+                    message = NMEAMessage::GNRMC(GNRMC::default());
+                    field = -1;
+                } else if token.starts_with("$") {
+                    // log::info!("{}", token);
+                }
+            }
+
+            NMEAMessage::GNRMC(gnrmc) => {
+                match field {
+                    0 => {
+                        gnrmc.utc_time = if token.len() >= 9 {
+                            let hours = token[0..2].parse::<u32>().ok()?;
+                            let minutes = token[2..4].parse::<u32>().ok()?;
+                            let seconds = token[4..6].parse::<u32>().ok()?;
+                            let milliseconds = token[7..].parse::<u32>().ok()?;
+
+                            Some(
+                                hours * 60 * 60_000
+                                    + minutes * 60_000
+                                    + seconds * 1_000
+                                    + milliseconds,
+                            )
+                        } else {
+                            None
+                        }
+                    }
+
+                    1 => {
+                        gnrmc.status = Some(match token {
+                            "A" => Status::Active,
+                            "V" => Status::Void,
+                            _ => Status::Unknown,
+                        })
+                    }
+                    2 => {
+                        gnrmc.latitude = if token.len() >= 7 {
+                            let degrees = token[0..2].parse::<f64>().ok()?;
+                            let minutes = token[2..].parse::<f64>().ok()?;
+                            Some(degrees + minutes / 60.0)
+                        } else {
+                            None
+                        }
+                    }
+                    3 => gnrmc.ns_indicator = token.chars().next(),
+                    4 => {
+                        gnrmc.longitude = if token.len() >= 7 {
+                            let degrees = token[0..3].parse::<f64>().ok()?;
+                            let minutes = token[3..].parse::<f64>().ok()?;
+                            Some(degrees + minutes / 60.0)
+                        } else {
+                            None
+                        }
+                    }
+                    5 => gnrmc.ew_indicator = token.chars().next(),
+                    6 => {
+                        // log::info!("speed: {}", token);
+                        gnrmc.speed_over_ground = token.parse::<f64>().ok()
+                    }
+                    7 => {
+                        // log::info!("course: {}", token);
+                        gnrmc.course_over_ground = token.parse::<f64>().ok()
+                    }
+                    8 => gnrmc.date = date_to_epoch(&token),
+                    9 => gnrmc.magnetic_variation = token.parse::<f64>().ok(),
+                    10 => gnrmc.ew_indicator_mag = token.chars().next(),
+                    11 => {
+                        gnrmc.mode = Some(match token {
+                            "A" => Mode::Autonomous,
+                            "D" => Mode::Differential,
+                            "E" => Mode::Estimated,
+                            "N" => Mode::NotValid,
+                            _ => Mode::Unknown,
+                        })
+                    }
+                    12 => {
+                        // checksum
+                    }
+                    _ => {
+                        return Some(message);
+                    }
+                }
+            }
+        }
+        field += 1;
     }
+}
 
-    pub async fn next_token(&mut self) -> Option<NMEAMessage> {
-        let mut message = NMEAMessage::Unknown;
-        let mut field = -1;
+pub async fn next_update<T>(
+    tokeniser: &mut T,
+) -> (Option<u64>, Option<(f64, f64)>, Option<(f64, f64)>)
+where
+    T: Tokeniser,
+{
+    //     log::info!("Reading...");
 
-        loop {
-            let token = self.0.next_token().await;
-            if token.is_none() {
-                return None;
+    loop {
+        let token = next_message(tokeniser).await;
+        match token {
+            Some(NMEAMessage::GNRMC(gnrmc)) => {
+                let timestamp = if let (Some(time), Some(date)) = (&gnrmc.utc_time, &gnrmc.date) {
+                    Some(*time as u64 + *date as u64 * 24 * 60 * 60_000)
+                } else {
+                    None
+                };
+
+                let location = if let (Some(latitude), Some(ew), Some(longitude), Some(ns)) = (
+                    &gnrmc.latitude,
+                    &gnrmc.ew_indicator,
+                    &gnrmc.longitude,
+                    &gnrmc.ns_indicator,
+                ) {
+                    let latitude_final = if *ns == 'S' {
+                        -1.0 * latitude
+                    } else {
+                        *latitude
+                    };
+
+                    let longitude_final = if *ew == 'W' {
+                        -1.0 * longitude
+                    } else {
+                        *longitude
+                    };
+
+                    Some((latitude_final, longitude_final))
+                } else {
+                    None
+                };
+
+                let speed = if let (Some(speed), Some(course)) =
+                    (&gnrmc.speed_over_ground, &gnrmc.course_over_ground)
+                {
+                    Some((*speed, *course))
+                } else {
+                    None
+                };
+
+                return (timestamp, location, speed);
             }
-            let token = token.unwrap();
-            match &mut message {
-                NMEAMessage::Unknown => {
-                    if token == "$GNRMC" {
-                        message = NMEAMessage::GNRMC(GNRMC::default());
-                        field = -1;
-                    } else if token.starts_with("$") {
-                        // log::info!("{}", token);
-                    }
-                }
-
-                NMEAMessage::GNRMC(gnrmc) => {
-                    match field {
-                        0 => {
-                            gnrmc.utc_time = if token.len() >= 9 {
-                                let hours = token[0..2].parse::<u32>().ok()?;
-                                let minutes = token[2..4].parse::<u32>().ok()?;
-                                let seconds = token[4..6].parse::<u32>().ok()?;
-                                let milliseconds = token[7..].parse::<u32>().ok()?;
-
-                                Some(
-                                    hours * 60 * 60_000
-                                        + minutes * 60_000
-                                        + seconds * 1_000
-                                        + milliseconds,
-                                )
-                            } else {
-                                None
-                            }
-                        }
-
-                        1 => {
-                            gnrmc.status = Some(match token {
-                                "A" => Status::Active,
-                                "V" => Status::Void,
-                                _ => Status::Unknown,
-                            })
-                        }
-                        2 => {
-                            gnrmc.latitude = if token.len() >= 7 {
-                                let degrees = token[0..2].parse::<f64>().ok()?;
-                                let minutes = token[2..].parse::<f64>().ok()?;
-                                Some(degrees + minutes / 60.0)
-                            } else {
-                                None
-                            }
-                        }
-                        3 => gnrmc.ns_indicator = token.chars().next(),
-                        4 => {
-                            gnrmc.longitude = if token.len() >= 7 {
-                                let degrees = token[0..3].parse::<f64>().ok()?;
-                                let minutes = token[3..].parse::<f64>().ok()?;
-                                Some(degrees + minutes / 60.0)
-                            } else {
-                                None
-                            }
-                        }
-                        5 => gnrmc.ew_indicator = token.chars().next(),
-                        6 => {
-                            // log::info!("speed: {}", token);
-                            gnrmc.speed_over_ground = token.parse::<f64>().ok()
-                        }
-                        7 => {
-                            // log::info!("course: {}", token);
-                            gnrmc.course_over_ground = token.parse::<f64>().ok()
-                        }
-                        8 => gnrmc.date = date_to_epoch(&token),
-                        9 => gnrmc.magnetic_variation = token.parse::<f64>().ok(),
-                        10 => gnrmc.ew_indicator_mag = token.chars().next(),
-                        11 => {
-                            gnrmc.mode = Some(match token {
-                                "A" => Mode::Autonomous,
-                                "D" => Mode::Differential,
-                                "E" => Mode::Estimated,
-                                "N" => Mode::NotValid,
-                                _ => Mode::Unknown,
-                            })
-                        }
-                        12 => {
-                            // checksum
-                        }
-                        _ => {
-                            return Some(message);
-                        }
-                    }
-                }
+            Some(NMEAMessage::Unknown) => {
+                log::info!("Unknown");
             }
-            field += 1;
+            None => {
+                // TODO: Remove this to avoid embassy dependency
+                Timer::after(Duration::from_millis(100)).await;
+                // log::info!("None");
+            }
         }
     }
 }

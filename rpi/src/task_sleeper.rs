@@ -1,6 +1,6 @@
 use core::sync::atomic::Ordering;
+// use the trait
 use embassy_sync::pubsub::PubSubBehavior;
-use embassy_time::{with_timeout, Duration};
 
 use engine_race::RaceHttpd;
 
@@ -43,8 +43,8 @@ pub async fn sleeper_task(
                 let sleep_ms = if wake_time > now { wake_time - now } else { 0 };
 
                 // log::info!("sleeping for {} ms", sleep_ms);
-                match with_timeout(
-                    Duration::from_millis(sleep_ms),
+                match embassy_time::with_timeout(
+                    embassy_time::Duration::from_millis(sleep_ms),
                     message_subscriber.next_message_pure(),
                 )
                 .await

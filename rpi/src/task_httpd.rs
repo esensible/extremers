@@ -1,13 +1,13 @@
 use core::sync::atomic::Ordering;
+use embassy_net::driver::Driver;
 use embassy_net::tcp::TcpSocket;
-use embassy_time::Duration;
 
 // traits used
 use embassy_sync::pubsub::PubSubBehavior;
 use embedded_io_async::Write;
 
-use lib_httpd::Response;
 use engine_race::RaceHttpd;
+use lib_httpd::Response;
 
 use crate::consts::*;
 
@@ -34,13 +34,12 @@ fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-#[embassy_executor::task(pool_size = MAX_SOCKETS)]
-pub async fn httpd_task(
+pub async fn httpd_task_impl<D: Driver>(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+    stack: &'static embassy_net::Stack<D>,
 ) -> ! {
     let mut rx_buffer = [0; RX_BUF_SIZE];
     let mut tx_buffer = [0; TX_BUF_SIZE];
@@ -135,7 +134,7 @@ pub async fn httpd_task(
                             // log::info!("handle_request -> None");
                             let mut message_subscriber = UPDATES_BUS.dyn_subscriber().unwrap();
                             match embassy_time::with_timeout(
-                                Duration::from_secs(5),
+                                embassy_time::Duration::from_secs(5),
                                 message_subscriber.next_message_pure(),
                             )
                             .await
