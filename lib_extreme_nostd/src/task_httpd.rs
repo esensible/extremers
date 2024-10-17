@@ -34,12 +34,12 @@ fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-pub async fn httpd_task_impl<D: Driver>(
+pub async fn httpd_task_impl(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<D>,
+    stack: &'static embassy_net::Stack<'_>,
 ) -> ! {
     let mut rx_buffer = [0; RX_BUF_SIZE];
     let mut tx_buffer = [0; TX_BUF_SIZE];
@@ -48,7 +48,7 @@ pub async fn httpd_task_impl<D: Driver>(
     let mut update = UpdateMessage::default();
 
     loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
         // socket.set_timeout(Some(Duration::from_secs(10)));
 
         // log::info!("Listening...");

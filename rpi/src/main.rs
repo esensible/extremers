@@ -6,9 +6,10 @@
 #![feature(type_alias_impl_trait)]
 #![allow(incomplete_features)]
 
-// mod flash;
-// use flash::PicoFlash;
-// use littlefs2::fs::Filesystem;
+// #[cfg(test)]
+// mod tests;
+
+
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
@@ -16,7 +17,7 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::UART1;
 use embassy_rp::peripherals::USB;
-use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0};
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::{
     Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
@@ -25,8 +26,9 @@ use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
+
 use heapless::Vec;
-use static_cell::make_static;
+use static_cell::StaticCell;
 
 use lib_extreme_nostd::{
     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
@@ -43,19 +45,13 @@ bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::task]
-async fn wifi_task(
-    runner: cyw43::Runner<
-        'static,
-        Output<'static, PIN_23>,
-        PioSpi<'static, PIN_25, PIO0, 0, DMA_CH0>,
-    >,
-) -> ! {
+async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
     runner.run().await
 }
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
-    stack.run().await
+async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
+    runner.run().await
 }
 
 #[embassy_executor::task]
@@ -91,7 +87,7 @@ pub async fn httpd_task(
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+    stack: &'static embassy_net::Stack<'_>,
 ) -> ! {
     httpd_task_impl(httpd_mutex, stack).await
 }
@@ -108,7 +104,10 @@ pub async fn sleeper_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let httpd = make_static!(Mutex::<ThreadModeRawMutex, _>::new(RaceHttpd::default()));
+    type RaceHttpdMutex = Mutex::<ThreadModeRawMutex, RaceHttpd>;
+
+    static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
+    let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
 
     let p = embassy_rp::init(Default::default());
 
@@ -153,12 +152,15 @@ async fn main(spawner: Spawner) {
         p.DMA_CH0,
     );
 
-    let state = make_static!(cyw43::State::new());
+    static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = STATE.init(cyw43::State::new());
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    let result = spawner.spawn(wifi_task(runner));
+
+    let result = spawner.spawn(cyw43_task(runner));
     if result.is_err() {
         log::warn!("failed to spawn wifi task");
     }
+
 
     control.init(clm).await;
     control
@@ -170,83 +172,36 @@ async fn main(spawner: Spawner) {
         .push(embassy_net::Ipv4Address::new(169, 254, 1, 100))
         .unwrap();
 
-    let config = Config::default();
+    // let config = Config::default();
     // Use a link-local address for communication without DHCP server
-    // let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
-    //     address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
-    //     dns_servers: dns_servers,
-    //     gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
-    //     // gateway: None,
-    // });
+    let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
+        address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
+        dns_servers: dns_servers,
+        gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
+        // gateway: None,
+    });
 
     // Generate random seed
     let seed = 0x0123_a5a7_83a4_fdef; // chosen by fair dice roll. guarenteed to be random.
 
     // Init network stack
-    let stack = &*make_static!(Stack::new(
-        net_device,
-        config,
-        make_static!(StackResources::<{ MAX_SOCKETS + 1 }>::new()),
-        seed
-    ));
 
-    let result = spawner.spawn(net_task(stack));
+    static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
+    static STACK: StaticCell<Stack<'_>> = StaticCell::new();
+    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    let stack = STACK.init(stack);
+
+    let result = spawner.spawn(net_task(runner));
     if result.is_err() {
         log::warn!("failed to spawn net task");
     }
 
-    control.start_ap_wpa2("nacra17", "password", 1).await;
+    control.start_ap_wpa2("nacra18", "password", 1).await;
 
     let result = spawner.spawn(sleeper_task(httpd));
     if result.is_err() {
         log::warn!("failed to spawn sleeper task");
     }
-
-    // int err = lfs_mount(&lfs, &cfg);
-
-    // // reformat if we can't mount the filesystem
-    // // this should only happen on the first boot
-    // if (err) {
-    //     lfs_format(&lfs, &cfg);
-    //     lfs_mount(&lfs, &cfg);
-    // }
-
-    // // read current count
-    // uint32_t boot_count = 0;
-    // lfs_file_open(&lfs, &file, "boot_count", LFS_O_RDWR | LFS_O_CREAT);
-    // lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
-
-    //     let mut storage = PicoFlash {};
-    //     let mut alloc_fs = Filesystem::allocate();
-
-    //     let result = Filesystem::mount(&mut alloc_fs, &mut storage);
-    //     let fs = match result {
-    //         Ok(fs) => fs,
-    //         Err(_) => {
-    //             log::warn!("failed to mount filesystem");
-    //             let result = Filesystem::format(&mut storage);
-    //             if result.is_err() {
-    //                 log::warn!("failed to format filesystem");
-    //             }
-    //             let result = Filesystem::mount(&mut alloc_fs, &mut storage);
-    //             if result.is_err() {
-    //                 log::warn!("failed to mount filesystem");
-    //             }
-    //             result.unwrap()
-    //         }
-    //     };
-
-    //     let _result = fs.create_file_and_then(b"/tmp/test_open.txt\0".try_into().unwrap(), |file| {
-
-    //         // can write to files
-    //         assert!(file.write(&[0u8, 1, 2]).unwrap() == 3);
-    //         file.sync()?;
-    //         // surprise surprise, inline files!
-    // //        assert_eq!(fs.available_blocks()?, 512 - 2 - 2);
-    //         // no longer exists!
-    //         // file.close()?;
-    //         Ok(())
-    //     });
 
     for _ in 0..MAX_SOCKETS {
         let result = spawner.spawn(httpd_task(httpd, stack));

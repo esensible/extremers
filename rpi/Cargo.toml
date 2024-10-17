@@ -5,45 +5,56 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-embassy-embedded-hal = { workspace = true }
-embassy-futures = { workspace = true }
-embedded-hal-1 = { workspace = true }
-embedded-hal-async = { workspace = true }
+embassy-embedded-hal = { workspace = true, features = ["defmt"] }
+embassy-futures = { workspace = true}
 embassy-usb-logger = { workspace = true }
-embassy-executor = { workspace = true, features = ["arch-cortex-m"] }
-embassy-time = { workspace = true }
-embassy-rp = { workspace = true }
-embassy-net = { workspace = true }
-embassy-sync = { workspace = true }
+embassy-executor = { workspace = true, features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"]  }
+embassy-time = { workspace = true, features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-rp = { workspace = true, features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+embassy-net = { workspace = true, features = ["defmt", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4" ] }
+embassy-sync = { workspace = true, features = ["defmt"] }
+
+cyw43 = { workspace = true, features = ["defmt", "firmware-logs", "bluetooth"] }
+cyw43-pio = { workspace = true, features = ["defmt"] }
 
 
-cyw43 = { version = "0.1.0", git = "https://github.com/embassy-rs/embassy", features = [
-    "firmware-logs",
-] }
-cyw43-pio = { version = "0.1.0", git = "https://github.com/embassy-rs/embassy", features = [
-    "overclock",
-] }
+#
+# Embedded
+#
+embedded-hal = { workspace = true }
+embedded-hal-async = { workspace = true}
+embedded-io-async = { workspace = true, features = ["defmt-03"] }
 
-cortex-m-rt = ">=0.6.15,<0.8"
-cortex-m = "0.7.6"
+#
+# Cortex
+#
+cortex-m = { workspace = true, features = ["inline-asm"] }
+cortex-m-rt = { workspace = true }
+
 
 panic-probe = { version = "0.3", features = ["print-defmt"] }
-heapless = "0.7.15"
+heapless = "0.8"
 
 defmt = "0.3"
 defmt-rtt = "0.4"
 
-static_cell = { version = "1.1", features = ["nightly"] }
+static_cell = { version = "2.1", features = ["nightly"] }
 log = { workspace = true }
 
 atomic-polyfill = "1.0.1"
 
 lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
+
+portable-atomic = { version = "1.5", features = ["critical-section"] }
+#fixed = "1.23.1"
+#fixed-macro = "1.2"
+
+
 engine_race = { path = "../engine_race/" }
 
-# littlefs2 = { version="0.4.0", features=["c-stubs", "log-none"] }
-
-# generic-array = "0.14"
 
 [profile.release]
 debug = 2
+
+
+
