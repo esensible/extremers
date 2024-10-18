@@ -196,7 +196,7 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn net task");
     }
 
-    control.start_ap_wpa2("nacra18", "password", 1).await;
+    control.start_ap_wpa2("nacra17", "password", 1).await;
 
     let result = spawner.spawn(sleeper_task(httpd));
     if result.is_err() {
