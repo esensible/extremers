@@ -28,6 +28,7 @@ const OK: &[u8] = b"200 OK\r\n";
 const BAD_REQUEST: &[u8] = b"400 Bad Request\r\n";
 const NOT_FOUND: &[u8] = b"404 Not Found\r\n";
 const SERVER_ERROR: &[u8] = b"500 Internal Server Error\r\n";
+const REDIRECT_INDEX: &[u8] = b"302 Found\r\nLocation: /index.html\r\n";
 const CONTENT_TYPE: &[u8] = b"Content-Type: ";
 const APP_JSON: &[u8] = b"application/json\r\n";
 // const TEXT_HTML: &[u8] = b"text/html\r\n";
@@ -212,7 +213,8 @@ impl<T: EventEngineTrait, S: StaticHttpTrait> EngineHttpd<T, S> {
 
                     Ok(Response::Complete(Some(header_len), None, Some(file)))
                 } else {
-                    Err(respond(response, NOT_FOUND, Some(b"bummer")))
+                    // Err(respond(response, NOT_FOUND, Some(b"bummer")))                    
+                    Err(respond(response, REDIRECT_INDEX, None))                    
                 }
             }
             _ => Err(respond(response, NOT_FOUND, Some(b"Ooops"))),
