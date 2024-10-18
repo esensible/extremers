@@ -17,11 +17,10 @@ tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 paste = "1.0"
 
-engine = { path = "../engine" }
-
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4.0", features = ["fs", "trace"] }
 
 chrono = "0.4"
 
+engine = { path = "../engine" }
 engine_race= {path="../engine_race" }

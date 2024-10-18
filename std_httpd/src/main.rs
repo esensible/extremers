@@ -8,7 +8,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use engine::{EventEngineTrait, Flat, FlatDiff, RaceEngine, UpdateResp};
+use engine::{EventEngineTrait, Flat, FlatDiff, EventEngine, UpdateResp};
+use engine_race::Race;
 use hyper::Server;
 use hyper::{Body, Response, StatusCode};
 use serde::Deserialize;
@@ -24,6 +25,8 @@ use tokio::time::{timeout, Duration};
 const TIMEOUT: Duration = Duration::from_secs(5);
 const TIMEZONE_OFFSET: i64 = (10 * 60 + 30) * 60; // ACDT (ms)
 const TIMESTAMP_TOLERANCE_MS: i64 = 20;
+
+type RaceEngine = EventEngine<Race, 1>;
 
 #[derive(Deserialize)]
 struct UpdatesQuery {
@@ -77,11 +80,12 @@ async fn main() {
     }
 }
 
-use engine_race::lookup;
+use engine_race::RaceStaticFiles;
+use engine_race::StaticHttpTrait;
 
 async fn static_files_handler(Path(file): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     println!("file: {}", file);
-    match lookup(&file) {
+    match RaceStaticFiles::lookup(&file) {
         Some(data) => {
             let bytes = Bytes::copy_from_slice(data);
 
@@ -100,14 +104,16 @@ async fn events_handler(
     system_state: Arc<SystemState>,
     Json(event): Json<<RaceEngine as EventEngineTrait>::Event>,
 ) -> Result<&'static str, String> {
-    let sleep_fn = |_time: usize, _: usize| {
+
+    let mut sleep_fn = |_time: u64, _: usize| -> Result<(), &'static str> {
         // Implement your sleep functionality here, if needed
+        Ok(())
     };
 
     let update = {
         let mut engine_state = system_state.engine.lock().await;
         let old_state = engine_state.1.get_state();
-        match engine_state.1.handle_event(event, &sleep_fn) {
+        match engine_state.1.handle_event(event, &mut sleep_fn) {
             Ok(updated) => {
                 if updated {
                     engine_state.0 += 1;
