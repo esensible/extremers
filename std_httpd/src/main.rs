@@ -198,10 +198,10 @@ async fn updates_handler(
                     .status(StatusCode::NO_CONTENT)
                     .body(Body::empty())
                     .unwrap();
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis() as i64;
+                // let now = SystemTime::now()
+                //     .duration_since(UNIX_EPOCH)
+                //     .expect("Time went backwards")
+                //     .as_millis() as i64;
 
                 Ok(response)
             }
