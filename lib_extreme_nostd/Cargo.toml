@@ -9,7 +9,6 @@ crate-type = ["lib"]
 [dependencies]
 embassy-sync = { workspace = true }
 embassy-time = { workspace = true }
-embassy-rp = { workspace = true }
 embassy-net = { workspace = true }
 
 embedded-io = { version = "0.6.0" }
