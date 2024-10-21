@@ -54,11 +54,13 @@ export const finishClick = () => {
 
 export const Race = () => (
     <div>
-        <div class="gps">{() => speed().toFixed(1)}</div>
-        <div class="gps">{() => heading().toFixed(0)}</div>
+        <div class="speed">{() => speed().toFixed(1)}</div>
+        <div class="heading">{() => heading().toFixed(0)}</div>
         <Confirm />
         <div class="buttons">
-            <button class="refresh finish" onClick={finishClick}>{raceTime}</button>
+            <div class="row">
+                <button class="refresh finish" onClick={finishClick}>{raceTime}</button>
+            </div>
         </div>
     </div>
 );

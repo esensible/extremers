@@ -86,31 +86,32 @@ const MARGIN = 5;
 
 const crossStyle = () => {
     const value = lineCross();
-    return value < 50 - MARGIN ? { left: value } : { right: 100 - value };
+    return 25;
+    // return value < 50 - MARGIN ? { left: value } : { right: 100 - value };
 }
 
 export const LineButtons = () => {
     if (line() == LINE_BOTH) {
-        return <div class="wrapper">
-            <div class="z-index"><span class="center-text">{crossTime}</span></div>
-            <div class="floating-square" style={crossStyle()}></div>
-            <button class="line trans" onClick={clickPort}>
-                <span class="bottom-left">Port</span>
+        return <div class="row">
+            <div class="line-time">{crossTime()}</div>
+            <div class="line-pos" style={crossStyle()}></div>
+            <button class={`port refresh`} onClick={clickPort}>
+                <span class="corner-label">Port</span>
             </button>
-            <button class="line trans" onClick={clickStbd}>
-                <span class="bottom-right">Stbd</span>
+            <button class={`stbd refresh`} onClick={clickStbd}>
+                <span class="corner-label">Stbd</span>
             </button>
         </div>
     }
 
-    const portClass = () => (line() == LINE_PORT) ? "line refresh" : "line";
-    const stbdClass = () => (line() == LINE_STBD) ? "line refresh" : "line";
+    const portClass = () => (line() == LINE_PORT) ? "refresh" : "";
+    const stbdClass = () => (line() == LINE_STBD) ? "refresh" : "";
 
-    return <div class="wrapper">
-        <button class={portClass()} onClick={clickPort}>
+    return <div class="row">
+        <button class={`port ${portClass()}`} onClick={clickPort}>
             Port
         </button>
-        <button class={stbdClass()} onClick={clickStbd}>
+        <button class={`stbd ${stbdClass()}`} onClick={clickStbd}>
             Stbd
         </button>
     </div>

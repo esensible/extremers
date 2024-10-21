@@ -63,17 +63,17 @@ createEffect(() => {
 
 export const Sequence = () => (
     <div>
-        <div class="gps">{() => speed().toFixed(1)}</div>
-        <div class="gps">{countdown}</div>
+        <div class="speed">{() => speed().toFixed(1)}</div>
+        <div class="countdown">{countdown}</div>
         <Confirm />
-        <div class="Buttons">
+        <div class="buttons">
             <LineButtons />
-            <div>
-                <button class="five" onClick={bumpStart(-300)}>5</button>
-                <button class="one" onClick={bumpStart(-60)}>1</button>
-                <button class="zero" onClick={bumpStart(0)}>Sync</button>
-                <button class="one" onClick={bumpStart(60)}>1</button>
-                <button class="five" onClick={bumpStart(300)}>5</button>
+            <div class="row">
+                <button onClick={bumpStart(-300)}>5</button>
+                <button onClick={bumpStart(-60)}>1</button>
+                <button onClick={bumpStart(0)}>Sync</button>
+                <button onClick={bumpStart(60)}>1</button>
+                <button onClick={bumpStart(300)}>5</button>
             </div>
         </div>
     </div>

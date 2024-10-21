@@ -1,9 +1,10 @@
 import { createSignal } from "./api.js" // maintains a map for RESTful updates
 
-const CONFIRM_SIZE = 100 / 2;
-const SCREEN_WIDTH = 1272 / 2;
-const SCREEN_HEIGHT = (1474 - 500) / 2;
 const CONFIRM_TIMEOUT = 5000;
+const BORDER_SIZE = 15; // vw
+const SCREEN_WIDTH = 100; // vw
+// don't confirm over the buttons
+const SCREEN_HEIGHT = 75; // vh
 
 export const confirm = () => {
     const [class_, setClass] = createSignal("confirm");
@@ -16,7 +17,7 @@ export const confirm = () => {
         _callback = callback;
         _count = typeof count === "number" ? count: 1;
 
-        setClass("confirm active");    
+        setClass("active");    
         onClickHandler();
     }
 
@@ -25,7 +26,7 @@ export const confirm = () => {
             clearTimeout(_removeTimeout);
             _removeTimeout = null;
         }
-        setClass("confirm");
+        setClass("");
         _count = -1;
         _callback = null;
     }
@@ -38,18 +39,16 @@ export const confirm = () => {
     
         if (_count > 0) {
 
-            const leftPosition = Math.random() * (SCREEN_WIDTH - 2 * CONFIRM_SIZE) + CONFIRM_SIZE;
-            const topPosition = Math.random() * (SCREEN_HEIGHT - 2 * CONFIRM_SIZE) + CONFIRM_SIZE; 
+            const leftPosition = Math.random() * (SCREEN_WIDTH - 2 * BORDER_SIZE) + BORDER_SIZE;
+            const topPosition = Math.random() * (SCREEN_HEIGHT - 2 * BORDER_SIZE) + BORDER_SIZE; 
         
             setPos({
-                left: leftPosition + 'px',
-                top: topPosition + 'px',
-                width: CONFIRM_SIZE + 'px',
-                height: CONFIRM_SIZE + 'px',
+                left: leftPosition + 'vw',
+                top: topPosition + 'vh',
             })
             _removeTimeout = setTimeout(cancelFn, CONFIRM_TIMEOUT);
         } else {
-            setClass("confirm");
+            setClass("");
             _callback();
         }      
         _count -= 1;
@@ -57,7 +56,7 @@ export const confirm = () => {
 
     return [
             () => (
-                <button class={class_()} style={pos()} onClick={onClickHandler}></button>
+                <button class={`confirm ${class_()}`} style={pos()} onClick={onClickHandler}></button>
             ),
             confirmFn,
             cancelFn,

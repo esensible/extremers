@@ -12,18 +12,18 @@ function seqClick(seconds) {
 }
 
 export const Active = () => (
-    <div>
-        <div class="gps">{() => speed().toFixed(1)}</div>
-        <div class="gps">{time}</div>
+    <>
+        <div class="speed">{() => speed().toFixed(1)}</div>
+        <div class="time">{time}</div>
         <Confirm />
         <div class="buttons">
             <LineButtons />
-            <div id="idle">
-                <button class="idle" onClick={seqClick(600)}>10</button>
-                <button class="idle" onClick={seqClick(300)}>5</button>
-                <button class="idle" onClick={seqClick(240)}>4</button>
-                <button class="idle" onClick={seqClick(60)}>1</button>
+            <div class="row">
+                <button onClick={seqClick(600)}>10</button>
+                <button onClick={seqClick(300)}>5</button>
+                <button onClick={seqClick(240)}>4</button>
+                <button onClick={seqClick(60)}>1</button>
             </div>
         </div>
-    </div>
+    </>
 );

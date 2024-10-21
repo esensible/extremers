@@ -22,22 +22,12 @@ export const Main = () => (
       <Race />
     </Match>
   </Switch>  
-  // switch (state()) {
-  //   case STATE_IDLE:
-  //     return <Idle/>;
-  //   case STATE_ACTIVE:
-  //     return <Active/>;
-  //   case STATE_SEQ:
-  //     return <Sequence/>;
-  //   case STATE_RACE:
-  //     return <Race/>;
-  //   default:
-  //     return <div><h1>Loading...</h1></div>;
-  // }
 );
 
 const app = () => (
-  <div><Main/></div>
+  <div class="container">
+    <Main/>
+  </div>
 );
 
 document.body.appendChild(app());
