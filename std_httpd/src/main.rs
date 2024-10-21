@@ -34,6 +34,14 @@ struct UpdatesQuery {
     timestamp: u64,
 }
 
+#[derive(Deserialize)]
+struct Location {
+    lat: f64,
+    lon: f64,
+    speed: f64,
+    heading: f64,
+}
+
 struct EngineState(usize, RaceEngine);
 struct SystemState {
     engine: TokioMutex<EngineState>,
@@ -51,6 +59,16 @@ async fn main() {
     });
 
     let app = Router::new()
+        .route( // this is for the test system to feed location data
+            "/location",
+            post({
+                let system_state = system_state.clone();
+                move |req: Json<Location>| {
+                    let system_state = system_state.clone();
+                    async move { location_handler(system_state, req).await }
+                }
+            }),
+        )
         .route(
             "/events",
             post({
@@ -97,6 +115,39 @@ async fn static_files_handler(Path(file): Path<String>) -> Result<impl IntoRespo
         }
         None => Err(StatusCode::NOT_FOUND),
     }
+}
+
+async fn location_handler(
+    system_state: Arc<SystemState>,
+    Json(location): Json<Location>,
+) -> Result<&'static str, String> {
+    
+    let update = {
+        let mut engine_state = system_state.engine.lock().await;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_millis() as u64;
+        let old_state = engine_state.1.get_state();
+        let updated = engine_state.1.update_location(timestamp, Some((location.lat, location.lon)), Some((location.speed, location.heading)));
+
+        if updated {
+            engine_state.0 += 1;
+            let new_state = engine_state.1.get_state();
+            let delta = UpdateResp::new(engine_state.0, FlatDiff(&new_state, &old_state));
+            match serde_json::to_string(&delta) {
+                Ok(update) => Ok(Some(update)),
+                Err(e) => Err(format!("Failed to serialize delta: {}", e)),
+            }
+        } else {
+            Ok(None)
+        }
+    }?;
+
+    if let Some(update) = update {
+        let _ = system_state.sendr.send(update);
+    }    
+    Ok("OK")    
 }
 
 // Define the handler for the `/events` endpoint
