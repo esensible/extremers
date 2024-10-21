@@ -1,10 +1,36 @@
-import { setAll } from 'silkjs';
+import { createSignal as solidCreateSignal } from 'solid-js';
 
 const BASE_URL = "";
 
 var timestampOffset = 10000000;
 // initial value is large to force sync
 var timezoneOffset = 0;
+
+
+const signalMap = new Map();
+
+export function createSignal(initialValue, key) {
+  const [getter, setter] = solidCreateSignal(initialValue);
+  if (key) {
+    signalMap.set(key, setter);
+  }
+  return [getter, setter];
+}
+
+export function setAll(updates, failHard = false) {
+  for (const key in updates) {
+    if (signalMap.has(key)) {
+      signalMap.get(key)(updates[key]);
+    } else {
+      if (failHard) {
+        throw new Error(`Key "${key}" not found in signalMap.`);
+      } else {
+        console.warn(`Key "${key}" not found in signalMap.`);
+        console.log(signalMap);
+      }
+    }
+  }
+}
 
 export function timestamp() {
   return new Date().getTime() + timestampOffset

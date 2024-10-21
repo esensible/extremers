@@ -1,8 +1,8 @@
-import { createSignal } from 'silkjs';
+import { createSignal } from "./api.js" // maintains a map for RESTful updates
 
-const CONFIRM_SIZE = 100;
-const SCREEN_WIDTH = 1272;
-const SCREEN_HEIGHT = 1474 - 500;
+const CONFIRM_SIZE = 100 / 2;
+const SCREEN_WIDTH = 1272 / 2;
+const SCREEN_HEIGHT = (1474 - 500) / 2;
 const CONFIRM_TIMEOUT = 5000;
 
 export const confirm = () => {
@@ -57,7 +57,7 @@ export const confirm = () => {
 
     return [
             () => (
-                <button class={class_} style={pos} onClick={onClickHandler}></button>
+                <button class={class_()} style={pos()} onClick={onClickHandler}></button>
             ),
             confirmFn,
             cancelFn,

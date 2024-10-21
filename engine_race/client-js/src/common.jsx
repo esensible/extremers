@@ -1,4 +1,5 @@
-import { createSignal, createEffect, onCleanup } from "silkjs"
+import { createEffect, onCleanup } from "solid-js"
+import { createSignal } from "./api.js" // maintains a map for RESTful updates
 import { postEvent, timestamp, timezoneSecs } from "./api.js"
 
 export const STATE_IDLE = "Idle";
@@ -92,7 +93,7 @@ export const LineButtons = () => {
     if (line() == LINE_BOTH) {
         return <div class="wrapper">
             <div class="z-index"><span class="center-text">{crossTime}</span></div>
-            <div class="floating-square" style={crossStyle}></div>
+            <div class="floating-square" style={crossStyle()}></div>
             <button class="line trans" onClick={clickPort}>
                 <span class="bottom-left">Port</span>
             </button>
@@ -106,10 +107,10 @@ export const LineButtons = () => {
     const stbdClass = () => (line() == LINE_STBD) ? "line refresh" : "line";
 
     return <div class="wrapper">
-        <button class={portClass} onClick={clickPort}>
+        <button class={portClass()} onClick={clickPort}>
             Port
         </button>
-        <button class={stbdClass} onClick={clickStbd}>
+        <button class={stbdClass()} onClick={clickStbd}>
             Stbd
         </button>
     </div>

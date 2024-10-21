@@ -42,7 +42,7 @@ struct SystemState {
 
 #[tokio::main]
 async fn main() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
 
     let (sender, _) = watch::channel(String::new());
     let system_state = Arc::new(SystemState {

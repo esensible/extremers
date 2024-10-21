@@ -16,7 +16,7 @@
     "express": "^4.18.2",
     "rollup": "^3.21.6",
     "rollup-plugin-gzip": "^3.1.0",
-    "silkjs": "github:esensible/silkjs"
+    "solid-js": "^1.9.2"
   },
   "devDependencies": {
     "@babel/core": "^7.21.8",
@@ -27,11 +27,13 @@
     "@rollup/plugin-node-resolve": "^15.0.2",
     "@rollup/plugin-terser": "^0.4.1",
     "@vitejs/plugin-react": "^4.0.0",
+    "babel-preset-solid": "^1.9.2",
     "esbuild": "^0.17.18",
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-smart-asset": "^2.1.2",
     "silky_mocha": "github:esensible/silky_mocha",
     "vite": "^4.3.5",
+    "vite-plugin-solid": "^2.10.2",
     "whatwg-fetch": "^3.6.2"
   }
 }

@@ -1,4 +1,4 @@
-import { state, time } from './common.jsx';
+import { time } from './common.jsx';
 // import pissingImg from "./assets/pissing.jpg";
 import { postEvent } from "./api.js"
 

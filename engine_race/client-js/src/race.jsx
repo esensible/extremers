@@ -1,5 +1,6 @@
 import { startTime, speed, heading, state, STATE_RACE } from './common.jsx';
-import { createSignal, createEffect, onCleanup } from 'silkjs';
+import { createEffect, onCleanup } from 'solid-js';
+import { createSignal } from "./api.js" // maintains a map for RESTful updates
 import { confirm } from './confirm.jsx';
 import { postEvent, timestamp } from "./api.js"
 

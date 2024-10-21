@@ -28,7 +28,7 @@ export default {
     babel({
       babelHelpers: 'bundled',
       presets: [
-        "silkjs/babel-presets",
+        'babel-preset-solid',
         [
           "@babel/preset-env",
           {

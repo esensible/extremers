@@ -1,12 +1,8 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import solidPlugin from 'vite-plugin-solid'
 
 export default defineConfig({
-  plugins: [
-    react({
-      jsxImportSource: 'silkjs',
-    }),
-  ],
+  plugins: [solidPlugin()],
   server: {
     proxy: {
       '/sync': {
@@ -40,6 +36,11 @@ export default defineConfig({
             console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
           });
         },   
+      },
+      '/updates': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        method: 'GET'
       },
     },
   },  
