@@ -46,8 +46,6 @@ atomic-polyfill = "1.0.1"
 lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
 
 portable-atomic = { version = "1.5", features = ["critical-section"] }
-#fixed = "1.23.1"
-#fixed-macro = "1.2"
 
 
 engine_race = { path = "../engine_race/" }
