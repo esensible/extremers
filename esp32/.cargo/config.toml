@@ -1,0 +1,12 @@
+[target.'cfg(all(target_arch = "riscv32", target_os = "none"))']
+runner    = "espflash flash --monitor"
+rustflags = [
+  "-C", "link-arg=-Tlinkall.x",
+  "-C", "force-frame-pointers",
+]
+
+[build]
+target = "riscv32imc-unknown-none-elf"
+
+# [env]
+# DEFMT_LOG = "debug"
