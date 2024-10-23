@@ -48,8 +48,5 @@ lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
 engine_race = { path = "../engine_race/" }
 
 
-#[profile.release]
-#debug = 2
-
 
 
