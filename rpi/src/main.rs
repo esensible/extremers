@@ -87,7 +87,7 @@ pub async fn httpd_task(
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<'_>,
+    stack: &'static embassy_net::Stack<'static>,
 ) -> ! {
     httpd_task_impl(httpd_mutex, stack).await
 }

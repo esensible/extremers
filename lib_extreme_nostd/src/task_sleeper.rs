@@ -30,7 +30,7 @@ pub async fn sleeper_task_impl(
             Some(message) => {
                 // so sleep!
                 // convert absolute wake time to a duration
-                let offset: u64 = unsafe {
+                let offset: u64 = {
                     let offset_msb = OFFSET_MSB.load(Ordering::Relaxed) as u64;
                     let offset_lsb = OFFSET_LSB.load(Ordering::Relaxed) as u64;
 

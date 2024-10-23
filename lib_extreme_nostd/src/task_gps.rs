@@ -22,7 +22,7 @@ pub async fn gps_task_impl<T>(
 
         if let Some(time) = &time {
             let uptime = embassy_time::Instant::now().as_millis() as u64;
-            unsafe {
+            {
                 if OFFSET_MSB.load(Ordering::Relaxed) == 0 {
                     offset = time - uptime;
                     let offset_msb = (offset >> 32) as u32;

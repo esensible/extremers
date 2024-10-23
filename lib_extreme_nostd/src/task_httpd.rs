@@ -1,5 +1,4 @@
 use core::sync::atomic::Ordering;
-use embassy_net::driver::Driver;
 use embassy_net::tcp::TcpSocket;
 
 // traits used
@@ -14,7 +13,7 @@ use crate::consts::*;
 fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
     // Confirm we have a GPS reading first
     // Critical because pending sleeps are not adjusted on GPS time updates
-    let offset: u64 = unsafe {
+    let offset: u64 = {
         let offset_msb = OFFSET_MSB.load(Ordering::Relaxed) as u64;
         let offset_lsb = OFFSET_LSB.load(Ordering::Relaxed) as u64;
 
@@ -70,7 +69,7 @@ pub async fn httpd_task_impl(
                     let response = {
                         let mut engine = httpd_mutex.lock().await;
 
-                        let offset: u64 = unsafe {
+                        let offset: u64 = {
                             let offset_msb = OFFSET_MSB.load(Ordering::Relaxed) as u64;
                             let offset_lsb = OFFSET_LSB.load(Ordering::Relaxed) as u64;
 
