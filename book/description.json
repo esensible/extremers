@@ -1,0 +1,21 @@
+{
+"metadata":{
+    "dc:title":"Extreme Racer",
+    "dc:creator":"esensible",
+    "dc:language":"en-US",
+    "dc:identifier":"extreme-racer",
+    "dc:source":"",
+    "meta":"",
+    "dc:date":"2024-10-01",
+    "dc:publisher":"",
+    "dc:contributor":"",
+    "dc:rights":"",
+    "dc:description":"",
+    "dc:subject":""
+    },
+"cover_image":"cover.jpg",
+"default_css":["general.css"],
+"chapters":[
+            {"markdown":"chapter1.md","css":""}
+        ]
+}
