@@ -11,8 +11,8 @@ embassy-sync = { workspace = true }
 embassy-time = { workspace = true }
 embassy-net = { workspace = true }
 
-embedded-io = { version = "0.6.0" }
-embedded-io-async = { version = "0.6.1" }
+embedded-io = { workspace = true }
+embedded-io-async = { workspace = true }
 
 log = { workspace = true }
 

@@ -1,37 +1,30 @@
-//! Embassy access point
-//!
-//! - creates an open access-point with SSID `esp-wifi`
-//! - you can connect to it using a static IP in range 192.168.2.2 .. 192.168.2.255, gateway 192.168.2.1
-//! - open http://192.168.2.1:8080/ in your browser - the example will perform an HTTP get request to some "random" server
-//!
-//! On Android you might need to choose _Keep Accesspoint_ when it tells you the WiFi has no internet connection, Chrome might not want to load the URL - you can use a shell and try `curl` and `ping`
-//!
-//! Because of the huge task-arena size configured this won't work on ESP32-S2
-//! When using USB-SERIAL-JTAG you may have to activate the feature `phy-enable-usb` in the esp-wifi crate.
-
-//% FEATURES: embassy embassy-generic-timers esp-wifi esp-wifi/async esp-wifi/embassy-net esp-wifi/wifi-default esp-wifi/wifi esp-wifi/utils
-//% CHIPS: esp32 esp32s2 esp32s3 esp32c2 esp32c3 esp32c6
+//! This example uses the RP Pico W board Wifi chip (cyw43).
+//! Creates an Access point Wifi network and creates a TCP endpoint on port 1234.
 
 #![no_std]
 #![no_main]
+#![feature(type_alias_impl_trait)]
+#![allow(incomplete_features)]
+
+// #[cfg(test)]
+// mod tests;
+
 
 use embassy_executor::Spawner;
-use embassy_net::{
-    tcp::TcpSocket,
-    IpListenEndpoint,
-    Ipv4Address,
-    Ipv4Cidr,
-    Stack,
-    StackResources,
-    StaticConfigV4,
-};
+use embassy_net::{Config, Stack, Runner, StackResources, StaticConfigV4, Ipv4Cidr, Ipv4Address};
+use embassy_net::driver::Driver;
+
+// use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
-use esp_alloc as _;
+
+// use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{prelude::*, rng::Rng, timer::timg::TimerGroup};
 use esp_println::{print, println};
 use esp_wifi::{
     init,
+    
     wifi::{
         AccessPointConfiguration,
         Configuration,
@@ -40,11 +33,24 @@ use esp_wifi::{
         WifiDevice,
         WifiEvent,
         WifiState,
+        AuthMethod,
     },
     EspWifiInitFor,
 };
 
-// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
+use heapless::Vec;
+use static_cell::StaticCell;
+
+
+
+// use lib_extreme_nostd::{
+//     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
+// };
+
+const MAX_SOCKETS: usize = 4;
+
+// use engine_race::RaceHttpd;
+
 macro_rules! mk_static {
     ($t:ty,$val:expr) => {{
         static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
@@ -54,8 +60,59 @@ macro_rules! mk_static {
     }};
 }
 
+
+// #[embassy_executor::task]
+// async fn logger_task(driver: Driver<'static, USB>) {
+//     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+// }
+
+// struct UartReader(UartRx<'static, UART1, Async>);
+// impl AsyncReader for UartReader {
+//     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+//         match self.0.read(buf).await {
+//             Ok(_) => Ok(buf.len()),
+//             Err(_) => Err(()),
+//         }
+//     }
+// }
+
+// #[embassy_executor::task]
+// pub async fn gps_task(
+//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
+//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+//         RaceHttpd,
+//     >,
+//     rx: UartRx<'static, UART1, Async>,
+// ) {
+//     let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
+//     gps_task_impl(httpd_mutex, &mut ring_buffer).await;
+// }
+
+// #[embassy_executor::task(pool_size = MAX_SOCKETS)]
+// pub async fn httpd_task(
+//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
+//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+//         RaceHttpd,
+//     >,
+//     stack: &'static embassy_net::Stack<'_>,
+// ) -> ! {
+//     httpd_task_impl(httpd_mutex, stack).await
+// }
+
+// #[embassy_executor::task]
+// pub async fn sleeper_task(
+//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
+//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+//         RaceHttpd,
+//     >,
+// ) {
+//     sleeper_task_impl(httpd_mutex).await;
+// }
+
 #[esp_hal_embassy::main]
-async fn main(spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) {
+
+
     esp_println::logger::init_logger_from_env();
     let peripherals = esp_hal::init({
         let mut config = esp_hal::Config::default();
@@ -63,7 +120,7 @@ async fn main(spawner: Spawner) -> ! {
         config
     });
 
-    esp_alloc::heap_allocator!(72 * 1024);
+    // esp_alloc::heap_allocator!(72 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
@@ -76,130 +133,80 @@ async fn main(spawner: Spawner) -> ! {
     .unwrap();
 
     let wifi = peripherals.WIFI;
-    let (wifi_interface, controller) =
+    let (mut net_device, mut controller) =
         esp_wifi::wifi::new_with_mode(&init, wifi, WifiApDevice).unwrap();
 
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "esp32")] {
-            let timg1 = TimerGroup::new(peripherals.TIMG1);
-            esp_hal_embassy::init(timg1.timer0);
-        } else {
+    // cfg_if::cfg_if! {
+    //     if #[cfg(feature = "esp32")] {
+    //         let timg1 = TimerGroup::new(peripherals.TIMG1);
+    //         esp_hal_embassy::init(timg1.timer0);
+    //     } else {
             use esp_hal::timer::systimer::{SystemTimer, Target};
             let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
             esp_hal_embassy::init(systimer.alarm0);
-        }
-    }
+    //     }
+    // }
 
     let config = embassy_net::Config::ipv4_static(StaticConfigV4 {
-        address: Ipv4Cidr::new(Ipv4Address::new(169, 254, 1, 1), 24),
-        gateway: Some(Ipv4Address::from_bytes(&[169, 254, 1, 1])),
+        address: Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 100), 24),
+        gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
         dns_servers: Default::default(),
     });
 
     let seed = 1234; // very random, very secure seed
 
     // Init network stack
-    let stack = &*mk_static!(
-        Stack<WifiDevice<'_, WifiApDevice>>,
-        Stack::new(
-            wifi_interface,
-            config,
-            mk_static!(StackResources<3>, StackResources::<3>::new()),
-            seed
-        )
-    );
+    static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
+    static STACK: StaticCell<Stack<'_>> = StaticCell::new();
+    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    // let stack = STACK.init(stack);
 
-    spawner.spawn(connection(controller)).ok();
-    spawner.spawn(net_task(&stack)).ok();
+    // let stack = &*mk_static!(
+    //     Stack<WifiDevice<'_, WifiApDevice>>,
+    //     Stack::new(
+    //         net_device,
+    //         config,
+    //         mk_static!(StackResources<3>, StackResources::<3>::new()),
+    //         seed
+    //     )
+    // );    
 
-    let mut rx_buffer = [0; 1536];
-    let mut tx_buffer = [0; 1536];
+    spawner.spawn(ap_task(controller)).ok();
+    // spawner.spawn(net_task(runner)).ok();
 
-    loop {
-        if stack.is_link_up() {
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
-    println!("Connect to the AP `esp-wifi` and point your browser to http://192.168.2.1:8080/");
-    println!("Use a static IP in the range 192.168.2.2 .. 192.168.2.255, use gateway 192.168.2.1");
+    // type RaceHttpdMutex = Mutex::<ThreadModeRawMutex, RaceHttpd>;
 
-    let mut socket = TcpSocket::new(&stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
-    loop {
-        println!("Wait for connection...");
-        let r = socket
-            .accept(IpListenEndpoint {
-                addr: None,
-                port: 8080,
-            })
-            .await;
-        println!("Connected...");
+    // static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
+    // let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
 
-        if let Err(e) = r {
-            println!("connect error: {:?}", e);
-            continue;
-        }
 
-        use embedded_io_async::Write;
+    // let result = spawner.spawn(sleeper_task(httpd));
+    // if result.is_err() {
+    //     log::warn!("failed to spawn sleeper task");
+    // }
 
-        let mut buffer = [0u8; 1024];
-        let mut pos = 0;
-        loop {
-            match socket.read(&mut buffer).await {
-                Ok(0) => {
-                    println!("read EOF");
-                    break;
-                }
-                Ok(len) => {
-                    let to_print =
-                        unsafe { core::str::from_utf8_unchecked(&buffer[..(pos + len)]) };
-
-                    if to_print.contains("\r\n\r\n") {
-                        print!("{}", to_print);
-                        println!();
-                        break;
-                    }
-
-                    pos += len;
-                }
-                Err(e) => {
-                    println!("read error: {:?}", e);
-                    break;
-                }
-            };
-        }
-
-        let r = socket
-            .write_all(
-                b"HTTP/1.0 200 OK\r\n\r\n\
-            <html>\
-                <body>\
-                    <h1>Hello Rust! Hello esp-wifi!</h1>\
-                </body>\
-            </html>\r\n\
-            ",
-            )
-            .await;
-        if let Err(e) = r {
-            println!("write error: {:?}", e);
-        }
-
-        let r = socket.flush().await;
-        if let Err(e) = r {
-            println!("flush error: {:?}", e);
-        }
-        Timer::after(Duration::from_millis(1000)).await;
-
-        socket.close();
-        Timer::after(Duration::from_millis(1000)).await;
-
-        socket.abort();
-    }
+    // for _ in 0..MAX_SOCKETS {
+    //     let result = spawner.spawn(httpd_task(httpd, stack));
+    //     if result.is_err() {
+    //         log::warn!("failed to spawn httpd task");
+    //         break;
+    //     }
+    // }
+    // loop {
+    //     Timer::after(Duration::from_secs(10)).await;
+    //     log::info!(".");
+    // }
 }
 
+
+// #[embassy_executor::task]
+// async fn net_task(mut runner: embassy_net::Runner<'static, WifiDevice<'static, WifiApDevice>>) -> ! {
+//     runner.run().await
+// }
+
+
 #[embassy_executor::task]
-async fn connection(mut controller: WifiController<'static>) {
+async fn ap_task(mut controller: WifiController<'static>) {
     println!("start connection task");
     println!("Device capabilities: {:?}", controller.get_capabilities());
     loop {
@@ -213,7 +220,9 @@ async fn connection(mut controller: WifiController<'static>) {
         }
         if !matches!(controller.is_started(), Ok(true)) {
             let client_config = Configuration::AccessPoint(AccessPointConfiguration {
-                ssid: "esp-wifi".try_into().unwrap(),
+                ssid: "nacra17".try_into().unwrap(),
+                password: "password".try_into().unwrap(),
+                auth_method: AuthMethod::WPA2Personal,
                 ..Default::default()
             });
             controller.set_configuration(&client_config).unwrap();
@@ -222,9 +231,4 @@ async fn connection(mut controller: WifiController<'static>) {
             println!("Wifi started!");
         }
     }
-}
-
-#[embassy_executor::task]
-async fn net_task(stack: &'static Stack<WifiDevice<'static, WifiApDevice>>) {
-    stack.run().await
 }

@@ -12,10 +12,8 @@ license = "MIT OR Apache-2.0"
 esp-hal             = { git="https://github.com/esp-rs/esp-hal/", features = ["log"] }
 esp-hal-embassy     = { git="https://github.com/esp-rs/esp-hal/" }
 esp-println         = { git="https://github.com/esp-rs/esp-hal/", features = ["log"] }
-esp-wifi            = { git="https://github.com/esp-rs/esp-hal/" }
+esp-wifi            = { git="https://github.com/esp-rs/esp-hal/", features = ["esp32c3", "wifi", "async", "embassy-net"] }
 esp-backtrace       = { git="https://github.com/esp-rs/esp-hal/", features = ["exception-handler", "panic-handler", "println"] }
-
-#esp-ieee802154      = { path = "../esp-ieee802154", optional = true }
 esp-storage         = { git="https://github.com/esp-rs/esp-hal/", optional = true }
 
 #
@@ -24,9 +22,10 @@ esp-storage         = { git="https://github.com/esp-rs/esp-hal/", optional = tru
 embassy-embedded-hal = { workspace = true, features = ["defmt"] }
 embassy-futures = { workspace = true}
 embassy-usb-logger = { workspace = true }
-embassy-executor = { workspace = true, features = ["task-arena-size-12288", "defmt"]  }
-# embassy-time = { workspace = true, features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-executor = { workspace = true, features = ["task-arena-size-12288", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"]  }
+embassy-time = { workspace = true, features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-net = { workspace = true, features = ["defmt", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4" ] }
+embassy-net-driver = { workspace = true }
 embassy-sync = { workspace = true, features = ["defmt"] }
 
 #
@@ -36,7 +35,6 @@ embedded-hal = { workspace = true }
 embedded-hal-async = { workspace = true}
 embedded-io-async = { workspace = true, features = ["defmt-03"] }
 
-panic-probe = { version = "0.3", features = ["print-defmt"] }
 heapless = "0.8"
 
 defmt = "0.3"
@@ -47,21 +45,18 @@ log = { workspace = true }
 
 atomic-polyfill = "1.0.1"
 
-lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
 
-portable-atomic = { version = "1.5", features = ["critical-section"] }
+# portable-atomic = { version = "1.5", features = ["critical-section"] }
+# portable-atomic = { version = "1.5", features = ["unsafe-assume-single-core"] }
 
 
-engine_race = { path = "../engine_race/" }
+# lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
+# engine_race = { path = "../engine_race/" }
 
 [features]
+default = ["esp32c3"]
 esp32c3 = ["esp-hal/esp32c3", "esp-backtrace/esp32c3", "esp-hal-embassy/esp32c3", "esp-println/esp32c3", "esp-storage?/esp32c3", "esp-wifi/esp32c3"]
-# esp-wifi = ["dep:esp-wifi"]
-# embassy                = ["dep:esp-hal-embassy"]
 # embassy-generic-timers = ["embassy-time/generic-queue-8"]
 
 [profile.release]
 debug = 2
-
-
-

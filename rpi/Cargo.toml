@@ -14,10 +14,6 @@ embassy-rp = { workspace = true, features = ["defmt", "unstable-pac", "time-driv
 embassy-net = { workspace = true, features = ["defmt", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4" ] }
 embassy-sync = { workspace = true, features = ["defmt"] }
 
-cyw43 = { workspace = true, features = ["defmt", "firmware-logs", "bluetooth"] }
-cyw43-pio = { workspace = true, features = ["defmt"] }
-
-
 #
 # Embedded
 #
@@ -30,29 +26,30 @@ embedded-io-async = { workspace = true, features = ["defmt-03"] }
 #
 cortex-m = { workspace = true, features = ["inline-asm"] }
 cortex-m-rt = { workspace = true }
+panic-probe = { workspace = true, features = ["print-defmt"] }
+cyw43 = { workspace = true, features = ["defmt", "firmware-logs", "bluetooth"] }
+cyw43-pio = { workspace = true, features = ["defmt"] }
 
-
-panic-probe = { version = "0.3", features = ["print-defmt"] }
-heapless = "0.8"
-
-defmt = "0.3"
-defmt-rtt = "0.4"
-
-static_cell = { version = "2.1", features = ["nightly"] }
+#
+# Other stuff
+#
 log = { workspace = true }
+heapless = { workspace = true }
+defmt = { workspace = true }
+defmt-rtt = { workspace = true }
+static_cell = { workspace = true, features = ["nightly"] }
+atomic-polyfill = { workspace = true }
+portable-atomic = { workspace = true, features = ["critical-section"] }
 
-atomic-polyfill = "1.0.1"
-
+#
+# The magic
+#   
 lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
-
-portable-atomic = { version = "1.5", features = ["critical-section"] }
-
-
 engine_race = { path = "../engine_race/" }
 
 
-[profile.release]
-debug = 2
+#[profile.release]
+#debug = 2
 
 
 
