@@ -5,41 +5,34 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-embassy-embedded-hal = { workspace = true, features = ["defmt"] }
-embassy-futures = { workspace = true}
-embassy-usb-logger = { workspace = true }
-embassy-executor = { workspace = true, features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"]  }
-embassy-time = { workspace = true, features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { workspace = true, features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
-embassy-net = { workspace = true, features = ["defmt", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4" ] }
-embassy-sync = { workspace = true, features = ["defmt"] }
-
-#
-# Embedded
-#
-embedded-hal = { workspace = true }
-embedded-hal-async = { workspace = true}
-embedded-io-async = { workspace = true, features = ["defmt-03"] }
+embassy-executor = { workspace = true, features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "integrated-timers"]  }
+embassy-time = { workspace = true }
+embassy-net = { workspace = true, features = ["tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4" ] }
+embassy-sync = { workspace = true }
 
 #
 # Cortex
 #
-cortex-m = { workspace = true, features = ["inline-asm"] }
+embassy-usb-logger = { workspace = true }
+embassy-rp = { workspace = true, features = ["unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
 cortex-m-rt = { workspace = true }
-panic-probe = { workspace = true, features = ["print-defmt"] }
-cyw43 = { workspace = true, features = ["defmt", "firmware-logs", "bluetooth"] }
-cyw43-pio = { workspace = true, features = ["defmt"] }
+panic-probe = { workspace = true }
+cyw43 = { workspace = true, features = ["bluetooth"] }
+cyw43-pio = { workspace = true }
 
 #
 # Other stuff
 #
+
+# edge-net = { workspace = true }
 log = { workspace = true }
 heapless = { workspace = true }
-defmt = { workspace = true }
-defmt-rtt = { workspace = true }
 static_cell = { workspace = true, features = ["nightly"] }
 atomic-polyfill = { workspace = true }
 portable-atomic = { workspace = true, features = ["critical-section"] }
+# defmt = { workspace = true }
+# defmt-rtt = { workspace = true }
+
 
 #
 # The magic

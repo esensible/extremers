@@ -34,7 +34,7 @@ use lib_extreme_nostd::{
     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
 };
 
-use {defmt_rtt as _, panic_probe as _};
+use panic_probe as _;
 
 use engine_race::RaceHttpd;
 
