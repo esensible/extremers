@@ -1,4 +1,5 @@
 use core::sync::atomic::Ordering;
+#[allow(unused_imports)]
 use embassy_sync::pubsub::PubSubBehavior;
 
 use engine_race::RaceHttpd;
@@ -51,7 +52,7 @@ pub async fn gps_task_impl<T>(
             // );
 
             update.1 = len;
-            UPDATES_BUS.publish_immediate(update.clone());
+            UPDATES_BUS.publisher().unwrap().publish_immediate(update.clone());
         }
     }
 }

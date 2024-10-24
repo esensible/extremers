@@ -45,13 +45,19 @@ bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::task]
-async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
+async fn wifi_task(
+    runner: cyw43::Runner<
+        'static,
+        Output<'static>,
+        PioSpi<'static, PIO0, 0, DMA_CH0>,
+    >,
+) -> ! {
     runner.run().await
 }
 
 #[embassy_executor::task]
-async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
-    runner.run().await
+async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
+    stack.run().await
 }
 
 #[embassy_executor::task]
@@ -87,7 +93,7 @@ pub async fn httpd_task(
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<'static>,
+    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
 ) -> ! {
     httpd_task_impl(httpd_mutex, stack).await
 }
@@ -156,7 +162,7 @@ async fn main(spawner: Spawner) {
     let state = STATE.init(cyw43::State::new());
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
 
-    let result = spawner.spawn(cyw43_task(runner));
+    let result = spawner.spawn(wifi_task(runner));
     if result.is_err() {
         log::warn!("failed to spawn wifi task");
     }
@@ -187,11 +193,11 @@ async fn main(spawner: Spawner) {
     // Init network stack
 
     static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
-    static STACK: StaticCell<Stack<'_>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
+    let stack = Stack::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
     let stack = STACK.init(stack);
 
-    let result = spawner.spawn(net_task(runner));
+    let result = spawner.spawn(net_task(stack));
     if result.is_err() {
         log::warn!("failed to spawn net task");
     }

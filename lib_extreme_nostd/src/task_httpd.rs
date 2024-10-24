@@ -2,8 +2,13 @@ use core::sync::atomic::Ordering;
 use embassy_net::tcp::TcpSocket;
 
 // traits used
+#[allow(unused_imports)]
 use embassy_sync::pubsub::PubSubBehavior;
+#[allow(unused_imports)]
 use embedded_io_async::Write;
+#[allow(unused_imports)]
+use embassy_net::driver::Driver;
+
 
 use engine_race::RaceHttpd;
 use lib_httpd::Response;
@@ -29,16 +34,16 @@ fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
         callback,
     };
 
-    SLEEP_BUS.publish_immediate(message);
+    SLEEP_BUS.publisher().unwrap().publish_immediate(message);
     Ok(())
 }
 
-pub async fn httpd_task_impl(
+pub async fn httpd_task_impl<D: Driver>(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
         RaceHttpd,
     >,
-    stack: &'static embassy_net::Stack<'_>,
+    stack: &'static embassy_net::Stack<D>,
 ) -> ! {
     let mut rx_buffer = [0; RX_BUF_SIZE];
     let mut tx_buffer = [0; TX_BUF_SIZE];
@@ -47,7 +52,7 @@ pub async fn httpd_task_impl(
     let mut update = UpdateMessage::default();
 
     loop {
-        let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         // socket.set_timeout(Some(Duration::from_secs(10)));
 
         // log::info!("Listening...");
@@ -126,7 +131,7 @@ pub async fn httpd_task_impl(
                             }
                             if let Some(up_len) = up_len {
                                 update.1 = up_len;
-                                UPDATES_BUS.publish_immediate(update.clone());
+                                UPDATES_BUS.publisher().unwrap().publish_immediate(update.clone());
                             }
                         }
                         Response::None => {

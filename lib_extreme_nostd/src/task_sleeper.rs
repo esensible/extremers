@@ -1,5 +1,6 @@
 use core::sync::atomic::Ordering;
 // use the trait
+#[allow(unused_imports)]
 use embassy_sync::pubsub::PubSubBehavior;
 
 use engine_race::RaceHttpd;
@@ -67,7 +68,7 @@ pub async fn sleeper_task_impl(
                         };
                         if let Some(len) = result {
                             let update = UpdateMessage(buffer, len);
-                            UPDATES_BUS.publish_immediate(update);
+                            UPDATES_BUS.publisher().unwrap().publish_immediate(update);
                         }
                         sleep_time = None;
                     }
