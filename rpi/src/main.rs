@@ -9,7 +9,6 @@
 // #[cfg(test)]
 // mod tests;
 
-
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources, udp};
@@ -60,11 +59,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<
-        'static,
-        Output<'static>,
-        PioSpi<'static, PIO0, 0, DMA_CH0>,
-    >,
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
 }
@@ -124,7 +119,7 @@ pub async fn sleeper_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    type RaceHttpdMutex = Mutex::<CriticalSectionRawMutex, RaceHttpd>;
+    type RaceHttpdMutex = Mutex<CriticalSectionRawMutex, RaceHttpd>;
 
     static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
     let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
@@ -181,7 +176,6 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn wifi task");
     }
 
-
     control.init(clm).await;
     control
         .set_power_management(cyw43::PowerManagementMode::Performance)
@@ -208,7 +202,12 @@ async fn main(spawner: Spawner) {
 
     static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
     static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
-    let stack = Stack::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    let stack = Stack::new(
+        net_device,
+        config,
+        RESOURCES.init(StackResources::new()),
+        seed,
+    );
     let stack = STACK.init(stack);
 
     let result = spawner.spawn(net_task(stack));
