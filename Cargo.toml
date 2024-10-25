@@ -50,7 +50,7 @@ panic-probe = { version = "0.3", default-features = false }
 #
 # Other stuff
 #
-edge-net = { version = "0.8", default-features = false, features = [ "embassy" ] }
+edge-net = { version = "0.8", default-features = false, features = [ "embassy", "io" ] }
 
 log = { version = "0.4", default-features = false }
 heapless = {version = "0.8", default-features = false }

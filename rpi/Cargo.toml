@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 embassy-executor = { workspace = true, features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "integrated-timers"]  }
 embassy-time = { workspace = true }
-embassy-net = { workspace = true, features = ["tcp", "udp", "dhcpv4", "medium-ethernet", "proto-ipv4" ] }
+embassy-net = { workspace = true, features = ["tcp", "udp", "medium-ethernet", "proto-ipv4" ] }
 embassy-sync = { workspace = true }
 
 embassy-embedded-hal = { workspace = true }
@@ -42,7 +42,3 @@ portable-atomic = { workspace = true, features = ["critical-section"] }
 #   
 lib_extreme_nostd = { path = "../lib_extreme_nostd/" }
 engine_race = { path = "../engine_race/" }
-
-
-
-

@@ -12,7 +12,7 @@
 
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, StackResources};
+use embassy_net::{Config, Stack, StackResources, udp};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::UART1;
@@ -23,12 +23,26 @@ use embassy_rp::uart::{
     Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
 };
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
 use heapless::Vec;
 use static_cell::StaticCell;
+
+use core::net::{Ipv4Addr, SocketAddrV4};
+use core::net::{SocketAddr, IpAddr};
+
+use edge_net::dhcp::io::{self, DEFAULT_CLIENT_PORT, DEFAULT_SERVER_PORT};
+use edge_net::dhcp::server::{Server, ServerOptions};
+
+use edge_net::embassy::{Udp, UdpBuffers};
+use edge_net::dhcp::client::Client;
+use edge_net::dhcp::io::client::Lease;
+use edge_net::nal::{MacAddr, RawBind};
+use edge_net::raw::io::RawSocket2Udp;
+
+use edge_net::nal::UdpBind;
 
 use lib_extreme_nostd::{
     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
@@ -78,7 +92,7 @@ impl AsyncReader for UartReader {
 #[embassy_executor::task]
 pub async fn gps_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     rx: UartRx<'static, UART1, Async>,
@@ -90,7 +104,7 @@ pub async fn gps_task(
 #[embassy_executor::task(pool_size = MAX_SOCKETS)]
 pub async fn httpd_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
@@ -101,7 +115,7 @@ pub async fn httpd_task(
 #[embassy_executor::task]
 pub async fn sleeper_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
 ) {
@@ -110,7 +124,7 @@ pub async fn sleeper_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    type RaceHttpdMutex = Mutex::<ThreadModeRawMutex, RaceHttpd>;
+    type RaceHttpdMutex = Mutex::<CriticalSectionRawMutex, RaceHttpd>;
 
     static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
     let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
@@ -202,7 +216,13 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn net task");
     }
 
+
+
     control.start_ap_wpa2("nacra17", "password", 1).await;
+
+    let ip = Ipv4Addr::new(169, 254, 1, 1);
+
+    spawner.spawn(dhcp_server_task(stack, ip)).unwrap();
 
     let result = spawner.spawn(sleeper_task(httpd));
     if result.is_err() {
@@ -219,5 +239,38 @@ async fn main(spawner: Spawner) {
     loop {
         Timer::after(Duration::from_secs(10)).await;
         log::info!(".");
+    }
+}
+
+
+#[embassy_executor::task]
+async fn dhcp_server_task(stack: &'static Stack<cyw43::NetDriver<'static>>, ip: Ipv4Addr) -> ! {
+    let buffers = UdpBuffers::<1, 1500, 1500, 2>::new();
+    let udp = Udp::new(&stack, &buffers);
+
+    let mut tx_buf = [0u8; 1500];
+    let mut rx_buf = [0u8; 1500];
+
+    let mut socket = udp
+        .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_SERVER_PORT))
+        .await
+        .unwrap();
+
+
+    // Will give IP addresses in the range x.x.x.50 - x.x.x.200, subnet 255.255.255.0
+    let mut server = edge_net::dhcp::server::Server::<64>::new(ip);
+    let mut gw_buf = [Ipv4Addr::UNSPECIFIED];
+    let server_options = ServerOptions::new(ip, Some(&mut gw_buf));
+
+    let mut buf = [0u8; 1500];
+
+    loop {
+        edge_net::dhcp::io::server::run(
+            &mut server,
+            &server_options,
+            &mut socket,
+            &mut buf,
+        )
+        .await;
     }
 }
