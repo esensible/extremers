@@ -11,7 +11,7 @@ use crate::consts::{
 
 pub async fn sleeper_task_impl(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
 ) {

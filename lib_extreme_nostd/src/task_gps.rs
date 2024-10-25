@@ -9,7 +9,7 @@ use crate::nmea_parser::{next_update, Tokeniser};
 
 pub async fn gps_task_impl<T>(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     tokeniser: &mut T,

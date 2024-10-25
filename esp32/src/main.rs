@@ -11,16 +11,17 @@
 
 
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, Runner, StackResources, StaticConfigV4, Ipv4Cidr, Ipv4Address};
+use embassy_net::{Config, Stack, StackResources, StaticConfigV4, Ipv4Cidr, Ipv4Address};
 use embassy_net::driver::Driver;
 
-// use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
 // use esp_alloc as _;
 use esp_backtrace as _;
-use esp_hal::{prelude::*, rng::Rng, timer::timg::TimerGroup};
+use esp_hal::{prelude::*, rng::Rng, timer::timg::TimerGroup, gpio::Io, uart::Uart, peripherals::UART0};
 use esp_println::{print, println};
 use esp_wifi::{
     init,
@@ -41,24 +42,15 @@ use esp_wifi::{
 use heapless::Vec;
 use static_cell::StaticCell;
 
+use engine_race::RaceHttpd;
 
+// traits
+use esp_hal::uart::UartRx;
+use esp_hal::Async;
 
-// use lib_extreme_nostd::{
-//     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
-// };
-
-const MAX_SOCKETS: usize = 4;
-
-// use engine_race::RaceHttpd;
-
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
+use lib_extreme_nostd::{
+    gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
+};
 
 
 // #[embassy_executor::task]
@@ -66,48 +58,48 @@ macro_rules! mk_static {
 //     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 // }
 
-// struct UartReader(UartRx<'static, UART1, Async>);
-// impl AsyncReader for UartReader {
-//     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
-//         match self.0.read(buf).await {
-//             Ok(_) => Ok(buf.len()),
-//             Err(_) => Err(()),
-//         }
-//     }
-// }
+struct UartReader(UartRx<'static, UART0, Async>);
+impl AsyncReader for UartReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+        match self.0.read_async(buf).await {
+            Ok(_) => Ok(buf.len()),
+            Err(_) => Err(()),
+        }
+    }
+}
 
-// #[embassy_executor::task]
-// pub async fn gps_task(
-//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
-//         RaceHttpd,
-//     >,
-//     rx: UartRx<'static, UART1, Async>,
-// ) {
-//     let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
-//     gps_task_impl(httpd_mutex, &mut ring_buffer).await;
-// }
+#[embassy_executor::task]
+pub async fn gps_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+    rx: UartRx<'static, UART0, Async>,
+) {
+    let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
+    gps_task_impl(httpd_mutex, &mut ring_buffer).await;
+}
 
-// #[embassy_executor::task(pool_size = MAX_SOCKETS)]
-// pub async fn httpd_task(
-//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
-//         RaceHttpd,
-//     >,
-//     stack: &'static embassy_net::Stack<'_>,
-// ) -> ! {
-//     httpd_task_impl(httpd_mutex, stack).await
-// }
+#[embassy_executor::task(pool_size = MAX_SOCKETS)]
+pub async fn httpd_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+    stack: &'static embassy_net::Stack<WifiDevice<'static, WifiApDevice>>,
+) -> ! {
+    httpd_task_impl(httpd_mutex, stack).await
+}
 
-// #[embassy_executor::task]
-// pub async fn sleeper_task(
-//     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-//         embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
-//         RaceHttpd,
-//     >,
-// ) {
-//     sleeper_task_impl(httpd_mutex).await;
-// }
+#[embassy_executor::task]
+pub async fn sleeper_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+) {
+    sleeper_task_impl(httpd_mutex).await;
+}
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -136,16 +128,9 @@ async fn main(spawner: Spawner) {
     let (mut net_device, mut controller) =
         esp_wifi::wifi::new_with_mode(&init, wifi, WifiApDevice).unwrap();
 
-    // cfg_if::cfg_if! {
-    //     if #[cfg(feature = "esp32")] {
-    //         let timg1 = TimerGroup::new(peripherals.TIMG1);
-    //         esp_hal_embassy::init(timg1.timer0);
-    //     } else {
-            use esp_hal::timer::systimer::{SystemTimer, Target};
-            let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
-            esp_hal_embassy::init(systimer.alarm0);
-    //     }
-    // }
+    use esp_hal::timer::systimer::{SystemTimer, Target};
+    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
+    esp_hal_embassy::init(systimer.alarm0);
 
     let config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 100), 24),
@@ -157,53 +142,50 @@ async fn main(spawner: Spawner) {
 
     // Init network stack
     static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
-    static STACK: StaticCell<Stack<'_>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
-    // let stack = STACK.init(stack);
-
-    // let stack = &*mk_static!(
-    //     Stack<WifiDevice<'_, WifiApDevice>>,
-    //     Stack::new(
-    //         net_device,
-    //         config,
-    //         mk_static!(StackResources<3>, StackResources::<3>::new()),
-    //         seed
-    //     )
-    // );    
+    static STACK: StaticCell<Stack<WifiDevice<'_, WifiApDevice>>> = StaticCell::new();
+    let stack = Stack::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    let stack = STACK.init(stack);
 
     spawner.spawn(ap_task(controller)).ok();
-    // spawner.spawn(net_task(runner)).ok();
-
-    // type RaceHttpdMutex = Mutex::<ThreadModeRawMutex, RaceHttpd>;
-
-    // static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
-    // let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
+    spawner.spawn(net_task(stack)).ok();
 
 
-    // let result = spawner.spawn(sleeper_task(httpd));
-    // if result.is_err() {
-    //     log::warn!("failed to spawn sleeper task");
-    // }
 
-    // for _ in 0..MAX_SOCKETS {
-    //     let result = spawner.spawn(httpd_task(httpd, stack));
-    //     if result.is_err() {
-    //         log::warn!("failed to spawn httpd task");
-    //         break;
-    //     }
-    // }
-    // loop {
-    //     Timer::after(Duration::from_secs(10)).await;
-    //     log::info!(".");
-    // }
+    type RaceHttpdMutex = Mutex::<CriticalSectionRawMutex, RaceHttpd>;
+
+    static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
+    let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
+
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let (tx_pin, rx_pin) = (io.pins.gpio21, io.pins.gpio20);
+    let config = esp_hal::uart::config::Config::default().baudrate(9600);
+    let uart0 = UartRx::new_async_with_config(peripherals.UART0, config, rx_pin).unwrap();
+    
+    let result = spawner.spawn(gps_task(httpd, uart0));
+
+    let result = spawner.spawn(sleeper_task(httpd));
+    if result.is_err() {
+        log::warn!("failed to spawn sleeper task");
+    }
+
+    for _ in 0..MAX_SOCKETS {
+        let result = spawner.spawn(httpd_task(httpd, stack));
+        if result.is_err() {
+            log::warn!("failed to spawn httpd task");
+            break;
+        }
+    }
+    loop {
+        Timer::after(Duration::from_secs(10)).await;
+        log::info!(".");
+    }
 }
 
 
-// #[embassy_executor::task]
-// async fn net_task(mut runner: embassy_net::Runner<'static, WifiDevice<'static, WifiApDevice>>) -> ! {
-//     runner.run().await
-// }
-
+#[embassy_executor::task]
+async fn net_task(stack: &'static Stack<WifiDevice<'static, WifiApDevice>>) -> ! {
+    stack.run().await
+}
 
 #[embassy_executor::task]
 async fn ap_task(mut controller: WifiController<'static>) {

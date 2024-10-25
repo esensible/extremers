@@ -40,7 +40,7 @@ fn sleep_fn(timeout: u64, callback: usize) -> Result<(), &'static str> {
 
 pub async fn httpd_task_impl<D: Driver>(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     stack: &'static embassy_net::Stack<D>,

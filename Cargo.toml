@@ -14,7 +14,7 @@ members = [
     # apps
     "std_httpd",
     "rpi",
-#    "esp32",
+    "esp32",
 ]
 
 
@@ -25,6 +25,12 @@ embassy-net = { version = "0.4", default-features = false}
 embassy-sync = { version = "0.6", default-features = false }
 embassy-time = { version = "0.3", default-features = false}
 
+
+embassy-futures = "0.1.1"
+
+
+embassy-embedded-hal = { version = "0.2", default-features = false }
+embedded-hal = { version = "1.0", default-features = false }
 
 #
 # Embedded
@@ -55,7 +61,16 @@ portable-atomic = { version = "1.5", default-features = false }
 # defmt = {version = "0.3", default-features = false }
 # defmt-rtt = {version = "0.4", default-features = false }
 
-
+#[patch.crates-io]
+#embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-time-driver = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#cyw43 = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+#cyw43-pio = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
 
 [profile.release]
 lto = "fat"

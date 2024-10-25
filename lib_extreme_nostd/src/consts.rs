@@ -1,5 +1,5 @@
 use core::sync::atomic::AtomicU32;
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
 
 pub const PORT: u16 = 80;
@@ -29,7 +29,7 @@ impl Default for UpdateMessage {
 
 // TODO: fix these args, given we're misusing them
 pub static UPDATES_BUS: PubSubChannel<
-    ThreadModeRawMutex,
+    CriticalSectionRawMutex,
     UpdateMessage,
     1,
     MAX_SOCKETS,
@@ -42,5 +42,5 @@ pub struct SleepMessage {
     pub callback: usize,
 }
 
-pub static SLEEP_BUS: PubSubChannel<ThreadModeRawMutex, SleepMessage, 1, MAX_SOCKETS, MAX_SOCKETS> =
+pub static SLEEP_BUS: PubSubChannel<CriticalSectionRawMutex, SleepMessage, 1, MAX_SOCKETS, MAX_SOCKETS> =
     PubSubChannel::new();
