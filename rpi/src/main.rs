@@ -9,7 +9,6 @@
 // #[cfg(test)]
 // mod tests;
 
-
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
@@ -23,7 +22,7 @@ use embassy_rp::uart::{
     Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
 };
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
@@ -46,11 +45,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<
-        'static,
-        Output<'static>,
-        PioSpi<'static, PIO0, 0, DMA_CH0>,
-    >,
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
 }
@@ -78,7 +73,7 @@ impl AsyncReader for UartReader {
 #[embassy_executor::task]
 pub async fn gps_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     rx: UartRx<'static, UART1, Async>,
@@ -90,7 +85,7 @@ pub async fn gps_task(
 #[embassy_executor::task(pool_size = MAX_SOCKETS)]
 pub async fn httpd_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
@@ -101,7 +96,7 @@ pub async fn httpd_task(
 #[embassy_executor::task]
 pub async fn sleeper_task(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
 ) {
@@ -110,7 +105,7 @@ pub async fn sleeper_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    type RaceHttpdMutex = Mutex::<ThreadModeRawMutex, RaceHttpd>;
+    type RaceHttpdMutex = Mutex<CriticalSectionRawMutex, RaceHttpd>;
 
     static HTTPD: StaticCell<RaceHttpdMutex> = StaticCell::new();
     let httpd = HTTPD.init(RaceHttpdMutex::new(RaceHttpd::default()));
@@ -167,7 +162,6 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn wifi task");
     }
 
-
     control.init(clm).await;
     control
         .set_power_management(cyw43::PowerManagementMode::Performance)
@@ -194,7 +188,12 @@ async fn main(spawner: Spawner) {
 
     static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
     static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
-    let stack = Stack::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    let stack = Stack::new(
+        net_device,
+        config,
+        RESOURCES.init(StackResources::new()),
+        seed,
+    );
     let stack = STACK.init(stack);
 
     let result = spawner.spawn(net_task(stack));
