@@ -6,7 +6,7 @@ use embassy_sync::pubsub::PubSubBehavior;
 use engine_race::RaceHttpd;
 
 use crate::consts::{
-    SleepMessage, UpdateMessage, OFFSET_LSB, OFFSET_MSB, SLEEP_BUS, UPDATES_BUS, UPDATE_BUF_SIZE,
+    SleepMessage, UpdateMessage, TICK_OFFSET, SLEEP_BUS, UPDATES_BUS, UPDATE_BUF_SIZE,
 };
 
 pub async fn sleeper_task_impl(
@@ -31,12 +31,7 @@ pub async fn sleeper_task_impl(
             Some(message) => {
                 // so sleep!
                 // convert absolute wake time to a duration
-                let offset: u64 = {
-                    let offset_msb = OFFSET_MSB.load(Ordering::Relaxed) as u64;
-                    let offset_lsb = OFFSET_LSB.load(Ordering::Relaxed) as u64;
-
-                    (offset_msb << 32) + offset_lsb
-                };
+                let offset = TICK_OFFSET.load(Ordering::Relaxed);
 
                 let now = embassy_time::Instant::now().as_millis() + offset;
                 let wake_time = message.wake_time;

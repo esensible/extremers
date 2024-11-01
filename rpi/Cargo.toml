@@ -26,15 +26,10 @@ cyw43-pio = { workspace = true }
 #
 # Other stuff
 #
-
 edge-net = { workspace = true }
 log = { workspace = true }
 heapless = { workspace = true }
 static_cell = { workspace = true, features = ["nightly"] }
-atomic-polyfill = { workspace = true }
-portable-atomic = { workspace = true, features = ["critical-section"] }
-# defmt = { workspace = true }
-# defmt-rtt = { workspace = true }
 
 
 #

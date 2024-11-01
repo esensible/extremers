@@ -12,9 +12,8 @@ embassy-time = { workspace = true }
 embassy-net = { workspace = true }
 
 embedded-io-async = { workspace = true }
-
 log = { workspace = true }
-
+portable-atomic = { workspace=true, features = ["critical-section", "fallback"] }
 
 lib_httpd = { path = "../lib_httpd/" }
 engine_race = { path = "../engine_race/" }

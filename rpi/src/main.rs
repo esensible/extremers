@@ -11,12 +11,10 @@
 
 use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, StackResources, udp};
+use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::UART1;
-use embassy_rp::peripherals::USB;
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::peripherals::{USB, UART1, DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::{
     Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
@@ -29,18 +27,11 @@ use embassy_time::{Duration, Timer};
 use heapless::Vec;
 use static_cell::StaticCell;
 
-use core::net::{Ipv4Addr, SocketAddrV4};
-use core::net::{SocketAddr, IpAddr};
+use core::net::{SocketAddr, IpAddr, Ipv4Addr};
 
-use edge_net::dhcp::io::{self, DEFAULT_CLIENT_PORT, DEFAULT_SERVER_PORT};
-use edge_net::dhcp::server::{Server, ServerOptions};
-
+use edge_net::dhcp::io::DEFAULT_SERVER_PORT;
+use edge_net::dhcp::server::ServerOptions;
 use edge_net::embassy::{Udp, UdpBuffers};
-use edge_net::dhcp::client::Client;
-use edge_net::dhcp::io::client::Lease;
-use edge_net::nal::{MacAddr, RawBind};
-use edge_net::raw::io::RawSocket2Udp;
-
 use edge_net::nal::UdpBind;
 
 use lib_extreme_nostd::{
@@ -200,7 +191,7 @@ async fn main(spawner: Spawner) {
 
     // Init network stack
 
-    static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 1 }>> = StaticCell::new();
+    static RESOURCES: StaticCell<StackResources<{ MAX_SOCKETS + 2 }>> = StaticCell::new();
     static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
     let stack = Stack::new(
         net_device,
@@ -221,7 +212,10 @@ async fn main(spawner: Spawner) {
 
     let ip = Ipv4Addr::new(169, 254, 1, 1);
 
-    spawner.spawn(dhcp_server_task(stack, ip)).unwrap();
+    let result = spawner.spawn(dhcp_server_task(stack, ip));
+    if result.is_err() {
+        log::warn!("failed to spawn dhcp server task");
+    }
 
     let result = spawner.spawn(sleeper_task(httpd));
     if result.is_err() {
@@ -247,14 +241,18 @@ async fn dhcp_server_task(stack: &'static Stack<cyw43::NetDriver<'static>>, ip: 
     let buffers = UdpBuffers::<1, 1500, 1500, 2>::new();
     let udp = Udp::new(&stack, &buffers);
 
-    let mut tx_buf = [0u8; 1500];
-    let mut rx_buf = [0u8; 1500];
-
-    let mut socket = udp
+    let mut socket = match udp
         .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_SERVER_PORT))
-        .await
-        .unwrap();
-
+        .await {
+            Ok(socket) => socket,
+            Err(e) => {
+                log::error!("Failed to bind DHCP server socket: {:?}", e);
+                loop {
+                    Timer::after(Duration::from_secs(1)).await;
+                    log::error!("DHCP server loop");
+                }
+            }
+        };
 
     // Will give IP addresses in the range x.x.x.50 - x.x.x.200, subnet 255.255.255.0
     let mut server = edge_net::dhcp::server::Server::<64>::new(ip);
@@ -264,12 +262,15 @@ async fn dhcp_server_task(stack: &'static Stack<cyw43::NetDriver<'static>>, ip: 
     let mut buf = [0u8; 1500];
 
     loop {
-        edge_net::dhcp::io::server::run(
+        if let Err(e) = edge_net::dhcp::io::server::run(
             &mut server,
             &server_options,
             &mut socket,
             &mut buf,
         )
-        .await;
+        .await {
+            log::warn!("DHCP server error: {:?}", e);
+            Timer::after(Duration::from_secs(1)).await;
+        }
     }
 }

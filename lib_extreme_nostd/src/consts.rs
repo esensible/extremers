@@ -1,4 +1,5 @@
-use core::sync::atomic::AtomicU32;
+use portable_atomic::AtomicU64;
+
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
 
@@ -15,8 +16,7 @@ pub const MAX_SOCKETS: usize = 6;
 // offset between tick timer and GPS time in ms
 // this isn't super safe, but realistically, the MSB will only change every 50 days
 // and out of sync operations won't end the world
-pub static OFFSET_MSB: AtomicU32 = AtomicU32::new(0);
-pub static OFFSET_LSB: AtomicU32 = AtomicU32::new(0);
+pub static TICK_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 pub struct UpdateMessage(pub [u8; UPDATE_BUF_SIZE], pub usize);

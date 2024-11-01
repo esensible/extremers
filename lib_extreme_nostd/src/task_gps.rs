@@ -4,7 +4,7 @@ use embassy_sync::pubsub::PubSubBehavior;
 
 use engine_race::RaceHttpd;
 
-use crate::consts::{UpdateMessage, OFFSET_LSB, OFFSET_MSB, UPDATES_BUS};
+use crate::consts::{UpdateMessage, TICK_OFFSET, UPDATES_BUS};
 use crate::nmea_parser::{next_update, Tokeniser};
 
 pub async fn gps_task_impl<T>(
@@ -24,13 +24,10 @@ pub async fn gps_task_impl<T>(
         if let Some(time) = &time {
             let uptime = embassy_time::Instant::now().as_millis() as u64;
             {
-                if OFFSET_MSB.load(Ordering::Relaxed) == 0 {
+                if TICK_OFFSET.load(Ordering::Relaxed) == 0 {
                     offset = time - uptime;
-                    let offset_msb = (offset >> 32) as u32;
-                    let offset_lsb = (offset & 0xFFFF_FFFF) as u32;
 
-                    OFFSET_MSB.store(offset_msb, Ordering::Relaxed);
-                    OFFSET_LSB.store(offset_lsb, Ordering::Relaxed);
+                    TICK_OFFSET.store(offset, Ordering::Relaxed);
                 }
             }
         }
