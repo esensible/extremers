@@ -279,8 +279,10 @@ async fn dhcp_server_task(stack: &'static Stack<cyw43::NetDriver<'static>>, ip: 
 
     // Will give IP addresses in the range x.x.x.50 - x.x.x.200, subnet 255.255.255.0
     let mut server = edge_net::dhcp::server::Server::<64>::new(ip);
-    let mut gw_buf = [Ipv4Addr::UNSPECIFIED];
-    let server_options = ServerOptions::new(ip, Some(&mut gw_buf));
+    let mut gw_buf = [ip];
+    let mut server_options = ServerOptions::new(ip, Some(&mut gw_buf));
+    let dns_servers = [ip];
+    server_options.dns = &dns_servers;
 
     let mut buf = [0u8; 1500];
 
