@@ -9,30 +9,34 @@
 // #[cfg(test)]
 // mod tests;
 
-use cyw43_pio::PioSpi;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
-use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{USB, UART1, DMA_CH0, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::uart::{
-    Async, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
-};
-use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
+
+use cyw43_pio::PioSpi;
+use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::{USB, UART1, DMA_CH2, PIO0, FLASH};
+use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::uart::{
+    Async as UartAsync, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
+};
+use embassy_rp::flash::{Flash, Async as FlashAsync};
+use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
+
 use heapless::Vec;
 use static_cell::StaticCell;
-
 use core::net::{SocketAddr, IpAddr, Ipv4Addr};
-
 use edge_net::dhcp::io::DEFAULT_SERVER_PORT;
 use edge_net::dhcp::server::ServerOptions;
 use edge_net::embassy::{Udp, UdpBuffers};
 use edge_net::nal::UdpBind;
+
+mod flash;
+use crate::flash::FlashLogger;
 
 use lib_extreme_nostd::{
     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
@@ -42,6 +46,10 @@ use panic_probe as _;
 
 use engine_race::RaceHttpd;
 
+
+const FLASH_OFFSET: u32 = 0x100000;
+const FLASH_SIZE: usize = 0x100000;
+
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
@@ -50,7 +58,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH2>>,
 ) -> ! {
     runner.run().await
 }
@@ -65,7 +73,7 @@ async fn logger_task(driver: Driver<'static, USB>) {
     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 }
 
-struct UartReader(UartRx<'static, UART1, Async>);
+struct UartReader(UartRx<'static, UART1, UartAsync>);
 impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
         match self.0.read(buf).await {
@@ -81,10 +89,17 @@ pub async fn gps_task(
         embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
-    rx: UartRx<'static, UART1, Async>,
+    rx: UartRx<'static, UART1, UartAsync>,
+    flash: Flash::<'static, FLASH, FlashAsync, FLASH_SIZE>,
 ) {
     let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
-    gps_task_impl(httpd_mutex, &mut ring_buffer).await;
+
+    let mut flash_logger = FlashLogger::new(flash);
+    let write_record_fn = |timestamp, location, speed| {
+        flash_logger.write_record(timestamp, location, speed);
+    };
+
+    gps_task_impl(httpd_mutex, &mut ring_buffer, write_record_fn).await;
 }
 
 #[embassy_executor::task(pool_size = MAX_SOCKETS)]
@@ -123,11 +138,19 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn logger task");
     }
 
+
+    // Erase 1MB of flash
+    let mut flash = Flash::<_, FlashAsync, FLASH_SIZE>::new(p.FLASH, p.DMA_CH0);
+    let result = flash.blocking_erase(FLASH_OFFSET, FLASH_OFFSET + FLASH_SIZE as u32);
+    if result.is_err() {
+        log::warn!("failed to erase flash");
+    }
+
     let mut config = UartConfig::default();
     config.baudrate = 9600;
     let uart_rx = UartRx::new(p.UART1, p.PIN_9, Irqs, p.DMA_CH1, config);
 
-    let result = spawner.spawn(gps_task(httpd, uart_rx));
+    let result = spawner.spawn(gps_task(httpd, uart_rx, flash));
     if result.is_err() {
         log::warn!("failed to spawn gps task");
     }
@@ -155,7 +178,7 @@ async fn main(spawner: Spawner) {
         cs,
         p.PIN_24,
         p.PIN_29,
-        p.DMA_CH0,
+        p.DMA_CH2,
     );
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();

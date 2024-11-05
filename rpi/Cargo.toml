@@ -30,7 +30,8 @@ edge-net = { workspace = true }
 log = { workspace = true }
 heapless = { workspace = true }
 static_cell = { workspace = true, features = ["nightly"] }
-
+bytemuck = {workspace = true, features=["derive"]}
+md5 = {workspace = true}
 
 #
 # The magic

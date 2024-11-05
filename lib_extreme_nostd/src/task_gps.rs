@@ -7,14 +7,16 @@ use engine_race::RaceHttpd;
 use crate::consts::{UpdateMessage, TICK_OFFSET, UPDATES_BUS};
 use crate::nmea_parser::{next_update, Tokeniser};
 
-pub async fn gps_task_impl<T>(
+pub async fn gps_task_impl<T, F>(
     httpd_mutex: &'static embassy_sync::mutex::Mutex<
         embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
         RaceHttpd,
     >,
     tokeniser: &mut T,
+    mut write_record: F,
 ) where
     T: Tokeniser,
+    F: FnMut(Option<u64>, Option<(f64, f64)>, Option<(f64, f64)>),
 {
     let mut offset: u64 = 0;
 
@@ -51,5 +53,7 @@ pub async fn gps_task_impl<T>(
             update.1 = len;
             UPDATES_BUS.publisher().unwrap().publish_immediate(update.clone());
         }
+        // write to flash
+        write_record(time, location, speed);
     }
 }
