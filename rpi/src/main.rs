@@ -19,7 +19,7 @@ use embassy_time::{Duration, Timer};
 use cyw43_pio::PioSpi;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{USB, UART1, DMA_CH2, PIO0, FLASH};
+use embassy_rp::peripherals::{USB, UART1, PIO0, FLASH};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::{
     Async as UartAsync, Config as UartConfig, InterruptHandler as UartInterruptHandler, UartRx,
@@ -29,14 +29,13 @@ use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 
 use heapless::Vec;
 use static_cell::StaticCell;
-use core::net::{SocketAddr, IpAddr, Ipv4Addr};
-use edge_net::dhcp::io::DEFAULT_SERVER_PORT;
-use edge_net::dhcp::server::ServerOptions;
-use edge_net::embassy::{Udp, UdpBuffers};
-use edge_net::nal::UdpBind;
+use core::net::Ipv4Addr;
 
 mod flash;
+mod network_tasks;
 use crate::flash::FlashLogger;
+use crate::network_tasks::{dhcp_server_task, wifi_task, net_task};
+
 
 use lib_extreme_nostd::{
     gps_task_impl, httpd_task_impl, sleeper_task_impl, AsyncReader, RingBuffer, MAX_SOCKETS,
@@ -56,17 +55,6 @@ bind_interrupts!(struct Irqs {
     UART1_IRQ => UartInterruptHandler<UART1>;
 });
 
-#[embassy_executor::task]
-async fn wifi_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH2>>,
-) -> ! {
-    runner.run().await
-}
-
-#[embassy_executor::task]
-async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
-    stack.run().await
-}
 
 #[embassy_executor::task]
 async fn logger_task(driver: Driver<'static, USB>) {
@@ -258,44 +246,3 @@ async fn main(spawner: Spawner) {
     }
 }
 
-
-#[embassy_executor::task]
-async fn dhcp_server_task(stack: &'static Stack<cyw43::NetDriver<'static>>, ip: Ipv4Addr) -> ! {
-    let buffers = UdpBuffers::<1, 1500, 1500, 2>::new();
-    let udp = Udp::new(&stack, &buffers);
-
-    let mut socket = match udp
-        .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_SERVER_PORT))
-        .await {
-            Ok(socket) => socket,
-            Err(e) => {
-                log::error!("Failed to bind DHCP server socket: {:?}", e);
-                loop {
-                    Timer::after(Duration::from_secs(1)).await;
-                    log::error!("DHCP server loop");
-                }
-            }
-        };
-
-    // Will give IP addresses in the range x.x.x.50 - x.x.x.200, subnet 255.255.255.0
-    let mut server = edge_net::dhcp::server::Server::<64>::new(ip);
-    let mut gw_buf = [ip];
-    let mut server_options = ServerOptions::new(ip, Some(&mut gw_buf));
-    let dns_servers = [ip];
-    server_options.dns = &dns_servers;
-
-    let mut buf = [0u8; 1500];
-
-    loop {
-        if let Err(e) = edge_net::dhcp::io::server::run(
-            &mut server,
-            &server_options,
-            &mut socket,
-            &mut buf,
-        )
-        .await {
-            log::warn!("DHCP server error: {:?}", e);
-            Timer::after(Duration::from_secs(1)).await;
-        }
-    }
-}
