@@ -1,3 +1,4 @@
+use serde::ser::SerializeStruct;
 use ::serde::Deserialize;
 use core::f64::consts::PI;
 use serde::Serialize;
@@ -7,15 +8,14 @@ use crate::types::Location;
 use extreme_traits::Engine;
 
 
-#[derive(Serialize, Copy, Clone, PartialEq, Default)]
+#[derive(Copy, Clone, PartialEq, Default)]
+// Serialize is implemented below because line serialization depends on Race state
 pub struct Race {
-    #[serde(flatten)]
     pub state: State,
-    #[serde(flatten)]
     pub line: Line,
-    #[serde(skip)]
     pub location: Location,
 }
+
 
 #[derive(Serialize, Copy, Clone, PartialEq)]
 #[serde(tag = "state")]
@@ -41,18 +41,13 @@ impl Default for State {
 }
 
 #[derive(Deserialize)]
-pub enum EventType {
+pub enum Event {
     LineStbd,
     LinePort,
 
     BumpSeq { timestamp: u64, seconds: i32 },
 
     RaceFinish,
-}
-
-#[derive(Deserialize)]
-pub struct Event {
-    pub event: EventType,
 }
 
 impl Engine for Race {
@@ -64,16 +59,16 @@ impl Engine for Race {
         timestamp: u64
     ) -> (Option<()>, Option<u64>) 
     {
-        let start_time = if let State::InSequence { start_time, .. } = self.state {
-            start_time
+        let (start_time, speed) = if let State::InSequence { start_time, speed, .. } = self.state {
+            (start_time, speed)
         } else {
             // bad things happened, we were in an unexpected state. Roll with it as best we can.
-            timestamp 
+            (timestamp, 0.0)
         };
 
         self.state = State::Racing {
             start_time,
-            speed: 0.0,
+            speed: speed,
             heading: 0.0,
         };
 
@@ -90,20 +85,20 @@ impl Engine for Race {
     ) -> (Option<()>, Option<u64>)
     {
 
-        match event.event {
-            EventType::LineStbd => {
+        match event {
+            Event::LineStbd => {
                 return (
                     self.line.set_stbd(self.location),
                     None
                 );
             }
-            EventType::LinePort => {
+            Event::LinePort => {
                 return (
                     self.line.set_port(self.location), 
                     None
                 );
             }
-            EventType::BumpSeq { timestamp, seconds } => {
+            Event::BumpSeq { timestamp, seconds } => {
                 match &mut self.state {
                     State::InSequence { start_time, .. } => {
                         if seconds == 0 {
@@ -148,7 +143,7 @@ impl Engine for Race {
                     }
                 }
             }
-            EventType::RaceFinish => {
+            Event::RaceFinish => {
                 let old_speed = match &self.state {
                     State::Active { speed, } => *speed,
                     State::InSequence { speed, .. } => *speed,
@@ -204,5 +199,56 @@ impl Engine for Race {
             return (result, None)
         }
         return (None, None)
+    }
+}
+
+
+impl Serialize for Race {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("Race", 7)?;
+
+        match &self.state {
+            State::Active { speed } => {
+                s.serialize_field("state", "Active")?;
+                s.serialize_field("speed", speed)?;
+            }
+            State::InSequence { start_time, speed } => {
+                s.serialize_field("state", "InSequence")?;
+                s.serialize_field("start_time", start_time)?;
+                s.serialize_field("speed", speed)?;
+            }
+            State::Racing { start_time, speed, heading } => {
+                s.serialize_field("state", "Racing")?;
+                s.serialize_field("start_time", start_time)?;
+                s.serialize_field("speed", speed)?;
+                s.serialize_field("heading", heading)?;
+            }
+        }
+
+        // Conditionally serialize the `line` field based on `state`
+        if !matches!(self.state, State::Racing { .. }) {
+            // s.serialize_field("line", &self.line)?;
+            match &self.line {
+                Line::None => {
+                    s.serialize_field("line", "None")?;
+                }
+                Line::Stbd { .. } => {
+                    s.serialize_field("line", "Stbd")?;
+                }
+                Line::Port { .. } => {
+                    s.serialize_field("line", "Port")?;
+                }
+                Line::Both { line_cross, line_timestamp, .. } => {
+                    s.serialize_field("line", "Both")?;
+                    s.serialize_field("line_cross", line_cross)?;
+                    s.serialize_field("line_timestamp", line_timestamp)?;
+                }
+            }
+        }
+
+        s.end()
     }
 }
