@@ -5,6 +5,7 @@ use serde::Serialize;
 const R: f64 = 6371e3; // radius of earth in meters
 
 #[derive(Copy, Clone, PartialEq, Default, Serialize)]
+#[serde(tag = "line")]
 pub enum Line {
     #[default]
     None,

@@ -9,13 +9,16 @@ use extreme_traits::Engine;
 
 #[derive(Serialize, Copy, Clone, PartialEq, Default)]
 pub struct Race {
+    #[serde(flatten)]
     pub state: State,
+    #[serde(flatten)]
     pub line: Line,
     #[serde(skip)]
     pub location: Location,
 }
 
 #[derive(Serialize, Copy, Clone, PartialEq)]
+#[serde(tag = "state")]
 pub enum State {
     Active {
         speed: f64,

@@ -4,6 +4,9 @@ mod tests {
     use crate::line::Line;
     use core::f64::consts::PI;
     use extreme_traits::Engine;
+    use serde_json;
+    use serde_json::json;
+
 
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
         let event = Event {
@@ -198,16 +201,59 @@ mod tests {
     }
 
 
+    fn assert_json_eq<Actual: serde::Serialize>(expected: serde_json::Value, actual: Actual) {
+        let json_result = serde_json::to_string(&actual).unwrap();
+        // println!("{}", actual);
+
+        let expected_json = serde_json::json!(expected);        
+    
+        let actual: serde_json::Value = serde_json::from_str(&json_result).expect("Invalid JSON");
+
+        assert_eq!(expected_json, actual);
+
+    }
+
     #[test]
     fn test_json() {
         let mut race = Race::default();
 
-        let mut race = Race::default();
-        race.state = State::Active { speed: 12.5 };
-        race.location = Location { lat: 0.5, lon: -2.1 };
+        let location = (42.3, -113.2);
+        let speed = (12.5, 270.0);
 
-        let json = serde_json::to_string(&race).unwrap();
-        assert_eq!(json, r#"{"state":{"Active":{"speed":12.5}},"line":{"None":{}}}"#);
+        let (updated, timer) = race.location_event(0, Some(location), Some(speed));
+        assert_eq!(Some(()), updated);
+        assert_eq!(None, timer);
+
+        assert_json_eq(json!({
+            "state": "Active",
+            "speed": 12.5,
+            "line": "None"
+        }), race);
+
+        
+        let event = Event {
+            event: EventType::LineStbd,
+        };
+        let _ = race.external_event(0, event);
+
+        assert_json_eq(json!({
+            "state": "Active",
+            "speed": 12.5,
+            "line": "Stbd",
+        }), race);
+
+        let event = Event {
+            event: EventType::LinePort,
+        };
+        let _ = race.external_event(0, event);
+
+        assert_json_eq(json!({
+            "state": "Active",
+            "speed": 12.5,
+            "line": "Both",
+            "line_cross": 0,
+            "line_timestamp": 0,
+        }), race);
     }
 
     // #[test]
