@@ -190,15 +190,16 @@ impl Engine for Race {
             let lon = lon * PI / 180.0;
             self.location = Location { lat, lon };
 
-            if let Some((speed, heading)) = speed {
-                let heading = heading * PI / 180.0;
-                self.line
-                    .update_location(timestamp, (lat, lon), heading, speed);            
+            if !matches!(self.state, State::Racing { .. }) {
+                if let Some((speed, heading)) = speed {
+                    let heading = heading * PI / 180.0;
+                    if Some(()) == self.line.update_location(timestamp, (lat, lon), heading, speed) {
+                        return (Some(()), None);
+                    }
+                }
             }
-
-            return (result, None)
         }
-        return (None, None)
+        return (result, None)
     }
 }
 

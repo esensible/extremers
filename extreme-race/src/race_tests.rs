@@ -23,7 +23,7 @@ mod tests {
 
         assert_eq!(
             race.location_event(0, None, Some((23.2, 350.0))),
-            (None, None),
+            (Some(()), None),
         );
 
         assert_json_eq(json!({
@@ -96,6 +96,17 @@ mod tests {
             "start_time": 31_000,
         }), race);
 
+        assert_eq!(
+            race.location_event(0, None, Some((17.5, 253.0))),
+            (Some(()), None),
+        );
+
+        assert_json_eq(json!({
+            "state": "Racing",
+            "speed": 17.5,
+            "heading": 253.0, 
+            "start_time": 31_000,
+        }), race);
 
         //
         // State: Active
@@ -110,7 +121,7 @@ mod tests {
 
         assert_json_eq(json!({
             "state": "Active",
-            "speed": 23.2,
+            "speed": 17.5,
             "line": "Both",
             "line_cross": 0,
             "line_timestamp": 0,
