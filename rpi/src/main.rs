@@ -56,60 +56,6 @@ bind_interrupts!(struct Irqs {
 });
 
 
-#[embassy_executor::task]
-async fn logger_task(driver: Driver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
-}
-
-struct UartReader(UartRx<'static, UART1, UartAsync>);
-impl AsyncReader for UartReader {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
-        match self.0.read(buf).await {
-            Ok(_) => Ok(buf.len()),
-            Err(_) => Err(()),
-        }
-    }
-}
-
-#[embassy_executor::task]
-pub async fn gps_task(
-    httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
-        RaceHttpd,
-    >,
-    rx: UartRx<'static, UART1, UartAsync>,
-    flash: Flash::<'static, FLASH, FlashAsync, FLASH_SIZE>,
-) {
-    let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
-
-    let mut flash_logger = FlashLogger::new(flash);
-    let write_record_fn = |timestamp, location, speed| {
-        flash_logger.write_record(timestamp, location, speed);
-    };
-
-    gps_task_impl(httpd_mutex, &mut ring_buffer, write_record_fn).await;
-}
-
-#[embassy_executor::task(pool_size = MAX_SOCKETS)]
-pub async fn httpd_task(
-    httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
-        RaceHttpd,
-    >,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
-) -> ! {
-    httpd_task_impl(httpd_mutex, stack).await
-}
-
-#[embassy_executor::task]
-pub async fn sleeper_task(
-    httpd_mutex: &'static embassy_sync::mutex::Mutex<
-        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
-        RaceHttpd,
-    >,
-) {
-    sleeper_task_impl(httpd_mutex).await;
-}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -246,3 +192,58 @@ async fn main(spawner: Spawner) {
     }
 }
 
+
+#[embassy_executor::task]
+async fn logger_task(driver: Driver<'static, USB>) {
+    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+}
+
+struct UartReader(UartRx<'static, UART1, UartAsync>);
+impl AsyncReader for UartReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+        match self.0.read(buf).await {
+            Ok(_) => Ok(buf.len()),
+            Err(_) => Err(()),
+        }
+    }
+}
+
+#[embassy_executor::task]
+pub async fn gps_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+    rx: UartRx<'static, UART1, UartAsync>,
+    flash: Flash::<'static, FLASH, FlashAsync, FLASH_SIZE>,
+) {
+    let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
+
+    let mut flash_logger = FlashLogger::new(flash);
+    let write_record_fn = |timestamp, location, speed| {
+        flash_logger.write_record(timestamp, location, speed);
+    };
+
+    gps_task_impl(httpd_mutex, &mut ring_buffer, write_record_fn).await;
+}
+
+#[embassy_executor::task(pool_size = MAX_SOCKETS)]
+pub async fn httpd_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+) -> ! {
+    httpd_task_impl(httpd_mutex, stack).await
+}
+
+#[embassy_executor::task]
+pub async fn sleeper_task(
+    httpd_mutex: &'static embassy_sync::mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+        RaceHttpd,
+    >,
+) {
+    sleeper_task_impl(httpd_mutex).await;
+}

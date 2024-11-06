@@ -15,6 +15,9 @@ members = [
     "std_httpd",
     "rpi",
     "esp32",
+
+    "extreme-traits",
+    "extreme-race",
 ]
 
 
