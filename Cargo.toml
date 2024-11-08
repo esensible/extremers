@@ -18,6 +18,7 @@ members = [
 
     "extreme-traits",
     "extreme-race",
+    "extreme-http",
 ]
 
 
@@ -53,7 +54,8 @@ panic-probe = { version = "0.3", default-features = false }
 #
 # Other stuff
 #
-edge-net = { version = "0.8", default-features = false, features = [ "embassy", "io" ] }
+# edge-net = { version = "0.8.1", default-features = false }
+edge-net = { git = "https://github.com/ivmarkov/edge-net", default-features = false }
 log = { version = "0.4", default-features = false }
 heapless = {version = "0.8", default-features = false }
 static_cell = { version = "2.1", default-features = false }
@@ -83,3 +85,4 @@ opt-level = 3
 
 [patch.crates-io]
 delog = {git = "https://github.com/giacomocaironi/delog", branch = "portable-atomic"}
+
