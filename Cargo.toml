@@ -55,7 +55,7 @@ panic-probe = { version = "0.3", default-features = false }
 # Other stuff
 #
 # edge-net = { version = "0.8.1", default-features = false }
-edge-net = { git = "https://github.com/ivmarkov/edge-net", default-features = false }
+edge-net = { git = "https://github.com/ivmarkov/edge-net", rev="f7039b8cfd4242071086ed2c2c4ee822753614b1", default-features = false }
 log = { version = "0.4", default-features = false }
 heapless = {version = "0.8", default-features = false }
 static_cell = { version = "2.1", default-features = false }

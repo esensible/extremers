@@ -50,7 +50,7 @@ async fn main(spawner: Spawner) {
         log::warn!("failed to spawn logger task");
     }
 
-
+    
     //
     // BEGIN WIFI SETUP
     //
@@ -109,7 +109,7 @@ async fn main(spawner: Spawner) {
     let seed = 0x0123_a5a7_83a4_fdef; // chosen by fair dice roll. guarenteed to be random.
 
     // Init network stack
-    static RESOURCES: StaticCell<StackResources<2 >> = StaticCell::new();
+    static RESOURCES: StaticCell<StackResources<6 >> = StaticCell::new();
     static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
     let stack = Stack::new(
         net_device,
@@ -141,7 +141,7 @@ async fn main(spawner: Spawner) {
     }
 
     loop {
-        Timer::after(Duration::from_secs(10)).await;
+        Timer::after(Duration::from_secs(2)).await;
         log::info!(".");
     }
 }
@@ -149,13 +149,13 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn logger_task(driver: Driver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+    embassy_usb_logger::run!(1024, log::LevelFilter::Debug, driver);
 }
 
 
 use core::fmt::Debug;
 use core::fmt::Display;
-use edge_net::http::io::server::{Connection, DefaultServer, Handler};
+use edge_net::http::io::server::{Connection, DefaultServer, Server, Handler};
 use edge_net::http::ws::MAX_BASE64_KEY_RESPONSE_LEN;
 use edge_net::http::Method;
 use edge_net::nal::TcpBind;
@@ -165,10 +165,12 @@ use embedded_io_async::{Read, Write};
 use edge_net::embassy::Tcp;
 use core::net::SocketAddr;
 use log::info;
+use edge_net::http::io::Error;
+use edge_net::nal::TcpAccept;
 
 #[embassy_executor::task]
 pub async fn httpd_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> !{
-    let buffers = TcpBuffers::<1, 1500, 1500>::new();
+    let buffers = TcpBuffers::<1, 2048, 2048>::new();
     let tcp = Tcp::new(&stack, &buffers);
 
     let acceptor = match tcp
@@ -184,33 +186,25 @@ pub async fn httpd_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> !{
             }
         };
 
+    log::error!("HTTP server stall");
+    Timer::after(Duration::from_secs(10)).await;
+    log::error!("HTTP server go time");
 
-    let mut server = DefaultServer::new();
+    let mut server: Server<1, 2048, 64>= Server::new();
+    let _ = server.run(None, acceptor, HttpHandler).await;
 
-    let _ = server.run(None, acceptor, WsHandler).await.unwrap();
     loop {
         Timer::after(Duration::from_secs(1)).await;
         log::error!("HTTP server loop");
     }
 }
 
-#[derive(Debug)]
-enum WsHandlerError<C, W> {
-    Connection(C),
-    Ws(W),
-}
 
-impl<C, W> From<C> for WsHandlerError<C, W> {
-    fn from(e: C) -> Self {
-        Self::Connection(e)
-    }
-}
+struct HttpHandler;
 
-struct WsHandler;
-
-impl Handler for WsHandler {
+impl Handler for HttpHandler {
     type Error<E>
-        = WsHandlerError<edge_net::http::io::Error<E>, edge_net::ws::Error<E>>
+        = Error<E>
     where
         E: Debug;
 
@@ -252,12 +246,21 @@ impl Handler for WsHandler {
 
             loop {
                 let mut header = FrameHeader::recv(&mut socket)
-                    .await
-                    .map_err(WsHandlerError::Ws)?;
+                    .await;
+                if header.is_err() {
+                    log::error!("Failed to recv header");
+                    break;
+                }
+                let mut header = header.unwrap();
+                    
                 let payload = header
                     .recv_payload(&mut socket, &mut buf)
-                    .await
-                    .map_err(WsHandlerError::Ws)?;
+                    .await;
+                if payload.is_err() {
+                    log::error!("Failed to recv payload");
+                    break;
+                }
+                let payload = payload.unwrap();
 
                 match header.frame_type {
                     FrameType::Text(_) => {
@@ -288,11 +291,11 @@ impl Handler for WsHandler {
 
                 info!("Echoing back as {header}");
 
-                header.send(&mut socket).await.map_err(WsHandlerError::Ws)?;
+                header.send(&mut socket).await;
                 header
                     .send_payload(&mut socket, payload)
-                    .await
-                    .map_err(WsHandlerError::Ws)?;
+                    .await;
+                
             }
         }
 
