@@ -3,8 +3,6 @@
 use core::option::Option;
 
 pub trait Engine: serde::Serialize {
-    type Event: serde::de::DeserializeOwned;
-
     /// Update the location of the engine
     /// Returns:
     /// * Some(()) if the engine state has changed, None otherwise
@@ -15,7 +13,7 @@ pub trait Engine: serde::Serialize {
         location: Option<(f64, f64)>,
         speed: Option<(f64, f64)>,
     ) -> (Option<()>, Option<u64>);
-    fn external_event(&mut self, timestamp: u64, event: Self::Event) -> (Option<()>, Option<u64>);
+    fn external_event(&mut self, timestamp: u64, event: &[u8]) -> (Option<()>, Option<u64>);
     fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>);
 
     /// Get a static file from the engine, if it exists

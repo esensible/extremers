@@ -58,8 +58,6 @@ pub struct Event {
 }
 
 impl Engine for Race {
-    type Event = Event;
-
     fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
         for &(k, v) in STATIC_FILES.iter() {
             if k == path {
@@ -90,7 +88,14 @@ impl Engine for Race {
         (Some(()), None)
     }
 
-    fn external_event(&mut self, _timestamp: u64, event: Self::Event) -> (Option<()>, Option<u64>) {
+    fn external_event(&mut self, _timestamp: u64, event: &[u8]) -> (Option<()>, Option<u64>) {
+        let event = match serde_json_core::from_slice::<Event>(event) {
+            Ok((event, _)) => event,
+            Err(_) => {
+                return (None, None);
+            }
+        };
+
         match event.event {
             EventType::LineStbd => {
                 return (self.line.set_stbd(self.location), None);

@@ -61,3 +61,4 @@ serde-json-core = { workspace = true, features = ["heapless"] }
 #   
 extreme-traits = { path = "../extreme-traits/" }
 extreme-race = { path = "../extreme-race/" }
+# extreme-tune = { path = "../extreme-tune/" }

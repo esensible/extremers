@@ -339,20 +339,12 @@ where
                             }
                         };
 
-                        let event = match serde_json_core::from_slice::<Engine::Event>(payload) {
-                            Ok((event, _)) => event,
-                            Err(e) => {
-                                log::error!("Failed to deserialize event: {:?}", e);
-                                break;
-                            }
-                        };
-
                         let mut engine = self.engine.lock().await;
                         // get the current time
                         let offset = self.tick_offset.load(Ordering::Relaxed);
                         let now = embassy_time::Instant::now().as_millis() + offset;
                         // handle the event
-                        let (update, timer) = (*engine).external_event(now, event);
+                        let (update, timer) = (*engine).external_event(now, payload);
 
                         // handle state update if there was one
                         if let Some(()) = update {
