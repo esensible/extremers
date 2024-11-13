@@ -215,8 +215,23 @@ where
         if headers.method != Method::Get {
             conn.initiate_response(405, Some("Method Not Allowed"), &[])
                 .await?;
-        } else if headers.path != "/" {
-            conn.initiate_response(404, Some("Not Found"), &[]).await?;
+        } else if headers.path != "/socket" {
+            let path = if headers.path == "/" || headers.path == "" {
+                "index.html"
+            } else if headers.path.starts_with('/') {
+                &headers.path[1..]
+            } else {
+                headers.path
+            };
+
+            log::info!("serving static file: {}", path);
+            let engine = self.engine.lock().await;
+            if let Some(file) = (*engine).get_static(path) {
+                conn.initiate_response(200, Some("OK"), &[]).await?;
+                conn.write_all(file).await?;
+            } else {
+                conn.initiate_response(404, Some("Not Found"), &[]).await?;
+            }
         } else if !conn.is_ws_upgrade_request()? {
             conn.initiate_response(200, Some("OK"), &[("Content-Type", "text/plain")])
                 .await?;
@@ -241,16 +256,30 @@ where
                 let engine = self.engine.lock().await;
                 match serde_json_core::to_vec::<Engine, MAX_MESSAGE_SIZE>(&*engine) {
                     Ok(message) => {
+                        // Build JSON wrapper manually since message is already serialized JSON
+                        let mut wrapper = UpdateMessage::new();
+                        wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
+                        let timestamp = embassy_time::Instant::now().as_millis()
+                            + self.tick_offset.load(Ordering::Relaxed);
+                        if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
+                            log::error!("failed to render timestamp");
+                        }
+                        wrapper.extend_from_slice(b",\"engine\":").unwrap();
+                        wrapper.extend_from_slice(&message).unwrap();
+                        wrapper.extend_from_slice(b"}").unwrap();
+
                         let header = FrameHeader {
                             mask_key: None,
                             frame_type: FrameType::Text(false), // no clue why false is required, but it is
-                            payload_len: message.len() as u64,
+                            payload_len: wrapper.len() as u64,
                         };
 
                         if let Err(e) = header.send(&mut socket).await {
                             log::error!("Failed to send header: {:?}", e);
                         }
-                        if let Err(e) = header.send_payload(&mut socket, message.as_slice()).await {
+
+                        // Send the wrapped message
+                        if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
                             log::error!("Failed to send payload: {:?}", e);
                         }
                     }
@@ -354,18 +383,29 @@ where
                         // break on any comms error
                         log::info!("broadcast message");
 
-                        // Send the message to the client
+                        // Build JSON wrapper manually since message is already serialized JSON
+                        let mut wrapper = UpdateMessage::new();
+                        wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
+                        let timestamp = embassy_time::Instant::now().as_millis()
+                            + self.tick_offset.load(Ordering::Relaxed);
+                        if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
+                            log::error!("failed to render timestamp");
+                        }
+                        wrapper.extend_from_slice(b",\"engine\":").unwrap();
+                        wrapper.extend_from_slice(&message).unwrap();
+                        wrapper.extend_from_slice(b"}").unwrap();
+
                         let header = FrameHeader {
                             mask_key: None,
                             frame_type: FrameType::Text(false), // no clue why false is required, but it is
-                            payload_len: message.len() as u64,
+                            payload_len: wrapper.len() as u64,
                         };
 
                         if let Err(e) = header.send(&mut socket).await {
                             log::error!("Failed to send header: {:?}", e);
-                            break;
                         }
-                        if let Err(e) = header.send_payload(&mut socket, message.as_slice()).await {
+
+                        if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
                             log::error!("Failed to send payload: {:?}", e);
                             break;
                         }
@@ -376,4 +416,30 @@ where
 
         Ok(())
     }
+}
+
+fn u64_to_heapless_vec<const N: usize>(mut num: u64, vec: &mut Vec<u8, N>) -> Result<(), ()> {
+    if num == 0 {
+        vec.extend_from_slice(&[b'0'])?;
+        return Ok(());
+    }
+
+    // Convert number to digits in reverse
+    let mut rev_digits = [0u8; 20]; // Max u64 length
+    let mut rev_idx = 0;
+    while num > 0 {
+        rev_digits[rev_idx] = (num % 10) as u8 + b'0';
+        num /= 10;
+        rev_idx += 1;
+    }
+
+    // Extend vec with digits in correct order
+    while rev_idx > 0 {
+        rev_idx -= 1;
+        if vec.push(rev_digits[rev_idx]).is_err() {
+            return Err(());
+        }
+    }
+
+    return Ok(());
 }

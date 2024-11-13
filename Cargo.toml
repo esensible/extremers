@@ -1,25 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = [
-    # where the magic happens
-    "engine",
-    # httpd implementation for std environment
-    "lib_httpd",
-
-    # engines
-    "engine_race",
-    "engine_tune",
-
-    # apps
-    "std_httpd",
-    # "rpi",
-    # "esp32",
-
-    "extreme-traits",
-    "extreme-race",
-    "extreme-http",
-]
+members = ["extreme-traits", "extreme-race", "extreme-http"]
 
 
 [workspace.dependencies]

@@ -17,4 +17,7 @@ pub trait Engine: serde::Serialize {
     ) -> (Option<()>, Option<u64>);
     fn external_event(&mut self, timestamp: u64, event: Self::Event) -> (Option<()>, Option<u64>);
     fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>);
+
+    /// Get a static file from the engine, if it exists
+    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]>;
 }

@@ -7,6 +7,8 @@ use crate::line::Line;
 use crate::types::Location;
 use extreme_traits::Engine;
 
+include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
+
 #[derive(Copy, Clone, PartialEq, Default)]
 // Serialize is implemented below because line serialization depends on Race state
 pub struct Race {
@@ -57,6 +59,15 @@ pub struct Event {
 
 impl Engine for Race {
     type Event = Event;
+
+    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
+        for &(k, v) in STATIC_FILES.iter() {
+            if k == path {
+                return Some(v);
+            }
+        }
+        return None;
+    }
 
     fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>) {
         let (start_time, speed) = if let State::InSequence {
