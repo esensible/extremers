@@ -1,12 +1,11 @@
-use serde::ser::SerializeStruct;
 use ::serde::Deserialize;
 use core::f64::consts::PI;
+use serde::ser::SerializeStruct;
 use serde::Serialize;
 
 use crate::line::Line;
 use crate::types::Location;
 use extreme_traits::Engine;
-
 
 #[derive(Copy, Clone, PartialEq, Default)]
 // Serialize is implemented below because line serialization depends on Race state
@@ -15,7 +14,6 @@ pub struct Race {
     pub line: Line,
     pub location: Location,
 }
-
 
 #[derive(Serialize, Copy, Clone, PartialEq)]
 #[serde(tag = "state")]
@@ -41,7 +39,7 @@ impl Default for State {
 }
 
 #[derive(Deserialize)]
-pub enum Event {
+pub enum EventType {
     LineStbd,
     LinePort,
 
@@ -50,16 +48,21 @@ pub enum Event {
     RaceFinish,
 }
 
+// Note: we use a struct to deserialize because serde
+// can't use tag= (to flatten) with no_std
+#[derive(Deserialize)]
+pub struct Event {
+    pub event: EventType,
+}
+
 impl Engine for Race {
     type Event = Event;
 
-
-    fn timer_event(
-        &mut self, 
-        timestamp: u64
-    ) -> (Option<()>, Option<u64>) 
-    {
-        let (start_time, speed) = if let State::InSequence { start_time, speed, .. } = self.state {
+    fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>) {
+        let (start_time, speed) = if let State::InSequence {
+            start_time, speed, ..
+        } = self.state
+        {
             (start_time, speed)
         } else {
             // bad things happened, we were in an unexpected state. Roll with it as best we can.
@@ -76,29 +79,15 @@ impl Engine for Race {
         (Some(()), None)
     }
 
-
-
-    fn external_event(
-        &mut self, 
-        _timestamp: u64, 
-        event: Self::Event
-    ) -> (Option<()>, Option<u64>)
-    {
-
-        match event {
-            Event::LineStbd => {
-                return (
-                    self.line.set_stbd(self.location),
-                    None
-                );
+    fn external_event(&mut self, _timestamp: u64, event: Self::Event) -> (Option<()>, Option<u64>) {
+        match event.event {
+            EventType::LineStbd => {
+                return (self.line.set_stbd(self.location), None);
             }
-            Event::LinePort => {
-                return (
-                    self.line.set_port(self.location), 
-                    None
-                );
+            EventType::LinePort => {
+                return (self.line.set_port(self.location), None);
             }
-            Event::BumpSeq { timestamp, seconds } => {
+            EventType::BumpSeq { timestamp, seconds } => {
                 match &mut self.state {
                     State::InSequence { start_time, .. } => {
                         if seconds == 0 {
@@ -143,9 +132,9 @@ impl Engine for Race {
                     }
                 }
             }
-            Event::RaceFinish => {
+            EventType::RaceFinish => {
                 let old_speed = match &self.state {
-                    State::Active { speed, } => *speed,
+                    State::Active { speed } => *speed,
                     State::InSequence { speed, .. } => *speed,
                     State::Racing { speed, .. } => *speed,
                 };
@@ -161,12 +150,11 @@ impl Engine for Race {
     }
 
     fn location_event(
-        &mut self, 
-        timestamp: u64, 
-        location: Option<(f64, f64)>, 
-        speed: Option<(f64, f64)>
-    ) -> (Option<()>, Option<u64>)
-    {
+        &mut self,
+        timestamp: u64,
+        location: Option<(f64, f64)>,
+        speed: Option<(f64, f64)>,
+    ) -> (Option<()>, Option<u64>) {
         let mut result = None;
 
         if let Some((new_speed, new_heading)) = speed {
@@ -193,16 +181,19 @@ impl Engine for Race {
             if !matches!(self.state, State::Racing { .. }) {
                 if let Some((speed, heading)) = speed {
                     let heading = heading * PI / 180.0;
-                    if Some(()) == self.line.update_location(timestamp, (lat, lon), heading, speed) {
+                    if Some(())
+                        == self
+                            .line
+                            .update_location(timestamp, (lat, lon), heading, speed)
+                    {
                         return (Some(()), None);
                     }
                 }
             }
         }
-        return (result, None)
+        return (result, None);
     }
 }
-
 
 impl Serialize for Race {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -221,7 +212,11 @@ impl Serialize for Race {
                 s.serialize_field("start_time", start_time)?;
                 s.serialize_field("speed", speed)?;
             }
-            State::Racing { start_time, speed, heading } => {
+            State::Racing {
+                start_time,
+                speed,
+                heading,
+            } => {
                 s.serialize_field("state", "Racing")?;
                 s.serialize_field("start_time", start_time)?;
                 s.serialize_field("speed", speed)?;
@@ -242,7 +237,11 @@ impl Serialize for Race {
                 Line::Port { .. } => {
                     s.serialize_field("line", "Port")?;
                 }
-                Line::Both { line_cross, line_timestamp, .. } => {
+                Line::Both {
+                    line_cross,
+                    line_timestamp,
+                    ..
+                } => {
                     s.serialize_field("line", "Both")?;
                     s.serialize_field("line_cross", line_cross)?;
                     s.serialize_field("line_timestamp", line_timestamp)?;

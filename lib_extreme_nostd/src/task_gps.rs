@@ -51,7 +51,10 @@ pub async fn gps_task_impl<T, F>(
             // );
 
             update.1 = len;
-            UPDATES_BUS.publisher().unwrap().publish_immediate(update.clone());
+            UPDATES_BUS
+                .publisher()
+                .unwrap()
+                .publish_immediate(update.clone());
         }
         // write to flash
         write_record(time, location, speed);

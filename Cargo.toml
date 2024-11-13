@@ -13,8 +13,8 @@ members = [
 
     # apps
     "std_httpd",
-    "rpi",
-    "esp32",
+    # "rpi",
+    # "esp32",
 
     "extreme-traits",
     "extreme-race",
@@ -25,9 +25,9 @@ members = [
 [workspace.dependencies]
 
 embassy-executor = { version = "0.6", default-features = false }
-embassy-net = { version = "0.4", default-features = false}
+embassy-net = { version = "0.4", default-features = false }
 embassy-sync = { version = "0.6", default-features = false }
-embassy-time = { version = "0.3", default-features = false}
+embassy-time = { version = "0.3", default-features = false }
 
 
 embassy-futures = "0.1.1"
@@ -44,7 +44,7 @@ embedded-io-async = { version = "0.6.1", default-features = false }
 #
 # Cortex
 #
-embassy-rp = { version = "0.2", default-features = false}
+embassy-rp = { version = "0.2", default-features = false }
 embassy-usb-logger = { version = "0.2" }
 cyw43 = { version = "0.2", default-features = false }
 cyw43-pio = { version = "0.2", default-features = false }
@@ -55,14 +55,15 @@ panic-probe = { version = "0.3", default-features = false }
 # Other stuff
 #
 # edge-net = { version = "0.8.1", default-features = false }
-edge-net = { git = "https://github.com/ivmarkov/edge-net", rev="f7039b8cfd4242071086ed2c2c4ee822753614b1", default-features = false }
+edge-net = { git = "https://github.com/ivmarkov/edge-net", rev = "f7039b8cfd4242071086ed2c2c4ee822753614b1", default-features = false }
 log = { version = "0.4", default-features = false }
-heapless = {version = "0.8", default-features = false }
+heapless = { version = "0.8", default-features = false }
 static_cell = { version = "2.1", default-features = false }
 atomic-polyfill = { version = "1.0.1", default-features = false }
 portable-atomic = { version = "1.5", default-features = false }
-bytemuck = {version="1.12.1", default-features = false}
-md5 = {version="0.7.0", default-features=false}
+bytemuck = { version = "1.12.1", default-features = false }
+md5 = { version = "0.7.0", default-features = false }
+serde-json-core = { version = "0.6", default-features = false }
 
 # defmt = {version = "0.3", default-features = false }
 # defmt-rtt = {version = "0.4", default-features = false }
@@ -84,5 +85,4 @@ opt-level = 3
 #debug = 2
 
 [patch.crates-io]
-delog = {git = "https://github.com/giacomocaironi/delog", branch = "portable-atomic"}
-
+delog = { git = "https://github.com/giacomocaironi/delog", branch = "portable-atomic" }
