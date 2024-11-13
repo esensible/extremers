@@ -37,13 +37,17 @@ body {
 }
 
 .buttons {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+
     display: flex;
     flex-direction: column;
     width: 100%;
     justify-content: center;
     align-items: center;
     margin-top: 1rem;
-    /* margin-top: auto; */
+    margin-top: auto;
 }
 
 .row {
@@ -117,11 +121,8 @@ button.stbd .corner-label {
     top: 50%;
     transform: translate(-50%, -50%);
     z-index: 2;
-    /* Should be above the solid box */
     pointer-events: none;
-    /* Non-clickable */
     font-size: 10vw;
-    /* Adjust the size as needed */
 }
 
 /*
@@ -134,4 +135,3 @@ button.stbd .corner-label {
     background-color: #000;
 } 
 */
-

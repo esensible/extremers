@@ -12,7 +12,7 @@ function seqClick(seconds) {
 }
 
 export const Active = () => (
-    <>
+    <div>
         <div class="speed">{() => speed().toFixed(1)}</div>
         <div class="time">{time}</div>
         <Confirm />
@@ -25,5 +25,5 @@ export const Active = () => (
                 <button onClick={seqClick(60)}>1</button>
             </div>
         </div>
-    </>
+    </div>
 );
