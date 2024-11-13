@@ -235,6 +235,31 @@ where
 
             let mut socket = conn.unbind()?;
 
+            // send the current state to the client immediately
+            {
+                // scoped so we release the lock ASAP
+                let engine = self.engine.lock().await;
+                match serde_json_core::to_vec::<Engine, MAX_MESSAGE_SIZE>(&*engine) {
+                    Ok(message) => {
+                        let header = FrameHeader {
+                            mask_key: None,
+                            frame_type: FrameType::Text(false), // no clue why false is required, but it is
+                            payload_len: message.len() as u64,
+                        };
+
+                        if let Err(e) = header.send(&mut socket).await {
+                            log::error!("Failed to send header: {:?}", e);
+                        }
+                        if let Err(e) = header.send_payload(&mut socket, message.as_slice()).await {
+                            log::error!("Failed to send payload: {:?}", e);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to serialize engine state: {:?}", e);
+                    }
+                }
+            }
+
             let mut subscriber = self.broadcast_channel.dyn_subscriber().unwrap();
 
             loop {
@@ -257,6 +282,7 @@ where
                                 break;
                             }
                             FrameType::Ping => {
+                                log::info!("Got {header}, sending pong");
                                 let header = FrameHeader {
                                     mask_key: None,
                                     frame_type: FrameType::Pong,
