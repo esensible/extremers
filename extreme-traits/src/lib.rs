@@ -1,21 +1,98 @@
 #![no_std]
+#![feature(adt_const_params)]
 
-use core::option::Option;
+mod selector;
+pub use selector::EngineSelector;
 
-pub trait Engine: serde::Serialize {
-    /// Update the location of the engine
-    /// Returns:
-    /// * Some(()) if the engine state has changed, None otherwise
-    /// * Some(timestamp) if a timer event is needed at `timestamp`. Some(0) will cancel any existing timer. None will result in no changes to any existing timer.
-    fn location_event(
-        &mut self,
-        timestamp: u64,
-        location: Option<(f64, f64)>,
-        speed: Option<(f64, f64)>,
-    ) -> (Option<()>, Option<u64>);
-    fn external_event(&mut self, timestamp: u64, event: &[u8]) -> (Option<()>, Option<u64>);
-    fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>);
+mod traits;
+pub use crate::traits::*;
 
-    /// Get a static file from the engine, if it exists
-    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]>;
+#[macro_export]
+macro_rules! define_engines {
+    ($enum_name:ident { $($variant:ident($engine_type:ty)),* $(,)? }) => {
+
+        struct $enum_name_Labels;
+
+        const $enum_name_VARIANTS: &'static [&'static str] = &[$(stringify!($variant)),*];
+
+        impl $crate::StringList for $enum_name_Labels {
+            fn index_of(value: &str) -> Option<usize> {
+                $enum_name_VARIANTS.iter().position(|&x| x == value)
+            }
+
+            fn list() -> &'static [&'static str] {
+                $enum_name_VARIANTS
+            }
+        }
+
+
+
+        #[derive(serde::Serialize)]
+        #[serde(tag = "Engine")]
+        enum $enum_name {
+            $(
+                $variant($engine_type),
+            )*
+        }
+
+        impl $crate::Engine for $enum_name {
+            type Event<'a> = [u8];
+
+            fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
+                match self {
+                    $(
+                        $enum_name::$variant(engine) => engine.get_static(path),
+                    )*
+                }
+            }
+
+            fn location_event(
+                &mut self,
+                timestamp: u64,
+                location: Option<(f64, f64)>,
+                speed: Option<(f64, f64)>,
+            ) -> (Option<()>, Option<u64>) {
+                match self {
+                    $(
+                        $enum_name::$variant(engine) => engine.location_event(timestamp, location, speed),
+                    )*
+                }
+            }
+
+            fn external_event(&mut self, timestamp: u64, event: &Self::Event) -> (Option<()>, Option<u64>) {
+                match self {
+                    $(
+                        $enum_name::$variant(engine) => {
+                            if let Ok(event) = serde_json_core::from_slice::<$engine_type::Event>(event) {
+                                return engine.external_event(timestamp, &event);
+                            }
+                        }
+                    )*
+                }
+                // TODO: Try to deserialize as a selector event
+
+                (None, None)
+            }
+
+            fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>) {
+                match self {
+                    $(
+                        $enum_name::$variant(engine) => engine.timer_event(timestamp),
+                    )*
+                }
+            }
+        }
+
+        impl $enum_name {
+            fn from_index(index: usize) -> Option<Self> {
+                match index {
+                    $(
+                        VARIANTS.iter().position(|&x| x == stringify!($variant)).unwrap() => Some($enum_name::$variant(Default::default())),
+                    )*
+                    _ => None,
+                }
+            }
+        }
+    };
+
 }

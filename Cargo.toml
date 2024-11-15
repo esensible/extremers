@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["extreme-traits", "extreme-race", "extreme-http"]
+members = ["extreme-traits", "extreme-race", "extreme-tune", "extreme-http"]
 
 
 [workspace.dependencies]

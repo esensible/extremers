@@ -28,6 +28,8 @@ use heapless::Vec;
 use panic_probe as _;
 use portable_atomic::AtomicU64;
 
+use crate::EngineType;
+
 // Constants
 pub const MAX_MESSAGE_SIZE: usize = 512;
 
@@ -343,8 +345,15 @@ where
                         // get the current time
                         let offset = self.tick_offset.load(Ordering::Relaxed);
                         let now = embassy_time::Instant::now().as_millis() + offset;
+
+                        let event = serde_json_core::from_slice::<EngineType::Event>(payload);
+                        if event.is_err() {
+                            log::error!("Failed to deserialize event");
+                            break;
+                        }
+                        let event = event.unwrap();
                         // handle the event
-                        let (update, timer) = (*engine).external_event(now, payload);
+                        let (update, timer) = (*engine).external_event(now, &event);
 
                         // handle state update if there was one
                         if let Some(()) = update {

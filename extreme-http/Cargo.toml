@@ -56,9 +56,11 @@ md5 = { workspace = true }
 embedded-io-async = { workspace = true }
 anyhow = { version = "1", default-features = false }
 serde-json-core = { workspace = true, features = ["heapless"] }
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+
 #
 # The magic
 #   
 extreme-traits = { path = "../extreme-traits/" }
 extreme-race = { path = "../extreme-race/" }
-# extreme-tune = { path = "../extreme-tune/" }
+extreme-tune = { path = "../extreme-tune/" }

@@ -49,7 +49,16 @@ use crate::{
 
 type EngineType = extreme_race::Race;
 // 128 samples history
-// type EngineType = extreme_tune::TuneSpeed<128>;
+// type EngineType = extreme_tune::TuneSpeed<32>;
+
+// use extreme_traits::define_engines;
+
+// define_engines! {
+//     Engines {
+//         Race(extreme_race::Race),
+//         TuneSpeed(extreme_tune::TuneSpeed<32>),
+//     }
+// }
 
 // Constants
 const MAX_WEB_SOCKETS: usize = 4;
