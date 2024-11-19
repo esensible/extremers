@@ -42,8 +42,8 @@ where
 {
     engine: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, Engine>,
     tick_offset: AtomicU64,
-    sleep_channel: PubSubChannel<CriticalSectionRawMutex, u64, 1, 2, 3>,
-    broadcast_channel: PubSubChannel<CriticalSectionRawMutex, UpdateMessage, 1, 2, 3>,
+    sleep_channel: PubSubChannel<CriticalSectionRawMutex, u64, 1, 4, 4>,
+    broadcast_channel: PubSubChannel<CriticalSectionRawMutex, UpdateMessage, 1, 4, 4>,
 }
 
 impl<Engine> HttpHandler<Engine>
@@ -65,7 +65,7 @@ where
         location: Option<(f64, f64)>,
         speed: Option<(f64, f64)>,
     ) {
-        log::info!("location_event: {:?}, {:?}, {:?}", time, location, speed);
+        // log::info!("location_event: {:?}, {:?}, {:?}", time, location, speed);
         let timestamp = match time {
             Some(timestamp) => {
                 let mut offset = self.tick_offset.load(Ordering::Relaxed);
@@ -87,7 +87,7 @@ where
 
         // handle state update if there was one
         if let Some(()) = update {
-            log::info!("broadcasting state update");
+            // log::info!("broadcasting state update");
 
             match (*engine).to_vec() {
                 Ok(message) => {
@@ -162,13 +162,13 @@ where
                         // !!!! sleep timed out - nominal case !!!!
                         //
                         Err(_timeout_error) => {
-                            log::info!("Yay: sleep timed out");
+                            // log::info!("Yay: sleep timed out");
                             let mut engine = self.engine.lock().await;
                             let (update, timer) = (*engine).timer_event(wake_time);
 
                             // handle state update if there was one
                             if let Some(()) = update {
-                                log::info!("broadcasting state update");
+                                // log::info!("broadcasting state update");
                                 match (*engine).to_vec() {
                                     Ok(message) => {
                                         if let Ok(publisher) = self.broadcast_channel.publisher() {
@@ -253,41 +253,43 @@ where
             let mut socket = conn.unbind()?;
 
             // send the current state to the client immediately
-            {
-                // scoped so we release the lock ASAP
+            let vec = {
                 let engine = self.engine.lock().await;
-                match (*engine).to_vec() {
-                    Ok(message) => {
-                        // Build JSON wrapper manually since message is already serialized JSON
-                        let mut wrapper = UpdateMessage::new();
-                        wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
-                        let timestamp = embassy_time::Instant::now().as_millis()
-                            + self.tick_offset.load(Ordering::Relaxed);
-                        if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
-                            log::error!("failed to render timestamp");
-                        }
-                        wrapper.extend_from_slice(b",\"engine\":").unwrap();
-                        wrapper.extend_from_slice(&message).unwrap();
-                        wrapper.extend_from_slice(b"}").unwrap();
+                (*engine).to_vec()
+            };
 
-                        let header = FrameHeader {
-                            mask_key: None,
-                            frame_type: FrameType::Text(false), // no clue why false is required, but it is
-                            payload_len: wrapper.len() as u64,
-                        };
-
-                        if let Err(e) = header.send(&mut socket).await {
-                            log::error!("Failed to send header: {:?}", e);
-                        }
-
-                        // Send the wrapped message
-                        if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
-                            log::error!("Failed to send payload: {:?}", e);
-                        }
+            // scoped so we release the lock ASAP
+            match vec {
+                Ok(message) => {
+                    // Build JSON wrapper manually since message is already serialized JSON
+                    let mut wrapper = UpdateMessage::new();
+                    wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
+                    let timestamp = embassy_time::Instant::now().as_millis()
+                        + self.tick_offset.load(Ordering::Relaxed);
+                    if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
+                        log::error!("failed to render timestamp");
                     }
-                    Err(e) => {
-                        log::error!("Failed to serialize engine state: {:?}", e);
+                    wrapper.extend_from_slice(b",\"engine\":").unwrap();
+                    wrapper.extend_from_slice(&message).unwrap();
+                    wrapper.extend_from_slice(b"}").unwrap();
+
+                    let header = FrameHeader {
+                        mask_key: None,
+                        frame_type: FrameType::Text(false), // no clue why false is required, but it is
+                        payload_len: wrapper.len() as u64,
+                    };
+
+                    if let Err(e) = header.send(&mut socket).await {
+                        log::error!("Failed to send header: {:?}", e);
                     }
+
+                    // Send the wrapped message
+                    if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
+                        log::error!("Failed to send payload: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to serialize engine state: {:?}", e);
                 }
             }
 
@@ -315,11 +317,11 @@ where
 
                         match header.frame_type {
                             FrameType::Close => {
-                                log::info!("Got {header}, client closed the connection cleanly");
+                                log::info!("Client closed connection");
                                 break;
                             }
                             FrameType::Ping => {
-                                log::info!("Got {header}, sending pong");
+                                log::info!("Sending pong");
                                 let header = FrameHeader {
                                     mask_key: None,
                                     frame_type: FrameType::Pong,
@@ -327,7 +329,7 @@ where
                                 };
 
                                 if let Err(e) = header.send(&mut socket).await {
-                                    log::error!("Failed to send header: {:?}", e);
+                                    log::error!("Failed to send pong: {:?}", e);
                                     break;
                                 }
                                 continue;
@@ -347,25 +349,26 @@ where
                             }
                         };
 
-                        log::info!(
-                            "payload: {}",
-                            core::str::from_utf8(payload).unwrap_or("<invalid utf8>")
-                        );
+                        // log::info!(
+                        //     "payload: {}",
+                        //     core::str::from_utf8(payload).unwrap_or("<invalid utf8>")
+                        // );
 
-                        let mut engine = self.engine.lock().await;
                         // get the current time
                         let offset = self.tick_offset.load(Ordering::Relaxed);
-                        let now = embassy_time::Instant::now().as_millis() + offset;
+                        let (update, timer) = {
+                            let mut engine = self.engine.lock().await;
+                            let now = embassy_time::Instant::now().as_millis() + offset;
 
-                        // handle the event
-                        let (update, timer) =
+                            // handle the event
                             match RawEngine::external_event(&mut *engine, now, payload) {
                                 Ok(result) => result,
                                 Err(_) => {
                                     log::error!("Failed to handle external event");
                                     break;
                                 }
-                            };
+                            }
+                        };
 
                         // handle state update if there was one
                         if let Some(update) = update {
@@ -388,7 +391,7 @@ where
                     Either::Second(message) => {
                         // send the message to the client
                         // break on any comms error
-                        log::info!("broadcast message");
+                        // log::info!("broadcast message");
 
                         // Build JSON wrapper manually since message is already serialized JSON
                         let mut wrapper = UpdateMessage::new();

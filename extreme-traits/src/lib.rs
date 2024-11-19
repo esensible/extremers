@@ -94,8 +94,8 @@ macro_rules! define_engines {
                                         return Ok((update, timer));
                                     }
                                     Err(e) => {
-                                        log::error!("Failed to deserialize selector event: {:?}", e);
-                                        return Err(());
+                                        log::error!("Failed to deserialize engine event: {:?}", e);
+                                        // fall through
                                     }
                                 }
                             },

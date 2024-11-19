@@ -16,23 +16,38 @@ body {
 .container {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
     height: 100vh;
     width: 100vw;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
-/* Speed display */
-.speed,
-.deviation {
-    font-size: 40vw;
-    text-align: center;
-    max-height: 30vh;
+.engines {
     width: 100%;
-    line-height: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding: 10px;
+    box-sizing: border-box;
 }
 
-span.small-deviation {
-    font-size: 10vw;
+.engine-button {
+    width: 50%;
+    height: 20vh;
+    margin: 5px 0;
+    font-size: 8vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* background-color: #ffffff; */
+    border: 1px solid #000000;
+    cursor: pointer;
+}
+
+/* Optimize scrolling for e-ink display */
+.engines {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
 }

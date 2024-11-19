@@ -36,3 +36,28 @@ body {
 span.small-deviation {
     font-size: 10vw;
 }
+
+.exit-button {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 15vh;
+    height: 15vh;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    z-index: 1;
+}
+
+button.confirm {
+    position: absolute;
+    width: 15vw;
+    height: 15vw;
+    border-radius: 100%;
+    display: none;
+    z-index: 999;
+}
+
+button.confirm.active {
+    display: block;
+}

@@ -256,7 +256,7 @@ pub async fn httpd_task(
             Ok(socket) => socket,
             Err(e) => {
                 log::error!("Failed to bind httpd socket: {:?}", e);
-                Timer::after(Duration::from_secs(10)).await;
+                Timer::after(Duration::from_secs(1)).await;
                 continue;
             }
         };
@@ -266,7 +266,7 @@ pub async fn httpd_task(
             Ok(_) => (),
             Err(e) => {
                 log::error!("HTTPd server error: {:?}", e);
-                Timer::after(Duration::from_secs(10)).await;
+                Timer::after(Duration::from_secs(1)).await;
                 continue;
             }
         }

@@ -64,12 +64,24 @@ button.confirm {
     height: 15vw;
     border-radius: 100%;
     display: none;
+    z-index: 999;
 }
 
 button.confirm.active {
     display: block;
 }
 
+.exit-button {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 15vh;
+    height: 15vh;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    z-index: 1;
+}
 
 button {
     flex: 1;

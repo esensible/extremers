@@ -69,7 +69,9 @@ function connectWebSocket() {
 
 export function postEvent(event, data, options) {
   data = data || {};
-  data.event = event;
+  if (event) {
+    data.event = event;
+  }
 
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(data));

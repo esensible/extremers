@@ -4,6 +4,8 @@ import './style.css'
 
 // Initialize state variables
 const [engines, setEngines] = createSignal([]);
+
+
 let socket;
 
 // Function to fetch updates from the server
@@ -43,6 +45,20 @@ function fetchUpdates() {
         }
     });
 }
+
+function postEvent(event, data, options) {
+    data = data || {};
+    if (event) {
+        data.event = event;
+    }
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+    } else {
+        console.error('WebSocket is not connected');
+    }
+}
+
 
 // Start fetching updates
 fetchUpdates();

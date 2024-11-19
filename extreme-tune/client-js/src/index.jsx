@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, createEffect } from "solid-js";
+import { confirm } from './confirm.jsx';
 
 import './style.css'
 
@@ -6,6 +7,7 @@ import './style.css'
 const [speed, setSpeed] = createSignal(0.0);
 const [speedDev, setSpeedDev] = createSignal(0.0);
 const [headingDev, setHeadingDev] = createSignal(0.0);
+const [Confirm, doConfirm] = confirm();
 
 // Function to format deviations with '+' or '-' prefix
 const formatDeviation = (value, precision = 1) => {
@@ -18,9 +20,10 @@ const formatDeviation = (value, precision = 1) => {
     );
 };
 
+let socket;
+
 // Function to fetch updates from the server
 function fetchUpdates() {
-    let socket;
 
     function connectWebSocket() {
         socket = new WebSocket(`ws://${window.location.host}/socket`);
@@ -64,6 +67,19 @@ function fetchUpdates() {
     });
 }
 
+function postEvent(event, data, options) {
+    data = data || {};
+    if (event) {
+        data.event = event;
+    }
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+    } else {
+        console.error('WebSocket is not connected');
+    }
+}
+
 // Start fetching updates
 fetchUpdates();
 
@@ -76,6 +92,8 @@ const App = () => {
 
     return (
         <div class="container">
+            <button class="exit-button" onClick={() => doConfirm(() => postEvent(false, { "index": "Exit" }), 2)}></button>
+            <Confirm />
             <div class="speed">{() => speed().toFixed(1)}</div>
             <div class="deviation">{() => formatDeviation(speedDev())}<span class="small-deviation">k</span></div>
             <div class="deviation">{() => formatDeviation(headingDev(), 0)}<span class="small-deviation">°</span></div>
