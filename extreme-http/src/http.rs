@@ -28,7 +28,7 @@ use heapless::Vec;
 use panic_probe as _;
 use portable_atomic::AtomicU64;
 
-use crate::EngineType;
+use extreme_traits::RawEngine;
 
 // Constants
 pub const MAX_MESSAGE_SIZE: usize = 512;
@@ -38,7 +38,7 @@ type UpdateMessage = Vec<u8, MAX_MESSAGE_SIZE>;
 
 pub struct HttpHandler<Engine>
 where
-    Engine: extreme_traits::Engine,
+    Engine: RawEngine,
 {
     engine: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, Engine>,
     tick_offset: AtomicU64,
@@ -48,7 +48,7 @@ where
 
 impl<Engine> HttpHandler<Engine>
 where
-    Engine: extreme_traits::Engine,
+    Engine: extreme_traits::RawEngine,
 {
     pub fn new(engine: Engine) -> Self {
         Self {
@@ -89,7 +89,7 @@ where
         if let Some(()) = update {
             log::info!("broadcasting state update");
 
-            match serde_json_core::to_vec(&*engine) {
+            match (*engine).to_vec() {
                 Ok(message) => {
                     if let Ok(publisher) = self.broadcast_channel.publisher() {
                         publisher.publish_immediate(message);
@@ -169,7 +169,7 @@ where
                             // handle state update if there was one
                             if let Some(()) = update {
                                 log::info!("broadcasting state update");
-                                match serde_json_core::to_vec(&*engine) {
+                                match (*engine).to_vec() {
                                     Ok(message) => {
                                         if let Ok(publisher) = self.broadcast_channel.publisher() {
                                             publisher.publish_immediate(message);
@@ -197,7 +197,7 @@ where
 
 impl<Engine> Handler for HttpHandler<Engine>
 where
-    Engine: extreme_traits::Engine,
+    Engine: extreme_traits::RawEngine,
 {
     type Error<E>
         = Error<E>
@@ -256,7 +256,7 @@ where
             {
                 // scoped so we release the lock ASAP
                 let engine = self.engine.lock().await;
-                match serde_json_core::to_vec::<Engine, MAX_MESSAGE_SIZE>(&*engine) {
+                match (*engine).to_vec() {
                     Ok(message) => {
                         // Build JSON wrapper manually since message is already serialized JSON
                         let mut wrapper = UpdateMessage::new();
@@ -291,7 +291,13 @@ where
                 }
             }
 
-            let mut subscriber = self.broadcast_channel.dyn_subscriber().unwrap();
+            let mut subscriber = match self.broadcast_channel.dyn_subscriber() {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Failed to create broadcast subscriber: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             loop {
                 let header_future = FrameHeader::recv(&mut socket);
@@ -341,33 +347,33 @@ where
                             }
                         };
 
+                        log::info!(
+                            "payload: {}",
+                            core::str::from_utf8(payload).unwrap_or("<invalid utf8>")
+                        );
+
                         let mut engine = self.engine.lock().await;
                         // get the current time
                         let offset = self.tick_offset.load(Ordering::Relaxed);
                         let now = embassy_time::Instant::now().as_millis() + offset;
 
-                        let event = serde_json_core::from_slice::<EngineType::Event>(payload);
-                        if event.is_err() {
-                            log::error!("Failed to deserialize event");
-                            break;
-                        }
-                        let event = event.unwrap();
                         // handle the event
-                        let (update, timer) = (*engine).external_event(now, &event);
+                        let (update, timer) =
+                            match RawEngine::external_event(&mut *engine, now, payload) {
+                                Ok(result) => result,
+                                Err(_) => {
+                                    log::error!("Failed to handle external event");
+                                    break;
+                                }
+                            };
 
                         // handle state update if there was one
-                        if let Some(()) = update {
-                            match serde_json_core::to_vec(&*engine) {
-                                Ok(message) => {
-                                    if let Ok(publisher) = self.broadcast_channel.publisher() {
-                                        publisher.publish_immediate(message);
-                                    } else {
-                                        log::error!("Failed to get broadcast channel publisher");
-                                    }
-                                }
-                                Err(_) => {
-                                    log::error!("Failed to serialize engine state");
-                                }
+                        if let Some(update) = update {
+                            if let Ok(publisher) = self.broadcast_channel.publisher() {
+                                publisher.publish_immediate(update);
+                            } else {
+                                log::error!("Failed to get broadcast channel publisher");
+                                break;
                             }
                         }
 

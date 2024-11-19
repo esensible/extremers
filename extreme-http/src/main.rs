@@ -47,18 +47,16 @@ use crate::{
     nmea_parser::{next_update, AsyncReader, RingBuffer},
 };
 
-type EngineType = extreme_race::Race;
-// 128 samples history
-// type EngineType = extreme_tune::TuneSpeed<32>;
+use extreme_traits::define_engines;
 
-// use extreme_traits::define_engines;
+// type EngineType = extreme_race::Race;
 
-// define_engines! {
-//     Engines {
-//         Race(extreme_race::Race),
-//         TuneSpeed(extreme_tune::TuneSpeed<32>),
-//     }
-// }
+define_engines! {
+    EngineType {
+        Race(extreme_race::Race),
+        TuneSpeed(extreme_tune::TuneSpeed<32>),
+    }
+}
 
 // Constants
 const MAX_WEB_SOCKETS: usize = 4;

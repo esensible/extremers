@@ -1,0 +1,38 @@
+/* Reset and base styles */
+html,
+body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background-color: #fff;
+    color: #000;
+}
+
+/* Container replicating the style of the Race client app */
+.container {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+    box-sizing: border-box;
+}
+
+/* Speed display */
+.speed,
+.deviation {
+    font-size: 40vw;
+    text-align: center;
+    max-height: 30vh;
+    width: 100%;
+    line-height: 1;
+}
+
+span.small-deviation {
+    font-size: 10vw;
+}

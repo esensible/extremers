@@ -50,6 +50,10 @@ function connectWebSocket() {
     timestampOffset = data.timestamp - new Date().getTime();
     timezoneOffset = 37800; // 10.5 hours
 
+    if (data.engine && data.engine.fuck_yeah && data.engine.fuck_yeah !== "Race") {
+      window.location.reload();
+    }
+
     setAll(data.engine, false);
   };
 

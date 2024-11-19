@@ -59,6 +59,7 @@ pub struct Event {
 
 impl Engine for Race {
     type Event<'a> = Event;
+
     fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
         for &(k, v) in STATIC_FILES.iter() {
             if k == path {
@@ -89,10 +90,10 @@ impl Engine for Race {
         (Some(()), None)
     }
 
-    fn external_event(
+    fn external_event<'a>(
         &mut self,
         _timestamp: u64,
-        event: &Self::Event<'_>,
+        event: &Self::Event<'a>,
     ) -> (Option<()>, Option<u64>) {
         match event.event {
             EventType::LineStbd => {

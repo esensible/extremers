@@ -20,8 +20,8 @@ pub struct TuneSpeed<const HISTORY_SIZE: usize> {
 }
 
 impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
-    // dummy type - we don't need events right now
-    type Event<'a> = &'a str;
+    // we don't need events right now
+    type Event<'a> = ();
 
     fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
         for &(k, v) in STATIC_FILES.iter() {
@@ -142,10 +142,10 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
         (None, None)
     }
 
-    fn external_event(
+    fn external_event<'a>(
         &mut self,
         _timestamp: u64,
-        _event: &Self::Event<'_>,
+        _event: &Self::Event<'a>,
     ) -> (Option<()>, Option<u64>) {
         // No external events to handle
         (None, None)

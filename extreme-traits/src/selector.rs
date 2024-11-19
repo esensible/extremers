@@ -1,4 +1,3 @@
-extern crate alloc; // Needed for no_std with serde
 use crate::traits::Engine;
 use core::fmt;
 use core::marker::PhantomData;
@@ -6,48 +5,89 @@ use serde::de::{self, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
+
 pub trait StringList {
     fn index_of(value: &str) -> Option<usize>;
     fn list() -> &'static [&'static str];
 }
 
-pub struct Event<Engines: StringList> {
-    index: usize,
+pub struct SelectorEvent<Engines: StringList> {
+    pub index: usize,
     _marker: PhantomData<Engines>,
 }
-
-impl<'de, Engines: StringList> Deserialize<'de> for Event<Engines> {
+impl<'de, Engines: StringList + 'static> Deserialize<'de> for SelectorEvent<Engines> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct EventVisitor<Engines>(PhantomData<Engines>);
+        struct EventVisitor<Engines: StringList>(PhantomData<Engines>);
 
-        impl<'de, Engines: StringList> Visitor<'de> for EventVisitor<Engines> {
-            type Value = Event<Engines>;
+        impl<'de, Engines: StringList + 'static> Visitor<'de> for EventVisitor<Engines> {
+            type Value = SelectorEvent<Engines>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string representing the engine name")
+                formatter.write_str(r#"a map with a single key "index" pointing to a string"#)
             }
 
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
             where
-                E: de::Error,
+                V: de::SeqAccess<'de>,
             {
-                Ok(Event {
-                    index: Engines::index_of(value).unwrap_or(0),
+                // Attempt to deserialize the sequence into a single string (the engine name).
+                let index = seq
+                    .next_element::<&str>()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+
+                Ok(SelectorEvent {
+                    index: Engines::index_of(index).unwrap_or(usize::MAX),
+                    _marker: PhantomData,
+                })
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: de::MapAccess<'de>,
+            {
+                let mut index: Option<&str> = None;
+
+                while let Some(key) = map.next_key::<&str>()? {
+                    match key {
+                        "index" => {
+                            if index.is_some() {
+                                return Err(de::Error::duplicate_field("index"));
+                            }
+                            index = Some(map.next_value()?);
+                        }
+                        _ => return Err(de::Error::unknown_field(key, &["index"])),
+                    }
+                }
+
+                let index = index.ok_or_else(|| de::Error::missing_field("index"))?;
+
+                Ok(SelectorEvent {
+                    index: Engines::index_of(index).unwrap_or(usize::MAX),
                     _marker: PhantomData,
                 })
             }
         }
 
-        deserializer.deserialize_str(EventVisitor(PhantomData))
+        deserializer.deserialize_map(EventVisitor(PhantomData))
     }
 }
 
 pub struct EngineSelector<Engines: StringList> {
-    index: usize,
+    pub index: usize,
     _marker: PhantomData<Engines>,
+}
+
+impl<Engines: StringList> Default for EngineSelector<Engines> {
+    fn default() -> Self {
+        Self {
+            index: usize::MAX,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<Engines: StringList> Serialize for EngineSelector<Engines> {
@@ -62,17 +102,25 @@ impl<Engines: StringList> Serialize for EngineSelector<Engines> {
     }
 }
 
-impl<Engines: StringList> Engine for EngineSelector<Engines> {
-    type Event<'a> = Event<Engines>;
+impl<Engines: StringList> Engine for EngineSelector<Engines>
+where
+    Engines: 'static,
+{
+    type Event<'a> = SelectorEvent<Engines>;
 
-    fn get_static(&self, _path: &'_ str) -> Option<&'static [u8]> {
-        None
+    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
+        for &(k, v) in STATIC_FILES.iter() {
+            if k == path {
+                return Some(v);
+            }
+        }
+        return None;
     }
 
-    fn external_event(
+    fn external_event<'a>(
         &mut self,
         _timestamp: u64,
-        event: &Self::Event<'_>,
+        event: &Self::Event<'a>,
     ) -> (Option<()>, Option<u64>) {
         if event.index != self.index {
             self.index = event.index;

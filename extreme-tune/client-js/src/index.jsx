@@ -8,12 +8,12 @@ const [speedDev, setSpeedDev] = createSignal(0.0);
 const [headingDev, setHeadingDev] = createSignal(0.0);
 
 // Function to format deviations with '+' or '-' prefix
-const formatDeviation = (value) => {
+const formatDeviation = (value, precision = 1) => {
     const sign = value == 0 ? '' : (value > 0 ? '+' : '-');
     return (
         <>
             <span class="small-deviation">{sign}</span>
-            {Math.abs(value).toFixed(1)}
+            {Math.abs(value).toFixed(precision)}
         </>
     );
 };
@@ -28,6 +28,10 @@ function fetchUpdates() {
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.engine) {
+                if (data.engine.fuck_yeah && data.engine.fuck_yeah !== "TuneSpeed") {
+                    window.location.reload();
+                }
+
                 if (data.engine.speed !== undefined) {
                     setSpeed(data.engine.speed);
                 }
@@ -74,7 +78,7 @@ const App = () => {
         <div class="container">
             <div class="speed">{() => speed().toFixed(1)}</div>
             <div class="deviation">{() => formatDeviation(speedDev())}<span class="small-deviation">k</span></div>
-            <div class="deviation">{() => formatDeviation(headingDev())}<span class="small-deviation">°</span></div>
+            <div class="deviation">{() => formatDeviation(headingDev(), 0)}<span class="small-deviation">°</span></div>
         </div >
     );
 };
