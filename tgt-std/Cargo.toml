@@ -1,0 +1,52 @@
+[package]
+edition = "2021"
+name = "tgt-std"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+embassy-executor = { workspace = true, features = [
+    "task-arena-size-98304",
+    "executor-thread",
+    # "executor-interrupt",
+    "integrated-timers",
+    "arch-std",
+] }
+embassy-time = { workspace = true, features = ["std"] }
+# embassy-net = { workspace = true, features = [
+#     "tcp",
+#     "udp",
+#     "medium-ethernet",
+#     "proto-ipv4",
+# ] }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+
+# embassy-embedded-hal = { workspace = true }
+# embedded-hal = { workspace = true }
+
+#
+# Other stuff
+#
+portable-atomic = { workspace = true, features = [
+    "critical-section",
+    "fallback",
+] }
+
+edge-net = { workspace = true, features = ["embassy", "io", "std"] }
+log = { workspace = true }
+heapless = { workspace = true }
+static_cell = { workspace = true, features = ["nightly"] }
+bytemuck = { workspace = true, features = ["derive"] }
+md5 = { workspace = true }
+embedded-io-async = { workspace = true }
+anyhow = { version = "1", default-features = false }
+serde-json-core = { workspace = true, features = ["heapless"] }
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+
+#
+# The magic
+#   
+extreme-traits = { path = "../extreme-traits/" }
+extreme-race = { path = "../extreme-race/" }
+extreme-tune = { path = "../extreme-tune/" }

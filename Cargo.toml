@@ -1,7 +1,14 @@
 [workspace]
 resolver = "2"
 
-members = ["extreme-traits", "extreme-race", "extreme-tune", "extreme-http"]
+members = [
+    "extreme-traits",
+    "extreme-race",
+    "extreme-tune",
+    "extreme-map",
+    "tgt-pico",
+    "tgt-std",
+]
 
 
 [workspace.dependencies]
