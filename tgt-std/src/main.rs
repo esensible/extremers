@@ -30,6 +30,7 @@ define_engines! {
     EngineType {
         Race(extreme_race::Race),
         TuneSpeed(extreme_tune::TuneSpeed<32>),
+        Map(extreme_map::Map),
     }
 }
 
@@ -80,7 +81,7 @@ pub async fn httpd_task(stack: &'static Stack, handler: &'static HttpHandler<Eng
 
     loop {
         let acceptor = match stack
-            .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 80))
+            .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8080))
             .await
         {
             Ok(socket) => socket,
