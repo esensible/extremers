@@ -3,7 +3,7 @@ use serde::ser::SerializeStruct;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::line::Line;
+use crate::maps::MapDisplay;
 use crate::types::Location;
 use extreme_traits::Engine;
 
@@ -11,7 +11,7 @@ include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
 
 #[derive(Copy, Clone, PartialEq, Default)]
 // Serialize is implemented below because line serialization depends on Race state
-pub struct Race {
+pub struct RaceMap {
     pub state: State,
     pub location: Location,
 }
@@ -30,6 +30,7 @@ pub enum State {
         start_time: u64,
         speed: f64,
         heading: f64,
+        map: MapDisplay,
     },
 }
 
@@ -53,7 +54,7 @@ pub struct Event {
     pub event: EventType,
 }
 
-impl Engine for Race {
+impl Engine for RaceMap {
     type Event<'a> = Event;
 
     fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
@@ -80,6 +81,7 @@ impl Engine for Race {
             start_time,
             speed: speed,
             heading: 0.0,
+            map: MapDisplay::default(),
         };
 
         // state is updated, no new timer
@@ -170,37 +172,49 @@ impl Engine for Race {
                 State::InSequence { speed, .. } => {
                     *speed = new_speed;
                 }
-                State::Racing { speed, heading, .. } => {
+                State::Racing {
+                    speed,
+                    heading,
+                    map,
+                    ..
+                } => {
                     *speed = new_speed;
                     *heading = new_heading;
+
+                    if let Some((lat, lon)) = location {
+                        // let lat = lat * PI / 180.0;
+                        // let lon = lon * PI / 180.0;
+
+                        map.update_position(lat, lon);
+                    }
                 }
             }
             result = Some(());
         };
 
-        if let Some((lat, lon)) = location {
-            let lat = lat * PI / 180.0;
-            let lon = lon * PI / 180.0;
-            self.location = Location { lat, lon };
+        // if let Some((lat, lon)) = location {
+        //     let lat = lat * PI / 180.0;
+        //     let lon = lon * PI / 180.0;
+        //     self.location = Location { lat, lon };
 
-            if !matches!(self.state, State::Racing { .. }) {
-                if let Some((speed, heading)) = speed {
-                    let heading = heading * PI / 180.0;
-                    if Some(())
-                        == self
-                            .line
-                            .update_location(timestamp, (lat, lon), heading, speed)
-                    {
-                        return (Some(()), None);
-                    }
-                }
-            }
-        }
+        //     if !matches!(self.state, State::Racing { .. }) {
+        //         if let Some((speed, heading)) = speed {
+        //             let heading = heading * PI / 180.0;
+        //             if Some(())
+        //                 == self
+        //                     .line
+        //                     .update_location(timestamp, (lat, lon), heading, speed)
+        //             {
+        //                 return (Some(()), None);
+        //             }
+        //         }
+        //     }
+        // }
         return (result, None);
     }
 }
 
-impl Serialize for Race {
+impl Serialize for RaceMap {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -221,11 +235,13 @@ impl Serialize for Race {
                 start_time,
                 speed,
                 heading,
+                map,
             } => {
                 s.serialize_field("state", "Racing")?;
                 s.serialize_field("start_time", start_time)?;
                 s.serialize_field("speed", speed)?;
                 s.serialize_field("heading", heading)?;
+                s.serialize_field("map", map)?;
             }
         }
 

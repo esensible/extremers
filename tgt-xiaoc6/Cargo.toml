@@ -1,0 +1,100 @@
+[package]
+edition = "2021"
+name = "xiaoc6"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+#
+# esp32
+#
+esp-hal = { git = "https://github.com/esp-rs/esp-hal/" }
+
+esp-hal-embassy = { git = "https://github.com/esp-rs/esp-hal/", features = [
+    # "integrated-timers",
+] }
+esp-println = { git = "https://github.com/esp-rs/esp-hal/", features = ["log"] }
+esp-wifi = { git = "https://github.com/esp-rs/esp-hal/", features = [
+    "esp32c6",
+    "wifi",
+    # "async",
+    # "embassy-net",
+] }
+esp-backtrace = { git = "https://github.com/esp-rs/esp-hal/", features = [
+    "exception-handler",
+    "panic-handler",
+    "println",
+] }
+esp-storage = { git = "https://github.com/esp-rs/esp-hal/", optional = true }
+esp-alloc = { git = "https://github.com/esp-rs/esp-hal/" }
+
+#
+# Embassy
+#
+embassy-embedded-hal = { workspace = true }
+embassy-futures = { workspace = true }
+embassy-usb-logger = { workspace = true }
+embassy-executor = { workspace = true, features = [
+    # "nightly",
+    "task-arena-size-65536",
+    # "task-arena-size-12288",
+    # "executor-thread",
+    # "executor-interrupt",
+    # "integrated-timers",
+] }
+embassy-time = { workspace = true, features = ["defmt-timestamp-uptime"] }
+embassy-net = { workspace = true, features = [
+    "tcp",
+    "udp",
+    "dhcpv4",
+    "medium-ethernet",
+    "proto-ipv4",
+] }
+# embassy-net-driver = { workspace = true }
+embassy-sync = { workspace = true }
+
+#
+# Embedded
+#
+embedded-hal = { workspace = true }
+# embedded-hal-async = { workspace = true}
+embedded-io-async = { workspace = true }
+
+edge-net = { workspace = true, features = ["embassy", "io"] }
+
+
+heapless = "0.8"
+static_cell = { version = "2.1", features = ["nightly"] }
+log = { workspace = true }
+atomic-polyfill = "1.0.1"
+
+serde-json-core = { workspace = true, features = ["heapless"] }
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+
+portable-atomic = { workspace = true, features = [
+    "critical-section",
+    "fallback",
+] }
+
+
+extreme-traits = { path = "../extreme-traits/" }
+extreme-race = { path = "../extreme-race/" }
+extreme-tune = { path = "../extreme-tune/" }
+
+[features]
+default = ["esp32c6"]
+esp32c6 = [
+    "esp-hal/esp32c6",
+    "esp-backtrace/esp32c6",
+    "esp-hal-embassy/esp32c6",
+    "esp-println/esp32c6",
+    "esp-storage?/esp32c6",
+    "esp-wifi/esp32c6",
+]
+# embassy-generic-timers = ["embassy-time/generic-queue-8"]
+
+# embassy = ["dep:esp-hal-embassy"]
+
+[profile.release]
+debug = 2

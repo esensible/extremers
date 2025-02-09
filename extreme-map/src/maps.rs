@@ -1,8 +1,12 @@
+use serde::Serialize;
+
+#[derive(Serialize, Copy, Clone, PartialEq, Default)]
 pub struct MapDisplay {
     map_bounds: MapBounds,
     current_position: Position,
 }
 
+#[derive(Serialize, Copy, Clone, PartialEq, Default)]
 pub struct MapBounds {
     top_left: Position,
     bottom_right: Position,
@@ -10,6 +14,7 @@ pub struct MapBounds {
     image_height: u32,
 }
 
+#[derive(Serialize, Copy, Clone, PartialEq, Default)]
 pub struct Position {
     lat: f64,
     lon: f64,
