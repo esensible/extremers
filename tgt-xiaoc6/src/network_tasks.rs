@@ -1,14 +1,8 @@
 use embassy_time::{Duration, Timer};
 
-use core::net::{IpAddr, Ipv4Addr, SocketAddr};
-use edge_net::dhcp::io::DEFAULT_SERVER_PORT;
-use edge_net::dhcp::server::ServerOptions;
-use edge_net::embassy::{Udp, UdpBuffers};
-use edge_net::nal::UdpBind;
-use embassy_net::{Config, Ipv4Address, Ipv4Cidr, Stack, Runner, StackResources, StaticConfigV4};
+use embassy_net::{Stack, Runner};
 
 use esp_wifi::{
-    init,
     wifi::{
         AccessPointConfiguration,
         Configuration,
@@ -19,11 +13,9 @@ use esp_wifi::{
         WifiState,
         AuthMethod,
     },
-    EspWifiController,
 };
 
 use core::str::FromStr;
-use esp_println::{print, println};
 
 
 #[embassy_executor::task]
@@ -48,7 +40,9 @@ pub async fn dhcp_task(stack: Stack<'static>, gw_ip_addr: &'static str) {
     let dns_servers = [ip];
     server_options.dns = &dns_servers;
 
-    let buffers = UdpBuffers::<3, 1024, 1024, 10>::new();
+    let buffers = UdpBuffers::<2, 1024, 1024, 10>::new();
+    // let buffers = UdpBuffers::<1, 1024, 1024, 2>::new();
+
     let unbound_socket = Udp::new(stack, &buffers);
     let mut bound_socket = unbound_socket
         .bind(core::net::SocketAddr::V4(SocketAddrV4::new(
@@ -73,8 +67,8 @@ pub async fn dhcp_task(stack: Stack<'static>, gw_ip_addr: &'static str) {
 
 #[embassy_executor::task]
 pub async fn wifi_task(mut controller: WifiController<'static>) {
-    println!("start connection task");
-    println!("Device capabilities: {:?}", controller.capabilities());
+    log::debug!("start connection task");
+    log::debug!("Device capabilities: {:?}", controller.capabilities());
     loop {
         match esp_wifi::wifi::wifi_state() {
             WifiState::ApStarted => {
@@ -89,12 +83,13 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
                 ssid: "nacra".try_into().unwrap(),
                 password: "password".try_into().unwrap(),
                 auth_method: AuthMethod::WPA2Personal,
+                channel: 10,
                 ..Default::default()
             });
             controller.set_configuration(&client_config).unwrap();
-            println!("Starting wifi");
+            log::info!("Starting wifi");
             controller.start_async().await.unwrap();
-            println!("Wifi started!");
+            log::info!("Wifi started!");
         }
     }
 }

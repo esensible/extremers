@@ -1,5 +1,4 @@
 use embassy_time::{Duration, Timer};
-use esp_println::{print, println};
 
 #[derive(Debug)]
 pub enum Status {
@@ -87,7 +86,7 @@ where
                 cursor = partial_len;
                 let result = self.reader.read(&mut self.buf[cursor..]).await;
                 if result.is_err() {
-                    println!("RX error");
+                    log::info!("RX error");
                     return None;
                 }
                 // TODO: Handle partial read here

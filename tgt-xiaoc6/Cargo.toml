@@ -9,24 +9,24 @@ license = "MIT OR Apache-2.0"
 #
 # esp32
 #
-esp-hal = { git = "https://github.com/esp-rs/esp-hal/" }
+esp-hal = { git = "https://github.com/esp-rs/esp-hal/", features = ["log"] }
 
 esp-hal-embassy = { git = "https://github.com/esp-rs/esp-hal/", features = [
+    "log",
     # "integrated-timers",
 ] }
 esp-println = { git = "https://github.com/esp-rs/esp-hal/", features = ["log"] }
-esp-wifi = { git = "https://github.com/esp-rs/esp-hal/", features = [
-    "esp32c6",
+esp-wifi = { git = "https://github.com/esp-rs/esp-hal/", default-features = true, features = [
     "wifi",
-    # "async",
-    # "embassy-net",
+    "smoltcp",
+    "log",
 ] }
 esp-backtrace = { git = "https://github.com/esp-rs/esp-hal/", features = [
     "exception-handler",
     "panic-handler",
     "println",
 ] }
-esp-storage = { git = "https://github.com/esp-rs/esp-hal/", optional = true }
+# esp-storage = { git = "https://github.com/esp-rs/esp-hal/", optional = true }
 esp-alloc = { git = "https://github.com/esp-rs/esp-hal/" }
 
 #
@@ -77,6 +77,8 @@ portable-atomic = { workspace = true, features = [
     "fallback",
 ] }
 
+usb-device = "0.3.2"
+usbd-serial = "0.2.2"
 
 extreme-traits = { path = "../extreme-traits/" }
 extreme-race = { path = "../extreme-race/" }
@@ -89,7 +91,7 @@ esp32c6 = [
     "esp-backtrace/esp32c6",
     "esp-hal-embassy/esp32c6",
     "esp-println/esp32c6",
-    "esp-storage?/esp32c6",
+    # "esp-storage?/esp32c6",
     "esp-wifi/esp32c6",
 ]
 # embassy-generic-timers = ["embassy-time/generic-queue-8"]
