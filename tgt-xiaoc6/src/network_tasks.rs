@@ -6,9 +6,8 @@ use esp_wifi::{
     wifi::{
         AccessPointConfiguration,
         Configuration,
-        WifiApDevice,
-        WifiController,
         WifiDevice,
+        WifiController,
         WifiEvent,
         WifiState,
         AuthMethod,
@@ -95,6 +94,6 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
 }
 
 #[embassy_executor::task]
-pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static, WifiApDevice>>) {
+pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await
 }

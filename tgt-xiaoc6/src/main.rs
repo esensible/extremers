@@ -26,7 +26,6 @@ use esp_hal::{
 };
 use esp_wifi::{
     init,
-    wifi::WifiApDevice,
     config::PowerSaveMode,
 };
 use edge_net::{
@@ -81,7 +80,7 @@ async fn main(spawner: Spawner) {
     let systimer = SystemTimer::new(peripherals.SYSTIMER);
     esp_hal_embassy::init(systimer.alarm0);
 
-    esp_alloc::heap_allocator!(76 * 1024);
+    // esp_alloc::heap_allocator!(76 * 1024);
 
     init_logger(log::LevelFilter::Info);
 
@@ -93,9 +92,9 @@ async fn main(spawner: Spawner) {
     static INIT: StaticCell<esp_wifi::EspWifiController<'static>> = StaticCell::new();
     let init = INIT.init(init(timg0.timer0, rng.clone(), peripherals.RADIO_CLK).unwrap());
 
-    let wifi = peripherals.WIFI;
-    let (wifi_interface, mut controller) =
-        esp_wifi::wifi::new_with_mode(&*init, wifi, WifiApDevice).unwrap();
+    let (mut controller, interfaces) =
+        esp_wifi::wifi::new(&*init, peripherals.WIFI).unwrap();
+    let device = interfaces.ap;
 
     let gw_ip_addr = Ipv4Addr::from_str("192.168.1.100").expect("failed to parse gateway ip");
     let mut dns_servers: Vec<_, 3> = Vec::new();
@@ -113,7 +112,7 @@ async fn main(spawner: Spawner) {
 
     static RESOURCES: StaticCell<StackResources<{ MAX_WEB_SOCKETS + 5 }>> = StaticCell::new();
     let (stack, runner) = embassy_net::new(
-        wifi_interface,
+        device,
         config,
         RESOURCES.init(StackResources::new()),
         seed,
@@ -145,7 +144,7 @@ async fn main(spawner: Spawner) {
         .with_tx(tx_pin)
         .with_rx(rx_pin)
         .into_async();
-    let (uart_rx, mut uart_tx) = uart0.split();
+    let (uart_rx, mut _uart_tx) = uart0.split();
     spawner.spawn(gps_task(uart_rx, httpd_handler)).ok(); 
 
     spawner.spawn(sleeper_task(httpd_handler)).ok();

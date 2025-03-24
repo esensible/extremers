@@ -9,25 +9,25 @@ license = "MIT OR Apache-2.0"
 #
 # esp32
 #
-esp-hal = { git = "https://github.com/esp-rs/esp-hal/", features = ["log"] }
+esp-hal = { version = "1.0.0-beta.0", features = ["log", "unstable"] }
 
-esp-hal-embassy = { git = "https://github.com/esp-rs/esp-hal/", features = [
+esp-hal-embassy = { version = "0.7", features = [
     "log",
     # "integrated-timers",
 ] }
-esp-println = { git = "https://github.com/esp-rs/esp-hal/", features = ["log"] }
-esp-wifi = { git = "https://github.com/esp-rs/esp-hal/", default-features = true, features = [
+esp-println = { version = "0.13", features = ["log"] }
+esp-wifi = { version = "0.13", default-features = true, features = [
     "wifi",
     "smoltcp",
     "log",
 ] }
-esp-backtrace = { git = "https://github.com/esp-rs/esp-hal/", features = [
+esp-backtrace = { version = "0.15", features = [
     "exception-handler",
     "panic-handler",
     "println",
 ] }
 # esp-storage = { git = "https://github.com/esp-rs/esp-hal/", optional = true }
-esp-alloc = { git = "https://github.com/esp-rs/esp-hal/" }
+esp-alloc = { version = "0.7" }
 
 #
 # Embassy
