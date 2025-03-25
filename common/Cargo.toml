@@ -1,0 +1,27 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Embassy framework imports
+embassy-executor = { version = "0.7", default-features = false }
+embassy-futures = "0.1.1"
+embassy-sync = { version = "0.6", default-features = false }
+embassy-time = { version = "0.4", default-features = false }
+
+# Networking imports
+edge-net = { version = "0.10.1", default-features = false }
+embedded-io-async = { version = "0.6.1", default-features = false }
+
+# Other external crates
+heapless = { version = "0.8", default-features = false }
+log = { version = "0.4", default-features = false }
+portable-atomic = { version = "1.5", default-features = false }
+
+# Local crates
+extreme-traits = { path = "../extreme-traits" }
+
+[features]
+default = []
+std = ["edge-net/std"]

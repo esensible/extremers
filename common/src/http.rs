@@ -32,6 +32,8 @@ use extreme_traits::RawEngine;
 
 // Constants
 pub const MAX_MESSAGE_SIZE: usize = 512;
+pub const MAX_WEB_SOCKETS: usize = 4;
+pub const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
 
 // Type aliases
 type UpdateMessage = Vec<u8, MAX_MESSAGE_SIZE>;

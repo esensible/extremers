@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![allow(incomplete_features)]
+// #![feature(type_alias_impl_trait)]
 
 use core::{net::{Ipv4Addr, SocketAddr, IpAddr}, str::FromStr};
 use heapless::Vec;
@@ -35,20 +34,15 @@ use edge_net::{
 };
 
 // Local modules
-mod http;
+// mod http;
 mod network_tasks;
 mod nmea_parser;
 
+use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
 use crate::{
-    http::HttpHandler,
     network_tasks::{dhcp_task, net_task, wifi_task},
     nmea_parser::{next_update, AsyncReader, RingBuffer},
 };
-
-// Constants
-const MAX_WEB_SOCKETS: usize = 4;
-const MAX_MESSAGE_SIZE: usize = 512;
-const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
 
 // UBX protocol constants
 // const UBX_SYNC1: u8 = 0xB5;
@@ -58,7 +52,7 @@ const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
 // const UBX_CFG_RXM_POWER_MODE: u8 = 0x02; // standby
 
 
-use extreme_traits::define_engines;
+use extreme_traits::{define_engines, MAX_MESSAGE_SIZE};
 
 // type EngineType = extreme_race::Race;
 define_engines! {

@@ -5,6 +5,9 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+# Common crate for shared code
+common = { path = "../common", features = ["std"] }
+
 embassy-executor = { workspace = true, features = [
     "task-arena-size-98304",
     "executor-thread",

@@ -18,11 +18,11 @@ use edge_net::{
 use static_cell::StaticCell;
 
 // Local modules
-mod http;
+// mod http;
 
-use crate::http::HttpHandler;
+use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
 
-use extreme_traits::define_engines;
+use extreme_traits::{define_engines, MAX_MESSAGE_SIZE};
 
 // type EngineType = extreme_race::Race;
 
@@ -32,11 +32,6 @@ define_engines! {
         TuneSpeed(extreme_tune::TuneSpeed<32>)
     }
 }
-
-// Constants
-const MAX_WEB_SOCKETS: usize = 4;
-const MAX_MESSAGE_SIZE: usize = 512;
-const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
 
 // env_logger::builder()
 //     .filter_level(log::LevelFilter::Debug)
