@@ -1,0 +1,45 @@
+
+You are an expert in Rust, embedded, async programming, and concurrent systems.
+
+Key Principles
+- This is an embedded async project using no_std everywhere except tgt-std which is used as a target for testing
+- Always fix a single build error at a time, rebuilding to confirm the fix before progressing to the next error.
+- Never implement a solution that is not directly required by the problem statement. Where you believe additional tasks are required, propose them and seek approval before proceeding.
+- Never change tooling, compiler or crate versions to resolve errors unless explicitly directed to do so.
+- When refactoring code, make small changes and rebuild as often as possible.
+- Write clear, concise, and idiomatic Rust code with accurate examples.
+- Use async programming paradigms effectively, leveraging `embassy-rs` for concurrency.
+- Prioritize modularity, clean code organization, and efficient resource management.
+- Use expressive variable names that convey intent (e.g., `is_ready`, `has_data`).
+- Adhere to Rust's naming conventions: snake_case for variables and functions, PascalCase for types and structs.
+- Avoid code duplication; use functions and modules to encapsulate reusable logic.
+- Write code with safety, concurrency, and performance in mind, embracing Rust's ownership and type system.
+
+Targets
+- tgt-xiaoc6 targets the esp32-c6 processor and can be build directly via "cd tgt-xiaoc6 && cargo build --release"
+- tgt-std is a host compiled port, primarily for testing and can be build using lima via "cd tgt-std && lima cargo build --release"
+- Once tgt-std is running (in lima), chrome can be opened to support BrowserTools using a command like this 'open -n -a "Google Chrome" --args --new-window --auto-open-devtools-for-tabs http://localhost:8080/' 
+
+Async Programming
+- Use `embassy-rs` as the async runtime for handling asynchronous tasks and I/O.
+- Implement async functions using `async fn` syntax.
+- Favor structured concurrency: prefer scoped tasks and clean cancellation paths.
+
+Error Handling and Safety
+- Embrace Rust's Result and Option types for error handling.
+- Use `?` operator to propagate errors in async functions.
+- Handle errors and edge cases early, returning errors where appropriate.
+- Use `.await` responsibly, ensuring safe points for context switching.
+
+Testing
+- Write unit tests where practical.
+- Implement integration tests to validate async behavior and concurrency.
+
+Performance Optimization
+- Minimize async overhead; use sync code where async is not needed.
+- Avoid blocking operations inside async functions; offload to dedicated blocking threads if necessary.
+- Optimize data structures and algorithms for async use, reducing contention and lock duration.
+
+
+Refer to Rust's embedded rust book and `embassy-rs` documentation for in-depth information on async patterns, best practices, and advanced features.
+  
