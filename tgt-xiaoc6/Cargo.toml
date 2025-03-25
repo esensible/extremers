@@ -5,6 +5,8 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+# Common crate for shared code
+common = { path = "../common" }
 
 #
 # esp32
