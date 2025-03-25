@@ -29,8 +29,7 @@ use extreme_traits::define_engines;
 define_engines! {
     EngineType {
         Race(extreme_race::Race),
-        TuneSpeed(extreme_tune::TuneSpeed<32>),
-        Map(extreme_map::RaceMap),
+        TuneSpeed(extreme_tune::TuneSpeed<32>)
     }
 }
 

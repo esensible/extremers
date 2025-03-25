@@ -1,6 +1,6 @@
 #![no_std]
-#![feature(adt_const_params)]
-#![feature(inline_const_pat)]
+// #![feature(adt_const_params)]
+// #![feature(inline_const_pat)]
 
 mod selector;
 pub use selector::{EngineSelector, SelectorEvent, StringList};

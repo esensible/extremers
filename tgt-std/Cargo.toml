@@ -9,7 +9,7 @@ embassy-executor = { workspace = true, features = [
     "task-arena-size-98304",
     "executor-thread",
     # "executor-interrupt",
-    "integrated-timers",
+    # "integrated-timers",
     "arch-std",
 ] }
 embassy-time = { workspace = true, features = ["std"] }
@@ -50,4 +50,3 @@ serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 extreme-traits = { path = "../extreme-traits/" }
 extreme-race = { path = "../extreme-race/" }
 extreme-tune = { path = "../extreme-tune/" }
-extreme-map = { path = "../extreme-map/" }

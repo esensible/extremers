@@ -3,9 +3,13 @@ resolver = "2"
 
 members = [
     "extreme-traits",
+
+    # apps
     "extreme-race",
     "extreme-tune",
-    # "tgt-std",
+
+    # targets
+    "tgt-std",
     "tgt-xiaoc6",
 ]
 
