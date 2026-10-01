@@ -12,16 +12,11 @@ embassy-executor = { workspace = true, features = ["executor-thread", "platform-
 embassy-time = { workspace = true, features = ["std"] }
 critical-section = { version = "1.2", features = ["std"] }
 
-edge-http = { workspace = true, features = ["std"] }
-edge-nal = { workspace = true }
 edge-nal-std = { workspace = true }
 
 log = { workspace = true }
+env_logger = "0.11"
 
-# required by extreme_traits::define_engines!
-heapless = { workspace = true }
-serde = { workspace = true }
-serde-json-core = { workspace = true, features = ["heapless"] }
 static_cell = { workspace = true }
 
 #

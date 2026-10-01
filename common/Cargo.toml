@@ -18,7 +18,8 @@ embedded-io-async = { workspace = true }
 # Other external crates
 heapless = { workspace = true }
 log = { workspace = true }
-portable-atomic = { workspace = true }
+# AtomicU64 on targets without 64-bit atomics (fallback is a no-op where they exist)
+portable-atomic = { workspace = true, features = ["fallback"] }
 
 # Local crates
 extreme-traits = { path = "../extreme-traits" }
@@ -28,5 +29,6 @@ default = []
 std = ["edge-http/std", "edge-ws/std"]
 
 [dev-dependencies]
-embassy-time = { workspace = true, features = ["std"] }
+# generic-queue: the tests run timers without an embassy executor
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 critical-section = { version = "1.2", features = ["std"] }

@@ -4,10 +4,10 @@ use embassy_net::{Runner, Stack};
 
 use esp_radio::wifi::{Interface, WifiController, ap::EventInfo};
 
-use core::str::FromStr;
+use common::config::AP_IP;
 
 #[embassy_executor::task]
-pub async fn dhcp_task(stack: Stack<'static>, gw_ip_addr: &'static str) {
+pub async fn dhcp_task(stack: Stack<'static>) {
     use core::net::{Ipv4Addr, SocketAddrV4};
 
     use edge_dhcp::{
@@ -17,17 +17,17 @@ pub async fn dhcp_task(stack: Stack<'static>, gw_ip_addr: &'static str) {
     use edge_nal::UdpBind;
     use edge_nal_embassy::{Udp, UdpBuffers};
 
-    let ip = Ipv4Addr::from_str(gw_ip_addr).expect("dhcp task failed to parse gw ip");
+    let ip = AP_IP;
 
     let mut buf = [0u8; 1500];
 
+    // overwritten with `ip` by ServerOptions::new
     let mut gw_buf = [Ipv4Addr::UNSPECIFIED];
     let mut server_options = ServerOptions::new(ip, Some(&mut gw_buf));
     let dns_servers = [ip];
     server_options.dns = &dns_servers;
 
     let buffers = UdpBuffers::<2, 1024, 1024, 10>::new();
-    // let buffers = UdpBuffers::<1, 1024, 1024, 2>::new();
 
     let unbound_socket = Udp::new(stack, &buffers);
     let mut bound_socket = unbound_socket

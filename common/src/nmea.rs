@@ -13,6 +13,17 @@
 
 use embassy_time::{Duration, Timer};
 
+use extreme_traits::{Fix, Velocity};
+
+/// A valid GPS fix, as reported by [`next_update`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GpsUpdate {
+    /// Epoch milliseconds, if the receiver reported date and time.
+    pub timestamp: Option<u64>,
+    pub fix: Option<Fix>,
+    pub velocity: Option<Velocity>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Status {
     Active,
@@ -341,11 +352,8 @@ where
     }
 }
 
-/// Waits for the next valid fix, returning
-/// (epoch milliseconds, (latitude, longitude), (speed, course))
-pub async fn next_update<T>(
-    tokeniser: &mut T,
-) -> (Option<u64>, Option<(f64, f64)>, Option<(f64, f64)>)
+/// Waits for the next valid fix.
+pub async fn next_update<T>(tokeniser: &mut T) -> GpsUpdate
 where
     T: Tokeniser,
 {
@@ -369,29 +377,63 @@ where
             None
         };
 
-        let location = if let (Some(latitude), Some(ns), Some(longitude), Some(ew)) = (
+        let fix = if let (Some(latitude), Some(ns), Some(longitude), Some(ew)) = (
             gnrmc.latitude,
             gnrmc.ns_indicator,
             gnrmc.longitude,
             gnrmc.ew_indicator,
         ) {
-            let latitude = if ns == 'S' { -latitude } else { latitude };
-            let longitude = if ew == 'W' { -longitude } else { longitude };
-            Some((latitude, longitude))
+            Some(Fix {
+                lat: if ns == 'S' { -latitude } else { latitude },
+                lon: if ew == 'W' { -longitude } else { longitude },
+            })
         } else {
             None
         };
 
-        let speed = if let (Some(speed), Some(course)) =
+        let velocity = if let (Some(speed), Some(heading)) =
             (gnrmc.speed_over_ground, gnrmc.course_over_ground)
         {
-            Some((speed, course))
+            Some(Velocity { speed, heading })
         } else {
             None
         };
 
-        return (timestamp, location, speed);
+        return GpsUpdate {
+            timestamp,
+            fix,
+            velocity,
+        };
     }
+}
+
+/// Longest PMTK command [`pmtk_sentence`] accepts: room is needed for `$`,
+/// `*`, two checksum digits and CR LF.
+pub const MAX_PMTK_COMMAND: usize = 64 - 6;
+
+/// Frames a PMTK (MediaTek GPS configuration) command, given without the
+/// leading `$`, as a complete sentence: `$<command>*<checksum>\r\n`.
+///
+/// # Panics
+/// If `command` is longer than [`MAX_PMTK_COMMAND`].
+pub fn pmtk_sentence<'o>(command: &str, out: &'o mut [u8; 64]) -> &'o [u8] {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let command = command.as_bytes();
+    assert!(command.len() <= MAX_PMTK_COMMAND, "PMTK command too long");
+    let checksum = command.iter().fold(0u8, |acc, b| acc ^ b);
+
+    let end = command.len() + 6;
+    out[0] = b'$';
+    out[1..=command.len()].copy_from_slice(command);
+    out[end - 5..end].copy_from_slice(&[
+        b'*',
+        HEX[(checksum >> 4) as usize],
+        HEX[(checksum & 0xF) as usize],
+        b'\r',
+        b'\n',
+    ]);
+    &out[..end]
 }
 
 #[cfg(test)]
@@ -513,6 +555,57 @@ mod tests {
         let msgs = messages(input.as_bytes(), 8);
         assert_eq!(msgs.len(), 1);
         assert!(!msgs[0].is_valid_fix());
+    }
+
+    #[test]
+    fn next_update_signs_and_converts() {
+        let input =
+            sentence("$GNRMC,123519.50,A,4807.038,S,01131.000,W,022.4,084.4,230326,003.1,W,A*");
+        let mut rb = RingBuffer::<_, 32>::new(ChunkReader {
+            data: input.as_bytes(),
+            chunk: 7,
+        });
+        let update = block_on(next_update(&mut rb));
+        // 2026-03-23 12:35:19.5 UTC
+        assert_eq!(update.timestamp, Some(1_774_269_319_500));
+        let fix = update.fix.unwrap();
+        assert!((fix.lat + (48.0 + 7.038 / 60.0)).abs() < 1e-9);
+        assert!((fix.lon + (11.0 + 31.0 / 60.0)).abs() < 1e-9);
+        assert_eq!(
+            update.velocity,
+            Some(Velocity {
+                speed: 22.4,
+                heading: 84.4
+            })
+        );
+    }
+
+    #[test]
+    fn pmtk_sentence_checksum() {
+        let mut out = [0u8; 64];
+        // published sentences (MTK command reference, Adafruit GPS library)
+        assert_eq!(
+            pmtk_sentence("PMTK220,1000", &mut out),
+            b"$PMTK220,1000*1F\r\n"
+        );
+        assert_eq!(
+            pmtk_sentence("PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0", &mut out),
+            b"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n"
+        );
+        // the commands tgt-pico sends
+        assert_eq!(
+            pmtk_sentence("PMTK314,0,1,0,0,0,0,0,0", &mut out),
+            b"$PMTK314,0,1,0,0,0,0,0,0*35\r\n"
+        );
+        assert_eq!(pmtk_sentence("PMTK313,1", &mut out), b"$PMTK313,1*2E\r\n");
+        assert_eq!(pmtk_sentence("PMTK319,1", &mut out), b"$PMTK319,1*24\r\n");
+    }
+
+    #[test]
+    #[should_panic]
+    fn pmtk_sentence_rejects_long_commands() {
+        let mut out = [0u8; 64];
+        let _ = pmtk_sentence(&"P".repeat(MAX_PMTK_COMMAND + 1), &mut out);
     }
 
     #[test]

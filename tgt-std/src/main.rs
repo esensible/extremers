@@ -1,96 +1,55 @@
-// Standard library imports
-use core::net::{IpAddr, Ipv4Addr, SocketAddr};
+//! Host target: serves the web UI on port 8080, with no GPS.
 
-// Embassy framework imports
-use embassy_executor::Executor;
-// use embassy_net::Stack;
-use embassy_time::{Duration, Timer};
-
-// Networking imports
-use edge_http::io::server::Server;
-use edge_nal::TcpBind;
 use edge_nal_std::Stack;
-
-// Other external crates
+use embassy_executor::Executor;
 use static_cell::StaticCell;
 
-// Local modules
-// mod http;
-
-use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
-
-use extreme_traits::{define_engines, MAX_MESSAGE_SIZE};
-
-// type EngineType = extreme_race::Race;
+use common::{runtime::EngineRuntime, tasks::serve_http};
+use extreme_traits::define_engines;
 
 define_engines! {
     EngineType {
         Race(extreme_race::Race),
-        TuneSpeed(extreme_tune::TuneSpeed<32>)
+        TuneSpeed(extreme_tune::TuneSpeed<32>),
     }
 }
 
-// env_logger::builder()
-//     .filter_level(log::LevelFilter::Debug)
-//     .filter_module("async_io", log::LevelFilter::Info)
-//     .format_timestamp_nanos()
-//     .init();
+type Runtime = EngineRuntime<EngineType>;
+
+/// Port 80 needs privileges on a host, so use the conventional alternative.
+const HTTP_PORT: u16 = 8080;
 
 fn main() {
-    static HTTPD_HANDLER: StaticCell<HttpHandler<EngineType>> = StaticCell::new();
-    let httpd_handler = HTTPD_HANDLER.init(HttpHandler::new(EngineType::default()));
+    // RUST_LOG=debug for the runtime's timer and GPS tracing
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    // Init network stack
+    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
+    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
+
     static STACK: StaticCell<Stack> = StaticCell::new();
-    let stack = Stack::new();
-    let stack = STACK.init(stack);
+    let stack: &'static Stack = STACK.init(Stack::new());
 
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        match httpd_task(stack, httpd_handler) {
+        match httpd_task(stack, runtime) {
             Ok(token) => spawner.spawn(token),
             Err(_) => log::warn!("failed to spawn httpd task"),
         }
 
-        match sleeper_task(httpd_handler) {
+        match timer_task(runtime) {
             Ok(token) => spawner.spawn(token),
-            Err(_) => log::warn!("failed to spawn sleeper task"),
+            Err(_) => log::warn!("failed to spawn timer task"),
         }
     });
 }
 
 #[embassy_executor::task]
-pub async fn sleeper_task(handler: &'static HttpHandler<EngineType>) {
-    handler.run_sleeper().await
+async fn httpd_task(stack: &'static Stack, runtime: &'static Runtime) -> ! {
+    serve_http(stack, HTTP_PORT, runtime).await
 }
 
 #[embassy_executor::task]
-pub async fn httpd_task(stack: &'static Stack, handler: &'static HttpHandler<EngineType>) -> ! {
-    // let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
-    // let tcp = Tcp::new(stack, &buffers);
-
-    loop {
-        let acceptor = match stack
-            .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8080))
-            .await
-        {
-            Ok(socket) => socket,
-            Err(e) => {
-                log::error!("Failed to bind httpd socket: {:?}", e);
-                Timer::after(Duration::from_secs(1)).await;
-                continue;
-            }
-        };
-
-        let mut server: Server<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, 64> = Server::new();
-        match server.run(None, acceptor, handler).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::error!("HTTPd server error: {:?}", e);
-                Timer::after(Duration::from_secs(1)).await;
-                continue;
-            }
-        }
-    }
+async fn timer_task(runtime: &'static Runtime) -> ! {
+    runtime.run_timer().await
 }

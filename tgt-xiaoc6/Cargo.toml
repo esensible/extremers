@@ -35,17 +35,12 @@ embassy-net = { workspace = true, features = [
 #
 # Networking
 #
-edge-http = { workspace = true }
 edge-nal = { workspace = true }
 edge-nal-embassy = { workspace = true, features = ["proto-ipv4", "medium-ethernet", "tcp", "udp"] }
 edge-dhcp = { workspace = true }
 
 log = { workspace = true }
 
-# required by extreme_traits::define_engines!
-heapless = { workspace = true }
-serde = { workspace = true }
-serde-json-core = { workspace = true, features = ["heapless"] }
 static_cell = { workspace = true }
 
 # AtomicU64 (used by common) on riscv32imac needs emulation

@@ -39,7 +39,6 @@ cyw43-pio = { version = "0.10" }
 #
 # Networking
 #
-edge-http = { workspace = true }
 edge-nal = { workspace = true }
 edge-nal-embassy = { workspace = true, features = ["proto-ipv4", "medium-ethernet", "tcp", "udp"] }
 edge-dhcp = { workspace = true }
@@ -51,11 +50,6 @@ edge-dhcp = { workspace = true }
 portable-atomic = { workspace = true, features = ["critical-section"] }
 log = { workspace = true }
 static_cell = { workspace = true }
-
-# required by extreme_traits::define_engines!
-heapless = { workspace = true }
-serde = { workspace = true }
-serde-json-core = { workspace = true, features = ["heapless"] }
 
 #
 # The magic

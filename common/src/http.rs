@@ -1,15 +1,12 @@
-// Standard library imports
-use core::{
-    fmt::{Debug, Display, Write as _},
-    sync::atomic::Ordering,
-};
+//! HTTP and websocket transport for an [`EngineRuntime`].
+//!
+//! Serves the active engine's static files, and on `/socket` upgrades to a
+//! websocket that carries client events in and state updates out.
 
-// Embassy framework imports
+use core::fmt::{Debug, Display, Write as _};
+
 use embassy_futures::select::{Either, select};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
-use embassy_time::{Duration, Timer};
 
-// Networking imports
 use edge_http::{
     Method,
     io::{
@@ -18,192 +15,104 @@ use edge_http::{
     },
     ws::MAX_BASE64_KEY_RESPONSE_LEN,
 };
-use edge_nal::TcpSplit;
+use edge_nal::{Readable, TcpSplit};
 use edge_ws::{Error as WsError, FrameHeader, FrameType};
-
-// Other external crates
 use embedded_io_async::{Read, Write};
-use heapless::Vec;
-// use panic_probe as _;
-use portable_atomic::AtomicU64;
 
-use extreme_traits::RawEngine;
+use extreme_traits::{MAX_MESSAGE_SIZE, RawEngine};
 
-// Constants
-pub const MAX_MESSAGE_SIZE: usize = 512;
-pub const MAX_WEB_SOCKETS: usize = 4;
-pub const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
+use crate::runtime::{EngineRuntime, StateMessage};
 
-// Type aliases
-type UpdateMessage = Vec<u8, MAX_MESSAGE_SIZE>;
-
-pub struct HttpHandler<Engine>
-where
-    Engine: RawEngine,
-{
-    engine: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, Engine>,
-    tick_offset: AtomicU64,
-    sleep_channel: PubSubChannel<CriticalSectionRawMutex, u64, 1, 4, 4>,
-    broadcast_channel: PubSubChannel<CriticalSectionRawMutex, UpdateMessage, 1, 4, 4>,
+/// An [`edge_http`] request handler backed by an [`EngineRuntime`].
+pub struct HttpHandler<'r, E: RawEngine> {
+    runtime: &'r EngineRuntime<E>,
 }
 
-impl<Engine> HttpHandler<Engine>
-where
-    Engine: extreme_traits::RawEngine,
-{
-    pub fn new(engine: Engine) -> Self {
-        Self {
-            broadcast_channel: PubSubChannel::new(),
-            sleep_channel: PubSubChannel::new(),
-            engine: embassy_sync::mutex::Mutex::new(engine),
-            tick_offset: AtomicU64::new(0),
-        }
+// derived impls would needlessly require `E: Clone`
+impl<E: RawEngine> Clone for HttpHandler<'_, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<E: RawEngine> Copy for HttpHandler<'_, E> {}
+
+impl<'r, E: RawEngine> HttpHandler<'r, E> {
+    pub fn new(runtime: &'r EngineRuntime<E>) -> Self {
+        Self { runtime }
     }
 
-    /// Current time in the same epoch-millisecond units as GPS timestamps.
-    fn now(&self) -> u64 {
-        embassy_time::Instant::now().as_millis() + self.tick_offset.load(Ordering::Relaxed)
-    }
-
-    pub async fn location_event(
-        &self,
-        time: Option<u64>,
-        location: Option<(f64, f64)>,
-        speed: Option<(f64, f64)>,
-    ) {
-        // log::info!("location_event: {:?}, {:?}, {:?}", time, location, speed);
-        let timestamp = match time {
-            Some(timestamp) => {
-                // the first GPS time fixes the offset from uptime to epoch time
-                if self.tick_offset.load(Ordering::Relaxed) == 0 {
-                    let uptime = embassy_time::Instant::now().as_millis();
-                    self.tick_offset
-                        .store(timestamp.saturating_sub(uptime), Ordering::Relaxed);
-                }
-                timestamp
+    /// Relays between a websocket and the runtime until either side fails or
+    /// the client closes.
+    async fn run_websocket<S>(&self, socket: &mut S) -> Result<(), WsError<S::Error>>
+    where
+        S: TcpSplit,
+    {
+        // subscribe before reading the current state, so no change is missed
+        let mut updates = match self.runtime.subscribe() {
+            Ok(updates) => updates,
+            Err(e) => {
+                log::error!("websocket: cannot subscribe to state updates: {:?}", e);
+                return Ok(());
             }
-            None => self.now(),
         };
 
-        let mut engine = self.engine.lock().await;
-        let (update, timer) = (*engine).location_event(timestamp, location, speed);
+        let (mut rx, mut tx) = socket.split();
 
-        // handle state update if there was one
-        if let Some(()) = update {
-            // log::info!("broadcasting state update");
-
-            match (*engine).to_vec() {
-                Ok(message) => {
-                    if let Ok(publisher) = self.broadcast_channel.publisher() {
-                        publisher.publish_immediate(message);
-                    } else {
-                        log::error!("Failed to get broadcast channel publisher");
-                        return;
-                    }
-                }
-                Err(_) => {
-                    log::error!("Failed to serialize engine state");
-                    return;
-                }
-            }
+        if let Ok(state) = self.runtime.current_state().await {
+            send_state(&mut tx, self.runtime.now(), &state).await?;
         }
 
-        // handle sleep timer if there was one
-        if let Some(timer) = timer {
-            if let Ok(publisher) = self.sleep_channel.publisher() {
-                publisher.publish_immediate(timer);
-            } else {
-                log::error!("Failed to get sleep channel publisher");
-                return;
-            }
-        }
-    }
-
-    pub async fn run_sleeper(&self) -> ! {
-        let mut sleep_time: Option<u64> = None;
-
+        let mut buf = [0_u8; MAX_MESSAGE_SIZE];
         loop {
-            let mut subscriber = match self.sleep_channel.dyn_subscriber() {
-                Ok(sub) => sub,
-                Err(_) => {
-                    log::error!("Failed to get sleep channel subscriber");
-                    Timer::after(Duration::from_secs(10)).await;
-                    continue;
-                }
-            };
+            // wait for readability rather than for a frame header: a frame
+            // read cancelled half way would desynchronise the stream
+            match select(rx.readable(), updates.next_message_pure()).await {
+                Either::First(readable) => {
+                    readable.map_err(WsError::Io)?;
+                    let header = FrameHeader::recv(&mut rx).await?;
+                    let payload = header.recv_payload(&mut rx, &mut buf).await?;
 
-            match sleep_time {
-                // just chillen, with nothin to do
-                None => {
-                    sleep_time = Some(subscriber.next_message_pure().await);
-                    log::info!("dude, you have a job");
-                }
-
-                // we have a sleep scheduled
-                Some(wake_time) => {
-                    // so sleep!
-                    // convert absolute wake time to a duration
-                    let now = self.now();
-                    let sleep_ms = if wake_time > now { wake_time - now } else { 0 };
-
-                    log::info!("sleeping for {} ms", sleep_ms);
-                    match embassy_time::with_timeout(
-                        embassy_time::Duration::from_millis(sleep_ms),
-                        subscriber.next_message_pure(),
-                    )
-                    .await
-                    {
-                        // sleep was terminated early
-                        Ok(message) => {
-                            log::info!("sleep terminated early: {}", message);
-                            sleep_time = Some(message);
-                        }
-
-                        //
-                        // !!!! sleep timed out - nominal case !!!!
-                        //
-                        Err(_timeout_error) => {
-                            // log::info!("Yay: sleep timed out");
-                            let mut engine = self.engine.lock().await;
-                            let (update, timer) = (*engine).timer_event(wake_time);
-
-                            // handle state update if there was one
-                            if let Some(()) = update {
-                                // log::info!("broadcasting state update");
-                                match (*engine).to_vec() {
-                                    Ok(message) => {
-                                        if let Ok(publisher) = self.broadcast_channel.publisher() {
-                                            publisher.publish_immediate(message);
-                                        } else {
-                                            log::error!(
-                                                "Failed to get broadcast channel publisher"
-                                            );
-                                        }
-                                    }
-                                    Err(_) => {
-                                        log::error!("Failed to serialize engine state");
-                                    }
-                                }
+                    match header.frame_type {
+                        FrameType::Text(_) | FrameType::Binary(_) => {
+                            if self.runtime.external_event(payload).await.is_err() {
+                                log::warn!(
+                                    "websocket: undecodable event: {}",
+                                    core::str::from_utf8(payload).unwrap_or("<not utf-8>")
+                                );
                             }
-
-                            // next sleep timer, if required
-                            sleep_time = timer;
+                        }
+                        FrameType::Ping => {
+                            let pong = FrameHeader {
+                                mask_key: None,
+                                frame_type: FrameType::Pong,
+                                payload_len: payload.len() as u64,
+                            };
+                            pong.send(&mut tx).await?;
+                            pong.send_payload(&mut tx, payload).await?;
+                        }
+                        FrameType::Close => {
+                            log::info!("websocket: closed by client");
+                            return Ok(());
+                        }
+                        FrameType::Pong | FrameType::Continue(_) => {
+                            log::debug!("websocket: ignoring {}", header);
                         }
                     }
+                }
+                Either::Second(state) => {
+                    send_state(&mut tx, self.runtime.now(), &state).await?;
                 }
             }
         }
     }
 }
 
-impl<Engine> Handler for HttpHandler<Engine>
-where
-    Engine: extreme_traits::RawEngine,
-{
-    type Error<E>
-        = Error<E>
+impl<E: RawEngine> Handler for HttpHandler<'_, E> {
+    type Error<T>
+        = Error<T>
     where
-        E: Debug;
+        T: Debug;
 
     async fn handle<T, const N: usize>(
         &self,
@@ -219,18 +128,14 @@ where
             conn.initiate_response(405, Some("Method Not Allowed"), &[])
                 .await?;
         } else if headers.path != "/socket" {
-            let path = if headers.path == "/" || headers.path == "" {
-                "index.html"
-            } else if headers.path.starts_with('/') {
-                &headers.path[1..]
-            } else {
-                headers.path
+            let path = match headers.path.trim_start_matches('/') {
+                "" => "index.html",
+                path => path,
             };
 
-            log::info!("serving static file: {}", path);
-            // files are 'static, so release the engine before the (slow) write
-            let file = self.engine.lock().await.get_static(path);
-            if let Some(file) = file {
+            log::debug!("http: GET {}", path);
+            // the lock is released before the (slow) write
+            if let Some(file) = self.runtime.static_file(path).await {
                 conn.initiate_response(200, Some("OK"), &[]).await?;
                 conn.write_all(file).await?;
             } else {
@@ -239,143 +144,17 @@ where
         } else if !conn.is_ws_upgrade_request()? {
             conn.initiate_response(200, Some("OK"), &[("Content-Type", "text/plain")])
                 .await?;
-
             conn.write_all(b"Initiate WS Upgrade request to switch this connection to WS")
                 .await?;
         } else {
             let mut buf = [0_u8; MAX_BASE64_KEY_RESPONSE_LEN];
             conn.initiate_ws_upgrade_response(&mut buf).await?;
-
             conn.complete().await?;
+            log::info!("websocket: connected");
 
-            log::info!("Connection upgraded to WS");
-
-            // Now we have the TCP socket in a state where it can be operated as a WS connection
-
-            let mut socket = conn.unbind()?;
-
-            // send the current state to the client immediately
-            let vec = {
-                let engine = self.engine.lock().await;
-                (*engine).to_vec()
-            };
-
-            // scoped so we release the lock ASAP
-            match vec {
-                Ok(message) => {
-                    if let Err(e) = send_state(&mut socket, self.now(), &message).await {
-                        log::error!("Failed to send state: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to serialize engine state: {:?}", e);
-                }
-            }
-
-            let mut subscriber = match self.broadcast_channel.dyn_subscriber() {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!("Failed to create broadcast subscriber: {:?}", e);
-                    return Ok(());
-                }
-            };
-
-            loop {
-                let header_future = FrameHeader::recv(&mut socket);
-                let subscriber_future = subscriber.next_message_pure();
-
-                match select(header_future, subscriber_future).await {
-                    Either::First(header_result) => {
-                        let header = match header_result {
-                            Ok(h) => h,
-                            Err(e) => {
-                                log::error!("Failed to receive header: {:?}", e);
-                                break;
-                            }
-                        };
-
-                        match header.frame_type {
-                            FrameType::Close => {
-                                log::info!("Client closed connection");
-                                break;
-                            }
-                            FrameType::Ping => {
-                                log::info!("Sending pong");
-                                let header = FrameHeader {
-                                    mask_key: None,
-                                    frame_type: FrameType::Pong,
-                                    payload_len: 0,
-                                };
-
-                                if let Err(e) = header.send(&mut socket).await {
-                                    log::error!("Failed to send pong: {:?}", e);
-                                    break;
-                                }
-                                continue;
-                            }
-                            _ => {
-                                log::info!("Got {header}");
-                            }
-                        }
-
-                        // Deserialize the payload into an Engine::Event
-                        let mut buf = [0_u8; MAX_MESSAGE_SIZE];
-                        let payload = match header.recv_payload(&mut socket, &mut buf).await {
-                            Ok(p) => p,
-                            Err(e) => {
-                                log::error!("Failed to receive payload: {:?}", e);
-                                break;
-                            }
-                        };
-
-                        // log::info!(
-                        //     "payload: {}",
-                        //     core::str::from_utf8(payload).unwrap_or("<invalid utf8>")
-                        // );
-
-                        let (update, timer) = {
-                            let mut engine = self.engine.lock().await;
-                            let now = self.now();
-
-                            // handle the event
-                            match RawEngine::external_event(&mut *engine, now, payload) {
-                                Ok(result) => result,
-                                Err(_) => {
-                                    log::error!("Failed to handle external event");
-                                    break;
-                                }
-                            }
-                        };
-
-                        // handle state update if there was one
-                        if let Some(update) = update {
-                            if let Ok(publisher) = self.broadcast_channel.publisher() {
-                                publisher.publish_immediate(update);
-                            } else {
-                                log::error!("Failed to get broadcast channel publisher");
-                                break;
-                            }
-                        }
-
-                        if let Some(timer) = timer {
-                            if let Ok(publisher) = self.sleep_channel.publisher() {
-                                publisher.publish_immediate(timer);
-                            } else {
-                                log::error!("Failed to get sleep channel publisher");
-                            }
-                        }
-                    }
-                    Either::Second(message) => {
-                        // send the message to the client
-                        // break on any comms error
-                        // log::info!("broadcast message");
-
-                        if let Err(e) = send_state(&mut socket, self.now(), &message).await {
-                            log::error!("Failed to send state: {:?}", e);
-                            break;
-                        }
-                    }
-                }
+            let socket = conn.unbind()?;
+            if let Err(e) = self.run_websocket(socket).await {
+                log::info!("websocket: disconnected: {:?}", e);
             }
         }
 
@@ -383,36 +162,47 @@ where
     }
 }
 
-/// Sends `{"timestamp":<timestamp>,"engine":<message>}` as a single websocket
-/// text frame. `message` is already serialized JSON. The pieces are written
-/// straight to the socket, so there is no intermediate buffer to overflow.
+/// Sends `{"timestamp":<timestamp>,"kind":"<kind>","engine":<state>}` as a
+/// single websocket text frame. The pieces are written straight to the
+/// socket, so there is no intermediate buffer to overflow.
 async fn send_state<W>(
     socket: &mut W,
     timestamp: u64,
-    message: &[u8],
+    state: &StateMessage,
 ) -> Result<(), WsError<W::Error>>
 where
     W: Write,
 {
     const PREFIX: &[u8] = b"{\"timestamp\":";
-    const MIDDLE: &[u8] = b",\"engine\":";
+    const KIND: &[u8] = b",\"kind\":\"";
+    const ENGINE: &[u8] = b"\",\"engine\":";
     const SUFFIX: &[u8] = b"}";
 
     let mut digits: heapless::String<20> = heapless::String::new();
     // a u64 has at most 20 digits, so this can't fail
     let _ = write!(digits, "{}", timestamp);
 
+    // engine names are Rust identifiers, so need no JSON escaping
+    let pieces = [
+        PREFIX,
+        digits.as_bytes(),
+        KIND,
+        state.kind.as_bytes(),
+        ENGINE,
+        &state.json,
+        SUFFIX,
+    ];
+
     let header = FrameHeader {
         mask_key: None,
         // `false`: not fragmented, this frame is the whole message
         frame_type: FrameType::Text(false),
-        payload_len: (PREFIX.len() + digits.len() + MIDDLE.len() + message.len() + SUFFIX.len())
-            as u64,
+        payload_len: pieces.iter().map(|piece| piece.len() as u64).sum(),
     };
     header.send(&mut *socket).await?;
 
     // server frames are not masked, so the payload can be written in pieces
-    for piece in [PREFIX, digits.as_bytes(), MIDDLE, message, SUFFIX] {
+    for piece in pieces {
         socket.write_all(piece).await.map_err(WsError::Io)?;
     }
     socket.flush().await.map_err(WsError::Io)
@@ -424,18 +214,24 @@ mod tests {
 
     use super::*;
     use embassy_futures::block_on;
+    use extreme_traits::StateJson;
 
     #[test]
     fn send_state_handles_max_size_message() {
-        let mut message = [b'x'; MAX_MESSAGE_SIZE];
-        message[0] = b'"';
-        message[MAX_MESSAGE_SIZE - 1] = b'"';
+        let mut json = StateJson::new();
+        json.resize(MAX_MESSAGE_SIZE, b'x').unwrap();
+        json[0] = b'"';
+        json[MAX_MESSAGE_SIZE - 1] = b'"';
+        let state = StateMessage {
+            kind: "TuneSpeed",
+            json,
+        };
 
         let mut out = [0u8; MAX_MESSAGE_SIZE + 128];
         let capacity = out.len();
         let written = {
             let mut writer: &mut [u8] = &mut out;
-            block_on(send_state(&mut writer, u64::MAX, &message)).unwrap();
+            block_on(send_state(&mut writer, u64::MAX, &state)).unwrap();
             capacity - writer.len()
         };
 
@@ -445,9 +241,9 @@ mod tests {
         assert_eq!(header.payload_len as usize, reader.len());
 
         let expected = std::format!(
-            "{{\"timestamp\":{},\"engine\":{}}}",
+            "{{\"timestamp\":{},\"kind\":\"TuneSpeed\",\"engine\":{}}}",
             u64::MAX,
-            core::str::from_utf8(&message).unwrap()
+            core::str::from_utf8(&state.json).unwrap()
         );
         assert_eq!(reader, expected.as_bytes());
     }

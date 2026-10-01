@@ -1,15 +1,12 @@
-//! This example uses the RP Pico W board Wifi chip (cyw43).
-//! Creates an Access point Wifi network and creates a TCP endpoint on port 1234.
+//! Raspberry Pi Pico W target: runs the race computer behind a WiFi access
+//! point (cyw43), with a MediaTek GPS module on UART1.
 
 #![no_std]
 #![no_main]
 
-// Standard library imports
-use core::net::{IpAddr, Ipv4Addr, SocketAddr};
-
 // Embassy framework imports
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, StackResources};
+use embassy_net::{Config, Ipv4Cidr, Stack, StackResources, StaticConfigV4};
 use embassy_rp::{
     bind_interrupts,
     clocks::RoscRng,
@@ -26,8 +23,6 @@ use embassy_rp::{
 use embassy_time::{Duration, Timer};
 
 // Networking imports
-use edge_http::io::server::Server;
-use edge_nal::TcpBind;
 use edge_nal_embassy::{Tcp, TcpBuffers};
 
 // Other external crates
@@ -41,11 +36,16 @@ mod network_tasks;
 
 use crate::network_tasks::{dhcp_server_task, net_task, wifi_task};
 use common::{
-    http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
-    nmea::{AsyncReader, RingBuffer, next_update},
+    config::{
+        AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE,
+        WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID,
+    },
+    nmea::{AsyncReader, pmtk_sentence},
+    runtime::EngineRuntime,
+    tasks::{read_gps, serve_http},
 };
 
-use extreme_traits::{MAX_MESSAGE_SIZE, define_engines};
+use extreme_traits::define_engines;
 
 define_engines! {
     EngineType {
@@ -53,6 +53,8 @@ define_engines! {
         TuneSpeed(extreme_tune::TuneSpeed<32>),
     }
 }
+
+type Runtime = EngineRuntime<EngineType>;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -113,11 +115,10 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::Performance)
         .await;
 
-    // Use a link-local address for communication without DHCP server
-    let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(Ipv4Addr::new(169, 254, 1, 1), 16),
-        dns_servers: [Ipv4Addr::new(169, 254, 1, 100)].into_iter().collect(),
-        gateway: Some(Ipv4Addr::new(169, 254, 1, 100)),
+    let config = Config::ipv4_static(StaticConfigV4 {
+        address: Ipv4Cidr::new(AP_IP, AP_PREFIX_LEN),
+        dns_servers: [AP_IP].into_iter().collect(),
+        gateway: Some(AP_IP),
     });
 
     // Generate random seed
@@ -137,51 +138,44 @@ async fn main(spawner: Spawner) {
         Err(_) => log::warn!("failed to spawn net task"),
     }
 
-    control.start_ap_wpa2("nacra17", "password", 1).await;
+    control
+        .start_ap_wpa2(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL)
+        .await;
 
-    let ip = Ipv4Addr::new(169, 254, 1, 1);
-
-    match dhcp_server_task(stack, ip) {
+    match dhcp_server_task(stack, AP_IP) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::warn!("failed to spawn dhcp server task"),
     }
 
-    static HTTPD_HANDLER: StaticCell<HttpHandler<EngineType>> = StaticCell::new();
-    let httpd_handler = HTTPD_HANDLER.init(HttpHandler::new(EngineType::default()));
+    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
+    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
 
-    match httpd_task(stack, httpd_handler) {
+    match httpd_task(stack, runtime) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::warn!("failed to spawn httpd task"),
     }
 
-    match sleeper_task(httpd_handler) {
+    match timer_task(runtime) {
         Ok(token) => spawner.spawn(token),
-        Err(_) => log::warn!("failed to spawn sleeper task"),
+        Err(_) => log::warn!("failed to spawn timer task"),
     }
 
     let mut config = UartConfig::default();
-    config.baudrate = 9600;
+    config.baudrate = GPS_BAUD;
     let uart = Uart::new(
         p.UART1, p.PIN_8, p.PIN_9, Irqs, p.DMA_CH2, p.DMA_CH1, config,
     );
     let (mut uart_tx, uart_rx) = uart.split();
 
-    // Configure GPS
-    // Only generate GPRMC message twice per second
+    // Configure the (MediaTek) GPS module
+    // Output only RMC sentences, one per fix
     send_pmtk_command(&mut uart_tx, "PMTK314,0,1,0,0,0,0,0,0").await;
     // Enable SBAS
     send_pmtk_command(&mut uart_tx, "PMTK313,1").await;
     // SBAS integrity mode
     send_pmtk_command(&mut uart_tx, "PMTK319,1").await;
 
-    // Set new baud rate
-    // send_pmtk_command(&mut uart_tx, "PMTK251,115200").await;
-    // Need to wait a moment for the change to take effect
-    // Timer::after(Duration::from_millis(100)).await;
-    // config.baudrate = 115200;
-    // uart.set_config(config);
-
-    match gps_task(uart_rx, httpd_handler) {
+    match gps_task(uart_rx, runtime) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::warn!("failed to spawn gps task"),
     }
@@ -198,96 +192,40 @@ async fn logger_task(driver: Driver<'static, USB>) {
 }
 
 #[embassy_executor::task]
-pub async fn sleeper_task(handler: &'static HttpHandler<EngineType>) {
-    handler.run_sleeper().await
+async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
+    let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
+    let tcp = Tcp::new(stack, &buffers);
+    serve_http(&tcp, HTTP_PORT, runtime).await
+}
+
+#[embassy_executor::task]
+async fn gps_task(rx: UartRx<'static, UartAsync>, runtime: &'static Runtime) -> ! {
+    read_gps(UartReader(rx), runtime).await
+}
+
+#[embassy_executor::task]
+async fn timer_task(runtime: &'static Runtime) -> ! {
+    runtime.run_timer().await
 }
 
 struct UartReader(UartRx<'static, UartAsync>);
+
 impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
         // fills the whole buffer
         match self.0.read(buf).await {
             Ok(()) => Ok(buf.len()),
-            Err(_) => Err(()),
-        }
-    }
-}
-
-#[embassy_executor::task]
-pub async fn gps_task(rx: UartRx<'static, UartAsync>, handler: &'static HttpHandler<EngineType>) {
-    let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
-    loop {
-        let (time, location, speed) = next_update(&mut ring_buffer).await;
-        handler.location_event(time, location, speed).await;
-    }
-}
-
-#[embassy_executor::task]
-pub async fn httpd_task(stack: Stack<'static>, handler: &'static HttpHandler<EngineType>) -> ! {
-    let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
-    let tcp = Tcp::new(stack, &buffers);
-
-    loop {
-        let acceptor = match tcp
-            .bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 80))
-            .await
-        {
-            Ok(socket) => socket,
             Err(e) => {
-                log::error!("Failed to bind httpd socket: {:?}", e);
-                Timer::after(Duration::from_secs(1)).await;
-                continue;
-            }
-        };
-
-        let mut server: Server<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, 64> = Server::new();
-        match server.run(None, acceptor, handler).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::error!("HTTPd server error: {:?}", e);
-                Timer::after(Duration::from_secs(1)).await;
-                continue;
+                log::warn!("gps: UART read failed: {:?}", e);
+                Err(())
             }
         }
     }
 }
 
 async fn send_pmtk_command(tx: &mut UartTx<'static, UartAsync>, command: &str) {
-    // Calculate checksum
-    let checksum = command.bytes().fold(0u8, |acc, b| acc ^ b);
-
-    // We'll use a static buffer since we're in no_std
-    let mut buffer: [u8; 64] = [0; 64];
-    let mut pos = 0;
-
-    // Build command manually
-    buffer[pos] = b'$';
-    pos += 1;
-    for &byte in command.as_bytes() {
-        buffer[pos] = byte;
-        pos += 1;
-    }
-    buffer[pos] = b'*';
-    pos += 1;
-
-    // Convert checksum to hex (manual implementation)
-    let hex_chars = [
-        b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E',
-        b'F',
-    ];
-    buffer[pos] = hex_chars[(checksum >> 4) as usize];
-    pos += 1;
-    buffer[pos] = hex_chars[(checksum & 0xF) as usize];
-    pos += 1;
-
-    // Add CR+LF
-    buffer[pos] = b'\r';
-    pos += 1;
-    buffer[pos] = b'\n';
-    pos += 1;
-
-    // Send command
-    if let Err(e) = tx.write(&buffer[..pos]).await {
-        log::error!("Failed to send GPS command: {:?}", e);
+    let mut buf = [0; 64];
+    if let Err(e) = tx.write(pmtk_sentence(command, &mut buf)).await {
+        log::error!("gps: failed to send {}: {:?}", command, e);
     }
 }
