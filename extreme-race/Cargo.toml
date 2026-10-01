@@ -15,3 +15,6 @@ extreme-traits = { path = "../extreme-traits" }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+
+[build-dependencies]
+extreme-build = { path = "../extreme-build" }

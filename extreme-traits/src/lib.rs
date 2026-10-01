@@ -1,144 +1,211 @@
 #![no_std]
-// #![feature(adt_const_params)]
-// #![feature(inline_const_pat)]
 
 mod selector;
-pub use selector::{EngineSelector, SelectorEvent, StringList};
+pub use selector::EngineSelector;
 
 mod traits;
 pub use crate::traits::*;
-pub use paste::paste;
 
+// Re-exported for the macros below; not part of the public API.
+#[doc(hidden)]
+pub use serde;
+
+/// Embeds the engine's web UI, built by `extreme_build::embed_client_js` in
+/// the crate's `build.rs`.
+///
+/// ```ignore
+/// const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
+/// ```
+#[macro_export]
+macro_rules! static_files {
+    () => {
+        include!(concat!(env!("OUT_DIR"), "/static_files.rs"))
+    };
+}
+
+/// Combines several engines into one [`RawEngine`] that clients can switch
+/// between.
+///
+/// ```ignore
+/// define_engines! {
+///     EngineType {
+///         Race(extreme_race::Race),
+///         TuneSpeed(extreme_tune::TuneSpeed<32>),
+///     }
+/// }
+/// ```
+///
+/// Generates `enum EngineType { Selector(EngineSelector), Race(..), .. }`,
+/// which starts as `Selector`, serializes as whichever engine is active and
+/// reports that engine's name as its [`kind`](RawEngine::kind).
+///
+/// Client events are externally tagged with the engine name:
+/// `{"Race": <race event>}` goes to the race engine and is ignored unless it
+/// is active; `{"Select": "Race"}` switches engine (any unknown name returns
+/// to the selector) and cancels any pending timer.
+///
+/// Every engine type must implement [`Engine`] and `Default`. Use the macro
+/// once per module: it also defines `EngineEvent` and `ENGINE_NAMES`.
 #[macro_export]
 macro_rules! define_engines {
     ($enum_name:ident { $($variant:ident($engine_type:ty)),* $(,)? }) => {
-        $crate::paste! {
-            struct [<$enum_name Labels>];
+        /// Names of the selectable engines, in declaration order.
+        const ENGINE_NAMES: &'static [&'static str] = &[$(stringify!($variant)),*];
 
-            const [<$enum_name VARIANTS>]: &'static [&'static str] = &[$(stringify!($variant)),*];
+        enum $enum_name {
+            Selector($crate::EngineSelector),
+            $(
+                $variant($engine_type),
+            )*
+        }
 
-            impl $crate::StringList for [<$enum_name Labels>] {
-                fn index_of(value: &str) -> Option<usize> {
-                    [<$enum_name VARIANTS>].iter().position(|&x| x == value)
-                }
+        /// A client event, externally tagged with the engine it is for.
+        enum EngineEvent<'a> {
+            /// Switch to the named engine; any other name returns to the selector.
+            Select(&'a str),
+            $(
+                $variant(<$engine_type as $crate::Engine>::Event<'a>),
+            )*
+        }
 
-                fn list() -> &'static [&'static str] {
-                    [<$enum_name VARIANTS>]
-                }
+        impl $enum_name {
+            fn selector() -> Self {
+                Self::Selector($crate::EngineSelector::new(ENGINE_NAMES))
             }
 
-            #[derive(serde::Serialize)]
-            #[serde(tag = "fuck_yeah")]
-            enum $enum_name {
-                Selector($crate::EngineSelector<[<$enum_name Labels>]>),
-                $(
-                    $variant($engine_type),
-                )*
-            }
-
-            impl Default for $enum_name {
-                fn default() -> Self {
-                    Self::Selector(Default::default())
+            fn select(name: &str) -> Self {
+                match name {
+                    $(
+                        stringify!($variant) => Self::$variant(Default::default()),
+                    )*
+                    _ => Self::selector(),
                 }
             }
+        }
 
-            impl $crate::RawEngine for $enum_name {
+        impl Default for $enum_name {
+            fn default() -> Self {
+                Self::selector()
+            }
+        }
 
-                fn to_vec(&self) -> Result<heapless::Vec<u8, MAX_MESSAGE_SIZE>, ()> {
-                    match serde_json_core::ser::to_vec(self) {
-                        Ok(vec) => Ok(vec),
-                        Err(_) => Err(()),
-                    }
+        impl $crate::serde::Serialize for $enum_name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: $crate::serde::Serializer,
+            {
+                match self {
+                    Self::Selector(engine) => engine.serialize(serializer),
+                    $(
+                        Self::$variant(engine) => engine.serialize(serializer),
+                    )*
                 }
+            }
+        }
 
-                fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
-                    match self {
-                        Self::Selector(engine) => engine.get_static(path),
-                        $(
-                            Self::$variant(engine) => engine.get_static(path),
-                        )*
-                    }
-                }
+        impl<'de> $crate::serde::Deserialize<'de> for EngineEvent<'de> {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: $crate::serde::Deserializer<'de>,
+            {
+                use $crate::serde::de::{Error, MapAccess, Visitor};
 
-                fn location_event(
-                    &mut self,
-                    timestamp: u64,
-                    location: Option<(f64, f64)>,
-                    speed: Option<(f64, f64)>,
-                ) -> (Option<()>, Option<u64>) {
-                    match self {
-                        Self::Selector(engine) => engine.location_event(timestamp, location, speed),
-                        $(
-                            Self::$variant(engine) => engine.location_event(timestamp, location, speed),
-                        )*
-                    }
-                }
+                struct EventVisitor;
 
-                fn external_event<'a>(
-                    &mut self,
-                    timestamp: u64,
-                    event: &'a [u8],
-                ) -> Result<(Option<heapless::Vec<u8, MAX_MESSAGE_SIZE>>, Option<u64>), ()> {
-                    match self {
-                        $(
-                            Self::$variant(engine) => {
+                impl<'de> Visitor<'de> for EventVisitor {
+                    type Value = EngineEvent<'de>;
 
-                                match serde_json_core::from_slice::<<$engine_type as $crate::Engine>::Event<'a>>(event) {
-                                    Ok((event, _)) => {
-                                        let (update, timer) = $crate::Engine::external_event(engine, timestamp, &event);
-                                        let update = if let Some(update) = update {
-                                            Some(self.to_vec()?)
-                                        } else {
-                                            None
-                                        };
-                                        return Ok((update, timer));
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to deserialize engine event: {:?}", e);
-                                        // fall through
-                                    }
-                                }
-                            },
-                        )*
-                        // Default case, fall through
-                        _ => {},
+                    fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                        f.write_str("a map with a single engine-name key")
                     }
 
-                    // Try to deserialize as a selector event
-                    // This allows engines to exit themselves
-                    match serde_json_core::from_slice::<$crate::SelectorEvent<[<$enum_name Labels>]>>(event) {
-                        Ok((event, _)) => {
-                            *self = Self::from_index(event.index);
-                            return Ok((Some(self.to_vec()?), None));
+                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                    where
+                        A: MapAccess<'de>,
+                    {
+                        const KEYS: &[&str] = &["Select", $(stringify!($variant)),*];
+
+                        let key: &'de str = map
+                            .next_key()?
+                            .ok_or_else(|| Error::invalid_length(0, &self))?;
+                        let event = match key {
+                            "Select" => EngineEvent::Select(map.next_value()?),
+                            $(
+                                stringify!($variant) => EngineEvent::$variant(map.next_value()?),
+                            )*
+                            _ => return Err(Error::unknown_variant(key, KEYS)),
+                        };
+                        if map.next_key::<&str>()?.is_some() {
+                            return Err(Error::custom("expected a single key"));
                         }
-                        Err(e) => {
-                            log::error!("Failed to deserialize selector event: {:?}", e);
-                        }
+                        Ok(event)
                     }
-
-                    return Err(())
                 }
 
-                fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>) {
-                    match self {
-                        Self::Selector(engine) => engine.timer_event(timestamp),
-                        $(
-                            Self::$variant(engine) => engine.timer_event(timestamp),
-                        )*
-                    }
+                deserializer.deserialize_map(EventVisitor)
+            }
+        }
+
+        impl $crate::RawEngine for $enum_name {
+            fn kind(&self) -> &'static str {
+                match self {
+                    Self::Selector(_) => <$crate::EngineSelector as $crate::Engine>::NAME,
+                    $(
+                        Self::$variant(_) => stringify!($variant),
+                    )*
                 }
             }
 
-            impl $enum_name {
-                fn from_index(index: usize) -> Self {
-                    match index {
-                        $(
-                            i if i == <[<$enum_name Labels>] as  $crate::StringList>::index_of(stringify!($variant)).unwrap() => {
-                                Self::$variant(Default::default())
-                            }
-                        )*
-                        _ => Self::Selector(Default::default()),
+            fn serialize_state(&self) -> Result<$crate::StateJson, ()> {
+                $crate::serialize_state(self)
+            }
+
+            fn external_event(&mut self, timestamp: u64, event: &[u8]) -> Result<$crate::Outcome, ()> {
+                let event: EngineEvent<'_> = $crate::deserialize_event(event)?;
+                Ok(match (&mut *self, &event) {
+                    (this, EngineEvent::Select(name)) => {
+                        *this = Self::select(name);
+                        $crate::Outcome::CHANGED.cancel_timer()
                     }
+                    $(
+                        (Self::$variant(engine), EngineEvent::$variant(event)) => {
+                            $crate::Engine::external_event(engine, timestamp, event)
+                        }
+                    )*
+                    // an event for an engine that is not active
+                    _ => $crate::Outcome::NONE,
+                })
+            }
+
+            fn location_event(
+                &mut self,
+                timestamp: u64,
+                fix: Option<$crate::Fix>,
+                velocity: Option<$crate::Velocity>,
+            ) -> $crate::Outcome {
+                match self {
+                    Self::Selector(engine) => $crate::Engine::location_event(engine, timestamp, fix, velocity),
+                    $(
+                        Self::$variant(engine) => $crate::Engine::location_event(engine, timestamp, fix, velocity),
+                    )*
+                }
+            }
+
+            fn timer_event(&mut self, timestamp: u64) -> $crate::Outcome {
+                match self {
+                    Self::Selector(engine) => $crate::Engine::timer_event(engine, timestamp),
+                    $(
+                        Self::$variant(engine) => $crate::Engine::timer_event(engine, timestamp),
+                    )*
+                }
+            }
+
+            fn get_static(&self, path: &str) -> Option<&'static [u8]> {
+                match self {
+                    Self::Selector(engine) => $crate::Engine::get_static(engine, path),
+                    $(
+                        Self::$variant(engine) => $crate::Engine::get_static(engine, path),
+                    )*
                 }
             }
         }

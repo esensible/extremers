@@ -10,5 +10,9 @@ crate-type = ["lib"]
 serde-json-core = { workspace = true, features = ["heapless"] }
 heapless = { workspace = true }
 serde = { workspace = true }
-paste = { workspace = true }
-log = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[build-dependencies]
+extreme-build = { path = "../extreme-build" }
