@@ -3,9 +3,9 @@ mod tests {
     extern crate std;
 
     use crate::TuneSpeed;
-    use std::vec;
-    use extreme_traits::Engine;
+    use extreme_traits::{Engine, Outcome, Velocity};
     use serde_json::json;
+    use std::vec;
 
     #[test]
     fn test_initial_state() {
@@ -24,9 +24,9 @@ mod tests {
         let speed = 10.0;
         let heading = 90.0;
 
-        let result = tune.location_event(timestamp, None, Some((speed, heading)));
+        let result = tune.location_event(timestamp, None, Some(Velocity { speed, heading }));
 
-        assert_eq!(result, (Some(()), None));
+        assert_eq!(result, Outcome::CHANGED);
         assert_eq!(tune.speed, speed);
         assert_eq!(tune.speed_dev, 0.0);
         assert_eq!(tune.heading_dev, 0.0);
@@ -46,7 +46,14 @@ mod tests {
         ];
 
         for (timestamp, speed, heading) in samples.iter() {
-            tune.location_event(*timestamp, None, Some((*speed, *heading)));
+            let _ = tune.location_event(
+                *timestamp,
+                None,
+                Some(Velocity {
+                    speed: *speed,
+                    heading: *heading,
+                }),
+            );
         }
 
         // Calculate expected weighted average speed over the last 30 seconds
@@ -110,19 +117,54 @@ mod tests {
     fn test_serialization() {
         let mut tune = TuneSpeed::<100>::default();
 
-        tune.location_event(0, None, Some((10.0, 90.0)));
-        tune.location_event(1000, None, Some((12.0, 95.0)));
+        let _ = tune.location_event(0, None, Some(vel(10.0, 90.0)));
+        let _ = tune.location_event(1000, None, Some(vel(12.0, 95.0)));
 
-        let serialized: heapless::String<{ extreme_traits::MAX_MESSAGE_SIZE }> =
-            serde_json_core::to_string(&tune).unwrap();
+        let serialized = extreme_traits::serialize_state(&tune).unwrap();
         let expected_json = json!({
             "speed": tune.speed,
             "speed_dev": tune.speed_dev,
             "heading_dev": tune.heading_dev,
         });
 
-        let parsed_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        let parsed_json: serde_json::Value = serde_json::from_slice(&serialized).unwrap();
 
         assert_eq!(parsed_json, expected_json);
+    }
+
+    #[test]
+    fn test_out_of_order_samples_are_ignored() {
+        let mut tune = TuneSpeed::<100>::default();
+
+        assert_eq!(
+            tune.location_event(5000, None, Some(vel(10.0, 90.0))),
+            Outcome::CHANGED
+        );
+        assert_eq!(
+            tune.location_event(6000, None, Some(vel(12.0, 95.0))),
+            Outcome::CHANGED
+        );
+        let (speed, speed_dev, heading_dev) = (tune.speed, tune.speed_dev, tune.heading_dev);
+
+        // older and repeated timestamps must not panic or change anything
+        assert_eq!(
+            tune.location_event(1000, None, Some(vel(20.0, 180.0))),
+            Outcome::NONE
+        );
+        assert_eq!(
+            tune.location_event(6000, None, Some(vel(20.0, 180.0))),
+            Outcome::NONE
+        );
+        assert_eq!(
+            (tune.speed, tune.speed_dev, tune.heading_dev),
+            (speed, speed_dev, heading_dev)
+        );
+
+        // no velocity, no change
+        assert_eq!(tune.location_event(7000, None, None), Outcome::NONE);
+    }
+
+    fn vel(speed: f64, heading: f64) -> Velocity {
+        Velocity { speed, heading }
     }
 }

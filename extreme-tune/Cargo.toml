@@ -10,7 +10,6 @@ crate-type = ["lib"]
 serde = { workspace = true }
 libm = { workspace = true }
 heapless = { workspace = true }
-serde-json-core = { workspace = true }
 
 extreme-traits = { path = "../extreme-traits" }
 

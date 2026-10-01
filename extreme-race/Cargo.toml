@@ -9,7 +9,6 @@ crate-type = ["lib"]
 [dependencies]
 serde = { workspace = true }
 libm = { workspace = true }
-serde-json-core = { workspace = true }
 
 extreme-traits = { path = "../extreme-traits" }
 

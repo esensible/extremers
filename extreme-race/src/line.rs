@@ -1,4 +1,4 @@
-use crate::geo_math::{bearing, distance, seconds_to_line};
+use crate::geo_math::{distance, seconds_to_line};
 use crate::types::Location;
 use serde::Serialize;
 
@@ -17,7 +17,7 @@ pub enum Line {
 
     Port {
         #[serde(skip)]
-        port_location: Location 
+        port_location: Location,
     },
 
     Both {
@@ -28,26 +28,23 @@ pub enum Line {
         stbd: Location,
         #[serde(skip)]
         port: Location,
-
-        #[serde(skip)]
-        bearing: f64,
         #[serde(skip)]
         length: f64,
     },
 }
 
 impl Line {
-    pub fn set_stbd(&mut self, location: Location) -> Option<()> {
+    pub fn set_stbd(&mut self, location: Location) -> bool {
         match self {
             Line::None => {
                 *self = Line::Stbd {
                     stbd_location: location,
                 };
-                return Some(())
+                true
             }
             Line::Stbd { stbd_location: loc } => {
                 *loc = location;
-                return None
+                false
             }
             Line::Port { port_location: loc } => {
                 *self = Line::Both {
@@ -55,37 +52,31 @@ impl Line {
                     line_cross: 0,
                     stbd: location,
                     port: *loc,
-                    bearing: bearing(location.lat, location.lon, loc.lat, loc.lon),
                     length: distance(location.lat, location.lon, loc.lat, loc.lon, R),
                 };
-                return Some(())
+                true
             }
             Line::Both {
-                stbd,
-                port,
-                bearing: line_bearing,
-                length,
-                ..
+                stbd, port, length, ..
             } => {
                 *stbd = location;
-                *line_bearing = bearing(location.lat, location.lon, port.lat, port.lon);
                 *length = distance(location.lat, location.lon, port.lat, port.lon, R);
-                return Some(())
+                true
             }
         }
     }
 
-    pub fn set_port(&mut self, location: Location) -> Option<()> {
+    pub fn set_port(&mut self, location: Location) -> bool {
         match self {
             Line::None => {
                 *self = Line::Port {
                     port_location: location,
                 };
-                return Some(())
+                true
             }
             Line::Port { port_location: loc } => {
                 *loc = location;
-                return None
+                false
             }
             Line::Stbd { stbd_location: loc } => {
                 *self = Line::Both {
@@ -93,24 +84,18 @@ impl Line {
                     line_cross: 0,
                     stbd: *loc,
                     port: location,
-                    bearing: bearing(loc.lat, loc.lon, location.lat, location.lon),
                     length: distance(loc.lat, loc.lon, location.lat, location.lon, R),
                 };
-                return Some(())
+                true
             }
             Line::Both {
-                stbd,
-                port,
-                bearing: line_bearing,
-                length,
-                ..
+                stbd, port, length, ..
             } => {
                 *port = location;
-                *line_bearing = bearing(stbd.lat, stbd.lon, location.lat, location.lon);
                 *length = distance(stbd.lat, stbd.lon, location.lat, location.lon, R);
 
                 // no state change, but the values have been updated
-                return Some(())
+                true
             }
         }
     }
@@ -118,23 +103,30 @@ impl Line {
     pub fn update_location(
         &mut self,
         timestamp: u64,
-        location: (f64, f64),
+        location: Location,
         heading: f64,
         speed: f64,
-    ) -> Option<()> {
+    ) -> bool {
         match self {
             Line::Both {
                 line_timestamp,
                 line_cross,
                 stbd,
                 port,
-                bearing,
                 length,
                 ..
             } => {
                 let (_on_line, new_point, new_time) = seconds_to_line(
-                    location.0, location.1, heading, speed, stbd.lat, stbd.lon, port.lat, port.lon,
-                    *bearing, *length, R,
+                    location.lat,
+                    location.lon,
+                    heading,
+                    speed,
+                    stbd.lat,
+                    stbd.lon,
+                    port.lat,
+                    port.lon,
+                    *length,
+                    R,
                 );
 
                 let abs_new_time = libm::fabs(new_time * 1000.0) as u64;
@@ -148,11 +140,9 @@ impl Line {
                 }
                 *line_cross = (new_point * 100.0) as u8;
 
-                Some(())
+                true
             }
-            _ => {
-                None
-            }
+            _ => false,
         }
     }
 }

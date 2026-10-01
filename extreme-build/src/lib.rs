@@ -23,8 +23,17 @@ pub fn embed_client_js() {
     let client_dir = crate_dir.join("client-js");
     let dist_dir = client_dir.join("dist");
 
-    for input in ["src", "index.html", "package.json", "package-lock.json", "rollup.config.js"] {
-        println!("cargo:rerun-if-changed={}", client_dir.join(input).display());
+    for input in [
+        "src",
+        "index.html",
+        "package.json",
+        "package-lock.json",
+        "rollup.config.js",
+    ] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            client_dir.join(input).display()
+        );
     }
 
     match build_client(&client_dir) {
@@ -69,7 +78,11 @@ fn build_client(client_dir: &Path) -> Result<(), NpmError> {
         if client_dir.join("package-lock.json").is_file() {
             npm(client_dir, &["ci", "--no-audit", "--no-fund"], "npm ci")?;
         } else {
-            npm(client_dir, &["install", "--no-audit", "--no-fund"], "npm install")?;
+            npm(
+                client_dir,
+                &["install", "--no-audit", "--no-fund"],
+                "npm install",
+            )?;
         }
     }
     npm(client_dir, &["run", "build"], "npm run build")
@@ -82,11 +95,19 @@ fn has_files(dir: &Path) -> bool {
 }
 
 /// Writes `static_files.rs`: a `&'static [(&str, &[u8])]` expression that
-/// `include_bytes!`s each file in `dist/`, so the bytes never pass through
-/// the generated source.
+/// `include_bytes!`s each file, so the bytes never pass through generated
+/// source.
+///
+/// The files are copied into `OUT_DIR` first. `npm run build` empties
+/// `dist/` and uses hashed bundle names, and every target (host tests, each
+/// firmware) has its own `OUT_DIR` and runs this script separately, so
+/// pointing `include_bytes!` at `dist/` itself would break whichever target
+/// built earlier.
 fn write_static_files(dist_dir: &Path) {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-    let mut out = fs::File::create(out_dir.join("static_files.rs")).expect("create static_files.rs");
+    let static_dir = out_dir.join("static");
+    let _ = fs::remove_dir_all(&static_dir);
+    fs::create_dir_all(&static_dir).expect("create OUT_DIR/static");
 
     let mut files: Vec<PathBuf> = fs::read_dir(dist_dir)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", dist_dir.display()))
@@ -96,14 +117,17 @@ fn write_static_files(dist_dir: &Path) {
         .collect();
     files.sort();
 
+    let mut out =
+        fs::File::create(out_dir.join("static_files.rs")).expect("create static_files.rs");
     writeln!(out, "&[").unwrap();
     for path in files {
         let name = path.file_name().unwrap().to_string_lossy();
+        let copy = static_dir.join(&*name);
+        fs::copy(&path, &copy).unwrap_or_else(|e| panic!("copy {}: {e}", path.display()));
         writeln!(
             out,
             "    ({:?}, include_bytes!({:?}).as_slice()),",
-            name,
-            path.canonicalize().expect("canonicalize dist file")
+            name, copy
         )
         .unwrap();
     }

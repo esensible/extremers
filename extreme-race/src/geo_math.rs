@@ -2,19 +2,6 @@ use core::f64::consts::PI;
 
 use libm::{asin, atan2, cos, fmax, fmod, pow, sin, sqrt};
 
-fn _local_radius(lat: f64) -> f64 {
-    let wgs_ellipsoid = (6378137.0, 6356752.314);
-
-    let f1 = pow(wgs_ellipsoid.0 * wgs_ellipsoid.0 * cos(lat), 2.0);
-    let f2 = pow(wgs_ellipsoid.1 * wgs_ellipsoid.1 * sin(lat), 2.0);
-    let f3 = pow(wgs_ellipsoid.0 * cos(lat), 2.0);
-    let f4 = pow(wgs_ellipsoid.1 * sin(lat), 2.0);
-
-    let radius = sqrt((f1 + f2) / (f3 + f4));
-
-    radius
-}
-
 fn great_circle_intersection(
     a_lat: f64,
     a_lon: f64,
@@ -148,7 +135,6 @@ pub fn seconds_to_line(
     stbd_lon: f64,
     port_lat: f64,
     port_lon: f64,
-    _line_heading: f64,
     line_length: f64,
     r: f64,
 ) -> (bool, f64, f64) {
@@ -181,17 +167,8 @@ pub fn seconds_to_line(
             let line_perc = distance(port_lat, port_lon, lat1, lon1, r) / line_length;
 
             return (true, line_perc, d / boat_speed);
-
-            // this was picking up math exceptions... not sure what to do in rust
-            // return (false, 50.0, 10000.0);
-        } // else if simple_diff(line_heading, boat_heading) > 0.0 {
-          //     log::info!("heading away");
-          // } else {
-          //     log::info!("no cross");
-          // }
-    } // else {
-      //     log::info!("wrong side");
-      // }
+        }
+    }
 
     let stbd_distance = distance(boat_lat, boat_lon, stbd_lat, stbd_lon, r);
     let port_distance = distance(boat_lat, boat_lon, port_lat, port_lon, r);

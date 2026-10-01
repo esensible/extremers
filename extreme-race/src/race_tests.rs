@@ -1,12 +1,9 @@
-
 mod tests {
-    use crate::race::*;
     use crate::line::Line;
+    use crate::race::*;
     use core::f64::consts::PI;
-    use extreme_traits::Engine;
-    use serde_json;
+    use extreme_traits::{Engine, Fix, Outcome, Velocity};
     use serde_json::json;
-
 
     #[test]
     fn test_sequence() {
@@ -15,192 +12,192 @@ mod tests {
         //
         // State: Active
         //
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 0.0,
-            "line": "None",
-        }), race);
-
-        assert_eq!(
-            race.location_event(0, None, Some((23.2, 350.0))),
-            (Some(()), None),
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 0.0,
+                "line": "None",
+            }),
+            race,
         );
 
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 23.2,
-            "line": "None",
-        }), race);
+        assert_eq!(
+            race.location_event(0, None, Some(vel(23.2, 350.0))),
+            Outcome::CHANGED,
+        );
+
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 23.2,
+                "line": "None",
+            }),
+            race,
+        );
 
         // set stbd pin
         assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::LineStbd),
-            ),
-            (Some(()), None),
+            race.external_event(0, &ev(EventType::LineStbd)),
+            Outcome::CHANGED,
         );
 
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 23.2,
-            "line": "Stbd",
-        }), race);
-
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 23.2,
+                "line": "Stbd",
+            }),
+            race,
+        );
 
         //
         // State: InSequence
         //
         bump(&mut race, 1000, 30, 31_000);
 
-        assert_json_eq(json!({
-            "state": "InSequence",
-            "speed": 23.2,
-            "start_time": 31_000,
-            "line": "Stbd",
-        }), race);
-
+        assert_json_eq(
+            json!({
+                "state": "InSequence",
+                "speed": 23.2,
+                "start_time": 31_000,
+                "line": "Stbd",
+            }),
+            race,
+        );
 
         // set port pin
         assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::LinePort),
-            ),
-            (Some(()), None),
+            race.external_event(0, &ev(EventType::LinePort)),
+            Outcome::CHANGED,
         );
 
-        assert_json_eq(json!({
-            "state": "InSequence",
-            "speed": 23.2,
-            "start_time": 31_000,
-            "line": "Both",
-            "line_cross": 0,
-            "line_timestamp": 0,
-        }), race);
-
+        assert_json_eq(
+            json!({
+                "state": "InSequence",
+                "speed": 23.2,
+                "start_time": 31_000,
+                "line": "Both",
+                "line_cross": 0,
+                "line_timestamp": 0,
+            }),
+            race,
+        );
 
         //
         // State: Racing
         //
-        assert_eq!(
-            race.timer_event(31_000),
-            (Some(()), None),
+        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
+
+        assert_json_eq(
+            json!({
+                "state": "Racing",
+                "speed": 23.2,
+                // we don't keep heading across the state change
+                "heading": 0.0,
+                "start_time": 31_000,
+            }),
+            race,
         );
 
-        assert_json_eq(json!({
-            "state": "Racing",
-            "speed": 23.2,
-            // we don't keep speed across the state change
-            "heading": 0.0, 
-            "start_time": 31_000,
-        }), race);
-
         assert_eq!(
-            race.location_event(0, None, Some((17.5, 253.0))),
-            (Some(()), None),
+            race.location_event(0, None, Some(vel(17.5, 253.0))),
+            Outcome::CHANGED,
         );
 
-        assert_json_eq(json!({
-            "state": "Racing",
-            "speed": 17.5,
-            "heading": 253.0, 
-            "start_time": 31_000,
-        }), race);
+        assert_json_eq(
+            json!({
+                "state": "Racing",
+                "speed": 17.5,
+                "heading": 253.0,
+                "start_time": 31_000,
+            }),
+            race,
+        );
 
         //
         // State: Active
         //
         assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::RaceFinish),
-            ),
-            (Some(()), None),
+            race.external_event(0, &ev(EventType::RaceFinish)),
+            Outcome::CHANGED.cancel_timer(),
         );
 
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 17.5,
-            "line": "Both",
-            "line_cross": 0,
-            "line_timestamp": 0,
-        }), race);
-
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 17.5,
+                "line": "Both",
+                "line_cross": 0,
+                "line_timestamp": 0,
+            }),
+            race,
+        );
     }
 
     #[test]
     fn test_line() {
         let mut race = Race::default();
-        let loc1 = (38.3, -134.2);
-        let loc2 = (32.3, -113.2);
+        let loc1 = fix(38.3, -134.2);
+        let loc2 = fix(32.3, -113.2);
 
         // set a location for stbd
-        assert_eq!(race.location_event(0, Some(loc1), None), (None, None));
+        assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
 
         assert_eq!(
             race.external_event(0, &ev(EventType::LineStbd)),
-            (Some(()), None)
+            Outcome::CHANGED
         );
 
         if let Line::Stbd { stbd_location } = race.line {
-            assert_eq!(stbd_location.lat, to_rad(loc1.0));
-            assert_eq!(stbd_location.lon, to_rad(loc1.1));
+            assert_eq!(stbd_location.lat, to_rad(loc1.lat));
+            assert_eq!(stbd_location.lon, to_rad(loc1.lon));
         } else {
             panic!("Line was not Stbd as expected");
         }
 
         // set a new location for stbd
-        let (updated, timer) = race.location_event(0, Some(loc2), None);
-        assert_eq!(None, updated);
-        assert_eq!(None, timer);
+        assert_eq!(race.location_event(0, Some(loc2), None), Outcome::NONE);
 
         assert_eq!(
             race.external_event(0, &ev(EventType::LineStbd)),
-            (None, None)
+            Outcome::NONE
         );
         if let Line::Stbd { stbd_location } = race.line {
-            assert_eq!(stbd_location.lat, to_rad(loc2.0));
-            assert_eq!(stbd_location.lon, to_rad(loc2.1));
+            assert_eq!(stbd_location.lat, to_rad(loc2.lat));
+            assert_eq!(stbd_location.lon, to_rad(loc2.lon));
         } else {
             panic!("Line was not Stbd as expected");
         }
 
         // set port and check that line is Both
-        assert_eq!(
-            race.location_event(0, Some(loc1), None),
-            (None, None)
-        );
+        assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
         assert_eq!(
             race.external_event(0, &ev(EventType::LinePort)),
-            (Some(()), None)
+            Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Both { .. }));
         if let Line::Both { stbd, port, .. } = race.line {
-            assert_eq!(stbd.lat, to_rad(loc2.0));
-            assert_eq!(stbd.lon, to_rad(loc2.1));
-            assert_eq!(port.lat, to_rad(loc1.0));
-            assert_eq!(port.lon, to_rad(loc1.1));
+            assert_eq!(stbd.lat, to_rad(loc2.lat));
+            assert_eq!(stbd.lon, to_rad(loc2.lon));
+            assert_eq!(port.lat, to_rad(loc1.lat));
+            assert_eq!(port.lon, to_rad(loc1.lon));
         } else {
             panic!("Line was not Both as expected");
         }
 
         // set a new location for port
-        let loc3 = (42.3, -113.2);
-        assert_eq!(
-            race.location_event(0, Some(loc3), None),
-            (None, None)
-        );
+        let loc3 = fix(42.3, -113.2);
+        assert_eq!(race.location_event(0, Some(loc3), None), Outcome::NONE);
         assert_eq!(
             race.external_event(0, &ev(EventType::LinePort)),
-            (Some(()), None)
+            Outcome::CHANGED
         );
 
         if let Line::Both { stbd, port, .. } = race.line {
-            assert_eq!(stbd.lat, to_rad(loc2.0));
-            assert_eq!(stbd.lon, to_rad(loc2.1));
-            assert_eq!(port.lat, to_rad(loc3.0));
-            assert_eq!(port.lon, to_rad(loc3.1));
+            assert_eq!(stbd.lat, to_rad(loc2.lat));
+            assert_eq!(stbd.lon, to_rad(loc2.lon));
+            assert_eq!(port.lat, to_rad(loc3.lat));
+            assert_eq!(port.lon, to_rad(loc3.lon));
         } else {
             panic!("Line was not Both as expected");
         }
@@ -226,72 +223,94 @@ mod tests {
     }
 
     #[test]
+    fn test_sync_after_start() {
+        let mut race = Race::default();
+        bump(&mut race, 1000, 30, 31_000);
+        // the start has passed but the timer has not been delivered yet:
+        // the start time is left alone and the timer fires immediately
+        bump(&mut race, 40_000, 0, 31_000);
+        bump(&mut race, 31_000, 0, 31_000);
+    }
+
+    #[test]
+    fn test_bump_saturates() {
+        let mut race = Race::default();
+        // starting a sequence that would begin before the epoch
+        bump(&mut race, 1000, -30, 0);
+        // bumping down past the epoch
+        bump(&mut race, 1000, 30, 0);
+        // bumping up near u64::MAX
+        let mut race = Race::default();
+        bump(&mut race, u64::MAX - 1000, 30, u64::MAX);
+        bump(&mut race, 0, -30, u64::MAX);
+    }
+
+    #[test]
     fn test_race() {
         let mut race = Race::default();
         bump(&mut race, 1000, 30, 31_000);
-        assert_eq!(
-            race.timer_event(31_000),
-            (Some(()), None)
-        );
+        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
 
-        if let State::Racing {
-            start_time,
-            speed,
-            heading,
-        } = race.state
-        {
+        if let State::Racing { start_time } = race.state {
             assert_eq!(start_time, 31_000);
-            assert_eq!(speed, 0.0);
-            assert_eq!(heading, 0.0);
+            assert_eq!(race.velocity.speed, 0.0);
+            assert_eq!(race.velocity.heading, 0.0);
         } else {
             panic!("State was not Racing as expected");
         }
 
         assert_eq!(
             race.external_event(0, &ev(EventType::RaceFinish)),
-            (Some(()), None)
+            Outcome::CHANGED.cancel_timer()
         );
         assert!(
-            matches!(race.state, State::Active { .. }),
+            matches!(race.state, State::Active),
             "State was not Active as expected",
         );
+    }
+
+    #[test]
+    fn test_abort_sequence_does_not_start_race() {
+        let mut race = Race::default();
+        bump(&mut race, 1000, 30, 31_000);
+
+        // finishing during the sequence aborts it and drops the start timer
+        assert_eq!(
+            race.external_event(5_000, &ev(EventType::RaceFinish)),
+            Outcome::CHANGED.cancel_timer()
+        );
+        assert!(matches!(race.state, State::Active));
+
+        // a timer that fires anyway (raced with the cancel) must be ignored
+        assert_eq!(race.timer_event(31_000), Outcome::NONE);
+        assert!(matches!(race.state, State::Active));
     }
 
     #[test]
     fn test_line_cross() {
         let mut race = Race::default();
 
-        let stbd = (-34.956404, 138.503427);
-        let boat_loc = (-34.956800, 138.504157);
-        let port = (-34.957152, 138.503438);
+        let stbd = fix(-34.956404, 138.503427);
+        let boat_loc = fix(-34.956800, 138.504157);
+        let port = fix(-34.957152, 138.503438);
 
-        set_line(&mut race, &stbd, &port);
+        set_line(&mut race, stbd, port);
 
-        let boat_velocity = (5.0, 270.0);
-
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 47, 25657);
+        expect_cross(&mut race, boat_loc, vel(5.0, 270.0), 47, 25657);
 
         // about middle
-        let boat_velocity = (10.0, 270.0);
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 47, 12828);
+        expect_cross(&mut race, boat_loc, vel(10.0, 270.0), 47, 12828);
 
         // away
-        let boat_velocity = (10.0, 90.0);
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 0, 14836);
+        expect_cross(&mut race, boat_loc, vel(10.0, 90.0), 0, 14836);
 
         // stbd end
-        let boat_velocity = (10.0, 250.0);
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 18, 13592);
+        expect_cross(&mut race, boat_loc, vel(10.0, 250.0), 18, 13592);
 
-        let boat_velocity = (10.0, 230.0);
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 0, 14836);
+        expect_cross(&mut race, boat_loc, vel(10.0, 230.0), 0, 14836);
 
         // port end
-        let boat_velocity = (10.0, 290.0);
-        expect_cross(&mut race, &boat_loc, &boat_velocity, 76, 13712);
-
-        // let boat_velocity = (10.0, 310.0);
-        // expect_cross(&mut race, &boat_loc, &boat_velocity, 100, 13712);
+        expect_cross(&mut race, boat_loc, vel(10.0, 290.0), 76, 13712);
     }
 
     #[test]
@@ -299,146 +318,107 @@ mod tests {
         let mut race = Race::default();
 
         assert_eq!(
-            race.location_event(0, Some((42.3, -113.2)), Some((12.5, 270.0))),
-            (Some(()), None),
+            race.location_event(0, Some(fix(42.3, -113.2)), Some(vel(12.5, 270.0))),
+            Outcome::CHANGED,
         );
 
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 12.5,
-            "line": "None"
-        }), race);
-
-        
-        assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::LineStbd),
-            ),
-            (Some(()), None),
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 12.5,
+                "line": "None"
+            }),
+            race,
         );
-
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 12.5,
-            "line": "Stbd",
-        }), race);
 
         assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::LinePort),
-            ),
-            (Some(()), None),
+            race.external_event(0, &ev(EventType::LineStbd)),
+            Outcome::CHANGED,
         );
 
-        assert_json_eq(json!({
-            "state": "Active",
-            "speed": 12.5,
-            "line": "Both",
-            "line_cross": 0,
-            "line_timestamp": 0,
-        }), race);
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 12.5,
+                "line": "Stbd",
+            }),
+            race,
+        );
+
+        assert_eq!(
+            race.external_event(0, &ev(EventType::LinePort)),
+            Outcome::CHANGED,
+        );
+
+        assert_json_eq(
+            json!({
+                "state": "Active",
+                "speed": 12.5,
+                "line": "Both",
+                "line_cross": 0,
+                "line_timestamp": 0,
+            }),
+            race,
+        );
     }
-
 
     fn assert_json_eq<Actual: serde::Serialize>(expected: serde_json::Value, actual: Actual) {
         let json_result = serde_json::to_string(&actual).unwrap();
-        // println!("{}", actual);
-
-        let expected_json = serde_json::json!(expected);        
-    
         let actual: serde_json::Value = serde_json::from_str(&json_result).expect("Invalid JSON");
-
-        assert_eq!(expected_json, actual);
-
+        assert_eq!(expected, actual);
     }
-
-
-    // #[test]
-    // fn field_test() {
-    //     let mut race = Race::default();
-    //     const START_TIME: u64 = 1000;
-
-    //     bump(&mut race, START_TIME, 30, 31_000);
-    //     race.start(&());
-
-    //     fn to_deg(rad: f64) -> f64 {
-    //         rad * 180.0 / PI
-    //     }
-
-    //     let stbd = (to_deg(-0.609884915845991), to_deg(2.4193028615952987));
-    //     let port = (to_deg(-0.6098849332992835), to_deg(2.419303597542466));
-    //     set_line(&mut race, &stbd, &port);
-
-    //     let boat_velocity = (1.405, 190.0);
-
-    //     let boat_loc = (to_deg(-0.6098844620603855), to_deg(2.4193031292124503));
-    //     expect_cross(&mut race, &boat_loc, &boat_velocity, 77, 4096);
-
-    //     let boat_loc = (to_deg(-0.6098844720603855), to_deg(2.4193031292124503));
-    //     expect_cross(&mut race, &boat_loc, &boat_velocity, 76, 4007);
-
-    //     let boat_loc = (to_deg(-0.6098848620603855), to_deg(2.4193031292124503));
-    //     expect_cross(&mut race, &boat_loc, &boat_velocity, 65, 534);
-
-    //     // cross
-    //     let boat_loc = (to_deg(-0.6098849220603855), to_deg(2.4193031292124503));
-    //     expect_cross(&mut race, &boat_loc, &boat_velocity, 63, 0);
-
-    //     let boat_loc = (to_deg(-0.6098849320603855), to_deg(2.4193031292124503));
-    //     expect_cross(&mut race, &boat_loc, &boat_velocity, 100, 1938);
-    // }
 
     fn ev(event: EventType) -> Event {
         Event { event }
+    }
+
+    fn fix(lat: f64, lon: f64) -> Fix {
+        Fix { lat, lon }
+    }
+
+    fn vel(speed: f64, heading: f64) -> Velocity {
+        Velocity { speed, heading }
     }
 
     fn to_rad(deg: f64) -> f64 {
         deg * PI / 180.0
     }
 
-    fn set_line(race: &mut Race, stbd: &(f64, f64), port: &(f64, f64)) {
+    fn set_line(race: &mut Race, stbd: Fix, port: Fix) {
         //
         // set a location for stbd
         //
-        assert_eq!(
-            race.location_event(0, Some(*stbd), None), 
-            (None, None)
-        );
+        assert_eq!(race.location_event(0, Some(stbd), None), Outcome::NONE);
 
         assert_eq!(
             race.external_event(0, &ev(EventType::LineStbd)),
-            (Some(()), None)
+            Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Stbd { .. }));
 
         //
         // set a new location for port
         //
-        assert_eq!(
-            race.location_event(0, Some(*port), None),
-            (None, None)
-        );
+        assert_eq!(race.location_event(0, Some(port), None), Outcome::NONE);
 
         assert_eq!(
             race.external_event(0, &ev(EventType::LinePort)),
-            (Some(()), None)
+            Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Both { .. }));
     }
 
     fn expect_cross(
         race: &mut Race,
-        boat_loc: &(f64, f64),
-        boat_velocity: &(f64, f64),
+        boat_loc: Fix,
+        boat_velocity: Velocity,
         expected_cross: u8,
         expected_timestamp: u64,
     ) {
-        let (updated, timer) = race.location_event(0, Some(*boat_loc), Some(*boat_velocity));
-        assert_eq!(Some(()), updated);
-        assert_eq!(None, timer);
-
+        assert_eq!(
+            race.location_event(0, Some(boat_loc), Some(boat_velocity)),
+            Outcome::CHANGED
+        );
 
         if let Line::Both {
             line_cross,
@@ -454,24 +434,15 @@ mod tests {
     }
 
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
-
         assert_eq!(
-            race.external_event(
-                0, 
-                &ev(EventType::BumpSeq {
-                    timestamp: timestamp,
-                    seconds: seconds,
-                }),
-            ),
-            (Some(()), Some(expected_start)),
+            race.external_event(0, &ev(EventType::BumpSeq { timestamp, seconds })),
+            Outcome::CHANGED.with_timer(expected_start),
         );
 
-        if let State::InSequence { start_time, .. } = race.state {
+        if let State::InSequence { start_time } = race.state {
             assert_eq!(start_time, expected_start);
         } else {
             panic!("State was not InSequence as expected");
         }
     }
-
 }
-

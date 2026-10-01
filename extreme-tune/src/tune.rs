@@ -1,10 +1,11 @@
 use core::f64::consts::PI;
-use extreme_traits::Engine;
+use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
 use heapless::Deque;
 use libm::{atan2, cos, fmod, sin};
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 
-include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
+/// Length of the averaging window, in milliseconds.
+const WINDOW_MS: u64 = 30_000;
 
 #[derive(Default)]
 pub struct TuneSpeed<const HISTORY_SIZE: usize> {
@@ -14,146 +15,110 @@ pub struct TuneSpeed<const HISTORY_SIZE: usize> {
     pub heading_dev: f64,
 
     // Internal state variables (not serialized)
-    speed_history: Deque<(f64, u64), HISTORY_SIZE>, // (speed, timestamp)
-    heading_history: Deque<(f64, u64), HISTORY_SIZE>, // (heading, timestamp)
+    history: Deque<(Velocity, u64), HISTORY_SIZE>, // (velocity, timestamp)
     last_timestamp: Option<u64>,
 }
 
+impl<const HISTORY_SIZE: usize> TuneSpeed<HISTORY_SIZE> {
+    fn push(&mut self, velocity: Velocity, timestamp: u64) {
+        if self.history.is_full() {
+            self.history.pop_front();
+        }
+        // cannot fail: there is room after the pop (unless HISTORY_SIZE is 0)
+        self.history.push_back((velocity, timestamp)).ok();
+    }
+}
+
 impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
+    const NAME: &'static str = "TuneSpeed";
+    const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
+
     // we don't need events right now
     type Event<'a> = ();
-
-    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
-        for &(k, v) in STATIC_FILES.iter() {
-            if k == path {
-                return Some(v);
-            }
-        }
-        return None;
-    }
 
     fn location_event(
         &mut self,
         timestamp: u64,
-        _location: Option<(f64, f64)>,
-        speed_heading: Option<(f64, f64)>,
-    ) -> (Option<()>, Option<u64>) {
-        if let Some((current_speed, current_heading)) = speed_heading {
-            // Update speed history
-            if let Some(last_ts) = self.last_timestamp {
-                let delta_time = timestamp - last_ts;
-                if delta_time > 0 {
-                    if self.speed_history.is_full() {
-                        self.speed_history.pop_front();
-                    }
-                    self.speed_history
-                        .push_back((current_speed, timestamp))
-                        .ok();
+        _fix: Option<Fix>,
+        velocity: Option<Velocity>,
+    ) -> Outcome {
+        let Some(current) = velocity else {
+            return Outcome::NONE;
+        };
 
-                    if self.heading_history.is_full() {
-                        self.heading_history.pop_front();
-                    }
-                    self.heading_history
-                        .push_back((current_heading, timestamp))
-                        .ok();
+        let Some(last_ts) = self.last_timestamp else {
+            // First timestamp received
+            self.push(current, timestamp);
+            self.speed = current.speed;
+            self.speed_dev = 0.0;
+            self.heading_dev = 0.0;
+            self.last_timestamp = Some(timestamp);
+            return Outcome::CHANGED;
+        };
 
-                    // Calculate weighted average speed over the last 30 seconds
-                    let mut weighted_speed_sum = 0.0;
-                    let mut total_time = 0.0;
-                    let window_start = timestamp.saturating_sub(30_000); // 30 seconds in milliseconds
-
-                    let mut prev_ts = timestamp;
-                    for &(speed, ts) in self.speed_history.iter().rev() {
-                        let dt = prev_ts.saturating_sub(ts) as f64 / 1000.0; // delta time in seconds
-                        if ts >= window_start {
-                            weighted_speed_sum += speed * dt;
-                            total_time += dt;
-                            prev_ts = ts;
-                        } else {
-                            let dt = prev_ts.saturating_sub(window_start) as f64 / 1000.0;
-                            weighted_speed_sum += speed * dt;
-                            total_time += dt;
-                            break;
-                        }
-                    }
-                    let mean_speed = if total_time > 0.0 {
-                        weighted_speed_sum / total_time
-                    } else {
-                        current_speed
-                    };
-
-                    self.speed = current_speed;
-
-                    // Calculate speed deviation
-                    self.speed_dev = current_speed - mean_speed;
-
-                    // Calculate weighted average heading over the last 30 seconds
-                    let mut sum_sin = 0.0;
-                    let mut sum_cos = 0.0;
-                    prev_ts = timestamp;
-                    // total_time = 0.0;
-                    for &(heading, ts) in self.heading_history.iter().rev() {
-                        let dt = prev_ts.saturating_sub(ts) as f64 / 1000.0; // delta time in seconds
-                        let heading_rad = heading * PI / 180.0;
-                        if ts >= window_start {
-                            sum_sin += sin(heading_rad) * dt;
-                            sum_cos += cos(heading_rad) * dt;
-                            // total_time += dt;
-                            prev_ts = ts;
-                        } else {
-                            let dt = prev_ts.saturating_sub(window_start) as f64 / 1000.0;
-                            sum_sin += sin(heading_rad) * dt;
-                            sum_cos += cos(heading_rad) * dt;
-                            // total_time += dt;
-                            break;
-                        }
-                    }
-                    // No need to divide by total_time for heading calculation
-
-                    // The atan2 function automatically handles the weighting through the accumulated sums
-                    let avg_heading_rad = atan2(sum_sin, sum_cos);
-                    let avg_heading_deg = avg_heading_rad * 180.0 / PI;
-
-                    // Calculate heading deviation and normalize to [-180, 180] degrees
-                    let mut heading_deviation = current_heading - avg_heading_deg;
-                    heading_deviation = fmod(heading_deviation + 180.0, 360.0) - 180.0;
-                    self.heading_dev = heading_deviation;
-
-                    self.last_timestamp = Some(timestamp);
-
-                    return (Some(()), None);
-                }
-            } else {
-                // First timestamp received
-                self.speed_history
-                    .push_back((current_speed, timestamp))
-                    .ok();
-                self.heading_history
-                    .push_back((current_heading, timestamp))
-                    .ok();
-                self.speed = current_speed;
-                self.speed_dev = 0.0;
-                self.heading_dev = 0.0;
-                self.last_timestamp = Some(timestamp);
-                return (Some(()), None);
-            }
+        // Ignore repeated and out-of-order samples.
+        if timestamp <= last_ts {
+            return Outcome::NONE;
         }
 
-        (None, None)
+        self.push(current, timestamp);
+
+        // Time-weighted averages over the last 30 seconds: each sample's speed
+        // and heading are weighted by the time until the next sample, clipped
+        // to the window. The heading average is taken over the unit vectors;
+        // atan2 does not need the sums normalised by the total time.
+        let window_start = timestamp.saturating_sub(WINDOW_MS);
+        let mut weighted_speed_sum = 0.0;
+        let mut total_time = 0.0;
+        let mut sum_sin = 0.0;
+        let mut sum_cos = 0.0;
+
+        let mut prev_ts = timestamp;
+        for &(sample, ts) in self.history.iter().rev() {
+            let in_window = ts >= window_start;
+            let until = if in_window { ts } else { window_start };
+            let dt = prev_ts.saturating_sub(until) as f64 / 1000.0; // seconds
+
+            let heading_rad = sample.heading * PI / 180.0;
+            weighted_speed_sum += sample.speed * dt;
+            total_time += dt;
+            sum_sin += sin(heading_rad) * dt;
+            sum_cos += cos(heading_rad) * dt;
+
+            if !in_window {
+                break;
+            }
+            prev_ts = ts;
+        }
+
+        let mean_speed = if total_time > 0.0 {
+            weighted_speed_sum / total_time
+        } else {
+            current.speed
+        };
+
+        self.speed = current.speed;
+        self.speed_dev = current.speed - mean_speed;
+
+        let avg_heading_deg = atan2(sum_sin, sum_cos) * 180.0 / PI;
+
+        // Heading deviation, normalized to [-180, 180] degrees
+        let heading_deviation = current.heading - avg_heading_deg;
+        self.heading_dev = fmod(heading_deviation + 180.0, 360.0) - 180.0;
+
+        self.last_timestamp = Some(timestamp);
+
+        Outcome::CHANGED
     }
 
-    fn external_event<'a>(
-        &mut self,
-        _timestamp: u64,
-        _event: &Self::Event<'a>,
-    ) -> (Option<()>, Option<u64>) {
+    fn external_event(&mut self, _timestamp: u64, _event: &()) -> Outcome {
         // No external events to handle
-        (None, None)
+        Outcome::NONE
     }
 
-    fn timer_event(&mut self, _timestamp: u64) -> (Option<()>, Option<u64>) {
+    fn timer_event(&mut self, _timestamp: u64) -> Outcome {
         // No timer events needed
-        (None, None)
+        Outcome::NONE
     }
 }
 
