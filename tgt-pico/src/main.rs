@@ -38,13 +38,12 @@ use static_cell::StaticCell;
 
 // Local modules
 mod network_tasks;
-mod nmea_parser;
 
-use crate::{
-    network_tasks::{dhcp_server_task, net_task, wifi_task},
-    nmea_parser::{AsyncReader, RingBuffer, next_update},
+use crate::network_tasks::{dhcp_server_task, net_task, wifi_task};
+use common::{
+    http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
+    nmea::{AsyncReader, RingBuffer, next_update},
 };
-use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
 
 use extreme_traits::{MAX_MESSAGE_SIZE, define_engines};
 

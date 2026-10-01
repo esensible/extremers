@@ -36,13 +36,12 @@ esp_bootloader_esp_idf::esp_app_desc!();
 // Local modules
 // mod http;
 mod network_tasks;
-mod nmea_parser;
 
-use crate::{
-    network_tasks::{dhcp_task, net_task, wifi_task},
-    nmea_parser::{AsyncReader, RingBuffer, next_update},
+use crate::network_tasks::{dhcp_task, net_task, wifi_task};
+use common::{
+    http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
+    nmea::{AsyncReader, RingBuffer, next_update},
 };
-use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
 
 // UBX protocol constants
 // const UBX_SYNC1: u8 = 0xB5;
@@ -182,9 +181,9 @@ pub async fn httpd_task(stack: Stack<'static>, handler: &'static HttpHandler<Eng
 struct UartReader(UartRx<'static, Async>);
 impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
-        // the ring buffer expects the whole buffer to be filled
-        match self.0.read_exact_async(buf).await {
-            Ok(()) => Ok(buf.len()),
+        // returns as soon as some bytes have arrived
+        match self.0.read_async(buf).await {
+            Ok(n) => Ok(n),
             Err(_) => {
                 println!("Failed to read from UART");
                 Err(())

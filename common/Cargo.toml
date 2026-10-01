@@ -26,3 +26,7 @@ extreme-traits = { path = "../extreme-traits" }
 [features]
 default = []
 std = ["edge-http/std", "edge-ws/std"]
+
+[dev-dependencies]
+embassy-time = { workspace = true, features = ["std"] }
+critical-section = { version = "1.2", features = ["std"] }

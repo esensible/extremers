@@ -1,11 +1,11 @@
 // Standard library imports
 use core::{
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, Write as _},
     sync::atomic::Ordering,
 };
 
 // Embassy framework imports
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use embassy_time::{Duration, Timer};
 
@@ -19,7 +19,7 @@ use edge_http::{
     ws::MAX_BASE64_KEY_RESPONSE_LEN,
 };
 use edge_nal::TcpSplit;
-use edge_ws::{FrameHeader, FrameType};
+use edge_ws::{Error as WsError, FrameHeader, FrameType};
 
 // Other external crates
 use embedded_io_async::{Read, Write};
@@ -60,6 +60,11 @@ where
         }
     }
 
+    /// Current time in the same epoch-millisecond units as GPS timestamps.
+    fn now(&self) -> u64 {
+        embassy_time::Instant::now().as_millis() + self.tick_offset.load(Ordering::Relaxed)
+    }
+
     pub async fn location_event(
         &self,
         time: Option<u64>,
@@ -69,18 +74,15 @@ where
         // log::info!("location_event: {:?}, {:?}, {:?}", time, location, speed);
         let timestamp = match time {
             Some(timestamp) => {
-                let mut offset = self.tick_offset.load(Ordering::Relaxed);
-                let uptime = embassy_time::Instant::now().as_millis() as u64;
-                if offset == 0 {
-                    offset = timestamp - uptime;
-                    self.tick_offset.store(offset, Ordering::Relaxed);
+                // the first GPS time fixes the offset from uptime to epoch time
+                if self.tick_offset.load(Ordering::Relaxed) == 0 {
+                    let uptime = embassy_time::Instant::now().as_millis();
+                    self.tick_offset
+                        .store(timestamp.saturating_sub(uptime), Ordering::Relaxed);
                 }
-                offset + timestamp
+                timestamp
             }
-            None => {
-                self.tick_offset.load(Ordering::Relaxed)
-                    + embassy_time::Instant::now().as_millis() as u64
-            }
+            None => self.now(),
         };
 
         let mut engine = self.engine.lock().await;
@@ -141,9 +143,7 @@ where
                 Some(wake_time) => {
                     // so sleep!
                     // convert absolute wake time to a duration
-                    let offset = self.tick_offset.load(Ordering::Relaxed);
-
-                    let now = embassy_time::Instant::now().as_millis() + offset;
+                    let now = self.now();
                     let sleep_ms = if wake_time > now { wake_time - now } else { 0 };
 
                     log::info!("sleeping for {} ms", sleep_ms);
@@ -228,8 +228,9 @@ where
             };
 
             log::info!("serving static file: {}", path);
-            let engine = self.engine.lock().await;
-            if let Some(file) = (*engine).get_static(path) {
+            // files are 'static, so release the engine before the (slow) write
+            let file = self.engine.lock().await.get_static(path);
+            if let Some(file) = file {
                 conn.initiate_response(200, Some("OK"), &[]).await?;
                 conn.write_all(file).await?;
             } else {
@@ -262,31 +263,8 @@ where
             // scoped so we release the lock ASAP
             match vec {
                 Ok(message) => {
-                    // Build JSON wrapper manually since message is already serialized JSON
-                    let mut wrapper = UpdateMessage::new();
-                    wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
-                    let timestamp = embassy_time::Instant::now().as_millis()
-                        + self.tick_offset.load(Ordering::Relaxed);
-                    if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
-                        log::error!("failed to render timestamp");
-                    }
-                    wrapper.extend_from_slice(b",\"engine\":").unwrap();
-                    wrapper.extend_from_slice(&message).unwrap();
-                    wrapper.extend_from_slice(b"}").unwrap();
-
-                    let header = FrameHeader {
-                        mask_key: None,
-                        frame_type: FrameType::Text(false), // no clue why false is required, but it is
-                        payload_len: wrapper.len() as u64,
-                    };
-
-                    if let Err(e) = header.send(&mut socket).await {
-                        log::error!("Failed to send header: {:?}", e);
-                    }
-
-                    // Send the wrapped message
-                    if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
-                        log::error!("Failed to send payload: {:?}", e);
+                    if let Err(e) = send_state(&mut socket, self.now(), &message).await {
+                        log::error!("Failed to send state: {:?}", e);
                     }
                 }
                 Err(e) => {
@@ -355,11 +333,9 @@ where
                         //     core::str::from_utf8(payload).unwrap_or("<invalid utf8>")
                         // );
 
-                        // get the current time
-                        let offset = self.tick_offset.load(Ordering::Relaxed);
                         let (update, timer) = {
                             let mut engine = self.engine.lock().await;
-                            let now = embassy_time::Instant::now().as_millis() + offset;
+                            let now = self.now();
 
                             // handle the event
                             match RawEngine::external_event(&mut *engine, now, payload) {
@@ -394,30 +370,8 @@ where
                         // break on any comms error
                         // log::info!("broadcast message");
 
-                        // Build JSON wrapper manually since message is already serialized JSON
-                        let mut wrapper = UpdateMessage::new();
-                        wrapper.extend_from_slice(b"{\"timestamp\":").unwrap();
-                        let timestamp = embassy_time::Instant::now().as_millis()
-                            + self.tick_offset.load(Ordering::Relaxed);
-                        if u64_to_heapless_vec(timestamp, &mut wrapper).is_err() {
-                            log::error!("failed to render timestamp");
-                        }
-                        wrapper.extend_from_slice(b",\"engine\":").unwrap();
-                        wrapper.extend_from_slice(&message).unwrap();
-                        wrapper.extend_from_slice(b"}").unwrap();
-
-                        let header = FrameHeader {
-                            mask_key: None,
-                            frame_type: FrameType::Text(false), // no clue why false is required, but it is
-                            payload_len: wrapper.len() as u64,
-                        };
-
-                        if let Err(e) = header.send(&mut socket).await {
-                            log::error!("Failed to send header: {:?}", e);
-                        }
-
-                        if let Err(e) = header.send_payload(&mut socket, wrapper.as_slice()).await {
-                            log::error!("Failed to send payload: {:?}", e);
+                        if let Err(e) = send_state(&mut socket, self.now(), &message).await {
+                            log::error!("Failed to send state: {:?}", e);
                             break;
                         }
                     }
@@ -429,28 +383,72 @@ where
     }
 }
 
-fn u64_to_heapless_vec<const N: usize>(mut num: u64, vec: &mut Vec<u8, N>) -> Result<(), ()> {
-    if num == 0 {
-        vec.extend_from_slice(&[b'0'])?;
-        return Ok(());
-    }
+/// Sends `{"timestamp":<timestamp>,"engine":<message>}` as a single websocket
+/// text frame. `message` is already serialized JSON. The pieces are written
+/// straight to the socket, so there is no intermediate buffer to overflow.
+async fn send_state<W>(
+    socket: &mut W,
+    timestamp: u64,
+    message: &[u8],
+) -> Result<(), WsError<W::Error>>
+where
+    W: Write,
+{
+    const PREFIX: &[u8] = b"{\"timestamp\":";
+    const MIDDLE: &[u8] = b",\"engine\":";
+    const SUFFIX: &[u8] = b"}";
 
-    // Convert number to digits in reverse
-    let mut rev_digits = [0u8; 20]; // Max u64 length
-    let mut rev_idx = 0;
-    while num > 0 {
-        rev_digits[rev_idx] = (num % 10) as u8 + b'0';
-        num /= 10;
-        rev_idx += 1;
-    }
+    let mut digits: heapless::String<20> = heapless::String::new();
+    // a u64 has at most 20 digits, so this can't fail
+    let _ = write!(digits, "{}", timestamp);
 
-    // Extend vec with digits in correct order
-    while rev_idx > 0 {
-        rev_idx -= 1;
-        if vec.push(rev_digits[rev_idx]).is_err() {
-            return Err(());
-        }
-    }
+    let header = FrameHeader {
+        mask_key: None,
+        // `false`: not fragmented, this frame is the whole message
+        frame_type: FrameType::Text(false),
+        payload_len: (PREFIX.len() + digits.len() + MIDDLE.len() + message.len() + SUFFIX.len())
+            as u64,
+    };
+    header.send(&mut *socket).await?;
 
-    return Ok(());
+    // server frames are not masked, so the payload can be written in pieces
+    for piece in [PREFIX, digits.as_bytes(), MIDDLE, message, SUFFIX] {
+        socket.write_all(piece).await.map_err(WsError::Io)?;
+    }
+    socket.flush().await.map_err(WsError::Io)
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use embassy_futures::block_on;
+
+    #[test]
+    fn send_state_handles_max_size_message() {
+        let mut message = [b'x'; MAX_MESSAGE_SIZE];
+        message[0] = b'"';
+        message[MAX_MESSAGE_SIZE - 1] = b'"';
+
+        let mut out = [0u8; MAX_MESSAGE_SIZE + 128];
+        let capacity = out.len();
+        let written = {
+            let mut writer: &mut [u8] = &mut out;
+            block_on(send_state(&mut writer, u64::MAX, &message)).unwrap();
+            capacity - writer.len()
+        };
+
+        let mut reader: &[u8] = &out[..written];
+        let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
+        assert_eq!(header.frame_type, FrameType::Text(false));
+        assert_eq!(header.payload_len as usize, reader.len());
+
+        let expected = std::format!(
+            "{{\"timestamp\":{},\"engine\":{}}}",
+            u64::MAX,
+            core::str::from_utf8(&message).unwrap()
+        );
+        assert_eq!(reader, expected.as_bytes());
+    }
 }
