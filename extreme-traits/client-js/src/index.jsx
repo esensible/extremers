@@ -16,10 +16,11 @@ function fetchUpdates() {
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
+            if (data.kind && data.kind !== "Selector") {
+                window.location.reload();
+                return;
+            }
             if (data.engine) {
-                if (data.engine.fuck_yeah && data.engine.fuck_yeah !== "Selector") {
-                    window.location.reload();
-                }
                 if (data.engine.engines !== undefined) {
                     setEngines(data.engine.engines);
                 }
@@ -46,14 +47,11 @@ function fetchUpdates() {
     });
 }
 
-function postEvent(event, data, options) {
-    data = data || {};
-    if (event) {
-        data.event = event;
-    }
-
+// Switch engine. Any name the server doesn't recognise returns to the
+// selector, so "Selector" is the clean way to exit.
+function selectEngine(name) {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(data));
+        socket.send(JSON.stringify({ Select: name }));
     } else {
         console.error('WebSocket is not connected');
     }
@@ -71,13 +69,7 @@ const App = () => {
                 {engines().map(engine => (
                     <button
                         class="engine-button"
-                        onClick={() => {
-                            if (socket && socket.readyState === WebSocket.OPEN) {
-                                socket.send(JSON.stringify({
-                                    index: engine
-                                }));
-                            }
-                        }}
+                        onClick={() => selectEngine(engine)}
                     >
                         {engine}
                     </button>

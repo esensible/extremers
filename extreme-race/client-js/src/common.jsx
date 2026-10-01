@@ -2,7 +2,6 @@ import { createEffect, onCleanup } from "solid-js"
 import { createSignal } from "./api.js" // maintains a map for RESTful updates
 import { postEvent, timestamp, timezoneSecs } from "./api.js"
 
-export const STATE_IDLE = "Idle";
 export const STATE_ACTIVE = "Active";
 export const STATE_SEQ = "InSequence";
 export const STATE_RACE = "Racing";
@@ -25,7 +24,7 @@ const [lineCross, _setLineCross] = createSignal(50, "line_cross");
 
 createEffect(() => {
     const _state = state();
-    if (_state !== STATE_IDLE && _state !== STATE_ACTIVE) {
+    if (_state !== STATE_ACTIVE) {
         return;
     }
 
