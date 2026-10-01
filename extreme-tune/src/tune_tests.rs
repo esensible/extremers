@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use super::TuneSpeed;
+    extern crate std;
+
+    use crate::TuneSpeed;
+    use std::vec;
     use extreme_traits::Engine;
     use serde_json::json;
 
@@ -69,7 +72,8 @@ mod tests {
         let current_speed = 13.0;
         let expected_speed_dev = current_speed - expected_speed;
 
-        assert!((tune.speed - expected_speed).abs() < 0.001);
+        // `speed` reports the current speed; the 30s average only feeds `speed_dev`
+        assert!((tune.speed - current_speed).abs() < 0.001);
         assert!((tune.speed_dev - expected_speed_dev).abs() < 0.001);
 
         // For heading, similar calculation using circular statistics
@@ -79,11 +83,6 @@ mod tests {
             (88.0_f64.to_radians(), 10000_u64), // From 15000 to 25000 ms
             (91.0_f64.to_radians(), 10000_u64), // From 25000 to 35000 ms
         ];
-
-        let total_time = weighted_headings
-            .iter()
-            .map(|&(_, dt)| dt as f64)
-            .sum::<f64>();
 
         let sum_sin = weighted_headings
             .iter()
@@ -114,7 +113,8 @@ mod tests {
         tune.location_event(0, None, Some((10.0, 90.0)));
         tune.location_event(1000, None, Some((12.0, 95.0)));
 
-        let serialized = serde_json_core::to_string(&tune).unwrap();
+        let serialized: heapless::String<{ extreme_traits::MAX_MESSAGE_SIZE }> =
+            serde_json_core::to_string(&tune).unwrap();
         let expected_json = json!({
             "speed": tune.speed,
             "speed_dev": tune.speed_dev,
@@ -124,10 +124,5 @@ mod tests {
         let parsed_json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(parsed_json, expected_json);
-    }
-
-    // Helper function for floating point comparison
-    fn approx_eq(a: f64, b: f64, epsilon: f64) -> bool {
-        (a - b).abs() < epsilon
     }
 }

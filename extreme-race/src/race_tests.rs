@@ -36,7 +36,7 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::LineStbd,
+                &ev(EventType::LineStbd),
             ),
             (Some(()), None),
         );
@@ -65,7 +65,7 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::LinePort,
+                &ev(EventType::LinePort),
             ),
             (Some(()), None),
         );
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::RaceFinish,
+                &ev(EventType::RaceFinish),
             ),
             (Some(()), None),
         );
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(race.location_event(0, Some(loc1), None), (None, None));
 
         assert_eq!(
-            race.external_event(0, Event::LineStbd),
+            race.external_event(0, &ev(EventType::LineStbd)),
             (Some(()), None)
         );
 
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(None, timer);
 
         assert_eq!(
-            race.external_event(0, Event::LineStbd),
+            race.external_event(0, &ev(EventType::LineStbd)),
             (None, None)
         );
         if let Line::Stbd { stbd_location } = race.line {
@@ -172,7 +172,7 @@ mod tests {
             (None, None)
         );
         assert_eq!(
-            race.external_event(0, Event::LinePort),
+            race.external_event(0, &ev(EventType::LinePort)),
             (Some(()), None)
         );
         assert!(matches!(race.line, Line::Both { .. }));
@@ -192,7 +192,7 @@ mod tests {
             (None, None)
         );
         assert_eq!(
-            race.external_event(0, Event::LinePort),
+            race.external_event(0, &ev(EventType::LinePort)),
             (Some(()), None)
         );
 
@@ -248,7 +248,7 @@ mod tests {
         }
 
         assert_eq!(
-            race.external_event(0, Event::RaceFinish),
+            race.external_event(0, &ev(EventType::RaceFinish)),
             (Some(()), None)
         );
         assert!(
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::LineStbd,
+                &ev(EventType::LineStbd),
             ),
             (Some(()), None),
         );
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::LinePort,
+                &ev(EventType::LinePort),
             ),
             (Some(()), None),
         );
@@ -390,6 +390,10 @@ mod tests {
     //     expect_cross(&mut race, &boat_loc, &boat_velocity, 100, 1938);
     // }
 
+    fn ev(event: EventType) -> Event {
+        Event { event }
+    }
+
     fn to_rad(deg: f64) -> f64 {
         deg * PI / 180.0
     }
@@ -404,7 +408,7 @@ mod tests {
         );
 
         assert_eq!(
-            race.external_event(0, Event::LineStbd),
+            race.external_event(0, &ev(EventType::LineStbd)),
             (Some(()), None)
         );
         assert!(matches!(race.line, Line::Stbd { .. }));
@@ -418,7 +422,7 @@ mod tests {
         );
 
         assert_eq!(
-            race.external_event(0, Event::LinePort),
+            race.external_event(0, &ev(EventType::LinePort)),
             (Some(()), None)
         );
         assert!(matches!(race.line, Line::Both { .. }));
@@ -454,10 +458,10 @@ mod tests {
         assert_eq!(
             race.external_event(
                 0, 
-                Event::BumpSeq {
+                &ev(EventType::BumpSeq {
                     timestamp: timestamp,
                     seconds: seconds,
-                },
+                }),
             ),
             (Some(()), Some(expected_start)),
         );
