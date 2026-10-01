@@ -12,8 +12,10 @@ use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::{
     bind_interrupts,
+    clocks::RoscRng,
+    dma,
     gpio::{Level, Output},
-    peripherals::{PIO0, UART1, USB},
+    peripherals::{DMA_CH1, DMA_CH2, DMA_CH3, PIO0, UART1, USB},
     pio::{InterruptHandler, Pio},
     uart::{
         Async as UartAsync, Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart,
@@ -24,32 +26,27 @@ use embassy_rp::{
 use embassy_time::{Duration, Timer};
 
 // Networking imports
-use edge_net::{
-    embassy::{Tcp, TcpBuffers},
-    http::io::server::Server,
-    nal::TcpBind,
-};
+use edge_http::io::server::Server;
+use edge_nal::TcpBind;
+use edge_nal_embassy::{Tcp, TcpBuffers};
 
 // Other external crates
-use cyw43_pio::PioSpi;
-use heapless::Vec;
+use cyw43::aligned_bytes;
+use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use panic_probe as _;
 use static_cell::StaticCell;
 
 // Local modules
-mod http;
 mod network_tasks;
 mod nmea_parser;
 
 use crate::{
-    http::HttpHandler,
     network_tasks::{dhcp_server_task, net_task, wifi_task},
-    nmea_parser::{next_update, AsyncReader, RingBuffer},
+    nmea_parser::{AsyncReader, RingBuffer, next_update},
 };
+use common::http::{HttpHandler, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE};
 
-use extreme_traits::define_engines;
-
-// type EngineType = extreme_race::Race;
+use extreme_traits::{MAX_MESSAGE_SIZE, define_engines};
 
 define_engines! {
     EngineType {
@@ -58,16 +55,11 @@ define_engines! {
     }
 }
 
-// Constants
-const MAX_WEB_SOCKETS: usize = 4;
-const MAX_MESSAGE_SIZE: usize = 512;
-const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
-
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     UART1_IRQ => UartInterruptHandler<UART1>;
-
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>, dma::InterruptHandler<DMA_CH3>;
 });
 
 #[embassy_executor::main]
@@ -75,21 +67,22 @@ async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
     let driver = Driver::new(p.USB, Irqs);
-    let result = spawner.spawn(logger_task(driver));
-    if result.is_err() {
-        log::warn!("failed to spawn logger task");
+    match logger_task(driver) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn logger task"),
     }
 
     //
     // BEGIN WIFI SETUP
     //
-    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
+    let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
+    let clm = aligned_bytes!("../cyw43-firmware/43439A0_clm.bin");
+    let nvram = aligned_bytes!("../cyw43-firmware/nvram_rp2040.bin");
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download 43439A0.bin --format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download 43439A0_clm.bin --format bin --chip RP2040 --base-address 0x10140000
+    //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+    //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
     //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
@@ -99,20 +92,21 @@ async fn main(spawner: Spawner) {
     let spi = PioSpi::new(
         &mut pio.common,
         pio.sm0,
+        DEFAULT_CLOCK_DIVIDER,
         pio.irq0,
         cs,
         p.PIN_24,
         p.PIN_29,
-        p.DMA_CH3,
+        dma::Channel::new(p.DMA_CH3, Irqs),
     );
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
 
-    let result = spawner.spawn(wifi_task(runner));
-    if result.is_err() {
-        log::warn!("failed to spawn wifi task");
+    match wifi_task(runner) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn wifi task"),
     }
 
     control.init(clm).await;
@@ -120,59 +114,50 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::Performance)
         .await;
 
-    let mut dns_servers: Vec<_, 3> = Vec::new();
-    dns_servers
-        .push(embassy_net::Ipv4Address::new(169, 254, 1, 100))
-        .unwrap();
-
-    // let config = Config::default();
     // Use a link-local address for communication without DHCP server
     let config = Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(169, 254, 1, 1), 16),
-        dns_servers: dns_servers,
-        gateway: Some(embassy_net::Ipv4Address::new(169, 254, 1, 100)),
-        // gateway: None,
+        address: embassy_net::Ipv4Cidr::new(Ipv4Addr::new(169, 254, 1, 1), 16),
+        dns_servers: [Ipv4Addr::new(169, 254, 1, 100)].into_iter().collect(),
+        gateway: Some(Ipv4Addr::new(169, 254, 1, 100)),
     });
 
     // Generate random seed
-    let seed = 0x0123_a5a7_83a4_fdef; // chosen by fair dice roll. guarenteed to be random.
+    let seed = RoscRng.next_u64();
 
     // Init network stack
     static RESOURCES: StaticCell<StackResources<{ MAX_WEB_SOCKETS + 2 }>> = StaticCell::new();
-    static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
-    let stack = Stack::new(
+    let (stack, runner) = embassy_net::new(
         net_device,
         config,
         RESOURCES.init(StackResources::new()),
         seed,
     );
-    let stack = STACK.init(stack);
 
-    let result = spawner.spawn(net_task(stack));
-    if result.is_err() {
-        log::warn!("failed to spawn net task");
+    match net_task(runner) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn net task"),
     }
 
     control.start_ap_wpa2("nacra17", "password", 1).await;
 
     let ip = Ipv4Addr::new(169, 254, 1, 1);
 
-    let result = spawner.spawn(dhcp_server_task(stack, ip));
-    if result.is_err() {
-        log::warn!("failed to spawn dhcp server task");
+    match dhcp_server_task(stack, ip) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn dhcp server task"),
     }
 
     static HTTPD_HANDLER: StaticCell<HttpHandler<EngineType>> = StaticCell::new();
     let httpd_handler = HTTPD_HANDLER.init(HttpHandler::new(EngineType::default()));
 
-    let result = spawner.spawn(httpd_task(stack, httpd_handler));
-    if result.is_err() {
-        log::warn!("failed to spawn httpd task");
+    match httpd_task(stack, httpd_handler) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn httpd task"),
     }
 
-    let result = spawner.spawn(sleeper_task(httpd_handler));
-    if result.is_err() {
-        log::warn!("failed to spawn sleeper task");
+    match sleeper_task(httpd_handler) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn sleeper task"),
     }
 
     let mut config = UartConfig::default();
@@ -197,9 +182,9 @@ async fn main(spawner: Spawner) {
     // config.baudrate = 115200;
     // uart.set_config(config);
 
-    let result = spawner.spawn(gps_task(uart_rx, httpd_handler));
-    if result.is_err() {
-        log::warn!("failed to spawn gps task");
+    match gps_task(uart_rx, httpd_handler) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::warn!("failed to spawn gps task"),
     }
 
     loop {
@@ -218,21 +203,19 @@ pub async fn sleeper_task(handler: &'static HttpHandler<EngineType>) {
     handler.run_sleeper().await
 }
 
-struct UartReader(UartRx<'static, UART1, UartAsync>);
+struct UartReader(UartRx<'static, UartAsync>);
 impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+        // fills the whole buffer
         match self.0.read(buf).await {
-            Ok(_) => Ok(buf.len()),
+            Ok(()) => Ok(buf.len()),
             Err(_) => Err(()),
         }
     }
 }
 
 #[embassy_executor::task]
-pub async fn gps_task(
-    rx: UartRx<'static, UART1, UartAsync>,
-    handler: &'static HttpHandler<EngineType>,
-) {
+pub async fn gps_task(rx: UartRx<'static, UartAsync>, handler: &'static HttpHandler<EngineType>) {
     let mut ring_buffer = RingBuffer::<UartReader, 32>::new(UartReader(rx));
     loop {
         let (time, location, speed) = next_update(&mut ring_buffer).await;
@@ -241,12 +224,9 @@ pub async fn gps_task(
 }
 
 #[embassy_executor::task]
-pub async fn httpd_task(
-    stack: &'static Stack<cyw43::NetDriver<'static>>,
-    handler: &'static HttpHandler<EngineType>,
-) -> ! {
+pub async fn httpd_task(stack: Stack<'static>, handler: &'static HttpHandler<EngineType>) -> ! {
     let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
-    let tcp = Tcp::new(&stack, &buffers);
+    let tcp = Tcp::new(stack, &buffers);
 
     loop {
         let acceptor = match tcp
@@ -273,7 +253,7 @@ pub async fn httpd_task(
     }
 }
 
-async fn send_pmtk_command(tx: &mut UartTx<'static, UART1, UartAsync>, command: &str) {
+async fn send_pmtk_command(tx: &mut UartTx<'static, UartAsync>, command: &str) {
     // Calculate checksum
     let checksum = command.bytes().fold(0u8, |acc, b| acc ^ b);
 

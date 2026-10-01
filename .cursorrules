@@ -17,6 +17,7 @@ Key Principles
 
 Targets
 - tgt-xiaoc6 targets the esp32-c6 processor and can be build directly via "cd tgt-xiaoc6 && cargo build --release"
+- tgt-pico targets the RP2040 Pico W and can be built directly via "cd tgt-pico && cargo build --release"
 - tgt-std is a host compiled port, primarily for testing and can be build using lima via "cd tgt-std && lima cargo build --release"
 - Once tgt-std is running (in lima), chrome can be opened to support BrowserTools using a command like this 'open -n -a "Google Chrome" --args --new-window --auto-open-devtools-for-tabs http://localhost:8080/' 
 

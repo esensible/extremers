@@ -1,5 +1,2 @@
 [build]
 target = "aarch64-unknown-linux-gnu"
-
-[unstable]
-next-lockfile-bump = true

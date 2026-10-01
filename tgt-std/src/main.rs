@@ -7,12 +7,9 @@ use embassy_executor::Executor;
 use embassy_time::{Duration, Timer};
 
 // Networking imports
-use edge_net::{
-    // embassy::{Tcp, TcpBuffers},
-    http::io::server::Server,
-    nal::TcpBind,
-    std::Stack,
-};
+use edge_http::io::server::Server;
+use edge_nal::TcpBind;
+use edge_nal_std::Stack;
 
 // Other external crates
 use static_cell::StaticCell;
@@ -51,14 +48,14 @@ fn main() {
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
-        let result = spawner.spawn(httpd_task(stack, httpd_handler));
-        if result.is_err() {
-            log::warn!("failed to spawn httpd task");
+        match httpd_task(stack, httpd_handler) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::warn!("failed to spawn httpd task"),
         }
 
-        let result = spawner.spawn(sleeper_task(httpd_handler));
-        if result.is_err() {
-            log::warn!("failed to spawn sleeper task");
+        match sleeper_task(httpd_handler) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::warn!("failed to spawn sleeper task"),
         }
     });
 }

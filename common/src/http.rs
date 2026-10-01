@@ -10,17 +10,16 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubC
 use embassy_time::{Duration, Timer};
 
 // Networking imports
-use edge_net::{
-    http::{
-        io::{
-            server::{Connection, Handler},
-            Error,
-        },
-        ws::MAX_BASE64_KEY_RESPONSE_LEN,
-        Method,
+use edge_http::{
+    Method,
+    io::{
+        Error,
+        server::{Connection, Handler},
     },
-    ws::{FrameHeader, FrameType},
+    ws::MAX_BASE64_KEY_RESPONSE_LEN,
 };
+use edge_nal::TcpSplit;
+use edge_ws::{FrameHeader, FrameType};
 
 // Other external crates
 use embedded_io_async::{Read, Write};
@@ -208,11 +207,11 @@ where
 
     async fn handle<T, const N: usize>(
         &self,
-        _task_id: impl Display + Clone,
+        _task_id: impl Display + Copy,
         conn: &mut Connection<'_, T, N>,
     ) -> Result<(), Self::Error<T::Error>>
     where
-        T: Read + Write,
+        T: Read + Write + TcpSplit,
     {
         let headers = conn.headers()?;
 

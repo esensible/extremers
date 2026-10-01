@@ -1,7 +1,7 @@
 [package]
-edition = "2021"
 name = "xiaoc6"
 version = "0.1.0"
+edition.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -11,41 +11,19 @@ common = { path = "../common" }
 #
 # esp32
 #
-esp-hal = { version = "1.0.0-beta.0", features = ["log", "unstable"] }
-
-esp-hal-embassy = { version = "0.7", features = [
-    "log",
-    # "integrated-timers",
-] }
-esp-println = { version = "0.13", features = ["log"] }
-esp-wifi = { version = "0.13", default-features = true, features = [
-    "wifi",
-    "smoltcp",
-    "log",
-] }
-esp-backtrace = { version = "0.15", features = [
-    "exception-handler",
-    "panic-handler",
-    "println",
-] }
-# esp-storage = { git = "https://github.com/esp-rs/esp-hal/", optional = true }
-esp-alloc = { version = "0.7" }
+esp-hal = { version = "1.2", features = ["log-04", "unstable"] }
+esp-rtos = { version = "0.4", features = ["esp-radio", "embassy", "log-04"] }
+esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "log-04", "unstable"] }
+esp-println = { version = "0.18", features = ["log-04"] }
+esp-backtrace = { version = "0.20", features = ["panic-handler", "println"] }
+esp-alloc = { version = "0.11" }
+esp-bootloader-esp-idf = { version = "0.6" }
 
 #
 # Embassy
 #
-embassy-embedded-hal = { workspace = true }
-embassy-futures = { workspace = true }
-embassy-usb-logger = { workspace = true }
-embassy-executor = { workspace = true, features = [
-    # "nightly",
-    "task-arena-size-65536",
-    # "task-arena-size-12288",
-    # "executor-thread",
-    # "executor-interrupt",
-    # "integrated-timers",
-] }
-embassy-time = { workspace = true, features = ["defmt-timestamp-uptime"] }
+embassy-executor = { workspace = true }
+embassy-time = { workspace = true }
 embassy-net = { workspace = true, features = [
     "tcp",
     "udp",
@@ -53,34 +31,25 @@ embassy-net = { workspace = true, features = [
     "medium-ethernet",
     "proto-ipv4",
 ] }
-# embassy-net-driver = { workspace = true }
-embassy-sync = { workspace = true }
 
 #
-# Embedded
+# Networking
 #
-embedded-hal = { workspace = true }
-# embedded-hal-async = { workspace = true}
-embedded-io-async = { workspace = true }
+edge-http = { workspace = true }
+edge-nal = { workspace = true }
+edge-nal-embassy = { workspace = true, features = ["proto-ipv4", "medium-ethernet", "tcp", "udp"] }
+edge-dhcp = { workspace = true }
 
-edge-net = { workspace = true, features = ["embassy", "io"] }
-
-
-heapless = "0.8"
-static_cell = { version = "2.1", features = ["nightly"] }
 log = { workspace = true }
-atomic-polyfill = "1.0.1"
 
+# required by extreme_traits::define_engines!
+heapless = { workspace = true }
+serde = { workspace = true }
 serde-json-core = { workspace = true, features = ["heapless"] }
-serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+static_cell = { workspace = true }
 
-portable-atomic = { workspace = true, features = [
-    "critical-section",
-    "fallback",
-] }
-
-usb-device = "0.3.2"
-usbd-serial = "0.2.2"
+# AtomicU64 (used by common) on riscv32imac needs emulation
+portable-atomic = { workspace = true, features = ["critical-section"] }
 
 extreme-traits = { path = "../extreme-traits/" }
 extreme-race = { path = "../extreme-race/" }
@@ -90,15 +59,10 @@ extreme-tune = { path = "../extreme-tune/" }
 default = ["esp32c6"]
 esp32c6 = [
     "esp-hal/esp32c6",
-    "esp-backtrace/esp32c6",
-    "esp-hal-embassy/esp32c6",
+    "esp-rtos/esp32c6",
+    "esp-radio/esp32c6",
     "esp-println/esp32c6",
-    # "esp-storage?/esp32c6",
-    "esp-wifi/esp32c6",
+    "esp-backtrace/esp32c6",
+    "esp-alloc/esp32c6",
+    "esp-bootloader-esp-idf/esp32c6",
 ]
-# embassy-generic-timers = ["embassy-time/generic-queue-8"]
-
-# embassy = ["dep:esp-hal-embassy"]
-
-[profile.release]
-debug = 2

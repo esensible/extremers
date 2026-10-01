@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 
 members = [
     "extreme-traits",
@@ -12,70 +12,56 @@ members = [
     # targets
     "tgt-std",
     "tgt-xiaoc6",
+    "tgt-pico",
 ]
 
+[workspace.package]
+edition = "2024"
 
 [workspace.dependencies]
-
-embassy-executor = { version = "0.7", default-features = false }
-embassy-net = { version = "0.6", default-features = false }
-embassy-sync = { version = "0.6", default-features = false }
-embassy-time = { version = "0.4", default-features = false }
-
-
-embassy-futures = "0.1.1"
-
-
-embassy-embedded-hal = { version = "0.2", default-features = false }
-embedded-hal = { version = "1.0", default-features = false }
+#
+# Embassy
+#
+embassy-executor = { version = "0.10", default-features = false }
+embassy-net = { version = "0.9", default-features = false }
+embassy-sync = { version = "0.8", default-features = false }
+embassy-time = { version = "0.5", default-features = false }
+embassy-futures = "0.1.2"
 
 #
 # Embedded
 #
-embedded-io-async = { version = "0.6.1", default-features = false }
+embedded-io-async = { version = "0.7", default-features = false }
 
 #
-# Cortex
+# Networking (the edge-net family, used directly rather than via the edge-net facade)
 #
-embassy-rp = { version = "0.2", default-features = false }
-embassy-usb-logger = { version = "0.2" }
-cyw43 = { version = "0.2", default-features = false }
-cyw43-pio = { version = "0.2", default-features = false }
-cortex-m-rt = { version = "0.7.0", default-features = false }
-panic-probe = { version = "0.3", default-features = false }
+edge-http = { version = "0.8", default-features = false, features = ["io"] }
+edge-ws = { version = "0.8", default-features = false, features = ["io"] }
+edge-nal = { version = "0.7", default-features = false }
+edge-nal-embassy = { version = "0.9", default-features = false }
+edge-nal-std = { version = "0.7", default-features = false }
+edge-dhcp = { version = "0.8", default-features = false, features = ["io"] }
 
 #
 # Other stuff
 #
-edge-net = { version = "0.10.1", default-features = false }
-# edge-net = { git = "https://github.com/ivmarkov/edge-net", rev = "f7039b8cfd4242071086ed2c2c4ee822753614b1", default-features = false }
 log = { version = "0.4", default-features = false }
+# NOTE: serde-json-core 0.6 (latest) is still built on heapless 0.8, and the
+# engines hand serde-json-core's heapless::Vec through to the http layer.
 heapless = { version = "0.8", default-features = false }
 static_cell = { version = "2.1", default-features = false }
-atomic-polyfill = { version = "1.0.1", default-features = false }
-portable-atomic = { version = "1.5", default-features = false }
-bytemuck = { version = "1.21", default-features = false }
-md5 = { version = "0.7.0", default-features = false }
+portable-atomic = { version = "1.15", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde-json-core = { version = "0.6", default-features = false }
-
-# defmt = {version = "0.3", default-features = false }
-# defmt-rtt = {version = "0.4", default-features = false }
-
-#[patch.crates-io]
-#embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-time-driver = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#cyw43 = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
-#cyw43-pio = { git = "https://github.com/embassy-rs/embassy.git", rev = "1cfd5370ac012814b7b386ba9ad8499529bdde4e" }
+serde_json = "1.0"
+libm = "0.2"
+paste = "1.0"
 
 [profile.release]
 lto = "fat"
 opt-level = 3
-#debug = 2
 
-# [patch.crates-io]
-# delog = { git = "https://github.com/giacomocaironi/delog", branch = "portable-atomic" }
+# The esp-radio blobs require optimization to work correctly, even in debug builds
+[profile.dev.package.esp-radio]
+opt-level = 3
