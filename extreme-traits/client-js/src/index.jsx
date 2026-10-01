@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, createEffect } from "solid-js";
 
+import './touch.js';
 import './style.css'
 
 // Initialize state variables

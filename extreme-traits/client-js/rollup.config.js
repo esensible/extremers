@@ -38,7 +38,19 @@ export default {
       extract: true,
       minimize: true,
     }),
-    html(),
+    html({
+      title: 'Extreme Selector',
+      // The Kindle browser is an old mobile WebKit: it ignores CSS
+      // touch-action but honours the viewport meta, so this is what stops
+      // pinch/double-tap zoom (water droplets look like a pinch).
+      meta: [
+        { charset: 'utf-8' },
+        {
+          name: 'viewport',
+          content: 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no',
+        },
+      ],
+    }),
     terser(),
   ]
 };

@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, createEffect } from "solid-js";
 import { confirm } from './confirm.jsx';
 
+import './touch.js';
 import './style.css'
 
 // Initialize state variables

@@ -6,6 +6,7 @@ import { Switch, Match } from 'solid-js';
 import { confirm } from './confirm.jsx';
 import { selectEngine } from './api.js';
 
+import './touch.js';
 import './style.css'
 
 const [Confirm, doConfirm] = confirm();
