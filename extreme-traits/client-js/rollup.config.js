@@ -3,11 +3,7 @@ import html from '@rollup/plugin-html';
 import postcss from 'rollup-plugin-postcss';
 import terser from '@rollup/plugin-terser';
 import resolve from '@rollup/plugin-node-resolve';
-import esbuild from 'esbuild';
-import { createFilter } from '@rollup/pluginutils';
 import image from '@rollup/plugin-image';
-import smartAsset from "rollup-plugin-smart-asset"
-import gzipPlugin from 'rollup-plugin-gzip';  // Import the plugin here
 
 function uuid(length) {
   return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
@@ -24,7 +20,6 @@ export default {
   plugins: [
     resolve(),
     image(),
-    // smartAsset({ mode: "copy" }),
     babel({
       babelHelpers: 'bundled',
       presets: [
@@ -43,8 +38,19 @@ export default {
       extract: true,
       minimize: true,
     }),
-    html(),
+    html({
+      title: 'Extreme Selector',
+      // The Kindle browser is an old mobile WebKit: it ignores CSS
+      // touch-action but honours the viewport meta, so this is what stops
+      // pinch/double-tap zoom (water droplets look like a pinch).
+      meta: [
+        { charset: 'utf-8' },
+        {
+          name: 'viewport',
+          content: 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no',
+        },
+      ],
+    }),
     terser(),
-    // gzipPlugin(),
   ]
 };

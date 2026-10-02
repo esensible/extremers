@@ -1,13 +1,11 @@
-use ::serde::Deserialize;
 use core::f64::consts::PI;
+
 use serde::ser::SerializeStruct;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::line::Line;
 use crate::types::Location;
-use extreme_traits::Engine;
-
-include!(concat!(env!("OUT_DIR"), "/static_files.rs"));
+use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
 
 #[derive(Copy, Clone, PartialEq, Default)]
 // Serialize is implemented below because line serialization depends on Race state
@@ -15,29 +13,21 @@ pub struct Race {
     pub state: State,
     pub line: Line,
     pub location: Location,
+    /// Latest speed and heading. Only `speed` is reported outside of
+    /// `Racing`; see `impl Serialize for Race`.
+    pub velocity: Velocity,
 }
 
-#[derive(Serialize, Copy, Clone, PartialEq)]
-#[serde(tag = "state")]
+#[derive(Copy, Clone, PartialEq, Default, Debug)]
 pub enum State {
-    Active {
-        speed: f64,
-    },
+    #[default]
+    Active,
     InSequence {
         start_time: u64,
-        speed: f64,
     },
     Racing {
         start_time: u64,
-        speed: f64,
-        heading: f64,
     },
-}
-
-impl Default for State {
-    fn default() -> Self {
-        State::Active { speed: 0.0 }
-    }
 }
 
 #[derive(Deserialize)]
@@ -58,107 +48,73 @@ pub struct Event {
 }
 
 impl Engine for Race {
+    const NAME: &'static str = "Race";
+    const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
+
     type Event<'a> = Event;
 
-    fn get_static(&self, path: &'_ str) -> Option<&'static [u8]> {
-        for &(k, v) in STATIC_FILES.iter() {
-            if k == path {
-                return Some(v);
-            }
-        }
-        return None;
-    }
-
-    fn timer_event(&mut self, timestamp: u64) -> (Option<()>, Option<u64>) {
-        let (start_time, speed) = if let State::InSequence {
-            start_time, speed, ..
-        } = self.state
-        {
-            (start_time, speed)
-        } else {
-            // bad things happened, we were in an unexpected state. Roll with it as best we can.
-            (timestamp, 0.0)
+    fn timer_event(&mut self, _timestamp: u64) -> Outcome {
+        // The only timer this engine sets is the start gun. One arriving in
+        // any other state is stale (e.g. raced with a RaceFinish) and is
+        // ignored rather than starting a race nobody is counting down to.
+        let State::InSequence { start_time } = self.state else {
+            return Outcome::NONE;
         };
 
-        self.state = State::Racing {
-            start_time,
-            speed: speed,
-            heading: 0.0,
-        };
+        self.state = State::Racing { start_time };
+        // Heading is reported as 0 until the first GPS update after the start.
+        self.velocity.heading = 0.0;
 
-        // state is updated, no new timer
-        (Some(()), None)
+        Outcome::CHANGED
     }
 
-    fn external_event<'a>(
-        &mut self,
-        _timestamp: u64,
-        event: &Self::Event<'a>,
-    ) -> (Option<()>, Option<u64>) {
+    fn external_event(&mut self, _timestamp: u64, event: &Event) -> Outcome {
         match event.event {
-            EventType::LineStbd => {
-                return (self.line.set_stbd(self.location), None);
-            }
-            EventType::LinePort => {
-                return (self.line.set_port(self.location), None);
-            }
+            EventType::LineStbd => Outcome::changed(self.line.set_stbd(self.location)),
+            EventType::LinePort => Outcome::changed(self.line.set_port(self.location)),
             EventType::BumpSeq { timestamp, seconds } => {
-                match &mut self.state {
-                    State::InSequence { start_time, .. } => {
+                let offset = seconds.unsigned_abs() as u64 * 1000;
+                let start_time = match &mut self.state {
+                    State::InSequence { start_time } => {
                         if seconds == 0 {
-                            // round down to nearest minute
-                            *start_time -= (*start_time - timestamp) % 60000;
+                            // Round the time remaining down to a whole minute.
+                            // If the start has already passed (the timer has
+                            // not been delivered yet) there is nothing to
+                            // round, so the start time is left alone and the
+                            // timer below fires straight away.
+                            *start_time -= start_time.saturating_sub(timestamp) % 60_000;
+                        } else if seconds.is_negative() {
+                            *start_time = start_time.saturating_add(offset);
                         } else {
-                            // apply offset
-                            let abs_seconds = seconds.unsigned_abs() as u64;
-                            if seconds.is_negative() {
-                                *start_time += abs_seconds * 1000;
-                            } else {
-                                *start_time -= abs_seconds * 1000;
-                            }
+                            // Bumping past the epoch clamps to 0: the start is
+                            // in the past and the timer fires straight away.
+                            *start_time = start_time.saturating_sub(offset);
                         }
-
-                        // updated, and new timer
-                        return (Some(()), Some(*start_time));
+                        *start_time
                     }
 
                     _ => {
-                        // changing states - set absolute start time
-                        let abs_seconds = seconds.unsigned_abs() as u64;
-                        let new_start = if seconds.is_negative() {
-                            timestamp - abs_seconds * 1000
+                        // changing states - set absolute start time, clamped
+                        // as above
+                        let start_time = if seconds.is_negative() {
+                            timestamp.saturating_sub(offset)
                         } else {
-                            timestamp + abs_seconds * 1000
+                            timestamp.saturating_add(offset)
                         };
-
-                        let old_speed = match &self.state {
-                            State::Active { speed } => *speed,
-                            State::InSequence { speed, .. } => *speed,
-                            State::Racing { speed, .. } => *speed,
-                        };
-
-                        // update now that start is scheduled
-                        self.state = State::InSequence {
-                            start_time: new_start,
-                            speed: old_speed,
-                        };
-
-                        return (Some(()), Some(new_start));
+                        self.state = State::InSequence { start_time };
+                        start_time
                     }
-                }
-            }
-            EventType::RaceFinish => {
-                let old_speed = match &self.state {
-                    State::Active { speed } => *speed,
-                    State::InSequence { speed, .. } => *speed,
-                    State::Racing { speed, .. } => *speed,
                 };
 
-                if !matches!(self.state, State::Active { .. }) {
-                    self.state = State::Active { speed: old_speed };
-                    return (Some(()), None);
+                Outcome::CHANGED.with_timer(start_time)
+            }
+            EventType::RaceFinish => {
+                if matches!(self.state, State::Active) {
+                    Outcome::NONE
                 } else {
-                    return (None, None);
+                    // also aborts a start sequence, so drop its timer
+                    self.state = State::Active;
+                    Outcome::CHANGED.cancel_timer()
                 }
             }
         }
@@ -167,46 +123,30 @@ impl Engine for Race {
     fn location_event(
         &mut self,
         timestamp: u64,
-        location: Option<(f64, f64)>,
-        speed: Option<(f64, f64)>,
-    ) -> (Option<()>, Option<u64>) {
-        let mut result = None;
+        fix: Option<Fix>,
+        velocity: Option<Velocity>,
+    ) -> Outcome {
+        if let Some(velocity) = velocity {
+            self.velocity = velocity;
+        }
 
-        if let Some((new_speed, new_heading)) = speed {
-            match &mut self.state {
-                State::Active { speed } => {
-                    *speed = new_speed;
-                }
-                State::InSequence { speed, .. } => {
-                    *speed = new_speed;
-                }
-                State::Racing { speed, heading, .. } => {
-                    *speed = new_speed;
-                    *heading = new_heading;
-                }
-            }
-            result = Some(());
-        };
-
-        if let Some((lat, lon)) = location {
-            let lat = lat * PI / 180.0;
-            let lon = lon * PI / 180.0;
-            self.location = Location { lat, lon };
+        if let Some(fix) = fix {
+            self.location = fix.into();
 
             if !matches!(self.state, State::Racing { .. }) {
-                if let Some((speed, heading)) = speed {
-                    let heading = heading * PI / 180.0;
-                    if Some(())
-                        == self
-                            .line
-                            .update_location(timestamp, (lat, lon), heading, speed)
-                    {
-                        return (Some(()), None);
-                    }
+                if let Some(velocity) = velocity {
+                    self.line.update_location(
+                        timestamp,
+                        self.location,
+                        velocity.heading * PI / 180.0,
+                        velocity.speed,
+                    );
                 }
             }
         }
-        return (result, None);
+
+        // A line update only happens alongside a velocity, which is itself a change.
+        Outcome::changed(velocity.is_some())
     }
 }
 
@@ -218,30 +158,25 @@ impl Serialize for Race {
         let mut s = serializer.serialize_struct("Race", 7)?;
 
         match &self.state {
-            State::Active { speed } => {
+            State::Active => {
                 s.serialize_field("state", "Active")?;
-                s.serialize_field("speed", speed)?;
+                s.serialize_field("speed", &self.velocity.speed)?;
             }
-            State::InSequence { start_time, speed } => {
+            State::InSequence { start_time } => {
                 s.serialize_field("state", "InSequence")?;
                 s.serialize_field("start_time", start_time)?;
-                s.serialize_field("speed", speed)?;
+                s.serialize_field("speed", &self.velocity.speed)?;
             }
-            State::Racing {
-                start_time,
-                speed,
-                heading,
-            } => {
+            State::Racing { start_time } => {
                 s.serialize_field("state", "Racing")?;
                 s.serialize_field("start_time", start_time)?;
-                s.serialize_field("speed", speed)?;
-                s.serialize_field("heading", heading)?;
+                s.serialize_field("speed", &self.velocity.speed)?;
+                s.serialize_field("heading", &self.velocity.heading)?;
             }
         }
 
-        // Conditionally serialize the `line` field based on `state`
+        // The line is only reported before the start
         if !matches!(self.state, State::Racing { .. }) {
-            // s.serialize_field("line", &self.line)?;
             match &self.line {
                 Line::None => {
                     s.serialize_field("line", "None")?;

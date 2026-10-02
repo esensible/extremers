@@ -1,20 +1,20 @@
 [package]
 name = "extreme-tune"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [lib]
 crate-type = ["lib"]
 
 [dependencies]
-serde = { version = "1.0.188", default-features = false, features = ["derive"] }
-serde_derive = "1.0.188"
-libm = "0.2"
+serde = { workspace = true }
+libm = { workspace = true }
 heapless = { workspace = true }
 
 extreme-traits = { path = "../extreme-traits" }
 
-serde-json-core = { workspace = true }
-
 [dev-dependencies]
-serde_json = "1.0"
+serde_json = { workspace = true }
+
+[build-dependencies]
+extreme-build = { path = "../extreme-build" }

@@ -1,7 +1,7 @@
 [package]
 name = "extreme-traits"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [lib]
 crate-type = ["lib"]
@@ -9,7 +9,10 @@ crate-type = ["lib"]
 [dependencies]
 serde-json-core = { workspace = true, features = ["heapless"] }
 heapless = { workspace = true }
-serde = { version = "1.0.188", default-features = false, features = ["derive"] }
-serde_derive = "1.0.188"
-paste = "1.0"
-log = "0.4"
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[build-dependencies]
+extreme-build = { path = "../extreme-build" }

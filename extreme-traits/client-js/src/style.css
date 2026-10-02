@@ -10,6 +10,13 @@ body {
     font-family: Arial, sans-serif;
     background-color: #fff;
     color: #000;
+    /* e-ink: no long-press selection/callout, no grey tap flash */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    -webkit-text-size-adjust: none;
+    touch-action: manipulation;
 }
 
 /* Container replicating the style of the Race client app */
@@ -44,10 +51,4 @@ body {
     /* background-color: #ffffff; */
     border: 1px solid #000000;
     cursor: pointer;
-}
-
-/* Optimize scrolling for e-ink display */
-.engines {
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: smooth;
 }

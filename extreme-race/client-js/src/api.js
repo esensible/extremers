@@ -50,11 +50,14 @@ function connectWebSocket() {
     timestampOffset = data.timestamp - new Date().getTime();
     timezoneOffset = 37800; // 10.5 hours
 
-    if (data.engine && data.engine.fuck_yeah && data.engine.fuck_yeah !== "Race") {
+    if (data.kind && data.kind !== "Race") {
       window.location.reload();
+      return;
     }
 
-    setAll(data.engine, false);
+    if (data.engine) {
+      setAll(data.engine, false);
+    }
   };
 
   socket.onclose = () => {
@@ -67,63 +70,28 @@ function connectWebSocket() {
   };
 }
 
-export function postEvent(event, data, options) {
-  data = data || {};
-  if (event) {
-    data.event = event;
-  }
-
+function send(message) {
   if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(data));
+    socket.send(JSON.stringify(message));
   } else {
     console.error('WebSocket is not connected');
   }
+}
+
+// Race events are externally tagged with the engine name, e.g.
+//   postEvent("LineStbd")            -> {"Race": {"event": "LineStbd"}}
+//   postEvent({BumpSeq: {...}})      -> {"Race": {"event": {"BumpSeq": {...}}}}
+export function postEvent(event) {
+  send({ Race: { event: event } });
+}
+
+// Switch engine. Any name the server doesn't recognise returns to the
+// selector, so "Selector" is the clean way to exit.
+export function selectEngine(name) {
+  send({ Select: name });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log("Initializing WebSocket connection");
   connectWebSocket();
 });
-
-
-
-
-
-
-// TODO: need to sync local time to GPS time
-// if (response.cnt == -1) {
-//   timestampOffset += response.offset || 0;
-//   timezoneOffset = response.tzOffset || 0;
-//   // log("info", "update", {offset: response.offset, tzOffset: response.tzOffset});
-//   setTimeout(() => poll(cnt), 0); // reschedule immediately 
-// }
-
-window.onerror = function (message, source, lineno, colno, error) {
-  var info = "An error occurred: " + message;
-  info += "\nSource: " + source;
-  info += "\nLine Number: " + lineno;
-  info += "\nColumn Number: " + colno;
-
-  // Check if the browser supports error.stack and if so, add it to the info
-  if (error && error.stack) {
-    info += "\nStack trace: " + error.stack;
-  }
-
-  log(info);
-
-  return true; // If you return true, the error won't be reported in the console
-}
-
-export function trace(level, message, data) {
-  const now = new Date(timestamp());
-  var xhr = new XMLHttpRequest();
-  xhr.open('POST', '/log', true);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  xhr.send(JSON.stringify({
-    level: level,
-    message: message,
-    data: data || {},
-    // timestamp: new Date().getTime()
-    timestamp: now.toISOString()
-  }));
-}

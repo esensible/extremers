@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --exclude xiaoc6 --exclude tgt-pico --exclude tgt-std
+      - run: cargo build -p tgt-std --target x86_64-unknown-linux-gnu
+
+  firmware:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ESP32-C6 (tgt-xiaoc6)
+            dir: tgt-xiaoc6
+            target: riscv32imac-unknown-none-elf
+          - name: Pico W (tgt-pico)
+            dir: tgt-pico
+            target: thumbv6m-none-eabi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+        working-directory: ${{ matrix.dir }}
