@@ -16,19 +16,18 @@ pub async fn dhcp_server_task(stack: Stack<'static>, ip: Ipv4Addr) -> ! {
     let buffers = UdpBuffers::<1, 1500, 1500, 2>::new();
     let udp = Udp::new(stack, &buffers);
 
-    let mut socket = match udp
-        .bind(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            DEFAULT_SERVER_PORT,
-        ))
-        .await
-    {
-        Ok(socket) => socket,
-        Err(e) => {
-            log::error!("Failed to bind DHCP server socket: {:?}", e);
-            loop {
+    let mut socket = loop {
+        match udp
+            .bind(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                DEFAULT_SERVER_PORT,
+            ))
+            .await
+        {
+            Ok(socket) => break socket,
+            Err(e) => {
+                log::error!("Failed to bind DHCP server socket, retrying: {:?}", e);
                 Timer::after(Duration::from_secs(1)).await;
-                log::error!("DHCP server loop");
             }
         }
     };
