@@ -46,23 +46,29 @@ pub async fn dhcp_task(stack: Stack<'static>) {
     let buffers = UdpBuffers::<2, 1024, 1024, 10>::new();
 
     let unbound_socket = Udp::new(stack, &buffers);
-    let mut bound_socket = unbound_socket
-        .bind(core::net::SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::UNSPECIFIED,
-            DEFAULT_SERVER_PORT,
-        )))
-        .await
-        .unwrap();
+    let mut bound_socket = loop {
+        match unbound_socket
+            .bind(core::net::SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::UNSPECIFIED,
+                DEFAULT_SERVER_PORT,
+            )))
+            .await
+        {
+            Ok(socket) => break socket,
+            Err(e) => {
+                log::error!("DHCP server cannot bind, retrying: {e:?}");
+                Timer::after(Duration::from_millis(1000)).await;
+            }
+        }
+    };
 
+    // The server holds the lease table, so it outlives errors: a new one
+    // would hand out addresses that clients still hold.
+    let mut server = Server::<_, 64>::new_with_et(ip);
     loop {
-        _ = io::server::run(
-            &mut Server::<_, 64>::new_with_et(ip),
-            &server_options,
-            &mut bound_socket,
-            &mut buf,
-        )
-        .await
-        .inspect_err(|e| log::warn!("DHCP server error: {e:?}"));
+        _ = io::server::run(&mut server, &server_options, &mut bound_socket, &mut buf)
+            .await
+            .inspect_err(|e| log::warn!("DHCP server error: {e:?}"));
         Timer::after(Duration::from_millis(500)).await;
     }
 }
