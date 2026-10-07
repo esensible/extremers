@@ -37,7 +37,9 @@ pub const HTTP_KEEPALIVE_TIMEOUT_MS: u32 = 5_000;
 /// going to sleep or out of range) never acknowledges data, and with no
 /// limit a write, or the final close, would wait for it forever.
 pub const SOCKET_IO_TIMEOUT_MS: u32 = 10_000;
-/// How often a websocket is pinged.
+/// How often a websocket is pinged and re-sent the current state. The
+/// clients reconnect after 15 s without a message (`SILENCE_TIMEOUT_MS` in
+/// each client-js), so keep this well below that.
 pub const WS_HEARTBEAT_MS: u64 = 5_000;
 /// A websocket client that has sent nothing, not even a pong, for this long
 /// is taken to be gone and disconnected.

@@ -2,9 +2,9 @@ import { state, STATE_ACTIVE, STATE_SEQ, STATE_RACE } from './common.jsx';
 import { Active } from './idle.jsx';
 import { Race } from './race.jsx';
 import { Sequence } from './sequence.jsx';
-import { Switch, Match } from 'solid-js';
+import { Switch, Match, Show } from 'solid-js';
 import { confirm } from './confirm.jsx';
-import { selectEngine } from './api.js';
+import { selectEngine, connected } from './api.js';
 
 import './touch.js';
 import './style.css'
@@ -30,6 +30,9 @@ const app = () => (
     <button class="exit-button" onClick={() => doConfirm(() => selectEngine("Selector"), 2)}></button>
     <Confirm />
     <Main />
+    <Show when={!connected()}>
+      <div class="connection-lost">Connection lost, reconnecting</div>
+    </Show>
   </div>
 );
 

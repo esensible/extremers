@@ -77,6 +77,21 @@ button.confirm.active {
     display: block;
 }
 
+/* shown while the server is unreachable: plain and high contrast for e-ink */
+.connection-lost {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    padding: 2vh 0;
+    background-color: #000;
+    color: #fff;
+    font-size: 6vh;
+    text-align: center;
+    pointer-events: none;
+}
+
 .exit-button {
     position: fixed;
     top: 0;

@@ -42,10 +42,48 @@ export function timezoneSecs() {
 }
 
 
-function connectWebSocket() {
-  socket = new WebSocket(`ws://${window.location.host}/socket`);
+// The server re-sends the state at least every 5 s (WS_HEARTBEAT_MS in
+// common/src/config.rs), so this long without a message means the
+// connection is dead, even if the browser hasn't noticed.
+const SILENCE_TIMEOUT_MS = 15000;
+const RECONNECT_DELAY_MS = 5000;
 
-  socket.onmessage = (event) => {
+// false while there is no live connection to the server
+export const [connected, setConnected] = solidCreateSignal(true);
+var silenceTimer = null;
+
+function connectWebSocket() {
+  const ws = new WebSocket(`ws://${window.location.host}/socket`);
+  socket = ws;
+
+  // Abandons this socket and schedules the next one. A dead connection's
+  // close handshake can take minutes, so don't wait for it.
+  function reconnect() {
+    if (socket !== ws) {
+      return;
+    }
+    socket = null;
+    clearTimeout(silenceTimer);
+    setConnected(false);
+    ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+    setTimeout(connectWebSocket, RECONNECT_DELAY_MS);
+  }
+
+  // also bounds how long connecting may take
+  function restartSilenceTimer() {
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      console.log('WebSocket silent. Reconnecting...');
+      reconnect();
+    }, SILENCE_TIMEOUT_MS);
+  }
+  restartSilenceTimer();
+
+  ws.onmessage = (event) => {
+    restartSilenceTimer();
+    setConnected(true);
+
     const data = JSON.parse(event.data);
     timestampOffset = data.timestamp - new Date().getTime();
     timezoneOffset = 37800; // 10.5 hours
@@ -60,12 +98,12 @@ function connectWebSocket() {
     }
   };
 
-  socket.onclose = () => {
+  ws.onclose = () => {
     console.log('WebSocket closed. Reconnecting...');
-    setTimeout(connectWebSocket, 5000);
+    reconnect();
   };
 
-  socket.onerror = (error) => {
+  ws.onerror = (error) => {
     console.error('WebSocket error:', error);
   };
 }

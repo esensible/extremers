@@ -70,7 +70,8 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         // A client that vanishes without closing (a Kindle going to sleep)
         // leaves no trace on the read side, so it is pinged every heartbeat
         // and dropped once it has been silent for too long; a browser
-        // answers pings by itself.
+        // answers pings by itself. Each heartbeat also carries the state,
+        // so the client can tell a dead connection from a quiet engine.
         let heartbeat = Duration::from_millis(WS_HEARTBEAT_MS);
         let mut last_heard = Instant::now();
         let mut next_heartbeat = last_heard + heartbeat;
@@ -133,6 +134,18 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     }
                     next_heartbeat = Instant::now() + heartbeat;
                     send_ping(&mut tx).await?;
+
+                    // the client can't see pings, so it is also sent the
+                    // state, which it takes as proof the connection lives.
+                    // A pending update is sent instead, rather than left to
+                    // follow (and possibly undo) a newer current state.
+                    let state = match updates.try_next_message_pure() {
+                        Some(state) => Ok(state),
+                        None => self.runtime.current_state().await,
+                    };
+                    if let Ok(state) = state {
+                        send_state(&mut tx, self.runtime.now(), &state).await?;
+                    }
                 }
             }
         }
