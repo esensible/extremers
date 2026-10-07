@@ -23,9 +23,11 @@ pub fn embed_client_js() {
     let client_dir = crate_dir.join("client-js");
     let dist_dir = client_dir.join("dist");
 
+    // Only inputs that exist: cargo treats a missing rerun-if-changed path as
+    // changed, which would rerun this script on every build. index.html is
+    // generated into dist/ by the rollup html plugin, so it is not an input.
     for input in [
         "src",
-        "index.html",
         "package.json",
         "package-lock.json",
         "rollup.config.js",
