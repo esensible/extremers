@@ -21,20 +21,16 @@ use esp_hal::{
 };
 use esp_println::logger::init_logger;
 use esp_radio::wifi::{
-    AuthenticationMethodConfig, Config as WifiConfig, ControllerConfig, CountryInfo, Interface,
-    OperatingClass, PowerSaveMode, WifiController, ap::AccessPointConfig,
+    ControllerConfig, CountryInfo, Interface, OperatingClass, PowerSaveMode, WifiController,
 };
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
 mod network_tasks;
 
-use crate::network_tasks::{dhcp_task, net_task, wifi_task};
+use crate::network_tasks::{access_point_config, dhcp_task, net_task, wifi_task};
 use common::{
-    config::{
-        AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE,
-        WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID,
-    },
+    config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
     nmea::AsyncReader,
     runtime::EngineRuntime,
     tasks::{read_gps, serve_http},
@@ -67,19 +63,11 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     // initialize wifi controller as an access point
-    let access_point_config = WifiConfig::AccessPoint(
-        AccessPointConfig::default()
-            .with_ssid(WIFI_SSID.try_into().unwrap())
-            .with_authentication(AuthenticationMethodConfig::Wpa2Personal(
-                WIFI_PASSWORD.try_into().unwrap(),
-            ))
-            .with_channel(WIFI_CHANNEL),
-    );
     let controller_config = ControllerConfig::default()
         .with_country_info(
             CountryInfo::from(*b"AU").with_operating_class(OperatingClass::Repr(0x21)),
         )
-        .with_initial_config(access_point_config);
+        .with_initial_config(access_point_config());
     let mut controller = WifiController::new(peripherals.WIFI, controller_config).unwrap();
     controller.set_power_saving(PowerSaveMode::None).unwrap();
     let device = Interface::access_point();
