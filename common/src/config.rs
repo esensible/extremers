@@ -28,3 +28,21 @@ pub const MAX_WEB_SOCKETS: usize = 4;
 /// Size of each TCP socket buffer and of the HTTP server's per-connection
 /// buffer.
 pub const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
+
+/// How long an HTTP connection may sit idle between requests before it is
+/// closed to free its slot; browsers simply open a new one.
+pub const HTTP_KEEPALIVE_TIMEOUT_MS: u32 = 5_000;
+/// Longest any single socket operation (read, write, flush, close) may
+/// take. A client that vanishes without closing its connection (a Kindle
+/// going to sleep or out of range) never acknowledges data, and with no
+/// limit a write, or the final close, would wait for it forever.
+pub const SOCKET_IO_TIMEOUT_MS: u32 = 10_000;
+/// How often a websocket is pinged.
+pub const WS_HEARTBEAT_MS: u64 = 5_000;
+/// A websocket client that has sent nothing, not even a pong, for this long
+/// is taken to be gone and disconnected.
+pub const WS_CLIENT_TIMEOUT_MS: u64 = 15_000;
+
+// The websocket loop waits for the client to be readable for at most one
+// heartbeat at a time; it must not trip the socket's own I/O timeout.
+const _: () = assert!(WS_HEARTBEAT_MS < SOCKET_IO_TIMEOUT_MS as u64);

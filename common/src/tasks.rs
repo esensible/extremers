@@ -6,13 +6,15 @@
 use core::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use edge_http::io::server::Server;
-use edge_nal::TcpBind;
+use edge_nal::{TcpBind, WithTimeout};
 use embassy_time::{Duration, Timer};
 
 use extreme_traits::RawEngine;
 
 use crate::{
-    config::{MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
+    config::{
+        HTTP_KEEPALIVE_TIMEOUT_MS, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_IO_TIMEOUT_MS,
+    },
     http::HttpHandler,
     nmea::{self, RingBuffer},
     runtime::EngineRuntime,
@@ -31,7 +33,19 @@ where
         match bind.bind(address).await {
             Ok(acceptor) => {
                 log::info!("http: listening on port {}", port);
-                if let Err(e) = server.run(None, acceptor, HttpHandler::new(runtime)).await {
+                // There are only MAX_WEB_SOCKETS connection slots, and a
+                // client that disappears without closing its connection
+                // must not hold one forever: idle keep-alives are closed,
+                // and every socket operation is bounded (which also bounds
+                // the final close, otherwise stuck waiting for the client
+                // to acknowledge). Websockets have their own liveness check,
+                // see `HttpHandler::run_websocket`.
+                let acceptor = WithTimeout::new(SOCKET_IO_TIMEOUT_MS, acceptor);
+                let handler = HttpHandler::new(runtime);
+                if let Err(e) = server
+                    .run(Some(HTTP_KEEPALIVE_TIMEOUT_MS), acceptor, handler)
+                    .await
+                {
                     log::error!("http: server error: {:?}", e);
                 }
             }

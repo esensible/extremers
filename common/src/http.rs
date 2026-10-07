@@ -5,7 +5,8 @@
 
 use core::fmt::{Debug, Display, Write as _};
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either3, select3};
+use embassy_time::{Duration, Instant, Timer};
 
 use edge_http::{
     Method,
@@ -21,7 +22,10 @@ use embedded_io_async::{Read, Write};
 
 use extreme_traits::{MAX_MESSAGE_SIZE, RawEngine};
 
-use crate::runtime::{EngineRuntime, StateMessage};
+use crate::{
+    config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS},
+    runtime::{EngineRuntime, StateMessage},
+};
 
 /// An [`edge_http`] request handler backed by an [`EngineRuntime`].
 pub struct HttpHandler<'r, E: RawEngine> {
@@ -63,15 +67,30 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
             send_state(&mut tx, self.runtime.now(), &state).await?;
         }
 
+        // A client that vanishes without closing (a Kindle going to sleep)
+        // leaves no trace on the read side, so it is pinged every heartbeat
+        // and dropped once it has been silent for too long; a browser
+        // answers pings by itself.
+        let heartbeat = Duration::from_millis(WS_HEARTBEAT_MS);
+        let mut last_heard = Instant::now();
+        let mut next_heartbeat = last_heard + heartbeat;
+
         let mut buf = [0_u8; MAX_MESSAGE_SIZE];
         loop {
             // wait for readability rather than for a frame header: a frame
             // read cancelled half way would desynchronise the stream
-            match select(rx.readable(), updates.next_message_pure()).await {
-                Either::First(readable) => {
+            match select3(
+                rx.readable(),
+                updates.next_message_pure(),
+                Timer::at(next_heartbeat),
+            )
+            .await
+            {
+                Either3::First(readable) => {
                     readable.map_err(WsError::Io)?;
                     let header = FrameHeader::recv(&mut rx).await?;
                     let payload = header.recv_payload(&mut rx, &mut buf).await?;
+                    last_heard = Instant::now();
 
                     match header.frame_type {
                         FrameType::Text(_) | FrameType::Binary(_) => {
@@ -95,13 +114,25 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                             log::info!("websocket: closed by client");
                             return Ok(());
                         }
+                        // a pong has done its job by arriving
                         FrameType::Pong | FrameType::Continue(_) => {
                             log::debug!("websocket: ignoring {}", header);
                         }
                     }
                 }
-                Either::Second(state) => {
+                Either3::Second(state) => {
                     send_state(&mut tx, self.runtime.now(), &state).await?;
+                }
+                Either3::Third(()) => {
+                    if last_heard.elapsed() >= Duration::from_millis(WS_CLIENT_TIMEOUT_MS) {
+                        log::info!(
+                            "websocket: client silent for {} ms, disconnecting",
+                            last_heard.elapsed().as_millis()
+                        );
+                        return Ok(());
+                    }
+                    next_heartbeat = Instant::now() + heartbeat;
+                    send_ping(&mut tx).await?;
                 }
             }
         }
@@ -160,6 +191,20 @@ impl<E: RawEngine> Handler for HttpHandler<'_, E> {
 
         Ok(())
     }
+}
+
+/// Sends an empty websocket ping.
+async fn send_ping<W>(socket: &mut W) -> Result<(), WsError<W::Error>>
+where
+    W: Write,
+{
+    let header = FrameHeader {
+        mask_key: None,
+        frame_type: FrameType::Ping,
+        payload_len: 0,
+    };
+    header.send(&mut *socket).await?;
+    socket.flush().await.map_err(WsError::Io)
 }
 
 /// Sends `{"timestamp":<timestamp>,"kind":"<kind>","engine":<state>}` as a
