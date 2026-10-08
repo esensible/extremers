@@ -1,0 +1,3 @@
+[submodule "solid-watch/quickjs-ng"]
+	path = solid-watch/quickjs-ng
+	url = https://github.com/quickjs-ng/quickjs.git
