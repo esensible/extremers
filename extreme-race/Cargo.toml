@@ -3,6 +3,9 @@ name = "extreme-race"
 version = "0.1.0"
 edition.workspace = true
 
+# The `race` package (extreme-packages/build.rs): its engine is this crate
+# built as a cdylib for wasm32 (extreme_sdk::export_engine!), its Kindle
+# page client-js/.
 [lib]
 crate-type = ["lib"]
 
@@ -11,10 +14,7 @@ serde = { workspace = true }
 postcard-schema = { workspace = true }
 libm = { workspace = true }
 
-extreme-traits = { path = "../extreme-traits" }
+extreme-sdk = { path = "../extreme-sdk" }
 
 [dev-dependencies]
 postcard = { workspace = true, features = ["use-std"] }
-
-[build-dependencies]
-extreme-build = { path = "../extreme-build" }

@@ -4,7 +4,8 @@ mod tests {
     use crate::line::Line;
     use crate::race::*;
     use core::f64::consts::PI;
-    use extreme_traits::{Engine, Fix, MAX_STATE_SIZE, Outcome, StateBytes, Velocity};
+    use extreme_sdk::{Engine, Fix, Location, Velocity, abi::IO_CAP};
+    use std::vec::Vec;
 
     #[test]
     fn test_sequence() {
@@ -15,18 +16,13 @@ mod tests {
         //
         assert_view(&race, 0.0, Phase::Active { line: LineView::None });
 
-        assert_eq!(
-            race.location_event(0, None, Some(vel(23.2, 350.0))),
-            Outcome::CHANGED,
-        );
+        assert!(gps(&mut race, 0, None, Some(vel(23.2, 350.0))));
 
         assert_view(&race, 23.2, Phase::Active { line: LineView::None });
 
         // set stbd pin
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LineStbd),
-            Outcome::CHANGED,
-        );
+        assert!(race.on_event(0, &RaceEvent::LineStbd));
+        assert_eq!(race.next_timer(), None);
 
         assert_view(&race, 23.2, Phase::Active { line: LineView::Stbd });
 
@@ -44,11 +40,9 @@ mod tests {
             },
         );
 
-        // set port pin
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LinePort),
-            Outcome::CHANGED,
-        );
+        // set port pin; the gun stays where it was
+        assert!(race.on_event(0, &RaceEvent::LinePort));
+        assert_eq!(race.next_timer(), Some(31_000));
 
         assert_view(
             &race,
@@ -62,7 +56,8 @@ mod tests {
         //
         // State: Racing
         //
-        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
+        assert!(race.on_timer(31_000));
+        assert_eq!(race.next_timer(), None);
 
         // we don't keep heading across the state change, and the line is
         // no longer shown
@@ -75,10 +70,7 @@ mod tests {
             },
         );
 
-        assert_eq!(
-            race.location_event(0, None, Some(vel(17.5, 253.0))),
-            Outcome::CHANGED,
-        );
+        assert!(gps(&mut race, 0, None, Some(vel(17.5, 253.0))));
 
         assert_view(
             &race,
@@ -92,10 +84,8 @@ mod tests {
         //
         // State: Active
         //
-        assert_eq!(
-            race.external_event(0, &RaceEvent::RaceFinish),
-            Outcome::CHANGED.cancel_timer(),
-        );
+        assert!(race.on_event(0, &RaceEvent::RaceFinish));
+        assert_eq!(race.next_timer(), None);
 
         assert_view(
             &race,
@@ -113,12 +103,9 @@ mod tests {
         let loc2 = fix(32.3, -113.2);
 
         // set a location for stbd
-        assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
+        assert!(!gps(&mut race, 0, Some(loc1), None));
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LineStbd),
-            Outcome::CHANGED
-        );
+        assert!(race.on_event(0, &RaceEvent::LineStbd));
 
         if let Line::Stbd { stbd_location } = race.line {
             assert_eq!(stbd_location.lat, to_rad(loc1.lat));
@@ -128,12 +115,9 @@ mod tests {
         }
 
         // set a new location for stbd
-        assert_eq!(race.location_event(0, Some(loc2), None), Outcome::NONE);
+        assert!(!gps(&mut race, 0, Some(loc2), None));
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LineStbd),
-            Outcome::NONE
-        );
+        assert!(!race.on_event(0, &RaceEvent::LineStbd));
         if let Line::Stbd { stbd_location } = race.line {
             assert_eq!(stbd_location.lat, to_rad(loc2.lat));
             assert_eq!(stbd_location.lon, to_rad(loc2.lon));
@@ -142,11 +126,8 @@ mod tests {
         }
 
         // set port and check that line is Both
-        assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LinePort),
-            Outcome::CHANGED
-        );
+        assert!(!gps(&mut race, 0, Some(loc1), None));
+        assert!(race.on_event(0, &RaceEvent::LinePort));
         assert!(matches!(race.line, Line::Both { .. }));
         if let Line::Both { stbd, port, .. } = race.line {
             assert_eq!(stbd.lat, to_rad(loc2.lat));
@@ -159,11 +140,8 @@ mod tests {
 
         // set a new location for port
         let loc3 = fix(42.3, -113.2);
-        assert_eq!(race.location_event(0, Some(loc3), None), Outcome::NONE);
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LinePort),
-            Outcome::CHANGED
-        );
+        assert!(!gps(&mut race, 0, Some(loc3), None));
+        assert!(race.on_event(0, &RaceEvent::LinePort));
 
         if let Line::Both { stbd, port, .. } = race.line {
             assert_eq!(stbd.lat, to_rad(loc2.lat));
@@ -200,20 +178,16 @@ mod tests {
     fn test_bump_uses_the_tap_time() {
         let mut race = Race::default();
         // tapped at 3500, arrived at 5000: the gun is 30 s from the tap
-        assert_eq!(
-            race.external_event(5000, &RaceEvent::BumpSeq { seconds: 30, timestamp: 3500 }),
-            Outcome::CHANGED.with_timer(33_500)
-        );
+        assert!(race.on_event(5000, &RaceEvent::BumpSeq { seconds: 30, timestamp: 3500 }));
+        assert_eq!(race.next_timer(), Some(33_500));
         assert!(matches!(
             race.state,
             State::InSequence { start_time: 33_500 }
         ));
         // sync tapped at 3600 (29.9 s left), arriving at 5100 (28.4 s
         // left): the 29.9 s round down to 0, the start moves to the tap
-        assert_eq!(
-            race.external_event(5100, &RaceEvent::BumpSeq { seconds: 0, timestamp: 3600 }),
-            Outcome::CHANGED.with_timer(3600)
-        );
+        assert!(race.on_event(5100, &RaceEvent::BumpSeq { seconds: 0, timestamp: 3600 }));
+        assert_eq!(race.next_timer(), Some(3600));
     }
 
     #[test]
@@ -243,7 +217,7 @@ mod tests {
     fn test_race() {
         let mut race = Race::default();
         bump(&mut race, 1000, 30, 31_000);
-        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
+        assert!(race.on_timer(31_000));
 
         if let State::Racing { start_time } = race.state {
             assert_eq!(start_time, 31_000);
@@ -253,10 +227,8 @@ mod tests {
             panic!("State was not Racing as expected");
         }
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::RaceFinish),
-            Outcome::CHANGED.cancel_timer()
-        );
+        assert!(race.on_event(0, &RaceEvent::RaceFinish));
+        assert_eq!(race.next_timer(), None);
         assert!(
             matches!(race.state, State::Active),
             "State was not Active as expected",
@@ -269,14 +241,12 @@ mod tests {
         bump(&mut race, 1000, 30, 31_000);
 
         // finishing during the sequence aborts it and drops the start timer
-        assert_eq!(
-            race.external_event(5_000, &RaceEvent::RaceFinish),
-            Outcome::CHANGED.cancel_timer()
-        );
+        assert!(race.on_event(5_000, &RaceEvent::RaceFinish));
+        assert_eq!(race.next_timer(), None);
         assert!(matches!(race.state, State::Active));
 
         // a timer that fires anyway (raced with the cancel) must be ignored
-        assert_eq!(race.timer_event(31_000), Outcome::NONE);
+        assert!(!race.on_timer(31_000));
         assert!(matches!(race.state, State::Active));
     }
 
@@ -285,7 +255,7 @@ mod tests {
     #[test]
     fn test_postcard_state() {
         let mut race = Race::default();
-        let _ = race.location_event(1000, None, Some(vel(6.4, 90.0)));
+        let _ = gps(&mut race, 1000, None, Some(vel(6.4, 90.0)));
         // speed 6.4f32 = 0x40CCCCCD, Active = 0, line None = 0
         assert_eq!(
             &state_bytes(&race)[..],
@@ -294,14 +264,14 @@ mod tests {
 
         // InSequence = 1, start_time 31 000 = varint 98 f2 01, Stbd = 1
         bump(&mut race, 1000, 30, 31_000);
-        let _ = race.external_event(0, &RaceEvent::LineStbd);
+        let _ = race.on_event(0, &RaceEvent::LineStbd);
         assert_eq!(
             &state_bytes(&race)[..],
             &[0xcd, 0xcc, 0xcc, 0x40, 1, 0x98, 0xf2, 0x01, 1]
         );
 
         // Racing = 2, then the heading, 0.0
-        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
+        assert!(race.on_timer(31_000));
         assert_eq!(
             &state_bytes(&race)[..],
             &[0xcd, 0xcc, 0xcc, 0x40, 2, 0x98, 0xf2, 0x01, 0, 0, 0, 0]
@@ -314,20 +284,18 @@ mod tests {
     #[test]
     fn test_postcard_events() {
         let mut race = Race::default();
-        let _ = race.location_event(0, Some(fix(38.3, -134.2)), None);
+        let _ = gps(&mut race, 0, Some(fix(38.3, -134.2)), None);
 
         assert_eq!(postcard::to_stdvec(&RaceEvent::LineStbd).unwrap(), [0]);
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[0]), Ok(Outcome::CHANGED));
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[0]), Some(true));
         assert!(matches!(race.line, Line::Stbd { .. }));
 
         // bump +30 s (zigzag 60), tapped at device time 3500 (ac 1b), the
         // event arriving at t = 5000
         let bump = postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: 30, timestamp: 3500 }).unwrap();
         assert_eq!(bump, [2, 60, 0xac, 0x1b]);
-        assert_eq!(
-            extreme_traits::RawEngine::external_event(&mut race, 5000, &bump),
-            Ok(Outcome::CHANGED.with_timer(3500 + 30_000))
-        );
+        assert_eq!(extreme_sdk::raw_event(&mut race, 5000, &bump), Some(true));
+        assert_eq!(race.next_timer(), Some(3500 + 30_000));
         assert!(matches!(
             race.state,
             State::InSequence { start_time: 33_500 }
@@ -338,17 +306,15 @@ mod tests {
             [2, 0xd7, 0x04, 0]
         );
 
-        assert_eq!(
-            extreme_traits::RawEngine::external_event(&mut race, 0, &[3]),
-            Ok(Outcome::CHANGED.cancel_timer())
-        );
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[3]), Some(true));
+        assert_eq!(race.next_timer(), None);
         assert!(matches!(race.state, State::Active));
 
         // truncated, unknown, empty, trailing
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[2, 1]), Err(()));
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[4]), Err(()));
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[]), Err(()));
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[3, 0]), Err(()));
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[2, 1]), None);
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[4]), None);
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[]), None);
+        assert_eq!(extreme_sdk::raw_event(&mut race, 0, &[3, 0]), None);
     }
 
     /// The serialized view of each phase at its largest: start and line
@@ -367,13 +333,13 @@ mod tests {
         assert_eq!(size(Phase::InSequence { start_time: now, line: LineView::Port }), 12);
         assert_eq!(size(Phase::InSequence { start_time: now, line: both(now) }), 19);
         assert_eq!(size(Phase::Racing { start_time: now, heading: 359.9 }), 15);
-        // the worst case, plus the engine tag, fits the state buffer
+        // the worst case fits the ABI's I/O buffer
         let worst = size(Phase::InSequence {
             start_time: u64::MAX,
             line: both(u64::MAX),
         });
         assert_eq!(worst, 27);
-        assert!(1 + worst <= MAX_STATE_SIZE);
+        assert!(worst <= IO_CAP);
         let mut race = Race::default();
         race.state = State::InSequence { start_time: u64::MAX };
         race.line = Line::Both {
@@ -428,22 +394,13 @@ mod tests {
     fn test_view_line() {
         let mut race = Race::default();
 
-        assert_eq!(
-            race.location_event(0, Some(fix(42.3, -113.2)), Some(vel(12.5, 270.0))),
-            Outcome::CHANGED,
-        );
+        assert!(gps(&mut race, 0, Some(fix(42.3, -113.2)), Some(vel(12.5, 270.0))));
         assert_view(&race, 12.5, Phase::Active { line: LineView::None });
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LineStbd),
-            Outcome::CHANGED,
-        );
+        assert!(race.on_event(0, &RaceEvent::LineStbd));
         assert_view(&race, 12.5, Phase::Active { line: LineView::Stbd });
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LinePort),
-            Outcome::CHANGED,
-        );
+        assert!(race.on_event(0, &RaceEvent::LinePort));
         assert_view(
             &race,
             12.5,
@@ -458,6 +415,15 @@ mod tests {
         // and it survives the wire
         let bytes = state_bytes(race);
         assert_eq!(postcard::from_bytes::<RaceView>(&bytes).unwrap(), race.view());
+    }
+
+    /// A GPS update; whether the view changed.
+    fn gps(race: &mut Race, timestamp: u64, fix: Option<Fix>, velocity: Option<Velocity>) -> bool {
+        race.on_location(&Location {
+            timestamp,
+            fix,
+            velocity,
+        })
     }
 
     fn fix(lat: f64, lon: f64) -> Fix {
@@ -476,23 +442,17 @@ mod tests {
         //
         // set a location for stbd
         //
-        assert_eq!(race.location_event(0, Some(stbd), None), Outcome::NONE);
+        assert!(!gps(race, 0, Some(stbd), None));
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LineStbd),
-            Outcome::CHANGED
-        );
+        assert!(race.on_event(0, &RaceEvent::LineStbd));
         assert!(matches!(race.line, Line::Stbd { .. }));
 
         //
         // set a new location for port
         //
-        assert_eq!(race.location_event(0, Some(port), None), Outcome::NONE);
+        assert!(!gps(race, 0, Some(port), None));
 
-        assert_eq!(
-            race.external_event(0, &RaceEvent::LinePort),
-            Outcome::CHANGED
-        );
+        assert!(race.on_event(0, &RaceEvent::LinePort));
         assert!(matches!(race.line, Line::Both { .. }));
     }
 
@@ -503,10 +463,7 @@ mod tests {
         expected_cross: u8,
         expected_timestamp: u64,
     ) {
-        assert_eq!(
-            race.location_event(0, Some(boat_loc), Some(boat_velocity)),
-            Outcome::CHANGED
-        );
+        assert!(gps(race, 0, Some(boat_loc), Some(boat_velocity)));
 
         if let Line::Both {
             line_cross,
@@ -521,12 +478,11 @@ mod tests {
         }
     }
 
-    /// A bump tapped at `timestamp`, arriving at 0 (which is ignored).
+    /// A bump tapped at `timestamp`, arriving at 0 (which is ignored): the
+    /// view changes and the gun (the engine's timer) is `expected_start`.
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
-        assert_eq!(
-            race.external_event(0, &RaceEvent::BumpSeq { seconds, timestamp }),
-            Outcome::CHANGED.with_timer(expected_start),
-        );
+        assert!(race.on_event(0, &RaceEvent::BumpSeq { seconds, timestamp }));
+        assert_eq!(race.next_timer(), Some(expected_start));
 
         if let State::InSequence { start_time } = race.state {
             assert_eq!(start_time, expected_start);
@@ -535,8 +491,10 @@ mod tests {
         }
     }
 
-    /// The engine's serialized state ([`extreme_traits::RawEngine`]).
-    fn state_bytes<E: Engine>(engine: &E) -> StateBytes {
-        extreme_traits::RawEngine::serialize_state(engine).unwrap()
+    /// The engine's view as postcard, as the ABI's `view` writes it.
+    fn state_bytes<E: Engine>(engine: &E) -> Vec<u8> {
+        let mut out = [0u8; IO_CAP];
+        let len = extreme_sdk::encode_view(engine, &mut out).unwrap();
+        out[..len].to_vec()
     }
 }

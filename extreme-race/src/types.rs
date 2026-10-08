@@ -1,6 +1,6 @@
 use core::f64::consts::PI;
 
-use extreme_traits::Fix;
+use extreme_sdk::Fix;
 
 /// A position in radians.
 #[derive(Copy, Clone, PartialEq, Default, Debug)]

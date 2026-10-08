@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::line::Line;
 use crate::types::Location;
-use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
+use extreme_sdk::{Engine, Location as Gps, Velocity};
 
 #[derive(Copy, Clone, PartialEq, Default)]
 pub struct Race {
@@ -109,9 +109,6 @@ impl Race {
 }
 
 impl Engine for Race {
-    const NAME: &'static str = "Race";
-    const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
-
     type View = RaceView;
     type Event = RaceEvent;
 
@@ -135,28 +132,36 @@ impl Engine for Race {
         }
     }
 
-    fn timer_event(&mut self, _timestamp: u64) -> Outcome {
-        // The only timer this engine sets is the start gun. One arriving in
-        // any other state is stale (e.g. raced with a RaceFinish) and is
+    fn on_timer(&mut self, _now: u64) -> bool {
+        // The only timer this engine asks for is the start gun. One arriving
+        // in any other state is stale (e.g. raced with a RaceFinish) and is
         // ignored rather than starting a race nobody is counting down to.
         let State::InSequence { start_time } = self.state else {
-            return Outcome::NONE;
+            return false;
         };
 
         self.state = State::Racing { start_time };
         // Heading is reported as 0 until the first GPS update after the start.
         self.velocity.heading = 0.0;
 
-        Outcome::CHANGED
+        true
     }
 
-    fn external_event(&mut self, _timestamp: u64, event: &RaceEvent) -> Outcome {
+    /// The start gun, while a start sequence runs.
+    fn next_timer(&self) -> Option<u64> {
+        match self.state {
+            State::InSequence { start_time } => Some(start_time),
+            _ => None,
+        }
+    }
+
+    fn on_event(&mut self, _now: u64, event: &RaceEvent) -> bool {
         match *event {
-            RaceEvent::LineStbd => Outcome::changed(self.line.set_stbd(self.location)),
-            RaceEvent::LinePort => Outcome::changed(self.line.set_port(self.location)),
+            RaceEvent::LineStbd => self.line.set_stbd(self.location),
+            RaceEvent::LinePort => self.line.set_port(self.location),
             RaceEvent::BumpSeq { seconds, timestamp } => {
                 let offset = seconds.unsigned_abs() as u64 * 1000;
-                let start_time = match &mut self.state {
+                match &mut self.state {
                     State::InSequence { start_time } => {
                         if seconds == 0 {
                             // Round the time remaining down to a whole minute.
@@ -172,7 +177,6 @@ impl Engine for Race {
                             // in the past and the timer fires straight away.
                             *start_time = start_time.saturating_sub(offset);
                         }
-                        *start_time
                     }
 
                     _ => {
@@ -184,30 +188,30 @@ impl Engine for Race {
                             timestamp.saturating_add(offset)
                         };
                         self.state = State::InSequence { start_time };
-                        start_time
                     }
                 };
-
-                Outcome::CHANGED.with_timer(start_time)
+                // the gun moved: next_timer() has the new start time
+                true
             }
             RaceEvent::RaceFinish => {
                 if matches!(self.state, State::Active) {
-                    Outcome::NONE
+                    false
                 } else {
-                    // also aborts a start sequence, so drop its timer
+                    // also aborts a start sequence, and with it its timer
+                    // (next_timer() is None outside a sequence)
                     self.state = State::Active;
-                    Outcome::CHANGED.cancel_timer()
+                    true
                 }
             }
         }
     }
 
-    fn location_event(
-        &mut self,
-        timestamp: u64,
-        fix: Option<Fix>,
-        velocity: Option<Velocity>,
-    ) -> Outcome {
+    fn on_location(&mut self, gps: &Gps) -> bool {
+        let Gps {
+            timestamp,
+            fix,
+            velocity,
+        } = *gps;
         if let Some(velocity) = velocity {
             self.velocity = velocity;
         }
@@ -228,6 +232,6 @@ impl Engine for Race {
         }
 
         // A line update only happens alongside a velocity, which is itself a change.
-        Outcome::changed(velocity.is_some())
+        velocity.is_some()
     }
 }

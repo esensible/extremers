@@ -1,5 +1,5 @@
 use core::f64::consts::PI;
-use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
+use extreme_sdk::{Engine, Location, Velocity};
 use heapless::Deque;
 use libm::{atan2, cos, fmod, sin};
 use postcard_schema::Schema;
@@ -42,9 +42,6 @@ impl<const HISTORY_SIZE: usize> TuneSpeed<HISTORY_SIZE> {
 }
 
 impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
-    const NAME: &'static str = "TuneSpeed";
-    const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
-
     type View = TuneView;
     // we don't need events right now
     type Event = ();
@@ -57,14 +54,10 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
         }
     }
 
-    fn location_event(
-        &mut self,
-        timestamp: u64,
-        _fix: Option<Fix>,
-        velocity: Option<Velocity>,
-    ) -> Outcome {
-        let Some(current) = velocity else {
-            return Outcome::NONE;
+    fn on_location(&mut self, location: &Location) -> bool {
+        let timestamp = location.timestamp;
+        let Some(current) = location.velocity else {
+            return false;
         };
 
         let Some(last_ts) = self.last_timestamp else {
@@ -74,12 +67,12 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
             self.speed_dev = 0.0;
             self.heading_dev = 0.0;
             self.last_timestamp = Some(timestamp);
-            return Outcome::CHANGED;
+            return true;
         };
 
         // Ignore repeated and out-of-order samples.
         if timestamp <= last_ts {
-            return Outcome::NONE;
+            return false;
         }
 
         self.push(current, timestamp);
@@ -129,16 +122,16 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
 
         self.last_timestamp = Some(timestamp);
 
-        Outcome::CHANGED
+        true
     }
 
-    fn external_event(&mut self, _timestamp: u64, _event: &()) -> Outcome {
+    fn on_event(&mut self, _now: u64, _event: &()) -> bool {
         // No external events to handle
-        Outcome::NONE
+        false
     }
 
-    fn timer_event(&mut self, _timestamp: u64) -> Outcome {
+    fn on_timer(&mut self, _now: u64) -> bool {
         // No timer events needed
-        Outcome::NONE
+        false
     }
 }

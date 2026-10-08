@@ -1,0 +1,16 @@
+[package]
+name = "extreme-wasm3"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT"
+description = "The vendored wasm3 interpreter (v0.9.0) and a thin Rust API over it, for the package host"
+links = "wasm3"
+
+[dependencies]
+libm = { workspace = true }
+# the heap counters (src/libc.rs); the target enables its fallback
+# (critical-section) where it has no atomic read-modify-write
+portable-atomic = { workspace = true }
+
+[build-dependencies]
+cc = "1.2"

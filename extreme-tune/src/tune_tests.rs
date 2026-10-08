@@ -3,8 +3,8 @@ mod tests {
     extern crate std;
 
     use crate::{TuneSpeed, TuneView};
-    use extreme_traits::{Engine, MAX_STATE_SIZE, Outcome, StateBytes, Velocity};
-    use std::vec;
+    use extreme_sdk::{Engine, Location, Velocity, abi::IO_CAP};
+    use std::{vec, vec::Vec};
 
     #[test]
     fn test_initial_state() {
@@ -23,9 +23,9 @@ mod tests {
         let speed = 10.0;
         let heading = 90.0;
 
-        let result = tune.location_event(timestamp, None, Some(Velocity { speed, heading }));
+        let result = gps(&mut tune, timestamp, Some(Velocity { speed, heading }));
 
-        assert_eq!(result, Outcome::CHANGED);
+        assert!(result);
         assert_eq!(tune.speed, speed);
         assert_eq!(tune.speed_dev, 0.0);
         assert_eq!(tune.heading_dev, 0.0);
@@ -45,9 +45,9 @@ mod tests {
         ];
 
         for (timestamp, speed, heading) in samples.iter() {
-            let _ = tune.location_event(
+            let _ = gps(
+                &mut tune,
                 *timestamp,
-                None,
                 Some(Velocity {
                     speed: *speed,
                     heading: *heading,
@@ -116,8 +116,8 @@ mod tests {
     fn test_view_and_postcard() {
         let mut tune = TuneSpeed::<100>::default();
 
-        let _ = tune.location_event(0, None, Some(vel(10.0, 90.0)));
-        let _ = tune.location_event(1000, None, Some(vel(12.0, 95.0)));
+        let _ = gps(&mut tune, 0, Some(vel(10.0, 90.0)));
+        let _ = gps(&mut tune, 1000, Some(vel(12.0, 95.0)));
 
         let view = tune.view();
         assert_eq!(view.speed, 12.0);
@@ -129,51 +129,53 @@ mod tests {
         assert_eq!(bytes.len(), 12);
         assert_eq!(&bytes[..4], &12.0f32.to_le_bytes());
         assert_eq!(postcard::from_bytes::<TuneView>(&bytes).unwrap(), view);
-        assert!(bytes.len() + 1 <= MAX_STATE_SIZE);
+        assert!(bytes.len() <= IO_CAP);
 
-        // no events
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut tune, 0, &[]), Ok(Outcome::NONE));
-        assert_eq!(extreme_traits::RawEngine::external_event(&mut tune, 0, &[0]), Err(()));
+        // no events: `()` is no bytes at all, and changes nothing
+        assert_eq!(extreme_sdk::raw_event(&mut tune, 0, &[]), Some(false));
+        assert_eq!(extreme_sdk::raw_event(&mut tune, 0, &[0]), None);
+        // and no timer
+        assert_eq!(tune.next_timer(), None);
     }
 
     #[test]
     fn test_out_of_order_samples_are_ignored() {
         let mut tune = TuneSpeed::<100>::default();
 
-        assert_eq!(
-            tune.location_event(5000, None, Some(vel(10.0, 90.0))),
-            Outcome::CHANGED
-        );
-        assert_eq!(
-            tune.location_event(6000, None, Some(vel(12.0, 95.0))),
-            Outcome::CHANGED
-        );
+        assert!(gps(&mut tune, 5000, Some(vel(10.0, 90.0))));
+        assert!(gps(&mut tune, 6000, Some(vel(12.0, 95.0))));
         let (speed, speed_dev, heading_dev) = (tune.speed, tune.speed_dev, tune.heading_dev);
 
         // older and repeated timestamps must not panic or change anything
-        assert_eq!(
-            tune.location_event(1000, None, Some(vel(20.0, 180.0))),
-            Outcome::NONE
-        );
-        assert_eq!(
-            tune.location_event(6000, None, Some(vel(20.0, 180.0))),
-            Outcome::NONE
-        );
+        assert!(!gps(&mut tune, 1000, Some(vel(20.0, 180.0))));
+        assert!(!gps(&mut tune, 6000, Some(vel(20.0, 180.0))));
         assert_eq!(
             (tune.speed, tune.speed_dev, tune.heading_dev),
             (speed, speed_dev, heading_dev)
         );
 
         // no velocity, no change
-        assert_eq!(tune.location_event(7000, None, None), Outcome::NONE);
+        assert!(!gps(&mut tune, 7000, None));
     }
 
     fn vel(speed: f64, heading: f64) -> Velocity {
         Velocity { speed, heading }
     }
 
-    /// The engine's serialized state ([`extreme_traits::RawEngine`]).
-    fn state_bytes<E: Engine>(engine: &E) -> StateBytes {
-        extreme_traits::RawEngine::serialize_state(engine).unwrap()
+    /// A GPS update with no fix (the tuning engine uses none); whether
+    /// the view changed.
+    fn gps<const N: usize>(tune: &mut TuneSpeed<N>, timestamp: u64, velocity: Option<Velocity>) -> bool {
+        tune.on_location(&Location {
+            timestamp,
+            fix: None,
+            velocity,
+        })
+    }
+
+    /// The engine's view as postcard, as the ABI's `view` writes it.
+    fn state_bytes<E: Engine>(engine: &E) -> Vec<u8> {
+        let mut out = [0u8; IO_CAP];
+        let len = extreme_sdk::encode_view(engine, &mut out).unwrap();
+        out[..len].to_vec()
     }
 }
