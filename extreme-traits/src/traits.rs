@@ -16,6 +16,13 @@ pub const MAX_MESSAGE_SIZE: usize = 512;
 /// A serialized engine state.
 pub type StateJson = heapless::Vec<u8, MAX_MESSAGE_SIZE>;
 
+/// Largest compact state, kind byte included: one BLE notification at the
+/// default ATT MTU (23 bytes less the 3-byte ATT header).
+pub const MAX_COMPACT_STATE: usize = 20;
+
+/// A compact binary engine state: `[kind code][engine bytes]`. See BLE.md.
+pub type CompactState = heapless::Vec<u8, MAX_COMPACT_STATE>;
+
 /// A GPS position, in degrees. South and west are negative.
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Fix {
@@ -123,6 +130,22 @@ pub trait Engine: Serialize {
             .find(|(name, _)| *name == path)
             .map(|(_, contents)| *contents)
     }
+
+    /// The state in compact binary form for low-bandwidth links (BLE, see
+    /// BLE.md), written to `out`; returns the number of bytes written, at
+    /// most `out.len()`. Absolute times are encoded relative to `now` so
+    /// clients need no clock sync. The default is an empty state.
+    fn compact_state(&self, now: u64, out: &mut [u8]) -> usize {
+        let _ = (now, out);
+        0
+    }
+
+    /// A client event in compact binary form (BLE.md). `Err` if the engine
+    /// does not understand it; the default understands nothing.
+    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
+        let _ = (timestamp, event);
+        Err(())
+    }
 }
 
 /// The byte-level view of an engine used by the runtime.
@@ -151,6 +174,28 @@ pub trait RawEngine {
     fn timer_event(&mut self, timestamp: u64) -> Outcome;
 
     fn get_static(&self, path: &str) -> Option<&'static [u8]>;
+
+    /// The active engine's code in the compact protocol (BLE.md): 0 is the
+    /// selector, then the engines in declaration order from 1.
+    fn kind_code(&self) -> u8;
+
+    /// The state in compact binary form: `[kind_code][engine bytes]`, times
+    /// relative to `now`.
+    fn compact_state(&self, now: u64) -> CompactState;
+
+    /// Deliver a compact binary event. `Err` means it was not understood.
+    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()>;
+}
+
+/// Builds a [`CompactState`] from a kind code and an engine's
+/// [`Engine::compact_state`]; truncated at [`MAX_COMPACT_STATE`] bytes.
+pub fn compact_state<E: Engine>(kind_code: u8, engine: &E, now: u64) -> CompactState {
+    let mut state = CompactState::new();
+    let _ = state.push(kind_code);
+    let mut body = [0u8; MAX_COMPACT_STATE - 1];
+    let n = engine.compact_state(now, &mut body).min(body.len());
+    let _ = state.extend_from_slice(&body[..n]);
+    state
 }
 
 /// Serialize an engine state to JSON. `Err` if it does not fit in
@@ -195,5 +240,17 @@ impl<E: Engine> RawEngine for E {
 
     fn get_static(&self, path: &str) -> Option<&'static [u8]> {
         Engine::get_static(self, path)
+    }
+
+    fn kind_code(&self) -> u8 {
+        1
+    }
+
+    fn compact_state(&self, now: u64) -> CompactState {
+        compact_state(1, self, now)
+    }
+
+    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
+        Engine::compact_event(self, timestamp, event)
     }
 }

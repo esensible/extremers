@@ -287,6 +287,82 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_state() {
+        let mut race = Race::default();
+        let mut buf = [0u8; 32];
+
+        // active, nothing set, 6.4 kn
+        let _ = race.location_event(
+            1000,
+            None,
+            Some(Velocity {
+                speed: 6.4,
+                heading: 90.0,
+            }),
+        );
+        assert_eq!(race.compact_state(1000, &mut buf), 13);
+        assert_eq!(&buf[..13], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x02]);
+
+        // in sequence, start in 31 s as seen 1 s after the bump; stbd set
+        bump(&mut race, 1000, 30, 31_000);
+        let _ = race.external_event(0, &ev(EventType::LineStbd));
+        assert_eq!(race.compact_state(2000, &mut buf), 13);
+        assert_eq!(buf[0], 1);
+        assert_eq!(buf[1], 1);
+        assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), 29_000);
+
+        // a past start is negative
+        assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
+        assert_eq!(race.compact_state(40_000, &mut buf), 13);
+        assert_eq!(buf[0], 2);
+        assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), -9_000);
+
+        // too small a buffer writes nothing
+        assert_eq!(race.compact_state(0, &mut buf[..12]), 0);
+    }
+
+    #[test]
+    fn test_compact_events() {
+        let mut race = Race::default();
+        let _ = race.location_event(
+            0,
+            Some(Fix {
+                lat: 38.3,
+                lon: -134.2,
+            }),
+            None,
+        );
+
+        assert_eq!(race.compact_event(0, &[0x10]), Ok(Outcome::CHANGED));
+        assert!(matches!(race.line, Line::Stbd { .. }));
+
+        // bump +30 s, tapped 1500 ms before the event arrived at t = 5000
+        let seconds: i16 = 30;
+        let ago: u16 = 1500;
+        let mut e = [0x12u8, 0, 0, 0, 0];
+        e[1..3].copy_from_slice(&seconds.to_le_bytes());
+        e[3..5].copy_from_slice(&ago.to_le_bytes());
+        assert_eq!(
+            race.compact_event(5000, &e),
+            Ok(Outcome::CHANGED.with_timer(3500 + 30_000))
+        );
+        assert!(matches!(
+            race.state,
+            State::InSequence { start_time: 33_500 }
+        ));
+
+        assert_eq!(
+            race.compact_event(0, &[0x13]),
+            Ok(Outcome::CHANGED.cancel_timer())
+        );
+        assert!(matches!(race.state, State::Active));
+
+        assert_eq!(race.compact_event(0, &[0x12, 1]), Err(()));
+        assert_eq!(race.compact_event(0, &[0x42]), Err(()));
+        assert_eq!(race.compact_event(0, &[]), Err(()));
+    }
+
+    #[test]
     fn test_line_cross() {
         let mut race = Race::default();
 

@@ -43,6 +43,11 @@ edge-nal = { version = "0.7", default-features = false }
 edge-nal-embassy = { version = "0.9", default-features = false }
 edge-nal-std = { version = "0.7", default-features = false }
 edge-dhcp = { version = "0.8", default-features = false, features = ["io"] }
+
+#
+# BLE (trouble-host 0.7 pairs with esp-radio 1.0.0-beta.1 via bt-hci 0.9)
+#
+trouble-host = { version = "0.7", default-features = false, features = ["derive", "gatt", "peripheral", "default-packet-pool"] }
 edge-captive = { version = "0.8", default-features = false, features = ["io"] }
 
 #

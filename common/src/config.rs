@@ -11,6 +11,9 @@ pub const WIFI_PASSWORD: &str = "password";
 /// WiFi channel of the access point.
 pub const WIFI_CHANNEL: u8 = 10;
 
+/// Name the device advertises over BLE (BLE.md).
+pub const BLE_NAME: &str = "nacra";
+
 /// The device's own address on the access point network. It is also the
 /// gateway and DNS server handed out by DHCP.
 pub const AP_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);

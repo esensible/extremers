@@ -13,6 +13,10 @@ embassy-time = { workspace = true }
 edge-http = { workspace = true }
 edge-ws = { workspace = true }
 edge-nal = { workspace = true }
+# BLE transport (feature `ble`)
+trouble-host = { workspace = true, optional = true }
+# trouble-host's heapless (characteristic values); the engines use 0.8
+heapless09 = { package = "heapless", version = "0.9", default-features = false, optional = true }
 embedded-io-async = { workspace = true }
 
 # Other external crates
@@ -31,6 +35,8 @@ default = []
 std = ["edge-http/std", "edge-ws/std"]
 # Log through defmt instead of `log` (the firmware targets).
 defmt = ["dep:defmt"]
+# The BLE GATT transport (src/ble.rs); needs a bt-hci controller from the target.
+ble = ["dep:trouble-host", "dep:heapless09"]
 
 [dev-dependencies]
 # generic-queue: the tests run timers without an embassy executor

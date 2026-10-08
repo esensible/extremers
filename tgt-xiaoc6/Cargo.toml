@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Common crate for shared code; it logs through defmt here
-common = { path = "../common", features = ["defmt"] }
+common = { path = "../common", features = ["defmt", "ble"] }
 
 #
 # Logging: defmt over RTT, read with probe-rs
@@ -24,6 +24,7 @@ esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "defmt", "unstable"]
 esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt"] }
 esp-alloc = { version = "0.11" }
 esp-bootloader-esp-idf = { version = "0.6" }
+trouble-host = { workspace = true, features = ["defmt"] }
 
 #
 # Embassy

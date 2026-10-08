@@ -114,6 +114,40 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_state() {
+        let mut tune = TuneSpeed::<100>::default();
+        let _ = tune.location_event(
+            0,
+            None,
+            Some(Velocity {
+                speed: 10.0,
+                heading: 90.0,
+            }),
+        );
+        let _ = tune.location_event(
+            1000,
+            None,
+            Some(Velocity {
+                speed: 12.0,
+                heading: 95.0,
+            }),
+        );
+
+        let mut buf = [0u8; 8];
+        assert_eq!(tune.compact_state(1000, &mut buf), 6);
+        assert_eq!(u16::from_le_bytes([buf[0], buf[1]]), 1200);
+        assert_eq!(
+            i16::from_le_bytes([buf[2], buf[3]]),
+            (tune.speed_dev * 100.0) as i16
+        );
+        assert_eq!(
+            i16::from_le_bytes([buf[4], buf[5]]),
+            (tune.heading_dev * 10.0) as i16
+        );
+        assert_eq!(tune.compact_state(1000, &mut buf[..5]), 0);
+    }
+
+    #[test]
     fn test_serialization() {
         let mut tune = TuneSpeed::<100>::default();
 

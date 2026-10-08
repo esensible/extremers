@@ -47,11 +47,85 @@ pub struct Event {
     pub event: EventType,
 }
 
+/// Compact (BLE) protocol, see BLE.md "Race".
+mod compact {
+    /// State codes.
+    pub const ACTIVE: u8 = 0;
+    pub const IN_SEQUENCE: u8 = 1;
+    pub const RACING: u8 = 2;
+    /// Line codes.
+    pub const LINE_NONE: u8 = 0;
+    pub const LINE_STBD: u8 = 1;
+    pub const LINE_PORT: u8 = 2;
+    pub const LINE_BOTH: u8 = 3;
+    /// Event opcodes.
+    pub const OP_LINE_STBD: u8 = 0x10;
+    pub const OP_LINE_PORT: u8 = 0x11;
+    pub const OP_BUMP_SEQ: u8 = 0x12;
+    pub const OP_RACE_FINISH: u8 = 0x13;
+    /// Encoded state length.
+    pub const STATE_LEN: usize = 13;
+}
+
+/// Milliseconds from `now` to `at`, clamped to an `i32`.
+fn millis_until(now: u64, at: u64) -> i32 {
+    (at as i64 - now as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+}
+
 impl Engine for Race {
     const NAME: &'static str = "Race";
     const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
 
     type Event<'a> = Event;
+
+    /// `[state][line][line_cross][start_in i32][line_in i32][speed u16]`,
+    /// little-endian; times in ms relative to `now`, speed in knots x 100.
+    fn compact_state(&self, now: u64, out: &mut [u8]) -> usize {
+        if out.len() < compact::STATE_LEN {
+            return 0;
+        }
+        let (state, start_time) = match self.state {
+            State::Active => (compact::ACTIVE, now),
+            State::InSequence { start_time } => (compact::IN_SEQUENCE, start_time),
+            State::Racing { start_time } => (compact::RACING, start_time),
+        };
+        let (line, line_cross, line_timestamp) = match self.line {
+            Line::None => (compact::LINE_NONE, 0, now),
+            Line::Stbd { .. } => (compact::LINE_STBD, 0, now),
+            Line::Port { .. } => (compact::LINE_PORT, 0, now),
+            Line::Both {
+                line_cross,
+                line_timestamp,
+                ..
+            } => (compact::LINE_BOTH, line_cross, line_timestamp),
+        };
+        let speed = (self.velocity.speed * 100.0).clamp(0.0, u16::MAX as f64) as u16;
+
+        out[0] = state;
+        out[1] = line;
+        out[2] = line_cross;
+        out[3..7].copy_from_slice(&millis_until(now, start_time).to_le_bytes());
+        out[7..11].copy_from_slice(&millis_until(now, line_timestamp).to_le_bytes());
+        out[11..13].copy_from_slice(&speed.to_le_bytes());
+        compact::STATE_LEN
+    }
+
+    /// `[0x10]` line stbd, `[0x11]` line port, `[0x13]` finish,
+    /// `[0x12][seconds i16][ago u16]` bump the sequence: `seconds` as in
+    /// `BumpSeq`, `ago` how many ms before `timestamp` the tap happened.
+    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
+        let event = match *event {
+            [compact::OP_LINE_STBD] => EventType::LineStbd,
+            [compact::OP_LINE_PORT] => EventType::LinePort,
+            [compact::OP_RACE_FINISH] => EventType::RaceFinish,
+            [compact::OP_BUMP_SEQ, s0, s1, a0, a1] => EventType::BumpSeq {
+                timestamp: timestamp.saturating_sub(u16::from_le_bytes([a0, a1]) as u64),
+                seconds: i16::from_le_bytes([s0, s1]) as i32,
+            },
+            _ => return Err(()),
+        };
+        Ok(Engine::external_event(self, timestamp, &Event { event }))
+    }
 
     fn timer_event(&mut self, _timestamp: u64) -> Outcome {
         // The only timer this engine sets is the start gun. One arriving in
