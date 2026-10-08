@@ -1,0 +1,39 @@
+{
+  "name": "solid-watch",
+  "version": "0.1.0",
+  "description": "Solid universal renderer and host contract for native watch UIs laid out with Yoga",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./js/index.js",
+    "./renderer": "./js/renderer.js",
+    "./jsx": { "types": "./js/jsx.d.ts" },
+    "./schema-merge": "./js/schema-merge.js",
+    "./schema/nodes.json": "./schema/nodes.json",
+    "./browser/*": "./browser/*"
+  },
+  "files": ["js", "schema", "codegen", "browser", "fonts"],
+  "scripts": {
+    "codegen": "node codegen/codegen.mjs",
+    "codegen:check": "node codegen/codegen.mjs --check",
+    "build:test-bundles": "rollup -c test/rollup.config.js",
+    "test": "node --test test/",
+    "fixtures": "node test/make-fixtures.mjs",
+    "boundary": "node test/boundary.mjs",
+    "dev": "vite browser --host 0.0.0.0"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@babel/preset-env": "^7.25.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "babel-preset-solid": "^1.9.2",
+    "rollup": "^4.24.0",
+    "solid-js": "^1.9.2",
+    "vite": "^5.4.0",
+    "yoga-layout": "^3.2.1"
+  }
+}
