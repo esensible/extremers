@@ -237,7 +237,10 @@ the Swift tests check the same bytes.
   so a dropped link does not stop the countdown; every notification
   re-anchors.
 - watchOS suspends the app and its BLE link when the wrist drops unless a
-  workout session is running: the app starts a sailing workout on connect.
+  workout session is running: the app starts a sailing workout as soon as
+  it starts looking for the box (not on connect, so scanning survives the
+  wrist dropping), and restarts it if another app's workout ends it
+  (watchOS allows one workout session at a time).
 
 ### What the watch app must do for security (to do)
 
