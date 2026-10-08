@@ -2,8 +2,10 @@
 # Flashes and prints the defmt log over RTT. The partition table is
 # partitions.csv (relative to where cargo runs, so run from tgt-xiaoc6/):
 # without it probe-rs writes its stock table and the firmware finds no
-# `settings` partition. Never add --chip-erase: it wipes settings too.
-runner = "probe-rs run --chip esp32c6 --idf-partition-table partitions.csv"
+# `settings` partition. The app always goes into ota_0, the slot the
+# bootloader boots while `otadata` is blank. Never add --chip-erase: it
+# wipes settings too.
+runner = "probe-rs run --chip esp32c6 --idf-partition-table partitions.csv --idf-target-app-partition ota_0"
 rustflags = [
     "-C", "link-arg=-Tdefmt.x",
     "-C", "link-arg=-Tlinkall.x",

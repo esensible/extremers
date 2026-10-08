@@ -7,31 +7,47 @@ read with probe-rs.
 
 Run cargo from this directory: the runner in `.cargo/config.toml` is
 
-    probe-rs run --chip esp32c6 --idf-partition-table partitions.csv
+    probe-rs run --chip esp32c6 --idf-partition-table partitions.csv --idf-target-app-partition ota_0
 
 so `cargo run --release` flashes the bootloader, **this crate's partition
-table** and the app, then prints the log. Flashing by hand must pass the same
-`--idf-partition-table partitions.csv`; without it probe-rs writes its stock
-table, the firmware logs `storage: no 'settings' partition` and runs on the
+table** and the app (into `ota_0`), then prints the log. Flashing by hand
+must pass the same flags; without the table probe-rs writes its stock one,
+the firmware logs `storage: no 'settings' partition` and runs on the
 compiled-in WiFi defaults. Never pass `--chip-erase`: it wipes the settings.
+With the probe on a `probe-rs serve` host, set `PROBE_RS_REMOTE_HOST` and
+`PROBE_RS_REMOTE_TOKEN` and `cargo run` goes through it.
 
 ## Partitions
 
 | Name | Type | Offset | Size | Holds |
 |---|---|---|---|---|
 | `nvs` | data/nvs | 0x9000 | 24 KiB | ESP-IDF standard; unused |
-| `phy_init` | data/phy | 0xF000 | 4 KiB | ESP-IDF standard; unused |
-| `factory` | app | 0x10000 | 1.875 MiB | the app (about 0.9 MiB today) |
-| `settings` | data/nvs | 0x1F0000 | 64 KiB | key/value settings: WiFi SSID + password |
-| `tracks` | data/undefined | 0x200000 | 2 MiB | reserved for GPS tracks; unused |
+| `otadata` | data/ota | 0xF000 | 8 KiB | which app slot to boot; blank (never written yet) |
+| `phy_init` | data/phy | 0x11000 | 4 KiB | ESP-IDF standard; unused |
+| `ota_0` | app | 0x20000 | 1.875 MiB | the app (about 0.9 MiB today) |
+| `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: GPS tracks, later an update |
+| `settings` | data/nvs | 0x3E0000 | 128 KiB | key/value settings: WiFi SSID + password |
 
-A normal flash never erases `settings` or `tracks`: probe-rs erases only
-around what it writes -- everything below 0x10000 (so the stock `nvs` does
-not survive a flash, as hilux/wireless-can found) and the app image's
-sectors -- the image is confined to `factory` (probe-rs refuses one that
-does not fit), and `factory` ends where `settings` begins. The firmware finds both by label in the partition
-table, so changing the layout means editing `partitions.csv` only. Details
-in `partitions.csv` and `src/storage.rs`.
+With `otadata` blank and no factory partition the bootloader boots `ota_0`,
+which is where probe-rs flashes. The slot that is not running holds GPS
+tracks (not implemented yet): written while sailing, downloaded over BLE,
+and erased before an OTA update writes new firmware into it. An update
+therefore needs the tracks downloaded first, and there is no rollback to
+the previous firmware once tracks have overwritten it. The app logs at
+boot which slot it runs from and the inactive slot's size
+(`storage::track_slot`).
+
+Once OTA exists, mind that probe-rs always flashes `ota_0`: if `otadata`
+then selects `ota_1`, the bootloader keeps booting `ota_1` (unless the
+flash's erase around the bootloader also blanks `otadata`; not checked).
+
+A normal flash never erases `settings` or `ota_1`: probe-rs erases only
+around what it writes -- the region of the bootloader and table (on
+hilux/wireless-can it wiped the stock `nvs` at 0x9000) and the app image's
+sectors in `ota_0` -- and refuses an image bigger than the slot. The
+firmware finds partitions by label or type in the table, so changing the
+layout means editing `partitions.csv` only. Details in `partitions.csv` and
+`src/storage.rs`.
 
 ## WiFi credentials
 

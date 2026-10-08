@@ -1,29 +1,33 @@
 # ESP-IDF partition table for the XIAO ESP32-C6 (4 MB flash).
 #
 # probe-rs writes it to 0x8000 when given `--idf-partition-table
-# partitions.csv` (the cargo runner in .cargo/config.toml passes it); without
-# that flag probe-rs writes its stock table, which has neither `settings` nor
-# `tracks`. The firmware reads the table back at boot (src/storage.rs) and
-# finds its partitions by label, so no offsets are repeated in code.
+# partitions.csv` (the cargo runner in .cargo/config.toml passes it, with
+# `--idf-target-app-partition ota_0`); without that flag probe-rs writes its
+# stock table, which has no `settings`. The firmware reads the table back
+# at boot (src/storage.rs) and finds partitions by label or type, so no
+# offsets are repeated in code.
 #
-# A flash writes only the bootloader, this table and the app image, and
-# erases only what they cover: everything below 0x10000 plus the app image
-# rounded up to whole erase blocks. The image is limited to `factory`
-# (probe-rs refuses a bigger one), and `settings` starts on the 64 KiB
-# boundary where `factory` ends, so no erase ever reaches it: settings and
-# tracks survive reflashing. (The stock `nvs` at 0x9000 does not -- it is
-# inside the bootloader's erase -- which is why nothing of ours lives there.)
+# Two app slots, no factory. The bootloader boots the slot `otadata`
+# selects; with `otadata` blank (all 0xFF, as now: nothing writes it yet)
+# and no factory partition it boots ota_0 ("No factory image, trying OTA 0"
+# in the ESP-IDF v5.5.1 bootloader probe-rs flashes). The slot not running
+# is where GPS tracks go until an update needs it (src/storage.rs,
+# `TrackSlot`), so there is no separate tracks partition.
+#
+# A flash writes only the bootloader, this table and the app image into
+# ota_0, and erases only around them: the region around the bootloader and
+# table (on hilux/wireless-can it wiped the stock `nvs` at 0x9000, so the
+# first `otadata` sector at 0xF000 is probably erased too) and the image's
+# sectors inside ota_0. probe-rs refuses an image bigger than the slot, so
+# ota_1 and `settings` are never erased by a flash.
 #
 # settings  key/value map (sequential-storage): WiFi credentials.
 #           Written by the `provision` binary, read by the app.
-# tracks    reserved for GPS traces; unused so far (see src/storage.rs).
-#           Subtype `undefined` (0x06), ESP-IDF's subtype for app-defined
-#           data: a numeric data subtype such as 0x40 is not accepted --
-#           probe-rs's partition parser (esp-idf-part 0.6) panics on it.
 #
-# Name,     Type, SubType,   Offset,   Size,     Flags
-nvs,        data, nvs,       0x9000,   0x6000,
-phy_init,   data, phy,       0xf000,   0x1000,
-factory,    app,  factory,   0x10000,  0x1E0000,
-settings,   data, nvs,       0x1F0000, 0x10000,
-tracks,     data, undefined, 0x200000, 0x200000,
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+otadata,    data, ota,     0xF000,   0x2000,
+phy_init,   data, phy,     0x11000,  0x1000,
+ota_0,      app,  ota_0,   0x20000,  0x1E0000,
+ota_1,      app,  ota_1,   0x200000, 0x1E0000,
+settings,   data, nvs,     0x3E0000, 0x20000,
