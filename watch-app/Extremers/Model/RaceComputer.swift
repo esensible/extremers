@@ -100,13 +100,22 @@ final class RaceComputer: NSObject, ObservableObject {
   private let haptics = Haptics()
 
   private var manager: CBCentralManager?
-  private var stateWaiters: [CheckedContinuation<Void, Never>] = []
   /// Strong reference: CoreBluetooth does not keep the peripheral alive.
   private(set) var peripheral: CBPeripheral?
   private var stateCharacteristic: CBCharacteristic?
   private var eventCharacteristic: CBCharacteristic?
-  private var pending: [String: (token: UUID, cont: CheckedContinuation<Any, Error>)] = [:]
+
+  /// A step of the loop waiting on a delegate callback, and its timeout.
+  private struct Pending {
+    let cont: CheckedContinuation<Any, Error>
+    let timer: Task<Void, Never>?
+  }
+  private var pending = Waiters<String, Pending>()
+  /// The one task that owns the link, while started.
   private var loop: Task<Void, Never>?
+  /// A stopped loop that may still be unwinding; the next one waits for it.
+  private var retiring: Task<Void, Never>?
+  private var generation = LinkGeneration()
 
   var isLive: Bool { link == .connected }
 
@@ -125,18 +134,32 @@ final class RaceComputer: NSObject, ObservableObject {
   // MARK: - Lifecycle
 
   /// Starts (or restarts after `stop()`) looking for the device. Idempotent.
+  ///
+  /// There is only ever one loop: a loop that `stop()` cancelled may still
+  /// be unwinding (its waits fail at once, but it has to run to its next
+  /// check), so the new one first waits for it to finish.
   func start() {
     guard loop == nil else { return }
+    let gen = generation.advance()
     link = state == nil ? .connecting : .reconnecting
-    loop = Task { await self.run() }
+    let previous = retiring
+    retiring = nil
+    loop = Task { [weak self] in
+      await previous?.value
+      await self?.run(gen)
+    }
   }
 
   /// Drops the link, ends the workout and stops the haptics.
   func stop() {
-    loop?.cancel()
+    generation.advance()
+    if let loop {
+      loop.cancel()
+      retiring = loop
+    }
     loop = nil
     link = .stopped
-    failAll(BleFailure.cancelled)
+    failAll(CancellationError())
     if let m = manager, m.isScanning { m.stopScan() }
     if let p = peripheral { manager?.cancelPeripheralConnection(p) }
     stateCharacteristic = nil
@@ -163,20 +186,34 @@ final class RaceComputer: NSObject, ObservableObject {
 
   // MARK: - The link
 
-  private func run() async {
+  /// Throws once this loop has been cancelled or replaced: after every
+  /// await, before it touches anything (a stopped loop must not scan,
+  /// connect, publish `.connected` or start the workout).
+  private func ensureCurrent(_ gen: UInt64) throws {
+    try Task.checkCancellation()
+    guard generation.isCurrent(gen) else { throw CancellationError() }
+  }
+
+  private func run(_ gen: UInt64) async {
     var retry = Self.firstRetry
-    while !Task.isCancelled {
+    while generation.isCurrent(gen), !Task.isCancelled {
       do {
         try await waitPoweredOn()
+        try ensureCurrent(gen)
         problem = nil
         let p = try await reach()
+        try ensureCurrent(gen)
         try await open(p)
-        retry = Self.firstRetry
+        try ensureCurrent(gen)
         guard p.state == .connected else { throw BleFailure.disconnected(underlying: nil) }
+        link = .connected
+        problem = nil
+        workout.start()
+        retry = Self.firstRetry
         // Only a failure (the drop) ends this wait.
         let _: Any = try await waitFor("disconnect", timeout: nil) {}
       } catch {
-        if Task.isCancelled { return }
+        if Task.isCancelled || !generation.isCurrent(gen) || error is CancellationError { return }
         let failure = (error as? BleFailure) ?? .other(error)
         bleLog.info("link down: \(String(describing: failure), privacy: .public)")
         closeLink()
@@ -243,9 +280,6 @@ final class RaceComputer: NSObject, ObservableObject {
     let _: Any = try await waitFor("read", timeout: Self.gattTimeout) {
       p.readValue(for: stateChar)
     }
-    link = .connected
-    problem = nil
-    workout.start()
   }
 
   /// Always discovers, on every connection: CoreBluetooth invalidates a
@@ -327,12 +361,10 @@ final class RaceComputer: NSObject, ObservableObject {
   private func waitPoweredOn() async throws {
     let m = ensureManager()
     if m.state == .unknown || m.state == .resetting {
-      await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        stateWaiters.append(cont)
-        Task { @MainActor in
-          try? await Task.sleep(nanoseconds: 3_000_000_000)
-          self.releaseStateWaiters()
-        }
+      do {
+        let _: Any = try await waitFor("power", timeout: 3) {}
+      } catch BleFailure.timeout {
+        // Still settling: the state below decides.
       }
     }
     switch m.state {
@@ -343,47 +375,62 @@ final class RaceComputer: NSObject, ObservableObject {
     }
   }
 
-  private func releaseStateWaiters() {
-    let waiters = stateWaiters
-    stateWaiters.removeAll()
-    waiters.forEach { $0.resume() }
-  }
-
   // MARK: - Waiting on delegate callbacks
 
   /// Runs `start` and waits for the delegate to complete `key`; nil
   /// `timeout` waits until completed or failed.
+  ///
+  /// The continuation is resumed exactly once, by whichever comes first:
+  /// the delegate (`complete`), the timeout, cancellation of the waiting
+  /// task, `failAll`, or a newer wait on the same key. Each of those takes
+  /// the entry out of `pending` before resuming it; the timer and the
+  /// cancel handler only take the entry they were made for (its token).
   private func waitFor<T>(_ key: String, timeout: TimeInterval?, start: () -> Void) async throws -> T {
-    let token = UUID()
-    let value: Any = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any, Error>) in
-      pending[key]?.cont.resume(throwing: BleFailure.cancelled)
-      pending[key] = (token, cont)
-      start()
-      if let timeout {
-        Task { @MainActor in
-          try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-          self.complete(key, token: token, .failure(BleFailure.timeout))
+    try Task.checkCancellation()
+    let token = pending.newToken()
+    let value: Any = try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any, Error>) in
+        let timer = timeout.map { seconds in
+          Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.complete(key, token: token, .failure(BleFailure.timeout))
+          }
         }
+        if let displaced = pending.add(key, token: token, Pending(cont: cont, timer: timer)) {
+          finish(displaced, .failure(BleFailure.cancelled))
+        }
+        start()
+      }
+    } onCancel: {
+      // Any thread; the entry is registered by the time this runs on main.
+      Task { @MainActor [weak self] in
+        self?.complete(key, token: token, .failure(CancellationError()))
       }
     }
+    try Task.checkCancellation()
     guard let typed = value as? T else { throw BleFailure.cancelled }
     return typed
   }
 
   /// Completes a waiter; `token` nil completes whatever is waiting on `key`.
   @discardableResult
-  private func complete(_ key: String, token: UUID? = nil, _ result: Result<Any, Error>) -> Bool {
-    guard let entry = pending[key], token == nil || entry.token == token else { return false }
-    pending[key] = nil
-    entry.cont.resume(with: result)
+  private func complete(_ key: String, token: UInt64? = nil, _ result: Result<Any, Error>) -> Bool {
+    guard let entry = pending.take(key, token: token) else { return false }
+    finish(entry, result)
     return true
   }
 
-  /// Fails every waiter except `kept`.
-  private func failAll(_ error: Error, keeping kept: String? = nil) {
-    let failing = pending.filter { $0.key != kept }
-    for key in failing.keys { pending[key] = nil }
-    failing.values.forEach { $0.cont.resume(throwing: error) }
+  /// Fails every waiter except those on `kept`.
+  private func failAll(_ error: Error, keeping kept: Set<String> = []) {
+    for entry in pending.takeAll(keeping: kept) {
+      finish(entry, .failure(error))
+    }
+  }
+
+  private func finish(_ entry: Pending, _ result: Result<Any, Error>) {
+    entry.timer?.cancel()
+    entry.cont.resume(with: result)
   }
 }
 
@@ -391,7 +438,7 @@ final class RaceComputer: NSObject, ObservableObject {
 
 extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
-    if central.state != .unknown && central.state != .resetting { releaseStateWaiters() }
+    if central.state != .unknown && central.state != .resetting { complete("power", .success(true)) }
     if central.state != .poweredOn {
       let failure: BleFailure
       switch central.state {
@@ -433,7 +480,7 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     if link == .connected { link = .reconnecting }
     // A late disconnect (from cancelling a stalled connect) must not end
     // the scan that replaced it.
-    failAll(BleFailure.disconnected(underlying: error), keeping: "find")
+    failAll(BleFailure.disconnected(underlying: error), keeping: ["find", "power"])
   }
 }
 
