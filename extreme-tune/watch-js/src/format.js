@@ -1,4 +1,4 @@
-// Text formats, as watch-app/Extremers/Model/Formatting.swift.
+// Text formats, as the native watch app's Format (Formatting.swift) had them.
 
 /** U+2212, the typographic minus. */
 export const MINUS = "−";

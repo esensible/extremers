@@ -1,14 +1,34 @@
 # Extremers for Apple Watch
 
 A standalone watchOS app: a second client of the race computer, over BLE.
-It shows the same state as the Kindle UI and has the same buttons (line
-pins, start a sequence, bump or sync the countdown, finish). The device is
-the only source of truth: the watch sends events and renders what the
-device notifies; it never changes the race state itself.
+It is a shell. It owns the link (find the box, pair, reconnect, keep
+running with the wrist down) and its own screens (connecting, pairing
+problems, a box speaking another protocol). Each app on the box (a package:
+Choose, Race, Tune) brings its own watch UI: a
+[solid-watch](../solid-watch/README.md) bundle, structured like the
+package's Kindle page, that the shell runs. The box is the only source of
+truth. It says which package is active, and the watch renders what the box
+notifies and sends events. It never changes anything itself.
 
-The protocol is [`../BLE.md`](../BLE.md). `Extremers/Model/Protocol.swift`
-is its Swift side and `ExtremersTests/ProtocolTests.swift` checks BLE.md's
-test vectors byte for byte.
+The box's `state` value is a postcard `Envelope { timestamp, active,
+ui_hash, state }`. The shell reads `active` and `ui_hash` to pick the
+bundle (`Model/Protocol.swift`, `Model/Bundles.swift`), and hands every
+envelope's bytes to the running bundle. The bundle decodes them, keeps the
+box's clock offset, and sends `HostEvent` bytes, which the shell writes to
+the `event` characteristic. A package this watch has no bundle for shows
+"This app isn't on the watch" with an Exit (`SelectDefault`).
+`ExtremersTests/EnvelopeTests.swift` checks the decoder against the Rust
+encoder's vectors (`EnvelopeVectors.swift`, from `tools/watch-bindgen`).
+
+For now the bundles are compiled in. A build phase copies each package's
+`watch-js/fixtures/bundle.js` (its committed build) and its sha256 into
+`Bundles/<package name>/`. Delivery over BLE takes the place of
+`CompiledBundles` later.
+
+Build the Release configuration for the watch. In Debug the QuickJS
+interpreter is unoptimized and its C frames are several times larger, so
+the Race bundle's first render overflows the engine's 256 KB stack limit
+("Maximum call stack size exceeded").
 
 ## Build
 
@@ -29,7 +49,7 @@ editing `project.yml`. It rewrites the project, so any change made in
 Xcode's project editor (signing team included) is lost: put lasting
 settings in `project.yml`.
 
-Unit tests (protocol, formatting, haptic cues, link bookkeeping, pairing decisions, the paired box) run on a watch simulator:
+Unit tests (the envelope, bundle routing, link bookkeeping, pairing decisions, the paired box) run on a watch simulator:
 pick a watchOS simulator and press Cmd-U. They need no device.
 
 ## Signing
@@ -68,8 +88,7 @@ from Xcode again each week. Paid accounts get a year.
 - The watch asks for Bluetooth access: allow it, or the Connecting screen
   says what to do.
 - It shows "Looking for nacra" until the race computer is powered and in
-  range, then the screen for whatever the device is doing (choose mode,
-  race, tune).
+  range, then the active app's screen (Choose, Race, Tune).
 - The race computer only talks to a watch paired with it (BLE.md,
   "Pairing a watch"). The first time: on the Kindle, Settings → **Pair
   watch**, then open the app; the watch asks to pair with `nacra`: tap
@@ -91,8 +110,9 @@ from Xcode again each week. Paid accounts get a year.
 - watchOS runs one workout at a time: starting a workout in another app
   ends this one. Extremers starts it again (at once if it is in front,
   else when you come back to it) and says "Workout restarted".
-- "Quit" on the choose-mode screen ends the workout and drops the link.
-  Swiping the app away in the app switcher does the same.
+- The **⋯** button at the top right, over any app, shows the box and the
+  link, and **Quit**, which ends the workout and drops the link. Swiping
+  the app away in the app switcher does the same.
 
 ### No workout
 
@@ -107,18 +127,23 @@ countdown keeps running from the last state either way.
 project.yml                  XcodeGen spec: app + unit tests
 Extremers/
   ExtremersApp.swift
-  Model/Protocol.swift       UUIDs, DeviceState decode, DeviceEvent encode (pure Swift)
-  Model/Commands.swift       buttons -> events, confirm requests (pure Swift)
-  Model/Formatting.swift     mm:ss, knots, signed values, haptic cue times (pure Swift)
+  Model/Protocol.swift       UUIDs, package ids, Envelope decode, SelectDefault (pure Swift)
+  Model/Bundles.swift        BundleSource, the compiled-in bundles, ShellRouter (pure Swift)
+  Model/Shell.swift          runs the active package's bundle (SolidWatchSession)
   Model/LinkPolicy.swift     backoff, loop generations, waiter table, workout restart rule (pure Swift)
   Model/Security.swift       CoreBluetooth errors -> retry / pairing problem / notice (no CB objects)
   Model/Box.swift            the paired box: scan-response address, matching, UserDefaults (pure Swift)
   Model/RaceComputer.swift   CoreBluetooth central: scan, connect, secure (pair), reconnect
   Model/WorkoutKeeper.swift  HKWorkoutSession that keeps the app alive
-  Model/Haptics.swift        countdown haptics from the anchored start
-  Views/                     one file per screen, plus shared pieces
-ExtremersTests/ProtocolTests.swift
+  Views/                     the shell's screens and its menu
+ExtremersTests/EnvelopeTests.swift, EnvelopeVectors.swift (generated)
+ExtremersTests/ShellRouterTests.swift
 ExtremersTests/LinkPolicyTests.swift
 ExtremersTests/SecurityTests.swift
 ExtremersTests/BoxTests.swift
 ```
+
+The apps' UIs live with their packages: `extreme-race/watch-js`,
+`extreme-tune/watch-js`, `extreme-traits/watch-js` (Choose). Haptics are
+theirs too. The Race bundle's countdown buzzes each minute, 30 s, 10 s,
+the last five seconds and the gun through solid-watch's haptic node.
