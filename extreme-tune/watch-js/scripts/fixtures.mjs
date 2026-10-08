@@ -1,12 +1,15 @@
 // Builds the golden fixtures in fixtures/: bundle.js (= dist/watch.js),
-// script.json (100 BLE state values), then solid-watch's make-fixtures
+// script.json (100 BLE state values: host Envelopes), then solid-watch's make-fixtures
 // writes bundle.js.sha256, log.jsonl (qjs, checked against node) and
 // frames.jsonl.
 //   npm run build && QJS=/path/to/qjs npm run fixtures
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { encodeState } from "../../../protocol-js/protocol.js";
+import { encodeEnvelope } from "../../../host-js/host.js";
+import { packageId } from "../../../host-js/package-id.js";
+import { encodeTuneView } from "../../protocol-js/tune.js";
+import { encodeRaceView } from "../../../extreme-race/protocol-js/race.js";
 
 const HERE = fileURLToPath(new URL("..", import.meta.url));
 const SOLID_WATCH = fileURLToPath(new URL("../../../solid-watch/", import.meta.url));
@@ -15,11 +18,12 @@ const FRAGMENT = fileURLToPath(new URL("../../../watch-js/extremers.schema.json"
 // Device clock of state i: a second apart, in 2026.
 const T0 = 1_790_000_000_000;
 
-// A BLE state value (a postcard State, BLE.md "State"), from the
-// generated encoder (tested against the Rust encoder in protocol-js/).
-const hex = (state) => Buffer.from(encodeState(state)).toString("hex");
+// A BLE state value (a host Envelope carrying a TuneView), from the
+// generated encoders (tested against the Rust encoder in host-js/test).
+const HASH = [0, 1, 2, 3, 4, 5, 6, 7];
+const hex = (envelope) => Buffer.from(encodeEnvelope(envelope)).toString("hex");
 function tune(i, speed, speed_dev, heading_dev) {
-  return { stateHex: hex({ timestamp: T0 + 1000 * i, engine: { tag: "TuneSpeed", value: { speed, speed_dev, heading_dev } } }) };
+  return { stateHex: hex({ timestamp: T0 + 1000 * i, active: packageId("tune"), ui_hash: HASH, state: encodeTuneView({ speed, speed_dev, heading_dev }) }) };
 }
 
 // Mostly a boat sailing around 5-8 kn, plus the edges: zero, sign changes,
@@ -42,17 +46,19 @@ for (let i = 0; steps.length < 100; i++) {
   const hdg = Math.round(Math.cos(i / 5) * 250) / 10;
   steps.push(tune(steps.length, speed, dev, hdg));
 }
-// another engine's state: the clock syncs, nothing else changes
+// another package's envelope: the clock syncs, nothing else changes
 steps[50] = {
   stateHex: hex({
     timestamp: T0 + 50_000,
-    engine: { tag: "Race", value: { speed: 6.4, phase: { tag: "Active", value: { line: { tag: "None", value: null } } } } },
+    active: packageId("race"),
+    ui_hash: HASH,
+    state: encodeRaceView({ speed: 6.4, phase: { tag: "Active", value: { line: { tag: "None", value: null } } } }),
   }),
 };
-// bytes that are not a State: nothing at all
+// bytes that are not an Envelope: nothing at all
 steps[51] = { stateHex: "02ffff" };
 // Exit behind the confirm widget (2 taps): once left to time out after 5 s,
-// then confirmed, which sends Select(Selector).
+// then confirmed, which sends SelectDefault.
 const EXIT = 11, CONFIRM = 28; // button tags (from the mount in log.jsonl)
 steps.push(
   { dispatch: { tag: EXIT, name: "press" } },

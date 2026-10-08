@@ -53,18 +53,22 @@ jobs:
       # the confirm widget the Kindle pages and the watch bundles share
       - run: npm test
         working-directory: client-common
-      # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
-      - run: npm ci
-        working-directory: extreme-tune/watch-js
-      - run: npm run build
-        working-directory: extreme-tune/watch-js
-      - run: npm run fixtures
-        working-directory: extreme-tune/watch-js
+      # the host envelope and per-package bindings (tools/watch-bindgen)
+      - run: npm test
+        working-directory: host-js
+      - run: ${{ runner.temp }}/qjs test/qjs.mjs
+        working-directory: host-js
+      # each package's watch bundle: rebuild, regenerate its fixtures under
+      # qjs, no diff, tests
+      - name: watch bundles
         env:
           QJS: ${{ runner.temp }}/qjs
-      - run: git diff --exit-code -- extreme-tune/watch-js/fixtures
-      - run: npm test
-        working-directory: extreme-tune/watch-js
+        run: |
+          for d in extreme-race/watch-js extreme-tune/watch-js extreme-traits/watch-js; do
+            (cd $d && npm ci && npm run build && npm run fixtures)
+            git diff --exit-code -- $d/fixtures
+            (cd $d && npm test)
+          done
 
   firmware:
     name: ${{ matrix.name }}
