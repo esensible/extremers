@@ -13,7 +13,7 @@
 
 use embassy_time::{Duration, Timer};
 
-use extreme_traits::{Fix, Velocity};
+use extreme_sdk::{Fix, Velocity};
 
 /// A valid GPS fix, as reported by [`next_update`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

@@ -2,17 +2,20 @@
 resolver = "3"
 
 members = [
-    "extreme-build",
-    "extreme-traits",
+    # the host protocol, the engine SDK, the WASM interpreter
+    "extreme-protocol",
+    "extreme-sdk",
+    "extreme-wasm3",
     "common",
 
-    # apps
+    # packages: the engines (crates), and what the firmware ships with
     "extreme-race",
     "extreme-tune",
-    "extreme-engines",
+    "extreme-packages",
 
     # tools
     "tools/bindgen",
+    "tools/package",
 
     # targets
     "tgt-std",
@@ -75,9 +78,20 @@ paste = "1.0"
 [profile.release]
 lto = "fat"
 opt-level = 3
+codegen-units = 1
 # Debug info only lives in the ELF, not the flashed image; probe-rs needs it
 # to show each defmt log line's source location.
 debug = 2
+
+# A package's engine.wasm (tools/package builds the engine crates as wasm32
+# cdylibs with it): small, no debug info, no names section. The size of the
+# module is what the interpreter parses and compiles on the device.
+[profile.engine]
+inherits = "release"
+opt-level = "z"
+debug = false
+strip = true
+panic = "abort"
 
 # Bonding (BLE.md "Security"): trouble-host 0.7.0 on crates.io cannot keep a
 # bond with an Apple device working. Re-pairing a bonded peer that connects

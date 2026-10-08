@@ -20,6 +20,6 @@ env_logger = "0.11"
 static_cell = { workspace = true }
 
 #
-# The magic
+# The packages (Race, Tune, Choose), run by the host in common
 #
-extreme-engines = { path = "../extreme-engines/" }
+extreme-packages = { path = "../extreme-packages" }

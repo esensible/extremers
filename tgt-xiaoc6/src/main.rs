@@ -29,7 +29,10 @@ use trouble_host::prelude::ExternalController;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+mod memory;
 mod network_tasks;
+#[cfg(feature = "selftest")]
+mod selftest;
 #[allow(dead_code)] // shared with src/bin/{provision,dump}.rs; each uses a subset
 mod storage;
 
@@ -44,15 +47,13 @@ use common::{
         AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
         SOCKET_BUFFER_SIZE,
     },
+    host::{Host, Registry},
     nmea::AsyncReader,
-    runtime::EngineRuntime,
     tasks::{read_gps, serve_http},
 };
 
-// The engines, and their order on the wire: extreme-engines.
-use extreme_engines::EngineType;
-
-type Runtime = EngineRuntime<EngineType>;
+// The packages the firmware ships with: Race and Tune preinstalled, Choose.
+use extreme_packages::PACKAGES;
 
 /// The BLE controller, with 20 HCI command slots.
 type BleController = ExternalController<BleConnector<'static>, 20>;
@@ -71,6 +72,8 @@ defmt::timestamp!(
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
+    // first, so the high-water mark covers everything after it
+    memory::paint_main_stack();
     // Logs go over RTT as defmt, read with probe-rs (`probe-rs run` or
     // `probe-rs attach`). 4 KiB covers boot when attaching late.
     rtt_target::rtt_init_defmt!(rtt_target::ChannelMode::NoBlockSkip, 4096);
@@ -103,8 +106,13 @@ async fn main(spawner: Spawner) -> ! {
     storage::init(peripherals.FLASH).await;
     choose_access_point_credentials().await;
 
-    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
-    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
+    memory::log("before the host");
+    static HOST: StaticCell<Host> = StaticCell::new();
+    let runtime: &'static Host = HOST.init(Host::new(Registry::new(
+        Some(&PACKAGES.choose),
+        PACKAGES.preinstalled,
+    )));
+    memory::log("host up");
 
     // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
     // controller's connection limit matches the host's.
@@ -173,6 +181,11 @@ async fn main(spawner: Spawner) -> ! {
     let (uart_rx, _uart_tx) = uart0.split();
     spawner.spawn(gps_task(uart_rx, runtime).unwrap());
 
+    memory::log("boot, all tasks spawned");
+    spawner.spawn(memory::memory_task().unwrap());
+    #[cfg(feature = "selftest")]
+    spawner.spawn(selftest::selftest_task(runtime).unwrap());
+
     // idle loop, blink LED
     let mut led = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
     led.set_high();
@@ -183,14 +196,14 @@ async fn main(spawner: Spawner) -> ! {
 }
 
 #[embassy_executor::task]
-async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
+async fn httpd_task(stack: Stack<'static>, runtime: &'static Host) -> ! {
     let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
     let tcp = Tcp::new(stack, &buffers);
     serve_http(&tcp, HTTP_PORT, runtime).await
 }
 
 #[embassy_executor::task]
-async fn ble_task(controller: BleController, runtime: &'static Runtime, address: [u8; 6]) -> ! {
+async fn ble_task(controller: BleController, runtime: &'static Host, address: [u8; 6]) -> ! {
     serve_ble(controller, runtime, address, &FlashBonds).await
 }
 
@@ -223,12 +236,12 @@ fn ble_address() -> [u8; 6] {
 }
 
 #[embassy_executor::task]
-async fn gps_task(rx: UartRx<'static, Async>, runtime: &'static Runtime) -> ! {
+async fn gps_task(rx: UartRx<'static, Async>, runtime: &'static Host) -> ! {
     read_gps(UartReader(rx), runtime).await
 }
 
 #[embassy_executor::task]
-async fn timer_task(runtime: &'static Runtime) -> ! {
+async fn timer_task(runtime: &'static Host) -> ! {
     runtime.run_timer().await
 }
 

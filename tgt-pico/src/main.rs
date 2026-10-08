@@ -40,15 +40,19 @@ use common::{
         AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE,
         WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID,
     },
+    host::{Host, Registry},
     nmea::{AsyncReader, pmtk_sentence},
-    runtime::EngineRuntime,
     tasks::{read_gps, serve_http},
 };
 
-// The engines, and their order on the wire: extreme-engines.
-use extreme_engines::EngineType;
+// The packages the firmware ships with: Race and Tune preinstalled, Choose.
+use extreme_packages::PACKAGES;
 
-type Runtime = EngineRuntime<EngineType>;
+/// The heap: wasm3 and the active engine (its code, value stack and linear
+/// memory; Race needs ~40 KB).
+#[global_allocator]
+static HEAP: embedded_alloc::LlffHeap = embedded_alloc::LlffHeap::empty();
+const HEAP_SIZE: usize = 96 * 1024;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -59,6 +63,11 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    {
+        use core::mem::MaybeUninit;
+        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+        unsafe { HEAP.init(&raw mut HEAP_MEM as usize, HEAP_SIZE) }
+    }
     let p = embassy_rp::init(Default::default());
 
     let driver = Driver::new(p.USB, Irqs);
@@ -141,8 +150,11 @@ async fn main(spawner: Spawner) {
         Err(_) => log::warn!("failed to spawn dhcp server task"),
     }
 
-    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
-    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
+    static HOST: StaticCell<Host> = StaticCell::new();
+    let runtime: &'static Host = HOST.init(Host::new(Registry::new(
+        Some(&PACKAGES.choose),
+        PACKAGES.preinstalled,
+    )));
 
     match httpd_task(stack, runtime) {
         Ok(token) => spawner.spawn(token),
@@ -186,19 +198,19 @@ async fn logger_task(driver: Driver<'static, USB>) {
 }
 
 #[embassy_executor::task]
-async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
+async fn httpd_task(stack: Stack<'static>, runtime: &'static Host) -> ! {
     let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
     let tcp = Tcp::new(stack, &buffers);
     serve_http(&tcp, HTTP_PORT, runtime).await
 }
 
 #[embassy_executor::task]
-async fn gps_task(rx: UartRx<'static, UartAsync>, runtime: &'static Runtime) -> ! {
+async fn gps_task(rx: UartRx<'static, UartAsync>, runtime: &'static Host) -> ! {
     read_gps(UartReader(rx), runtime).await
 }
 
 #[embassy_executor::task]
-async fn timer_task(runtime: &'static Runtime) -> ! {
+async fn timer_task(runtime: &'static Host) -> ! {
     runtime.run_timer().await
 }
 

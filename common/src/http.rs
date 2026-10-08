@@ -1,10 +1,13 @@
-//! HTTP and websocket transport for an [`EngineRuntime`].
+//! HTTP and websocket transport for a [`Host`].
 //!
-//! Serves the active engine's static files, and on `/socket` upgrades to a
-//! websocket that carries client events in and state updates out, both as
-//! binary frames of postcard ([`crate::protocol`]).
+//! Serves the packages' web bundles: Choose's page at `/` (its files at
+//! `/<file>`), each installed package's at `/pkg/<id>/` (`<id>` in
+//! decimal, its files at `/pkg/<id>/<file>`, its watch bundle at
+//! `/pkg/<id>/watch.js`). On `/socket` it upgrades to a websocket that
+//! carries host events in and envelopes out, both as binary frames of
+//! postcard (README "Host protocol").
 
-use core::fmt::{Debug, Display};
+use core::fmt::{Debug, Display, Write as _};
 
 use embassy_futures::select::{Either3, select3};
 use embassy_time::{Duration, Instant, Timer};
@@ -21,58 +24,110 @@ use edge_nal::{Readable, TcpSplit};
 use edge_ws::{Error as WsError, FrameHeader, FrameType};
 use embedded_io_async::{Read, Write};
 
-use extreme_traits::RawEngine;
+use extreme_protocol::{CHOOSE, ENVELOPE_MAX, PackageId};
 
 use crate::{
-    ble_settings::BleStatusView,
     config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS, WS_MAX_INCOMING},
     fmt::{Dbg, Disp},
-    protocol::{MAX_WS_STATE_MESSAGE, WsEventKind, encode_ws_state, split_ws_event},
-    runtime::{EngineRuntime, StateMessage},
+    host::{Host, StateMessage, Transport},
 };
 
-/// An [`edge_http`] request handler backed by an [`EngineRuntime`].
-pub struct HttpHandler<'r, E: RawEngine> {
-    runtime: &'r EngineRuntime<E>,
+/// An [`edge_http`] request handler backed by a [`Host`].
+#[derive(Clone, Copy)]
+pub struct HttpHandler<'r> {
+    host: &'r Host,
 }
 
-// derived impls would needlessly require `E: Clone`
-impl<E: RawEngine> Clone for HttpHandler<'_, E> {
-    fn clone(&self) -> Self {
-        *self
+/// What a GET asks for.
+#[derive(Debug, PartialEq, Eq)]
+enum Route<'a> {
+    /// A file of a package's web bundle (or its watch bundle).
+    File(PackageId, &'a str),
+    /// Somewhere else first: a package's page without its trailing slash,
+    /// or `/` on a host without Choose.
+    Redirect(PackageId),
+    Socket,
+    NotFound,
+}
+
+/// `path` (query string dropped) as a [`Route`].
+fn route(path: &str) -> Route<'_> {
+    let path = path.split('?').next().unwrap_or("");
+    let path = path.trim_start_matches('/');
+    if path == "socket" {
+        return Route::Socket;
+    }
+    match path.strip_prefix("pkg/") {
+        None if !path.contains('/') => Route::File(CHOOSE, path),
+        None => Route::NotFound,
+        Some(rest) => {
+            let (id, file) = match rest.split_once('/') {
+                Some((id, file)) => (id, Some(file)),
+                None => (rest, None),
+            };
+            match (id.parse::<PackageId>(), file) {
+                (Ok(id), Some(file)) if !file.contains('/') => Route::File(id, file),
+                (Ok(id), None) => Route::Redirect(id),
+                _ => Route::NotFound,
+            }
+        }
     }
 }
 
-impl<E: RawEngine> Copy for HttpHandler<'_, E> {}
+/// `/pkg/<id>/` (or `/` for Choose).
+fn page_url(id: PackageId) -> heapless::String<24> {
+    let mut url = heapless::String::new();
+    if id == CHOOSE {
+        let _ = url.push('/');
+    } else {
+        let _ = write!(url, "/pkg/{id}/");
+    }
+    url
+}
 
-impl<'r, E: RawEngine> HttpHandler<'r, E> {
-    pub fn new(runtime: &'r EngineRuntime<E>) -> Self {
-        Self { runtime }
+impl<'r> HttpHandler<'r> {
+    pub fn new(host: &'r Host) -> Self {
+        Self { host }
     }
 
-    /// Relays between a websocket and the runtime until either side fails or
+    /// The contents of `file` of package `id`, or where to go instead.
+    fn file(&self, id: PackageId, file: &str) -> Result<&'static [u8], Option<PackageId>> {
+        let Some(package) = self.host.package(id) else {
+            // no Choose: its page is the default app's
+            if id == CHOOSE && file.is_empty() {
+                let default = self.host.default_id();
+                return Err((default != CHOOSE).then_some(default));
+            }
+            return Err(None);
+        };
+        if let Some(contents) = package.web_file(file) {
+            return Ok(contents);
+        }
+        if file == "watch.js" && !package.watch.is_empty() {
+            return Ok(package.watch);
+        }
+        Err(None)
+    }
+
+    /// Relays between a websocket and the host until either side fails or
     /// the client closes.
     async fn run_websocket<S>(&self, socket: &mut S) -> Result<(), WsError<S::Error>>
     where
         S: TcpSplit,
     {
         // subscribe before reading the current state, so no change is missed
-        let mut updates = match self.runtime.subscribe() {
+        let mut updates = match self.host.subscribe() {
             Ok(updates) => updates,
             Err(e) => {
-                error!(
-                    "websocket: cannot subscribe to state updates: {:?}",
-                    Dbg(&e)
-                );
+                error!("websocket: cannot subscribe to state updates: {:?}", Dbg(&e));
                 return Ok(());
             }
         };
 
         let (mut rx, mut tx) = socket.split();
 
-        if let Ok(state) = self.runtime.current_state().await {
-            send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
-        }
+        let state = self.host.current_state().await;
+        self.send_state(&mut tx, &state).await?;
 
         // A client that vanishes without closing (a Kindle going to sleep)
         // leaves no trace on the read side, so it is pinged every heartbeat
@@ -87,13 +142,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         loop {
             // wait for readability rather than for a frame header: a frame
             // read cancelled half way would desynchronise the stream
-            match select3(
-                rx.readable(),
-                updates.next_message_pure(),
-                Timer::at(next_heartbeat),
-            )
-            .await
-            {
+            match select3(rx.readable(), updates.next_message_pure(), Timer::at(next_heartbeat)).await {
                 Either3::First(readable) => {
                     readable.map_err(WsError::Io)?;
                     let header = FrameHeader::recv(&mut rx).await?;
@@ -124,9 +173,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                         }
                     }
                 }
-                Either3::Second(state) => {
-                    send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
-                }
+                Either3::Second(state) => self.send_state(&mut tx, &state).await?,
                 Either3::Third(()) => {
                     if last_heard.elapsed() >= Duration::from_millis(WS_CLIENT_TIMEOUT_MS) {
                         info!(
@@ -143,49 +190,40 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     // A pending update is sent instead, rather than left to
                     // follow (and possibly undo) a newer current state.
                     let state = match updates.try_next_message_pure() {
-                        Some(state) => Ok(state),
-                        None => self.runtime.current_state().await,
+                        Some(state) => state,
+                        None => self.host.current_state().await,
                     };
-                    if let Ok(state) = state {
-                        send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
-                    }
+                    self.send_state(&mut tx, &state).await?;
                 }
             }
         }
     }
-}
 
-impl<E: RawEngine> HttpHandler<'_, E> {
-    /// A message from the client: a `WsEvent` (an engine event, or a BLE
-    /// command).
+    /// A message from the client: a `HostEvent`.
     async fn client_event(&self, payload: &[u8]) {
-        match split_ws_event(payload) {
-            Some((WsEventKind::Engine, event)) => {
-                if self.runtime.external_event(event).await.is_err() {
-                    warn!(
-                        "websocket: engine event refused (undecodable, or not for the active engine): {:?}",
-                        Dbg(&event)
-                    );
-                }
-            }
-            Some((WsEventKind::Ble, command)) => {
-                match postcard::from_bytes(command) {
-                    Ok(command) => match self.runtime.ble_command(command) {
-                        Ok(()) => info!("websocket: BLE command {:?}", Dbg(&command)),
-                        Err(()) => warn!(
-                            "websocket: BLE command {:?} refused (no BLE on this target, or busy)",
-                            Dbg(&command)
-                        ),
-                    },
-                    Err(_) => warn!("websocket: undecodable BLE command: {:?}", Dbg(&command)),
-                }
-            }
-            None => warn!("websocket: undecodable message: {:?}", Dbg(&payload)),
+        match self.host.event(payload, Transport::WebSocket).await {
+            Ok(()) => debug!("websocket: event {:?}", Dbg(&payload)),
+            Err(why) => warn!("websocket: event refused ({:?}): {:?}", Dbg(&why), Dbg(&payload)),
         }
+    }
+
+    /// Sends `state` as an envelope stamped now, with the BLE status for
+    /// Choose, as one binary frame.
+    async fn send_state<W: Write>(&self, socket: &mut W, state: &StateMessage) -> Result<(), WsError<W::Error>> {
+        let mut frame = [0u8; ENVELOPE_MAX];
+        let Ok(len) = self
+            .host
+            .encode_envelope(state, self.host.now(), self.host.ble_status_view(), &mut frame)
+        else {
+            // sized for the largest envelope, so this can't happen
+            error!("websocket: {} state does not fit a frame", state.name);
+            return Ok(());
+        };
+        send_frame(socket, &frame[..len]).await
     }
 }
 
-impl<E: RawEngine> Handler for HttpHandler<'_, E> {
+impl Handler for HttpHandler<'_> {
     type Error<T>
         = Error<T>
     where
@@ -202,36 +240,44 @@ impl<E: RawEngine> Handler for HttpHandler<'_, E> {
         let headers = conn.headers()?;
 
         if headers.method != Method::Get {
-            conn.initiate_response(405, Some("Method Not Allowed"), &[])
-                .await?;
-        } else if headers.path != "/socket" {
-            let path = match headers.path.trim_start_matches('/') {
-                "" => "index.html",
-                path => path,
-            };
-
-            debug!("http: GET {}", path);
-            // the lock is released before the (slow) write
-            if let Some(file) = self.runtime.static_file(path).await {
+            conn.initiate_response(405, Some("Method Not Allowed"), &[]).await?;
+            return Ok(());
+        }
+        debug!("http: GET {}", headers.path);
+        let found = match route(headers.path) {
+            Route::Socket => None,
+            Route::File(id, file) => Some(self.file(id, file)),
+            Route::Redirect(id) => Some(Err(Some(id))),
+            Route::NotFound => Some(Err(None)),
+        };
+        match found {
+            Some(Ok(file)) => {
                 conn.initiate_response(200, Some("OK"), &[]).await?;
                 conn.write_all(file).await?;
-            } else {
+            }
+            Some(Err(Some(id))) => {
+                let url = page_url(id);
+                conn.initiate_response(302, Some("Found"), &[("Location", url.as_str())]).await?;
+            }
+            Some(Err(None)) => {
                 conn.initiate_response(404, Some("Not Found"), &[]).await?;
             }
-        } else if !conn.is_ws_upgrade_request()? {
-            conn.initiate_response(200, Some("OK"), &[("Content-Type", "text/plain")])
-                .await?;
-            conn.write_all(b"Initiate WS Upgrade request to switch this connection to WS")
-                .await?;
-        } else {
-            let mut buf = [0_u8; MAX_BASE64_KEY_RESPONSE_LEN];
-            conn.initiate_ws_upgrade_response(&mut buf).await?;
-            conn.complete().await?;
-            info!("websocket: connected");
+            None if !conn.is_ws_upgrade_request()? => {
+                conn.initiate_response(200, Some("OK"), &[("Content-Type", "text/plain")])
+                    .await?;
+                conn.write_all(b"Initiate WS Upgrade request to switch this connection to WS")
+                    .await?;
+            }
+            None => {
+                let mut buf = [0_u8; MAX_BASE64_KEY_RESPONSE_LEN];
+                conn.initiate_ws_upgrade_response(&mut buf).await?;
+                conn.complete().await?;
+                info!("websocket: connected");
 
-            let socket = conn.unbind()?;
-            if let Err(e) = self.run_websocket(socket).await {
-                info!("websocket: disconnected: {:?}", Dbg(&e));
+                let socket = conn.unbind()?;
+                if let Err(e) = self.run_websocket(socket).await {
+                    info!("websocket: disconnected: {:?}", Dbg(&e));
+                }
             }
         }
 
@@ -253,32 +299,16 @@ where
     socket.flush().await.map_err(WsError::Io)
 }
 
-/// Sends a state message, a `WsState` stamped `timestamp` with the BLE
-/// status `ble`, as one binary websocket frame.
-async fn send_state<W>(
-    socket: &mut W,
-    timestamp: u64,
-    state: &StateMessage,
-    ble: Option<&BleStatusView>,
-) -> Result<(), WsError<W::Error>>
-where
-    W: Write,
-{
-    let mut frame = [0u8; MAX_WS_STATE_MESSAGE];
-    // sized for the largest engine state and BLE status, so this can't fail
-    let Ok(len) = encode_ws_state(timestamp, &state.engine, ble, &mut frame) else {
-        error!("websocket: {} state does not fit a frame", state.kind);
-        return Ok(());
-    };
-
+/// Sends `payload` as one binary frame.
+async fn send_frame<W: Write>(socket: &mut W, payload: &[u8]) -> Result<(), WsError<W::Error>> {
     let header = FrameHeader {
         mask_key: None,
         // `false`: not fragmented, this frame is the whole message
         frame_type: FrameType::Binary(false),
-        payload_len: len as u64,
+        payload_len: payload.len() as u64,
     };
     header.send(&mut *socket).await?;
-    socket.write_all(&frame[..len]).await.map_err(WsError::Io)?;
+    socket.write_all(payload).await.map_err(WsError::Io)?;
     socket.flush().await.map_err(WsError::Io)
 }
 
@@ -287,83 +317,39 @@ mod tests {
     extern crate std;
 
     use super::*;
-    use crate::{
-        ble_settings::{BleNote, BleStatus},
-        protocol::WsState,
-    };
     use embassy_futures::block_on;
-    use embassy_time::Instant;
-    use extreme_traits::{MAX_STATE_SIZE, StateBytes};
 
-    /// Stands in for an engine set's `EngineState`: a tag and some bytes.
-    #[derive(Debug, PartialEq, serde::Deserialize)]
-    enum Engine {
-        Selector(()),
-        Small(u8, u8),
+    #[test]
+    fn routes() {
+        assert_eq!(route("/"), Route::File(CHOOSE, ""));
+        assert_eq!(route("/?h=0011"), Route::File(CHOOSE, ""));
+        assert_eq!(route("/bundle-ab.js"), Route::File(CHOOSE, "bundle-ab.js"));
+        assert_eq!(route("/socket"), Route::Socket);
+        assert_eq!(route("/pkg/123/"), Route::File(123, ""));
+        assert_eq!(route("/pkg/123/?h=ff"), Route::File(123, ""));
+        assert_eq!(route("/pkg/123/index.html"), Route::File(123, "index.html"));
+        assert_eq!(route("/pkg/123"), Route::Redirect(123));
+        assert_eq!(route("/pkg/x/"), Route::NotFound);
+        assert_eq!(route("/pkg/1/a/b"), Route::NotFound);
+        assert_eq!(route("/a/b"), Route::NotFound);
+        assert_eq!(page_url(0).as_str(), "/");
+        assert_eq!(page_url(4_294_967_295).as_str(), "/pkg/4294967295/");
     }
 
-    fn sent(state: &StateMessage, timestamp: u64, ble: Option<&BleStatusView>) -> std::vec::Vec<u8> {
-        let mut out = [0u8; MAX_WS_STATE_MESSAGE + 16];
+    #[test]
+    fn frames_are_binary_and_whole() {
+        let mut out = [0u8; ENVELOPE_MAX + 16];
         let capacity = out.len();
+        let payload = [7u8; ENVELOPE_MAX];
         let written = {
             let mut writer: &mut [u8] = &mut out;
-            block_on(send_state(&mut writer, timestamp, state, ble)).unwrap();
+            block_on(send_frame(&mut writer, &payload)).unwrap();
             capacity - writer.len()
         };
         let mut reader: &[u8] = &out[..written];
         let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
         assert_eq!(header.frame_type, FrameType::Binary(false));
-        assert_eq!(header.payload_len as usize, reader.len());
-        reader.to_vec()
-    }
-
-    #[test]
-    fn send_state_handles_max_size_message() {
-        let mut engine = StateBytes::new();
-        engine.push(1).unwrap();
-        engine.resize(MAX_STATE_SIZE, 0xab).unwrap();
-        let state = StateMessage { kind: "Big", engine };
-        let mut status = BleStatus {
-            pair_until: Some(Instant::MAX),
-            note: BleNote::PairedNotSaved([0xff; 6]),
-            ..Default::default()
-        };
-        for _ in 0..crate::config::MAX_BLE_BONDS {
-            status.bonds.push([0xff; 6]).unwrap();
-        }
-        let ble = status.view(Instant::from_secs(0));
-
-        let frame = sent(&state, u64::MAX, Some(&ble));
-        assert_eq!(frame.len(), MAX_WS_STATE_MESSAGE);
-        // the timestamp, the engine bytes as they were, the status
-        assert_eq!(&frame[..10], &postcard::to_stdvec(&u64::MAX).unwrap()[..]);
-        assert_eq!(&frame[10..10 + MAX_STATE_SIZE], &state.engine[..]);
-        let ble_bytes = postcard::to_stdvec(&Some(&ble)).unwrap();
-        assert_eq!(&frame[10 + MAX_STATE_SIZE..], &ble_bytes[..]);
-    }
-
-    /// A small engine state decodes as the typed `WsState`.
-    #[test]
-    fn send_state_is_a_ws_state() {
-        let state = StateMessage {
-            kind: "Small",
-            engine: StateBytes::from_slice(&[1, 0xab, 0xcd]).unwrap(),
-        };
-        let ble = BleStatus::default().view(Instant::from_secs(0));
-        let frame = sent(&state, 1_790_000_000_000, Some(&ble));
-        let decoded: WsState<Engine> = postcard::from_bytes(&frame).unwrap();
-        assert_eq!(decoded.timestamp, 1_790_000_000_000);
-        assert_eq!(decoded.engine, Engine::Small(0xab, 0xcd));
-        assert_eq!(decoded.ble, Some(ble));
-    }
-
-    /// Without BLE the status is `None`, one byte.
-    #[test]
-    fn send_state_without_ble() {
-        let state = StateMessage {
-            kind: "Selector",
-            engine: StateBytes::from_slice(&[0]).unwrap(),
-        };
-        assert_eq!(sent(&state, 7, None), [7, 0, 0]);
+        assert_eq!(header.payload_len as usize, ENVELOPE_MAX);
+        assert_eq!(reader, &payload[..]);
     }
 }

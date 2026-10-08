@@ -50,8 +50,10 @@ edge-dhcp = { workspace = true }
 portable-atomic = { workspace = true, features = ["critical-section"] }
 log = { workspace = true }
 static_cell = { workspace = true }
+# the heap wasm3 and the active engine live in
+embedded-alloc = "0.6"
 
 #
-# The magic
+# The packages (Race, Tune, Choose), run by the host in common
 #
-extreme-engines = { path = "../extreme-engines/" }
+extreme-packages = { path = "../extreme-packages" }

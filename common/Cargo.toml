@@ -37,8 +37,11 @@ defmt = { version = "1.0", optional = true }
 # AtomicU64 on targets without 64-bit atomics (fallback is a no-op where they exist)
 portable-atomic = { workspace = true, features = ["fallback"] }
 
-# Local crates
-extreme-traits = { path = "../extreme-traits" }
+# Local crates: the host protocol, the engine ABI and shared types, the
+# interpreter the engines run in
+extreme-protocol = { path = "../extreme-protocol" }
+extreme-sdk = { path = "../extreme-sdk" }
+extreme-wasm3 = { path = "../extreme-wasm3" }
 
 [features]
 default = []
@@ -53,3 +56,8 @@ ble = ["dep:trouble-host", "dep:heapless09", "dep:static_cell"]
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 critical-section = { version = "1.2", features = ["std"] }
 postcard = { workspace = true, features = ["use-std"] }
+# the real Race and Tune packages, run by the host under wasm3 in the tests
+extreme-packages = { path = "../extreme-packages" }
+extreme-race = { path = "../extreme-race" }
+extreme-tune = { path = "../extreme-tune" }
+log = { workspace = true, features = ["std"] }

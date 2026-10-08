@@ -9,8 +9,6 @@
 use core::fmt;
 
 use embassy_time::Instant;
-use postcard_schema::Schema;
-use serde::{Deserialize, Serialize};
 
 use crate::config::MAX_BLE_BONDS;
 
@@ -125,41 +123,9 @@ impl BondRecord {
     }
 }
 
-/// What the Kindle's settings panel asks of the BLE transport: the `Ble`
-/// variant of a websocket event ([`WsEvent`](crate::protocol::WsEvent)).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Schema)]
-pub enum BleCommand {
-    /// Open the pairing window for
-    /// [`BLE_PAIRING_WINDOW_SECS`](crate::config::BLE_PAIRING_WINDOW_SECS).
-    Pair,
-    /// Close it early.
-    Cancel,
-    /// Delete every bond (flash and host) and drop bonded links.
-    ForgetAll,
-}
-
-/// The last thing that happened to pairing, for the settings panel, which
-/// puts it in words. Addresses are in BLE byte order.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Schema)]
-pub enum BleNote {
-    #[default]
-    None,
-    /// A device bonded (its identity address).
-    Paired([u8; 6]),
-    /// A device bonded but the bond could not be written to flash: it works
-    /// until the next power cycle only.
-    PairedNotSaved([u8; 6]),
-    /// Pairing was attempted outside the window and refused.
-    Rejected,
-    /// Pairing started in the window but did not complete.
-    Failed,
-    /// The window closed with nobody paired.
-    Expired,
-    /// A device tried to resume a bond this box does not hold.
-    StaleBond,
-    /// All bonds were deleted.
-    Forgotten,
-}
+// The wire types of pairing (the Kindle's `HostEvent::Ble` commands and the
+// status in Choose's view) are the host protocol's.
+pub use extreme_protocol::{BLE_STATUS_VIEW_MAX, BleCommand, BleNote, BleStatusView};
 
 /// The BLE side's state as the settings panel shows it.
 #[derive(Clone, Debug, Default)]
@@ -172,29 +138,6 @@ pub struct BleStatus {
     pub bonds: heapless::Vec<[u8; 6], MAX_BLE_BONDS>,
     pub note: BleNote,
 }
-
-/// [`BleStatus`] as the websocket clients get it: the `ble` field of a
-/// [`WsState`](crate::protocol::WsState) (BLE.md "Pairing a watch").
-/// Addresses are in BLE byte order (least significant byte first): print
-/// them reversed, as [`AddrText`] does.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Schema)]
-pub struct BleStatusView {
-    /// This box's address.
-    pub addr: [u8; 6],
-    /// What is left of the pairing window when the message was sent, ms; 0
-    /// when it is closed.
-    pub pair_ms: u32,
-    /// The bonded devices' identity addresses, oldest first.
-    pub bonds: heapless::Vec<[u8; 6], MAX_BLE_BONDS>,
-    /// How many bonds the box keeps.
-    pub max_bonds: u8,
-    pub note: BleNote,
-}
-
-/// Largest serialized `Option<BleStatusView>`: Some, the address, a 5-byte
-/// `pair_ms`, the bond count and every bond, `max_bonds`, the longest note.
-/// `status_view_worst_case_fits` checks it.
-pub const BLE_STATUS_VIEW_MAX: usize = 1 + 6 + 5 + 1 + 6 * MAX_BLE_BONDS + 1 + 1 + 6;
 
 impl BleStatus {
     /// The view of this status at `now` (the pairing window's time left is

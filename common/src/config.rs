@@ -15,7 +15,7 @@ pub const BLE_NAME: &str = "nacra";
 pub const MAX_BLE_CONNECTIONS: usize = 2;
 /// Bonded devices kept (BLE.md "Security"): a crew's watches and a phone.
 /// When all are taken, a new pairing replaces the oldest bond.
-pub const MAX_BLE_BONDS: usize = 4;
+pub const MAX_BLE_BONDS: usize = extreme_protocol::MAX_BLE_BONDS;
 /// How long "Pair watch" on the Kindle's settings panel lets a new device
 /// bond (BLE.md "Pairing a watch"). Bonding is refused at any other time;
 /// bonded devices reconnect whenever they like.

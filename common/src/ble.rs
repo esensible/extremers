@@ -1,8 +1,8 @@
-//! BLE GATT transport for an [`EngineRuntime`] (BLE.md).
+//! BLE GATT transport for a [`Host`] (BLE.md).
 //!
 //! One service with two characteristics: `state` (read, notify) carries the
-//! engine state, `event` (write, write-without-response) takes client
-//! events, both postcard ([`crate::protocol`]). Up to [`CONNECTIONS_MAX`] centrals at once, each
+//! host's envelope, `event` (write, write-without-response) takes host
+//! events, both postcard (README "Host protocol"). Up to [`CONNECTIONS_MAX`] centrals at once, each
 //! served by its own worker; a worker with no connection advertises, and
 //! only one advertises at a time, so the device is connectable exactly
 //! while a slot is free.
@@ -28,14 +28,13 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex, signal::Sign
 use embassy_time::{Duration, Instant, Timer};
 use trouble_host::{att::AttClient, prelude::*};
 
-use extreme_traits::RawEngine;
+use extreme_protocol::ENVELOPE_MAX;
 
 use crate::{
     ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord},
     config::{BLE_NAME, BLE_PAIRING_WINDOW_SECS, MAX_BLE_BONDS, MAX_BLE_CONNECTIONS},
     fmt::{Dbg, Disp},
-    protocol::{MAX_STATE_MESSAGE, encode_state},
-    runtime::{EngineRuntime, StateMessage},
+    host::{Host, Refused, StateMessage, Transport},
 };
 
 /// Concurrent BLE connections: the watch plus a phone or a debugging tool.
@@ -59,16 +58,18 @@ const SERVICE_UUID: u128 = 0xe4a1c000_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const STATE_UUID: u128 = 0xe4a1c001_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const EVENT_UUID: u128 = 0xe4a1c002_6b2f_4f77_9a0d_3c5e7b9d1f20;
 
-/// Largest `state` value: a `State` (timestamp and engine state) at its
-/// largest. A notification carries at most ATT MTU - 3 bytes, so a central
-/// must exchange a larger ATT MTU than the default 23 (BLE.md "State");
-/// CoreBluetooth always does, and the host accepts up to its packet pool's
-/// MTU less 4, 247.
-const STATE_MAX: usize = MAX_STATE_MESSAGE;
-/// Largest `event` value: an `EngineEvent`; a write longer than this is
-/// refused. Today's largest is 17 bytes (a bump with `seconds` and
-/// `timestamp` at their longest), within the default MTU's 20.
-const EVENT_MAX: usize = 20;
+/// Largest `state` value: an `Envelope` at its largest. A notification
+/// carries at most ATT MTU - 3 bytes, so a central must exchange a larger
+/// ATT MTU than the default 23 (BLE.md "State"); CoreBluetooth always does,
+/// and the host accepts up to its packet pool's MTU less 4, 247. A value
+/// that does not fit the link's MTU is not notified (logged); a read gets
+/// it whole, in parts (Read Blob).
+const STATE_MAX: usize = ENVELOPE_MAX;
+/// Largest `event` value: a `HostEvent`; a write longer than this is
+/// refused. Today's largest is 24 bytes (a Race bump with `seconds` and
+/// `timestamp` at their longest, plus the package id), more than the
+/// default MTU's 20: a central must exchange a larger MTU (BLE.md).
+const EVENT_MAX: usize = 64;
 
 /// Company identifier of the scan response's manufacturer data: 0xFFFF is
 /// the Bluetooth SIG's value for internal use and testing, i.e. no company.
@@ -166,7 +167,7 @@ impl Shared {
         }
     }
 
-    async fn publish<E: RawEngine>(&self, runtime: &EngineRuntime<E>) {
+    async fn publish(&self, runtime: &Host) {
         runtime.set_ble_status(self.status()).await;
     }
 }
@@ -177,15 +178,14 @@ impl Shared {
 /// `store`.
 ///
 /// [`static_random_address`]: crate::ble_settings::static_random_address
-pub async fn serve_ble<C, E, S>(
+pub async fn serve_ble<C, S>(
     controller: C,
-    runtime: &EngineRuntime<E>,
+    runtime: &Host,
     address: [u8; 6],
     store: &S,
 ) -> !
 where
     C: Controller,
-    E: RawEngine,
     S: BondStore,
 {
     info!("ble: address {} (static random)", Disp(&AddrText(address)));
@@ -268,14 +268,13 @@ where
 }
 
 /// The pairing window and the Kindle's commands.
-async fn control<C, E, S>(
+async fn control<C, S>(
     shared: &Shared,
     stack: &Stack<'_, C, DefaultPacketPool>,
-    runtime: &EngineRuntime<E>,
+    runtime: &Host,
     store: &S,
 ) where
     C: Controller,
-    E: RawEngine,
     S: BondStore,
 {
     let window = Duration::from_secs(BLE_PAIRING_WINDOW_SECS);
@@ -347,18 +346,17 @@ async fn forget_all<C: Controller, S: BondStore>(
 /// Worker `me`: advertise (while holding the advertising lock), accept,
 /// serve the connection until it drops, repeat.
 #[allow(clippy::too_many_arguments)]
-async fn worker<'v, C, E, S>(
+async fn worker<'v, C, S>(
     me: usize,
     shared: &Shared,
     stack: &Stack<'_, C, DefaultPacketPool>,
     advertising: &Mutex<NoopRawMutex, &mut Peripheral<'v, C, DefaultPacketPool>>,
     server: &Server<'_>,
-    runtime: &EngineRuntime<E>,
+    runtime: &Host,
     store: &S,
     unit: &[u8; 6],
 ) where
     C: Controller,
-    E: RawEngine,
     S: BondStore,
 {
     loop {
@@ -496,17 +494,16 @@ fn scan_data_encode(unit: &[u8; 6], out: &mut [u8; 31]) -> Option<usize> {
 /// An encrypted link is not enough on its own: outside the window a
 /// central can still pair (without bonding) and encrypt, and may even
 /// claim a bonded device's identity address while doing so.
-async fn serve<C, E, S>(
+async fn serve<C, S>(
     me: usize,
     shared: &Shared,
     stack: &Stack<'_, C, DefaultPacketPool>,
     server: &Server<'_>,
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
-    runtime: &EngineRuntime<E>,
+    runtime: &Host,
     store: &S,
 ) where
     C: Controller,
-    E: RawEngine,
     S: BondStore,
 {
     let state = &server.race.state;
@@ -530,8 +527,7 @@ async fn serve<C, E, S>(
         }
     };
 
-    if let Ok(message) = runtime.current_state().await
-        && let Some(value) = state_value(&message, runtime.now())
+    if let Some(value) = state_value(runtime, &runtime.current_state().await)
         && let Err(e) = conn.set(state, &value)
     {
         // a central that subscribes later reads it from the table
@@ -557,21 +553,26 @@ async fn serve<C, E, S>(
         {
             Either4::First(gatt) => gatt,
             Either4::Second(message) => {
-                if trusted && let Some(value) = state_value(&message, runtime.now()) {
-                    // the host truncates a notification to the ATT MTU
+                if trusted && let Some(value) = state_value(runtime, &message) {
+                    // A notification carries at most ATT MTU - 3 bytes and
+                    // the host would cut a longer one short, which no
+                    // central could decode: not sent (stored for reads,
+                    // which come in parts), logged once per connection.
                     let room = conn.raw().att_mtu() as usize - 3;
-                    if value.len() > room && !warned_mtu {
-                        warned_mtu = true;
-                        warn!(
-                            "ble: connection {}: {} state is {} bytes but the ATT MTU allows {}: the central must exchange a larger MTU",
-                            me,
-                            message.kind,
-                            value.len(),
-                            room
-                        );
-                    }
-                    // stored too, so reads stay current
-                    if let Err(e) = state.notify(conn, &value, true).await {
+                    if value.len() > room {
+                        if !warned_mtu {
+                            warned_mtu = true;
+                            warn!(
+                                "ble: connection {}: {} state is {} bytes but the ATT MTU allows {}: not notified; the central must exchange a larger MTU",
+                                me,
+                                message.name,
+                                value.len(),
+                                room
+                            );
+                        }
+                        let _ = conn.set(state, &value);
+                    } else if let Err(e) = state.notify(conn, &value, true).await {
+                        // stored too, so reads stay current
                         debug!("ble: connection {}: notify failed: {:?}", me, Dbg(&e));
                     }
                 }
@@ -750,14 +751,19 @@ async fn serve<C, E, S>(
                                 }
                             });
                             let accepted = match &payload {
-                                Some(payload) => runtime.external_event(payload).await.is_ok(),
-                                None => false,
+                                Some(payload) => runtime.event(payload, Transport::Ble).await,
+                                None => Err(Refused::Undecodable),
                             };
-                            if accepted {
+                            if accepted.is_ok() {
                                 debug!("ble: connection {}: event {:?}", me, Dbg(&payload));
                                 write.accept()
                             } else {
-                                warn!("ble: connection {}: event refused: {:?}", me, Dbg(&payload));
+                                warn!(
+                                    "ble: connection {}: event refused ({:?}): {:?}",
+                                    me,
+                                    Dbg(&accepted),
+                                    Dbg(&payload)
+                                );
                                 if command {
                                     write.accept_unprocessed()
                                 } else {
@@ -785,8 +791,7 @@ async fn serve<C, E, S>(
                             warn!("ble: connection {}: state read refused: link not bonded", me);
                             read.reject(AttErrorCode::INSUFFICIENT_AUTHORISATION)
                         } else {
-                            if let Ok(message) = runtime.current_state().await
-                                && let Some(value) = state_value(&message, runtime.now())
+                            if let Some(value) = state_value(runtime, &runtime.current_state().await)
                                 && let Err(e) = conn.set(state, &value)
                             {
                                 warn!("ble: cannot set state: {:?}", Dbg(&e));
@@ -926,24 +931,20 @@ async fn wait_disconnect(conn: &GattConnection<'_, '_, DefaultPacketPool>) {
     }
 }
 
-/// The `state` characteristic value of a state message: a `State` stamped
-/// `now`.
-fn state_value(message: &StateMessage, now: u64) -> Option<StateValue> {
+/// The `state` characteristic value of a state message: its envelope
+/// stamped now, without the BLE status (Choose's view has `ble: None` here).
+fn state_value(host: &Host, message: &StateMessage) -> Option<StateValue> {
     let mut value = StateValue::new();
     // cannot fail: resizing to the capacity
     let _ = value.resize(STATE_MAX, 0);
-    match encode_state(now, &message.engine, &mut value) {
+    match host.encode_envelope(message, host.now(), None, &mut value) {
         Ok(len) => {
             value.truncate(len);
             Some(value)
         }
         Err(()) => {
-            error!(
-                "ble: {} state is {} bytes, too long for {}",
-                message.kind,
-                message.engine.len(),
-                STATE_MAX
-            );
+            // sized for the largest envelope, so this can't happen
+            error!("ble: {} state does not fit {} bytes", message.name, STATE_MAX);
             None
         }
     }
