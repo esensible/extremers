@@ -1,0 +1,12 @@
+{
+  "ctx": { "width": 198, "height": 242 },
+  "steps": [
+    { "state": { "armed": true, "toMs": 65000 } },
+    { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 0 } } },
+    { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 1500 } } },
+    { "dispatch": { "tag": 999, "name": "press", "payload": { "agoMs": 0 } } },
+    { "state": { "armed": false, "toMs": -3000 } },
+    { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 0 } } },
+    { "state": { "armed": true, "toMs": null } }
+  ]
+}

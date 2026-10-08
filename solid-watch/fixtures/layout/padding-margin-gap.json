@@ -1,0 +1,80 @@
+{
+ "name": "padding-margin-gap",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"padding\",8]",
+  "[\"setProp\",2,\"gap\",6]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"setProp\",3,\"margin\",4]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"height\",20]",
+  "[\"setProp\",4,\"marginHorizontal\",10]",
+  "[\"setProp\",4,\"marginTop\",3]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"paddingVertical\",5]",
+  "[\"setProp\",5,\"paddingLeft\",7]",
+  "[\"createNode\",6,\"view\"]",
+  "[\"setProp\",6,\"height\",10]",
+  "[\"insert\",5,6,0]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    99
+   ],
+   "3": [
+    12,
+    12,
+    174,
+    20
+   ],
+   "4": [
+    18,
+    45,
+    162,
+    20
+   ],
+   "5": [
+    8,
+    71,
+    182,
+    20
+   ],
+   "6": [
+    7,
+    5,
+    175,
+    10
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

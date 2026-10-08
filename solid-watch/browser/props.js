@@ -493,7 +493,7 @@ export const schema = {
       "children": "none",
       "props": {
         "toMs": {
-          "kind": "behavior",
+          "kind": "measure",
           "type": "number",
           "default": null,
           "doc": "Target, ms after the receipt of the state being applied when this prop was set (negative = passed). null shows nothing."

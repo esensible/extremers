@@ -1,0 +1,70 @@
+{
+ "name": "row-space-between",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"justifyContent\",\"space-between\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"width\",40]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"width\",30]",
+  "[\"setProp\",4,\"height\",30]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"width\",20]",
+  "[\"setProp\",5,\"height\",10]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    30
+   ],
+   "3": [
+    0,
+    0,
+    40,
+    20
+   ],
+   "4": [
+    94,
+    0,
+    30,
+    30
+   ],
+   "5": [
+    178,
+    0,
+    20,
+    10
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

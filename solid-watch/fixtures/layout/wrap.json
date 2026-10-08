@@ -1,0 +1,92 @@
+{
+ "name": "wrap",
+ "viewport": {
+  "width": 176,
+  "height": 215
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":176,\"height\":215}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"flexWrap\",\"wrap\"]",
+  "[\"setProp\",2,\"gap\",4]",
+  "[\"setProp\",2,\"alignContent\",\"flex-start\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"width\",60]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"width\",60]",
+  "[\"setProp\",4,\"height\",20]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"width\",60]",
+  "[\"setProp\",5,\"height\",20]",
+  "[\"insert\",2,5,0]",
+  "[\"createNode\",6,\"view\"]",
+  "[\"setProp\",6,\"width\",60]",
+  "[\"setProp\",6,\"height\",20]",
+  "[\"insert\",2,6,0]",
+  "[\"createNode\",7,\"view\"]",
+  "[\"setProp\",7,\"width\",60]",
+  "[\"setProp\",7,\"height\",20]",
+  "[\"insert\",2,7,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    176,
+    215
+   ],
+   "2": [
+    0,
+    0,
+    176,
+    68
+   ],
+   "3": [
+    0,
+    0,
+    60,
+    20
+   ],
+   "4": [
+    64,
+    0,
+    60,
+    20
+   ],
+   "5": [
+    0,
+    24,
+    60,
+    20
+   ],
+   "6": [
+    64,
+    24,
+    60,
+    20
+   ],
+   "7": [
+    0,
+    48,
+    60,
+    20
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

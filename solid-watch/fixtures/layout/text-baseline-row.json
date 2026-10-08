@@ -1,0 +1,72 @@
+{
+ "name": "text-baseline-row",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"alignItems\",\"baseline\"]",
+  "[\"setProp\",2,\"gap\",2]",
+  "[\"createNode\",3,\"text\"]",
+  "[\"setProp\",3,\"fontSize\",22]",
+  "[\"createText\",4,\"+0.5\"]",
+  "[\"insert\",3,4,0]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",5,\"text\"]",
+  "[\"setProp\",5,\"fontSize\",12]",
+  "[\"createText\",6,\"kn\"]",
+  "[\"insert\",5,6,0]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    27.5
+   ],
+   "3": [
+    0,
+    0,
+    53,
+    27.5
+   ],
+   "5": [
+    54.5,
+    12.5,
+    15,
+    15
+   ]
+  },
+  "text": {
+   "3": {
+    "fontSize": 22,
+    "lines": 1
+   },
+   "5": {
+    "fontSize": 12,
+    "lines": 1
+   }
+  },
+  "content": {}
+ }
+}

@@ -9,6 +9,7 @@
     "./renderer": "./js/renderer.js",
     "./jsx": { "types": "./js/jsx.d.ts" },
     "./schema-merge": "./js/schema-merge.js",
+    "./rollup": "./js/rollup.js",
     "./schema/nodes.json": "./schema/nodes.json",
     "./browser/*": "./browser/*"
   },
@@ -17,7 +18,8 @@
     "codegen": "node codegen/codegen.mjs",
     "codegen:check": "node codegen/codegen.mjs --check",
     "build:test-bundles": "rollup -c test/rollup.config.js",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
+    "check": "sh test/all.sh",
     "fixtures": "node test/make-fixtures.mjs",
     "boundary": "node test/boundary.mjs",
     "dev": "vite browser --host 0.0.0.0"
@@ -30,6 +32,7 @@
     "@babel/preset-env": "^7.25.0",
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-node-resolve": "^15.3.0",
+    "@rollup/plugin-terser": "^0.4.4",
     "babel-preset-solid": "^1.9.2",
     "rollup": "^4.24.0",
     "solid-js": "^1.9.2",

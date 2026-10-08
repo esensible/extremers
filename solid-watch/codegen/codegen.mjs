@@ -76,7 +76,7 @@ function groupsFor(merged, ownedNames, prefix) {
       let g = seen.get(p.group);
       if (!g) {
         const isNodeGroup = !!merged.nodes[p.group] && !merged.groups[p.group];
-        g = { group: p.group, struct: structName(p.group, isNodeGroup ? "" : prefix), isNodeGroup, props: new Map() };
+        g = { group: p.group, struct: structName(p.group, prefix), isNodeGroup, props: new Map() };
         seen.set(p.group, g);
       }
       g.props.set(name, p);
@@ -175,7 +175,7 @@ function swiftEnumsAndStructs(groups, prefix) {
     out.push(`  public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {`);
     out.push(`    switch name {`);
     for (const [name, p] of g.props) {
-      const id = swiftIdent(name);
+      const id = "self." + swiftIdent(name); // props may be called `name` or `value`
       const def = swiftDefault(g, name, p, prefix);
       out.push(`    case ${swiftStr(name)}:`);
       out.push(`      if value == .null { ${id} = ${def}; return .ok }`);
@@ -277,6 +277,15 @@ public struct PropSpec: Sendable {
   public let group: String
   public let inherits: Bool
   public let values: [String]
+
+  public init(name: String, kind: PropKind, type: PropType, group: String, inherits: Bool, values: [String]) {
+    self.name = name
+    self.kind = kind
+    self.type = type
+    self.group = group
+    self.inherits = inherits
+    self.values = values
+  }
 }
 
 public struct NodeSpec: Sendable {
@@ -287,6 +296,14 @@ public struct NodeSpec: Sendable {
   /// Has a Yoga node (false for haptic).
   public let layout: Bool
   public let props: [String: PropSpec]
+
+  public init(type: String, children: ChildKind, native: Bool, layout: Bool, props: [String: PropSpec]) {
+    self.type = type
+    self.children = children
+    self.native = native
+    self.layout = layout
+    self.props = props
+  }
 }
 
 public enum PropDecode {

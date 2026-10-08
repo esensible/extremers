@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "demo",
+  "doc": "Example app fragment: exercises every extension point (tests and Swift typecheck).",
+  "colors": { "accent": "#FF9F0A", "caption": "#999999" },
+  "pressHandlers": { "send": { "doc": "Send the button's payload bytes." } },
+  "extends": {
+    "button": {
+      "props": {
+        "payload": { "kind": "behavior", "type": "bytes", "default": null },
+        "mode": { "kind": "behavior", "type": "enum", "values": ["now", "later"], "default": "now" }
+      }
+    }
+  },
+  "groups": {
+    "dial": { "props": { "needle": { "kind": "paint", "type": "color", "default": "accent" } } }
+  },
+  "nodes": {
+    "gauge": {
+      "doc": "A dial.",
+      "groups": ["layout", "box", "dial"],
+      "children": "none",
+      "props": {
+        "value": { "kind": "paint", "type": "number", "default": 0 },
+        "name": { "kind": "paint", "type": "string", "default": null },
+        "style": { "kind": "paint", "type": "enum", "values": ["arc", "full-circle"], "default": "arc" }
+      }
+    }
+  }
+}

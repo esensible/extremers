@@ -1,0 +1,66 @@
+{
+ "name": "display-none",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"height\",50]",
+  "[\"setProp\",4,\"display\",\"none\"]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"height\",20]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    40
+   ],
+   "3": [
+    0,
+    0,
+    198,
+    20
+   ],
+   "4": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "5": [
+    0,
+    20,
+    198,
+    20
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

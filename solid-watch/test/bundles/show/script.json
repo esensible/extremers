@@ -1,0 +1,10 @@
+{
+  "ctx": { "width": 198, "height": 242 },
+  "steps": [
+    { "state": { "on": true, "label": "a", "extra": false } },
+    { "state": { "on": true, "label": "b", "extra": true } },
+    { "state": { "on": false, "label": "b", "extra": true } },
+    { "state": { "on": false, "label": "b", "extra": false } },
+    { "state": { "on": true, "label": "c", "extra": false } }
+  ]
+}

@@ -1,0 +1,4 @@
+["#mount",1,{"width":198,"height":242}]
+["createNode",2,"view"]
+["createText",3,"hello"]
+["#error","raw text \"hello\" must be inside <text>, not <view>"]

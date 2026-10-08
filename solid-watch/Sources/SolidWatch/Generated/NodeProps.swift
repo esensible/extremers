@@ -67,6 +67,15 @@ public struct PropSpec: Sendable {
   public let group: String
   public let inherits: Bool
   public let values: [String]
+
+  public init(name: String, kind: PropKind, type: PropType, group: String, inherits: Bool, values: [String]) {
+    self.name = name
+    self.kind = kind
+    self.type = type
+    self.group = group
+    self.inherits = inherits
+    self.values = values
+  }
 }
 
 public struct NodeSpec: Sendable {
@@ -77,6 +86,14 @@ public struct NodeSpec: Sendable {
   /// Has a Yoga node (false for haptic).
   public let layout: Bool
   public let props: [String: PropSpec]
+
+  public init(type: String, children: ChildKind, native: Bool, layout: Bool, props: [String: PropSpec]) {
+    self.type = type
+    self.children = children
+    self.native = native
+    self.layout = layout
+    self.props = props
+  }
 }
 
 public enum PropDecode {
@@ -254,219 +271,219 @@ public struct LayoutProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "display":
-      if value == .null { display = .flex; return .ok }
-      guard let v = PropDecode.string(value).flatMap(Display.init(rawValue:)) else { display = .flex; return .invalid }
-      display = v
+      if value == .null { self.display = .flex; return .ok }
+      guard let v = PropDecode.string(value).flatMap(Display.init(rawValue:)) else { self.display = .flex; return .invalid }
+      self.display = v
       return .ok
     case "position":
-      if value == .null { position = .relative; return .ok }
-      guard let v = PropDecode.string(value).flatMap(Position.init(rawValue:)) else { position = .relative; return .invalid }
-      position = v
+      if value == .null { self.position = .relative; return .ok }
+      guard let v = PropDecode.string(value).flatMap(Position.init(rawValue:)) else { self.position = .relative; return .invalid }
+      self.position = v
       return .ok
     case "top":
-      if value == .null { top = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { top = .undefined; return .invalid }
-      top = v
+      if value == .null { self.top = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.top = .undefined; return .invalid }
+      self.top = v
       return .ok
     case "right":
-      if value == .null { right = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { right = .undefined; return .invalid }
-      right = v
+      if value == .null { self.right = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.right = .undefined; return .invalid }
+      self.right = v
       return .ok
     case "bottom":
-      if value == .null { bottom = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { bottom = .undefined; return .invalid }
-      bottom = v
+      if value == .null { self.bottom = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.bottom = .undefined; return .invalid }
+      self.bottom = v
       return .ok
     case "left":
-      if value == .null { left = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { left = .undefined; return .invalid }
-      left = v
+      if value == .null { self.left = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.left = .undefined; return .invalid }
+      self.left = v
       return .ok
     case "width":
-      if value == .null { width = .auto; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { width = .auto; return .invalid }
-      width = v
+      if value == .null { self.width = .auto; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.width = .auto; return .invalid }
+      self.width = v
       return .ok
     case "height":
-      if value == .null { height = .auto; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { height = .auto; return .invalid }
-      height = v
+      if value == .null { self.height = .auto; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.height = .auto; return .invalid }
+      self.height = v
       return .ok
     case "minWidth":
-      if value == .null { minWidth = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { minWidth = .undefined; return .invalid }
-      minWidth = v
+      if value == .null { self.minWidth = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.minWidth = .undefined; return .invalid }
+      self.minWidth = v
       return .ok
     case "minHeight":
-      if value == .null { minHeight = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { minHeight = .undefined; return .invalid }
-      minHeight = v
+      if value == .null { self.minHeight = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.minHeight = .undefined; return .invalid }
+      self.minHeight = v
       return .ok
     case "maxWidth":
-      if value == .null { maxWidth = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { maxWidth = .undefined; return .invalid }
-      maxWidth = v
+      if value == .null { self.maxWidth = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.maxWidth = .undefined; return .invalid }
+      self.maxWidth = v
       return .ok
     case "maxHeight":
-      if value == .null { maxHeight = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { maxHeight = .undefined; return .invalid }
-      maxHeight = v
+      if value == .null { self.maxHeight = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.maxHeight = .undefined; return .invalid }
+      self.maxHeight = v
       return .ok
     case "aspectRatio":
-      if value == .null { aspectRatio = nil; return .ok }
-      guard let v = PropDecode.number(value) else { aspectRatio = nil; return .invalid }
-      aspectRatio = v
+      if value == .null { self.aspectRatio = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.aspectRatio = nil; return .invalid }
+      self.aspectRatio = v
       return .ok
     case "flex":
-      if value == .null { flex = nil; return .ok }
-      guard let v = PropDecode.number(value) else { flex = nil; return .invalid }
-      flex = v
+      if value == .null { self.flex = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.flex = nil; return .invalid }
+      self.flex = v
       return .ok
     case "flexGrow":
-      if value == .null { flexGrow = 0; return .ok }
-      guard let v = PropDecode.number(value) else { flexGrow = 0; return .invalid }
-      flexGrow = v
+      if value == .null { self.flexGrow = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.flexGrow = 0; return .invalid }
+      self.flexGrow = v
       return .ok
     case "flexShrink":
-      if value == .null { flexShrink = 0; return .ok }
-      guard let v = PropDecode.number(value) else { flexShrink = 0; return .invalid }
-      flexShrink = v
+      if value == .null { self.flexShrink = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.flexShrink = 0; return .invalid }
+      self.flexShrink = v
       return .ok
     case "flexBasis":
-      if value == .null { flexBasis = .auto; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { flexBasis = .auto; return .invalid }
-      flexBasis = v
+      if value == .null { self.flexBasis = .auto; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.flexBasis = .auto; return .invalid }
+      self.flexBasis = v
       return .ok
     case "flexDirection":
-      if value == .null { flexDirection = .column; return .ok }
-      guard let v = PropDecode.string(value).flatMap(FlexDirection.init(rawValue:)) else { flexDirection = .column; return .invalid }
-      flexDirection = v
+      if value == .null { self.flexDirection = .column; return .ok }
+      guard let v = PropDecode.string(value).flatMap(FlexDirection.init(rawValue:)) else { self.flexDirection = .column; return .invalid }
+      self.flexDirection = v
       return .ok
     case "flexWrap":
-      if value == .null { flexWrap = .nowrap; return .ok }
-      guard let v = PropDecode.string(value).flatMap(FlexWrap.init(rawValue:)) else { flexWrap = .nowrap; return .invalid }
-      flexWrap = v
+      if value == .null { self.flexWrap = .nowrap; return .ok }
+      guard let v = PropDecode.string(value).flatMap(FlexWrap.init(rawValue:)) else { self.flexWrap = .nowrap; return .invalid }
+      self.flexWrap = v
       return .ok
     case "justifyContent":
-      if value == .null { justifyContent = .flexStart; return .ok }
-      guard let v = PropDecode.string(value).flatMap(JustifyContent.init(rawValue:)) else { justifyContent = .flexStart; return .invalid }
-      justifyContent = v
+      if value == .null { self.justifyContent = .flexStart; return .ok }
+      guard let v = PropDecode.string(value).flatMap(JustifyContent.init(rawValue:)) else { self.justifyContent = .flexStart; return .invalid }
+      self.justifyContent = v
       return .ok
     case "alignItems":
-      if value == .null { alignItems = .stretch; return .ok }
-      guard let v = PropDecode.string(value).flatMap(AlignItems.init(rawValue:)) else { alignItems = .stretch; return .invalid }
-      alignItems = v
+      if value == .null { self.alignItems = .stretch; return .ok }
+      guard let v = PropDecode.string(value).flatMap(AlignItems.init(rawValue:)) else { self.alignItems = .stretch; return .invalid }
+      self.alignItems = v
       return .ok
     case "alignSelf":
-      if value == .null { alignSelf = .auto; return .ok }
-      guard let v = PropDecode.string(value).flatMap(AlignSelf.init(rawValue:)) else { alignSelf = .auto; return .invalid }
-      alignSelf = v
+      if value == .null { self.alignSelf = .auto; return .ok }
+      guard let v = PropDecode.string(value).flatMap(AlignSelf.init(rawValue:)) else { self.alignSelf = .auto; return .invalid }
+      self.alignSelf = v
       return .ok
     case "alignContent":
-      if value == .null { alignContent = .flexStart; return .ok }
-      guard let v = PropDecode.string(value).flatMap(AlignContent.init(rawValue:)) else { alignContent = .flexStart; return .invalid }
-      alignContent = v
+      if value == .null { self.alignContent = .flexStart; return .ok }
+      guard let v = PropDecode.string(value).flatMap(AlignContent.init(rawValue:)) else { self.alignContent = .flexStart; return .invalid }
+      self.alignContent = v
       return .ok
     case "margin":
-      if value == .null { margin = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { margin = .undefined; return .invalid }
-      margin = v
+      if value == .null { self.margin = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.margin = .undefined; return .invalid }
+      self.margin = v
       return .ok
     case "marginHorizontal":
-      if value == .null { marginHorizontal = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginHorizontal = .undefined; return .invalid }
-      marginHorizontal = v
+      if value == .null { self.marginHorizontal = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginHorizontal = .undefined; return .invalid }
+      self.marginHorizontal = v
       return .ok
     case "marginVertical":
-      if value == .null { marginVertical = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginVertical = .undefined; return .invalid }
-      marginVertical = v
+      if value == .null { self.marginVertical = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginVertical = .undefined; return .invalid }
+      self.marginVertical = v
       return .ok
     case "marginTop":
-      if value == .null { marginTop = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginTop = .undefined; return .invalid }
-      marginTop = v
+      if value == .null { self.marginTop = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginTop = .undefined; return .invalid }
+      self.marginTop = v
       return .ok
     case "marginRight":
-      if value == .null { marginRight = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginRight = .undefined; return .invalid }
-      marginRight = v
+      if value == .null { self.marginRight = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginRight = .undefined; return .invalid }
+      self.marginRight = v
       return .ok
     case "marginBottom":
-      if value == .null { marginBottom = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginBottom = .undefined; return .invalid }
-      marginBottom = v
+      if value == .null { self.marginBottom = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginBottom = .undefined; return .invalid }
+      self.marginBottom = v
       return .ok
     case "marginLeft":
-      if value == .null { marginLeft = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: true) else { marginLeft = .undefined; return .invalid }
-      marginLeft = v
+      if value == .null { self.marginLeft = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: true) else { self.marginLeft = .undefined; return .invalid }
+      self.marginLeft = v
       return .ok
     case "padding":
-      if value == .null { padding = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { padding = .undefined; return .invalid }
-      padding = v
+      if value == .null { self.padding = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.padding = .undefined; return .invalid }
+      self.padding = v
       return .ok
     case "paddingHorizontal":
-      if value == .null { paddingHorizontal = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingHorizontal = .undefined; return .invalid }
-      paddingHorizontal = v
+      if value == .null { self.paddingHorizontal = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingHorizontal = .undefined; return .invalid }
+      self.paddingHorizontal = v
       return .ok
     case "paddingVertical":
-      if value == .null { paddingVertical = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingVertical = .undefined; return .invalid }
-      paddingVertical = v
+      if value == .null { self.paddingVertical = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingVertical = .undefined; return .invalid }
+      self.paddingVertical = v
       return .ok
     case "paddingTop":
-      if value == .null { paddingTop = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingTop = .undefined; return .invalid }
-      paddingTop = v
+      if value == .null { self.paddingTop = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingTop = .undefined; return .invalid }
+      self.paddingTop = v
       return .ok
     case "paddingRight":
-      if value == .null { paddingRight = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingRight = .undefined; return .invalid }
-      paddingRight = v
+      if value == .null { self.paddingRight = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingRight = .undefined; return .invalid }
+      self.paddingRight = v
       return .ok
     case "paddingBottom":
-      if value == .null { paddingBottom = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingBottom = .undefined; return .invalid }
-      paddingBottom = v
+      if value == .null { self.paddingBottom = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingBottom = .undefined; return .invalid }
+      self.paddingBottom = v
       return .ok
     case "paddingLeft":
-      if value == .null { paddingLeft = .undefined; return .ok }
-      guard let v = Dimension.parse(value, allowAuto: false) else { paddingLeft = .undefined; return .invalid }
-      paddingLeft = v
+      if value == .null { self.paddingLeft = .undefined; return .ok }
+      guard let v = Dimension.parse(value, allowAuto: false) else { self.paddingLeft = .undefined; return .invalid }
+      self.paddingLeft = v
       return .ok
     case "borderWidth":
-      if value == .null { borderWidth = 0; return .ok }
-      guard let v = PropDecode.number(value) else { borderWidth = 0; return .invalid }
-      borderWidth = v
+      if value == .null { self.borderWidth = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.borderWidth = 0; return .invalid }
+      self.borderWidth = v
       return .ok
     case "gap":
-      if value == .null { gap = nil; return .ok }
-      guard let v = PropDecode.number(value) else { gap = nil; return .invalid }
-      gap = v
+      if value == .null { self.gap = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.gap = nil; return .invalid }
+      self.gap = v
       return .ok
     case "rowGap":
-      if value == .null { rowGap = nil; return .ok }
-      guard let v = PropDecode.number(value) else { rowGap = nil; return .invalid }
-      rowGap = v
+      if value == .null { self.rowGap = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.rowGap = nil; return .invalid }
+      self.rowGap = v
       return .ok
     case "columnGap":
-      if value == .null { columnGap = nil; return .ok }
-      guard let v = PropDecode.number(value) else { columnGap = nil; return .invalid }
-      columnGap = v
+      if value == .null { self.columnGap = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.columnGap = nil; return .invalid }
+      self.columnGap = v
       return .ok
     case "overflow":
-      if value == .null { overflow = .visible; return .ok }
-      guard let v = PropDecode.string(value).flatMap(Overflow.init(rawValue:)) else { overflow = .visible; return .invalid }
-      overflow = v
+      if value == .null { self.overflow = .visible; return .ok }
+      guard let v = PropDecode.string(value).flatMap(Overflow.init(rawValue:)) else { self.overflow = .visible; return .invalid }
+      self.overflow = v
       return .ok
     case "boxSizing":
-      if value == .null { boxSizing = .borderBox; return .ok }
-      guard let v = PropDecode.string(value).flatMap(BoxSizing.init(rawValue:)) else { boxSizing = .borderBox; return .invalid }
-      boxSizing = v
+      if value == .null { self.boxSizing = .borderBox; return .ok }
+      guard let v = PropDecode.string(value).flatMap(BoxSizing.init(rawValue:)) else { self.boxSizing = .borderBox; return .invalid }
+      self.boxSizing = v
       return .ok
     default:
       return .unknown
@@ -488,24 +505,24 @@ public struct BoxProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "background":
-      if value == .null { background = nil; return .ok }
-      guard let v = PropDecode.string(value) else { background = nil; return .invalid }
-      background = v
+      if value == .null { self.background = nil; return .ok }
+      guard let v = PropDecode.string(value) else { self.background = nil; return .invalid }
+      self.background = v
       return .ok
     case "borderColor":
-      if value == .null { borderColor = nil; return .ok }
-      guard let v = PropDecode.string(value) else { borderColor = nil; return .invalid }
-      borderColor = v
+      if value == .null { self.borderColor = nil; return .ok }
+      guard let v = PropDecode.string(value) else { self.borderColor = nil; return .invalid }
+      self.borderColor = v
       return .ok
     case "borderRadius":
-      if value == .null { borderRadius = 0; return .ok }
-      guard let v = PropDecode.number(value) else { borderRadius = 0; return .invalid }
-      borderRadius = v
+      if value == .null { self.borderRadius = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.borderRadius = 0; return .invalid }
+      self.borderRadius = v
       return .ok
     case "opacity":
-      if value == .null { opacity = 1; return .ok }
-      guard let v = PropDecode.number(value) else { opacity = 1; return .invalid }
-      opacity = v
+      if value == .null { self.opacity = 1; return .ok }
+      guard let v = PropDecode.number(value) else { self.opacity = 1; return .invalid }
+      self.opacity = v
       return .ok
     default:
       return .unknown
@@ -554,34 +571,34 @@ public struct TextStyleProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "color":
-      if value == .null { color = "white"; return .ok }
-      guard let v = PropDecode.string(value) else { color = "white"; return .invalid }
-      color = v
+      if value == .null { self.color = "white"; return .ok }
+      guard let v = PropDecode.string(value) else { self.color = "white"; return .invalid }
+      self.color = v
       return .ok
     case "fontSize":
-      if value == .null { fontSize = 16; return .ok }
-      guard let v = PropDecode.number(value) else { fontSize = 16; return .invalid }
-      fontSize = v
+      if value == .null { self.fontSize = 16; return .ok }
+      guard let v = PropDecode.number(value) else { self.fontSize = 16; return .invalid }
+      self.fontSize = v
       return .ok
     case "fontWeight":
-      if value == .null { fontWeight = .normal; return .ok }
-      guard let v = PropDecode.string(value).flatMap(FontWeight.init(rawValue:)) else { fontWeight = .normal; return .invalid }
-      fontWeight = v
+      if value == .null { self.fontWeight = .normal; return .ok }
+      guard let v = PropDecode.string(value).flatMap(FontWeight.init(rawValue:)) else { self.fontWeight = .normal; return .invalid }
+      self.fontWeight = v
       return .ok
     case "tabular":
-      if value == .null { tabular = false; return .ok }
-      guard let v = PropDecode.bool(value) else { tabular = false; return .invalid }
-      tabular = v
+      if value == .null { self.tabular = false; return .ok }
+      guard let v = PropDecode.bool(value) else { self.tabular = false; return .invalid }
+      self.tabular = v
       return .ok
     case "lineHeight":
-      if value == .null { lineHeight = nil; return .ok }
-      guard let v = PropDecode.number(value) else { lineHeight = nil; return .invalid }
-      lineHeight = v
+      if value == .null { self.lineHeight = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.lineHeight = nil; return .invalid }
+      self.lineHeight = v
       return .ok
     case "textAlign":
-      if value == .null { textAlign = .left; return .ok }
-      guard let v = PropDecode.string(value).flatMap(TextAlign.init(rawValue:)) else { textAlign = .left; return .invalid }
-      textAlign = v
+      if value == .null { self.textAlign = .left; return .ok }
+      guard let v = PropDecode.string(value).flatMap(TextAlign.init(rawValue:)) else { self.textAlign = .left; return .invalid }
+      self.textAlign = v
       return .ok
     default:
       return .unknown
@@ -603,14 +620,14 @@ public struct TextLayoutProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "numberOfLines":
-      if value == .null { numberOfLines = 0; return .ok }
-      guard let v = PropDecode.number(value) else { numberOfLines = 0; return .invalid }
-      numberOfLines = v
+      if value == .null { self.numberOfLines = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.numberOfLines = 0; return .invalid }
+      self.numberOfLines = v
       return .ok
     case "minScale":
-      if value == .null { minScale = 1; return .ok }
-      guard let v = PropDecode.number(value) else { minScale = 1; return .invalid }
-      minScale = v
+      if value == .null { self.minScale = 1; return .ok }
+      guard let v = PropDecode.number(value) else { self.minScale = 1; return .invalid }
+      self.minScale = v
       return .ok
     default:
       return .unknown
@@ -649,24 +666,24 @@ public struct ButtonProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "onPress":
-      if value == .null { onPress = false; return .ok }
-      guard let v = PropDecode.bool(value) else { onPress = false; return .invalid }
-      onPress = v
+      if value == .null { self.onPress = false; return .ok }
+      guard let v = PropDecode.bool(value) else { self.onPress = false; return .invalid }
+      self.onPress = v
       return .ok
     case "press":
-      if value == .null { press = nil; return .ok }
-      guard let v = PropDecode.string(value) else { press = nil; return .invalid }
-      press = v
+      if value == .null { self.press = nil; return .ok }
+      guard let v = PropDecode.string(value) else { self.press = nil; return .invalid }
+      self.press = v
       return .ok
     case "confirm":
-      if value == .null { confirm = nil; return .ok }
-      guard let v = ButtonConfirm(value) else { confirm = nil; return .invalid }
-      confirm = v
+      if value == .null { self.confirm = nil; return .ok }
+      guard let v = ButtonConfirm(value) else { self.confirm = nil; return .invalid }
+      self.confirm = v
       return .ok
     case "disabled":
-      if value == .null { disabled = false; return .ok }
-      guard let v = PropDecode.bool(value) else { disabled = false; return .invalid }
-      disabled = v
+      if value == .null { self.disabled = false; return .ok }
+      guard let v = PropDecode.bool(value) else { self.disabled = false; return .invalid }
+      self.disabled = v
       return .ok
     default:
       return .unknown
@@ -695,14 +712,14 @@ public struct CountdownProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "toMs":
-      if value == .null { toMs = nil; return .ok }
-      guard let v = PropDecode.number(value) else { toMs = nil; return .invalid }
-      toMs = v
+      if value == .null { self.toMs = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.toMs = nil; return .invalid }
+      self.toMs = v
       return .ok
     case "format":
-      if value == .null { format = .countdown; return .ok }
-      guard let v = PropDecode.string(value).flatMap(CountdownFormat.init(rawValue:)) else { format = .countdown; return .invalid }
-      format = v
+      if value == .null { self.format = .countdown; return .ok }
+      guard let v = PropDecode.string(value).flatMap(CountdownFormat.init(rawValue:)) else { self.format = .countdown; return .invalid }
+      self.format = v
       return .ok
     default:
       return .unknown
@@ -728,9 +745,9 @@ public struct ClockProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "format":
-      if value == .null { format = .hourMinute24; return .ok }
-      guard let v = PropDecode.string(value).flatMap(ClockFormat.init(rawValue:)) else { format = .hourMinute24; return .invalid }
-      format = v
+      if value == .null { self.format = .hourMinute24; return .ok }
+      guard let v = PropDecode.string(value).flatMap(ClockFormat.init(rawValue:)) else { self.format = .hourMinute24; return .invalid }
+      self.format = v
       return .ok
     default:
       return .unknown
@@ -764,14 +781,14 @@ public struct HapticProps: Equatable, Sendable {
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
     case "pattern":
-      if value == .null { pattern = .click; return .ok }
-      guard let v = PropDecode.string(value).flatMap(HapticPattern.init(rawValue:)) else { pattern = .click; return .invalid }
-      pattern = v
+      if value == .null { self.pattern = .click; return .ok }
+      guard let v = PropDecode.string(value).flatMap(HapticPattern.init(rawValue:)) else { self.pattern = .click; return .invalid }
+      self.pattern = v
       return .ok
     case "trigger":
-      if value == .null { trigger = .null; return .ok }
-      guard let v = Optional(value) else { trigger = .null; return .invalid }
-      trigger = v
+      if value == .null { self.trigger = .null; return .ok }
+      guard let v = Optional(value) else { self.trigger = .null; return .invalid }
+      self.trigger = v
       return .ok
     default:
       return .unknown
@@ -1055,7 +1072,7 @@ public enum CoreSchema {
       "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
       "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
       "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "toMs": PropSpec(name: "toMs", kind: .behavior, type: .number, group: "countdown", inherits: false, values: []),
+      "toMs": PropSpec(name: "toMs", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
       "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "countdown", inherits: false, values: ["countdown", "elapsed", "remaining"]),
     ]),
     "clock": NodeSpec(type: "clock", children: .none, native: false, layout: true, props: [
