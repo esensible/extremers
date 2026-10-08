@@ -103,7 +103,10 @@ export interface CountdownProps {
 }
 
 export interface ClockProps {
-  format?: "HH:mm" | "HH:mm:ss" | "h:mm" | null;
+  /** README: Clock. */
+  format?: "HH:mm" | "HH:mm:ss" | "h:mm" | "hh:mm" | null;
+  /** Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it. */
+  tzOffsetMin?: number | null;
 }
 
 export interface HapticProps {
@@ -142,7 +145,7 @@ export interface CountdownElement extends LayoutProps, BoxProps, TextStyleProps,
   ref?: unknown;
 }
 
-/** Wall clock text, ticked by the host. */
+/** Wall clock text on the device timeline (local clock + the syncClock offset, read as UTC ms), shifted by tzOffsetMin, ticked by the host. */
 export interface ClockElement extends LayoutProps, BoxProps, TextStyleProps, TextLayoutProps, ClockProps {
   children?: never;
   ref?: unknown;

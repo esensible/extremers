@@ -44,6 +44,9 @@ test("countdown runs on local now + offset; the offset comes from the last syncC
   assert.equal(tree.displayText(cd), "01:03"); // 5069000 - (1006250 + 3999750)
   clock.set(1006250 + 3000); // 3 s later, no new state: it keeps counting
   assert.equal(tree.displayText(cd), "01:00");
+  // the clock is on the same timeline: device 5 009 000 ms = 01:23:29 UTC, +10:30
+  const wall = [...tree.nodes.values()].find((n) => n.type === "clock");
+  assert.equal(tree.displayText(wall), "11:53");
 });
 
 function countdownTree(props) {

@@ -40,14 +40,13 @@ export function runQjs(qjs, bundlePath, scriptPath, extra = []) {
 // The fixture's host-local clock: mount at T0; a state's commit is laid out
 // at its local receipt time (the #state line's third element), so no time
 // passes between a state's arrival and its layout. Device time comes from the
-// bundle's syncClock lines. Wall clock fixed at 09:41:07.
+// bundle's syncClock lines (offset 0 before the first one).
 export const T0 = 1_000_000;
 export function fixtureClock(start = T0) {
   let now = start;
   return {
     now: () => now,
     set: (t) => (now = t),
-    date: () => new Date(2026, 0, 1, 9, 41, 7),
   };
 }
 

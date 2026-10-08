@@ -757,16 +757,20 @@ public struct CountdownProps: Equatable, Sendable {
   }
 }
 
-/// `format`: HH:mm | HH:mm:ss | h:mm
+/// `format`: HH:mm | HH:mm:ss | h:mm | hh:mm
 public enum ClockFormat: String, CaseIterable, Sendable {
   case hourMinute24 = "HH:mm"
   case hourMinuteSecond24 = "HH:mm:ss"
   case hourMinute12 = "h:mm"
+  case hourMinute12Padded = "hh:mm"
 }
 
 /// `clock`'s own props.
 public struct ClockProps: Equatable, Sendable {
+  /// README: Clock.
   public var format: ClockFormat = .hourMinute24
+  /// Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it.
+  public var tzOffsetMin: Double = 0
 
   public init() {}
 
@@ -778,6 +782,11 @@ public struct ClockProps: Equatable, Sendable {
       if value == .null { self.format = .hourMinute24; return .ok }
       guard let v = PropDecode.string(value).flatMap(ClockFormat.init(rawValue:)) else { self.format = .hourMinute24; return .invalid }
       self.format = v
+      return .ok
+    case "tzOffsetMin":
+      if value == .null { self.tzOffsetMin = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.tzOffsetMin = 0; return .invalid }
+      self.tzOffsetMin = v
       return .ok
     default:
       return .unknown
@@ -1175,7 +1184,8 @@ public enum CoreSchema {
       "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
       "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
       "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "clock", inherits: false, values: ["HH:mm", "HH:mm:ss", "h:mm"]),
+      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "clock", inherits: false, values: ["HH:mm", "HH:mm:ss", "h:mm", "hh:mm"]),
+      "tzOffsetMin": PropSpec(name: "tzOffsetMin", kind: .measure, type: .number, group: "clock", inherits: false, values: []),
     ]),
     "haptic": NodeSpec(type: "haptic", children: .none, native: false, layout: false, props: [
       "pattern": PropSpec(name: "pattern", kind: .behavior, type: .enumeration, group: "haptic", inherits: false, values: ["notification", "directionUp", "directionDown", "success", "failure", "retry", "start", "stop", "click"]),

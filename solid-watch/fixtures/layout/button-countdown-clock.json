@@ -7,8 +7,8 @@
  "pointScaleFactor": 2,
  "measure": "stub",
  "clock": {
-  "now": 1000000,
-  "local": "2026-01-01T09:41:07"
+  "localNow": 1000000,
+  "offset": 0
  },
  "log": [
   "[\"#mount\",1,{\"width\":198,\"height\":242}]",
@@ -42,10 +42,14 @@
   "[\"createNode\",9,\"clock\"]",
   "[\"setProp\",9,\"format\",\"h:mm\"]",
   "[\"insert\",2,9,0]",
-  "[\"createNode\",10,\"haptic\"]",
-  "[\"setProp\",10,\"pattern\",\"click\"]",
-  "[\"setProp\",10,\"trigger\",1]",
+  "[\"createNode\",10,\"clock\"]",
+  "[\"setProp\",10,\"format\",\"HH:mm:ss\"]",
+  "[\"setProp\",10,\"tzOffsetMin\",630]",
   "[\"insert\",2,10,0]",
+  "[\"createNode\",11,\"haptic\"]",
+  "[\"setProp\",11,\"pattern\",\"click\"]",
+  "[\"setProp\",11,\"trigger\",1]",
+  "[\"insert\",2,11,0]",
   "[\"insert\",1,2,0]",
   "[\"commit\"]"
  ],
@@ -61,7 +65,7 @@
     0,
     0,
     198,
-    175.5
+    199.5
    ],
    "3": [
     0,
@@ -98,6 +102,12 @@
     155.5,
     198,
     20
+   ],
+   "10": [
+    0,
+    179.5,
+    198,
+    20
    ]
   },
   "text": {
@@ -118,6 +128,10 @@
     "lines": 1
    },
    "9": {
+    "fontSize": 16,
+    "lines": 1
+   },
+   "10": {
     "fontSize": 16,
     "lines": 1
    }

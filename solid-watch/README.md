@@ -94,7 +94,9 @@ hidden from them.
   going between states and without the link. States only refresh the offset
   and the values; an unchanged `at` is simply not re-sent, nothing to
   re-anchor.
-- `clock` shows the host's local wall time. Exceptions propagate to the host (show an
+- `clock` is on the same timeline: it shows device now (read as UTC epoch
+  ms) shifted by its `tzOffsetMin` prop — the device decides the zone and
+  the bundle passes it, the watch's own zone is not used. Exceptions propagate to the host (show an
 error screen; keep the app alive).
 
 ## Host interface
@@ -295,7 +297,10 @@ plus `{atRemainingMs: 0, pattern: "success"}` for the gun.
 
 ### Clock
 
-Local time: `HH:mm` (default), `HH:mm:ss`, `h:mm` (12-hour, no AM/PM).
+`t = floor((deviceNow + tzOffsetMin × 60000) / 1000)` seconds; within the
+day (`t mod 86400`, non-negative): `HH:mm` (default), `HH:mm:ss`, `h:mm`
+(12-hour, no AM/PM, 0 → 12), `hh:mm` (the same, two digits). Re-measured when
+the string changes.
 
 ## Behaviour
 
@@ -345,8 +350,8 @@ Apply `log` (same format as above), commit once, compare. Frames are exact
 **Stub measurer**: every character (code point) is 0.6 × fontSize × scale
 wide; line height ratio 1.25; wrapping is greedy by character (a character
 that would pass `maxWidth + 0.001` starts a new line; a line holds at least
-one); `"\n"` breaks. **Fixture clock**: now = T0 = 1 000 000 ms, local
-time 09:41:07.
+one); `"\n"` breaks. **Fixture clock**: local now = T0 = 1 000 000 ms,
+offset 0 (no `syncClock`), so a `clock` shows 00:16:40 UTC + its `tzOffsetMin`.
 
 ## Font
 

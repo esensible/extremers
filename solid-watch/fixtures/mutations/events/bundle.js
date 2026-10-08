@@ -842,6 +842,7 @@
   const [count, setCount] = createSignal(0);
   const [armed, setArmed] = createSignal(true);
   const [at, setAt] = createSignal(null);
+  const [tz, setTz] = createSignal(0);
   const CUES = [60000, 30000, 10000, 5000, 4000, 3000, 2000, 1000].map(ms => ({
     atRemainingMs: ms,
     pattern: "click"
@@ -894,34 +895,39 @@
       setProp(_el$0, "minScale", 0.5);
       setProp(_el$0, "cues", CUES);
       setProp(_el$1, "format", "elapsed");
-      setProp(_el$10, "format", "HH:mm");
+      setProp(_el$10, "format", "hh:mm");
       effect(_p$ => {
         var _v$ = armed() ? p => setCount(count() + (p && p.agoMs > 1000 ? 10 : 1)) : undefined,
           _v$2 = !armed(),
           _v$3 = count(),
           _v$4 = at(),
-          _v$5 = at();
+          _v$5 = at(),
+          _v$6 = tz();
         _v$ !== _p$.e && (_p$.e = setProp(_el$2, "onPress", _v$, _p$.e));
         _v$2 !== _p$.t && (_p$.t = setProp(_el$5, "disabled", _v$2, _p$.t));
         _v$3 !== _p$.a && (_p$.a = setProp(_el$9, "trigger", _v$3, _p$.a));
         _v$4 !== _p$.o && (_p$.o = setProp(_el$0, "at", _v$4, _p$.o));
         _v$5 !== _p$.i && (_p$.i = setProp(_el$1, "at", _v$5, _p$.i));
+        _v$6 !== _p$.n && (_p$.n = setProp(_el$10, "tzOffsetMin", _v$6, _p$.n));
         return _p$;
       }, {
         e: undefined,
         t: undefined,
         a: undefined,
         o: undefined,
-        i: undefined
+        i: undefined,
+        n: undefined
       });
       return _el$;
     })();
   }
   createApp(App, {
     onState(s) {
+      var _s$tz;
       syncClock(s.now); // device clock when the state was captured
       setArmed(s.armed);
       setAt(s.start); // device time of the start, or null
+      setTz((_s$tz = s.tz) !== null && _s$tz !== void 0 ? _s$tz : 0); // the device's zone, minutes east of UTC
     }
   });
 

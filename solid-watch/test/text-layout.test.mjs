@@ -41,10 +41,16 @@ test("formatCountdown matches the watch app's Formatting.swift rules", () => {
   assert.equal(formatCountdown("remaining", 3_600_001), "1:00:01");
 });
 
-test("formatClock", () => {
-  const d = new Date(2026, 0, 1, 0, 5, 9);
-  assert.equal(formatClock("HH:mm", d), "00:05");
-  assert.equal(formatClock("HH:mm:ss", d), "00:05:09");
-  assert.equal(formatClock("h:mm", d), "12:05");
-  assert.equal(formatClock("h:mm", new Date(2026, 0, 1, 13, 5)), "1:05");
+test("formatClock: device ms (UTC) shifted by tzOffsetMin", () => {
+  const t = Date.UTC(2026, 0, 1, 0, 5, 9, 999);
+  assert.equal(formatClock("HH:mm", t), "00:05");
+  assert.equal(formatClock("HH:mm:ss", t), "00:05:09");
+  assert.equal(formatClock("h:mm", t), "12:05");
+  assert.equal(formatClock("hh:mm", t), "12:05");
+  assert.equal(formatClock("HH:mm", t, 630), "10:35"); // +10:30 (Adelaide summer)
+  assert.equal(formatClock("hh:mm", t, 630), "10:35");
+  assert.equal(formatClock("h:mm", Date.UTC(2026, 0, 1, 13, 5)), "1:05");
+  assert.equal(formatClock("hh:mm", Date.UTC(2026, 0, 1, 13, 5)), "01:05");
+  assert.equal(formatClock("HH:mm", t, -60), "23:05"); // west of UTC wraps to the day before
+  assert.equal(formatClock("HH:mm", 1_000_000), "00:16"); // fixture T0
 });

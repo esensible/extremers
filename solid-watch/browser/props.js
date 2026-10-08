@@ -532,7 +532,7 @@ export const schema = {
       }
     },
     "clock": {
-      "doc": "Wall clock text, ticked by the host.",
+      "doc": "Wall clock text on the device timeline (local clock + the syncClock offset, read as UTC ms), shifted by tzOffsetMin, ticked by the host.",
       "groups": [
         "layout",
         "box",
@@ -547,14 +547,23 @@ export const schema = {
           "values": [
             "HH:mm",
             "HH:mm:ss",
-            "h:mm"
+            "h:mm",
+            "hh:mm"
           ],
           "default": "HH:mm",
           "swiftNames": {
             "HH:mm": "hourMinute24",
             "HH:mm:ss": "hourMinuteSecond24",
-            "h:mm": "hourMinute12"
-          }
+            "h:mm": "hourMinute12",
+            "hh:mm": "hourMinute12Padded"
+          },
+          "doc": "README: Clock."
+        },
+        "tzOffsetMin": {
+          "kind": "measure",
+          "type": "number",
+          "default": 0,
+          "doc": "Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it."
         }
       }
     },

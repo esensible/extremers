@@ -1,14 +1,14 @@
 {
   "ctx": { "width": 198, "height": 242 },
   "steps": [
-    { "state": { "armed": true, "now": 5001000, "start": 5066000 } },
+    { "state": { "armed": true, "now": 5001000, "start": 5066000, "tz": 630 } },
     { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 0 } } },
     { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 1500 } } },
     { "dispatch": { "tag": 999, "name": "press", "payload": { "agoMs": 0 } } },
-    { "state": { "armed": false, "now": 5005000, "start": 5069000 } },
-    { "state": { "armed": false, "now": 5006000, "start": 5069000 }, "localMs": 1006250 },
+    { "state": { "armed": false, "now": 5005000, "start": 5069000, "tz": 630 } },
+    { "state": { "armed": false, "now": 5006000, "start": 5069000, "tz": 630 }, "localMs": 1006250 },
     { "dispatch": { "tag": 3, "name": "press", "payload": { "agoMs": 0 } } },
-    { "state": { "armed": true, "now": 5008000, "start": 5005000 } },
-    { "state": { "armed": true, "now": 5009000, "start": null } }
+    { "state": { "armed": true, "now": 5008000, "start": 5005000, "tz": 630 } },
+    { "state": { "armed": true, "now": 5009000, "start": null, "tz": 630 } }
   ]
 }

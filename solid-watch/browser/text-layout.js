@@ -111,12 +111,20 @@ export function formatCountdown(format, remainingMs) {
   }
 }
 
-/** Local wall-clock time of `date` (a Date). */
-export function formatClock(format, date) {
-  const h = date.getHours(), m = date.getMinutes(), s = date.getSeconds();
+/**
+ * Wall-clock text for device time `deviceMs` (UTC epoch ms) in the zone
+ * `tzOffsetMin` minutes east of UTC: t = floor((deviceMs + tzOffsetMin x
+ * 60000) / 1000) seconds; h = floor(t / 3600) mod 24 (non-negative), m, s.
+ */
+export function formatClock(format, deviceMs, tzOffsetMin = 0) {
+  const t = Math.floor((deviceMs + tzOffsetMin * 60000) / 1000);
+  const day = ((t % 86400) + 86400) % 86400;
+  const h = Math.floor(day / 3600), m = Math.floor(day / 60) % 60, s = day % 60;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
   switch (format) {
     case "HH:mm:ss": return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
-    case "h:mm": return `${h % 12 === 0 ? 12 : h % 12}:${pad2(m)}`;
+    case "h:mm": return `${h12}:${pad2(m)}`;
+    case "hh:mm": return `${pad2(h12)}:${pad2(m)}`;
     default: return `${pad2(h)}:${pad2(m)}`;
   }
 }

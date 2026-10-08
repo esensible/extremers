@@ -8,6 +8,7 @@ import { createApp, syncClock } from "solid-watch";
 const [count, setCount] = createSignal(0);
 const [armed, setArmed] = createSignal(true);
 const [at, setAt] = createSignal(null);
+const [tz, setTz] = createSignal(0);
 
 const CUES = [60000, 30000, 10000, 5000, 4000, 3000, 2000, 1000].map((ms) => ({ atRemainingMs: ms, pattern: "click" })).concat([{ atRemainingMs: 0, pattern: "success" }]);
 
@@ -24,7 +25,7 @@ function App() {
       <haptic pattern="success" trigger={count()} />
       <countdown at={at()} fontSize={40} tabular minScale={0.5} cues={CUES} />
       <countdown at={at()} format="elapsed" />
-      <clock format="HH:mm" />
+      <clock format="hh:mm" tzOffsetMin={tz()} />
     </view>
   );
 }
@@ -34,5 +35,6 @@ createApp(App, {
     syncClock(s.now); // device clock when the state was captured
     setArmed(s.armed);
     setAt(s.start); // device time of the start, or null
+    setTz(s.tz ?? 0); // the device's zone, minutes east of UTC
   },
 });

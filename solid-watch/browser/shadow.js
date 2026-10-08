@@ -8,8 +8,8 @@
 //   tree.createRoot(1, { width, height })
 //   tree.createNode("view") -> tag ... tree.commit() -> layout result
 //
-// clock: { now(): host-local monotonic ms, date(): Date (wall clock, for
-// <clock>) }. Countdowns run on device time = local now + offset, where
+// clock: { now(): host-local monotonic ms }. Countdowns and <clock> run on
+// device time = local now + offset, where
 // offset = deviceNowMs - local receipt time of the state that last called
 // syncClock (README: Time). The host calls receivedState(localMs) when a
 // state arrives, before handing it to the bundle.
@@ -65,7 +65,7 @@ export class ShadowTree {
     this.offset = deviceNowMs - local;
     // every countdown's text may have moved; cues are not re-armed (a mark
     // crossed by the correction fires or re-arms on the next tick as usual)
-    for (const n of this.nodes.values()) if (n.type === "countdown") this.dirtyMeasure.add(n.tag);
+    for (const n of this.nodes.values()) if (n.type === "countdown" || n.type === "clock") this.dirtyMeasure.add(n.tag);
   }
   /** Device time now. */
   deviceNow() {
@@ -282,7 +282,7 @@ export class ShadowTree {
       if (typeof n.props.at !== "number") return "";
       return formatCountdown(n.props.format ?? "countdown", this._remaining(n));
     }
-    return formatClock(n.props.format ?? "HH:mm", this.clock.date());
+    return formatClock(n.props.format ?? "HH:mm", this.deviceNow(), typeof n.props.tzOffsetMin === "number" ? n.props.tzOffsetMin : 0);
   }
 
   // ---- countdowns (README: Countdown formats, Countdown cues) -------------------

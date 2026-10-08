@@ -90,7 +90,8 @@ export class DomHost {
     el.appendChild(this.screen);
     this.onEvent = onEvent;
     this.pressHandlers = pressHandlers;
-    const clock = { now: () => performance.now(), date: () => new Date() };
+    // local clock: epoch ms, so before any syncClock the clock shows real UTC time
+    const clock = { now: () => performance.timeOrigin + performance.now() };
     this.clock = clock;
     this.tree = new ShadowTree(Yoga, { schema, fragments, measurer: domMeasurer(schema.font.lineHeightRatio), clock });
     this.colors = this.tree.schema.colors;
