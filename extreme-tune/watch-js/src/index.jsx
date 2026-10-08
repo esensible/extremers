@@ -46,8 +46,7 @@ function Tune() {
 }
 
 createApp(Tune, {
-  // TuneSpeed's state has no times, so receivedAtMs (the host clock at
-  // receipt, for countdown `at`) is unused here.
+  // TuneSpeed's state has no times: no syncClock, no countdowns.
   onState(bytes) {
     const s = decode(bytes);
     if (!s) return;
