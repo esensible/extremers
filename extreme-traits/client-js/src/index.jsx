@@ -10,6 +10,40 @@ const [engines, setEngines] = createSignal([], {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
 });
 
+// BLE pairing (BLE.md "Pairing a watch"): the state message's `ble` field,
+// absent on a box without BLE. Everything but the time left, which changes
+// on every message; same reason for the JSON comparison.
+const [ble, setBle] = createSignal(null, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+});
+// Whole seconds left in the pairing window, 0 when it is closed. Counted
+// down here from the last message, so it needs no message per second.
+const [pairSecs, setPairSecs] = createSignal(0);
+let pairDeadline = 0;
+const [showSettings, setShowSettings] = createSignal(false);
+const [confirmForget, setConfirmForget] = createSignal(false);
+
+function updatePairSecs() {
+    const left = pairDeadline - Date.now();
+    setPairSecs(left > 0 ? Math.ceil(left / 1000) : 0);
+}
+setInterval(updatePairSecs, 1000);
+
+function receiveBle(status) {
+    if (!status) {
+        setBle(null);
+        return;
+    }
+    setBle({ addr: status.addr, bonds: status.bonds, max: status.max, note: status.note });
+    pairDeadline = Date.now() + status.pair_ms;
+    updatePairSecs();
+}
+
+function minutesSeconds(secs) {
+    const s = secs % 60;
+    return Math.floor(secs / 60) + ':' + (s < 10 ? '0' : '') + s;
+}
+
 
 let socket;
 
@@ -68,6 +102,7 @@ function fetchUpdates() {
                     setEngines(data.engine.engines);
                 }
             }
+            receiveBle(data.ble);
         };
 
         ws.onclose = () => {
@@ -90,19 +125,104 @@ function fetchUpdates() {
     });
 }
 
-// Switch engine. Any name the server doesn't recognise returns to the
-// selector, so "Selector" is the clean way to exit.
-function selectEngine(name) {
+function send(message) {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ Select: name }));
+        socket.send(JSON.stringify(message));
     } else {
         console.error('WebSocket is not connected');
     }
 }
 
+// Switch engine. Any name the server doesn't recognise returns to the
+// selector, so "Selector" is the clean way to exit.
+function selectEngine(name) {
+    send({ Select: name });
+}
+
+// BLE commands, exactly `{"Ble":"Pair"}` etc. (common/src/ble_settings.rs).
+function bleCommand(command) {
+    send({ Ble: command });
+}
+
 
 // Start fetching updates
 fetchUpdates();
+
+// Watch pairing: open the pairing window, see the bonded watches, forget
+// them all. Plain black on white, big targets, nothing animated (e-ink).
+const Settings = () => {
+    const bonds = () => (ble() ? ble().bonds : []);
+    return (
+        <div class="settings">
+            <div class="settings-title">Watch pairing</div>
+            <div class="settings-line">This box: {ble() ? ble().addr : ''}</div>
+            <Show
+                when={pairSecs() > 0}
+                fallback={
+                    <button class="settings-button" onClick={() => bleCommand('Pair')}>
+                        Pair watch
+                    </button>
+                }
+            >
+                <div class="settings-line settings-strong">
+                    Pairing open, {minutesSeconds(pairSecs())} left: connect the watch now
+                </div>
+                <button class="settings-button" onClick={() => bleCommand('Cancel')}>
+                    Stop pairing
+                </button>
+            </Show>
+            <Show when={ble() && ble().note}>
+                <div class="settings-line">{ble().note}</div>
+            </Show>
+            <div class="settings-line settings-strong">
+                Paired watches: {bonds().length} of {ble() ? ble().max : 0}
+            </div>
+            {bonds().map(addr => (
+                <div class="settings-line settings-bond">{addr}</div>
+            ))}
+            <Show
+                when={confirmForget()}
+                fallback={
+                    <Show when={bonds().length > 0}>
+                        <button class="settings-button" onClick={() => setConfirmForget(true)}>
+                            Forget all watches
+                        </button>
+                    </Show>
+                }
+            >
+                <div class="settings-line settings-strong">
+                    Forget all {bonds().length}? Each must pair again.
+                </div>
+                <div class="settings-row">
+                    <button
+                        class="settings-button settings-half"
+                        onClick={() => {
+                            bleCommand('ForgetAll');
+                            setConfirmForget(false);
+                        }}
+                    >
+                        Forget
+                    </button>
+                    <button
+                        class="settings-button settings-half"
+                        onClick={() => setConfirmForget(false)}
+                    >
+                        Keep
+                    </button>
+                </div>
+            </Show>
+            <button
+                class="settings-button"
+                onClick={() => {
+                    setConfirmForget(false);
+                    setShowSettings(false);
+                }}
+            >
+                Close
+            </button>
+        </div>
+    );
+};
 
 // Main App Component
 const App = () => {
@@ -117,7 +237,15 @@ const App = () => {
                         {engine}
                     </button>
                 ))}
+                <Show when={ble()}>
+                    <button class="settings-open" onClick={() => setShowSettings(true)}>
+                        Settings
+                    </button>
+                </Show>
             </div>
+            <Show when={showSettings() && ble()}>
+                <Settings />
+            </Show>
             <Show when={!connected()}>
                 <div class="connection-lost">Connection lost, reconnecting</div>
             </Show>

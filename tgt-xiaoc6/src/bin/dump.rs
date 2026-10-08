@@ -4,11 +4,13 @@
 //!
 //! Flashing it replaces the app (flash the app again afterwards); the
 //! settings partition is untouched by either flash. The password itself is
-//! never printed, only its length.
+//! never printed, only its length; of BLE bonds only the count and the
+//! devices' identity addresses, never their keys.
 
 #![no_std]
 #![no_main]
 
+use common::ble_settings::AddrText;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
@@ -47,6 +49,25 @@ async fn main(_spawner: Spawner) -> ! {
                 Some(n) => warn!("dump: wifi: {=usize}-byte record that is not valid credentials", n),
                 None => info!("dump: wifi: nothing stored (the app uses its compiled-in defaults)"),
             },
+        }
+        // Addresses only: the keys (LTK, IRK) are never printed.
+        let bonds = storage::bonds().await;
+        info!(
+            "dump: ble bonds: {=usize} of {=usize}",
+            bonds.iter().flatten().count(),
+            bonds.len()
+        );
+        for (slot, bond) in bonds.iter().enumerate() {
+            if let Some(b) = bond {
+                info!(
+                    "dump: ble bond slot {=usize}: {} ({=str} identity, {=str}, seq {=u32})",
+                    slot,
+                    defmt::Display2Format(&AddrText(b.addr)),
+                    if b.addr_kind == 0 { "public" } else { "random" },
+                    if b.irk.is_some() { "IRK" } else { "no IRK" },
+                    b.seq
+                );
+            }
         }
     }
     info!("dump: done");

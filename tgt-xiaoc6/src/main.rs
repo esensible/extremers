@@ -38,8 +38,12 @@ use crate::network_tasks::{
     wifi_task,
 };
 use common::{
-    ble::{CONNECTIONS_MAX, serve_ble},
-    config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
+    ble::{BondStore, CONNECTIONS_MAX, serve_ble},
+    ble_settings::{BondRecord, static_random_address},
+    config::{
+        AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
+        SOCKET_BUFFER_SIZE,
+    },
     nmea::AsyncReader,
     runtime::EngineRuntime,
     tasks::{read_gps, serve_http},
@@ -112,7 +116,7 @@ async fn main(spawner: Spawner) -> ! {
     // controller's connection limit matches the host's.
     let ble_config = esp_radio::ble::Config::default().with_max_connections(CONNECTIONS_MAX as u16);
     let connector = BleConnector::new(peripherals.BT, ble_config).unwrap();
-    spawner.spawn(ble_task(ExternalController::new(connector), runtime).unwrap());
+    spawner.spawn(ble_task(ExternalController::new(connector), runtime, ble_address()).unwrap());
 
     // initialize wifi controller as an access point
     let controller_config = ControllerConfig::default()
@@ -192,8 +196,36 @@ async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
 }
 
 #[embassy_executor::task]
-async fn ble_task(controller: BleController, runtime: &'static Runtime) -> ! {
-    serve_ble(controller, runtime).await
+async fn ble_task(controller: BleController, runtime: &'static Runtime, address: [u8; 6]) -> ! {
+    serve_ble(controller, runtime, address, &FlashBonds).await
+}
+
+/// BLE bonds in the settings partition (storage.rs).
+struct FlashBonds;
+
+impl BondStore for FlashBonds {
+    async fn load(&self) -> [Option<BondRecord>; MAX_BLE_BONDS] {
+        storage::bonds().await
+    }
+
+    async fn save(&self, slot: usize, bond: &BondRecord) -> bool {
+        storage::store_bond(slot, bond).await
+    }
+
+    async fn clear(&self) -> bool {
+        storage::clear_bonds().await
+    }
+}
+
+/// This unit's BLE static random address, from the base MAC address burnt
+/// into the chip's eFuses at the factory (unique per chip), so no two boxes
+/// advertise the same address.
+fn ble_address() -> [u8; 6] {
+    let mac = esp_hal::efuse::base_mac_address();
+    let mut bytes = [0u8; 6];
+    bytes.copy_from_slice(mac.as_bytes());
+    defmt::info!("efuse: base MAC {=[u8]:02x}", bytes);
+    static_random_address(bytes)
 }
 
 #[embassy_executor::task]

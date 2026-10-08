@@ -2,6 +2,10 @@
 //! Also blanks `otadata`, so the bootloader boots `ota_0` (storage.rs,
 //! `blank_otadata`).
 //!
+//! Erasing `settings` deletes the BLE bonds too: every paired watch has to
+//! be forgotten on the watch and paired again (BLE.md "Security"). To drop
+//! only the bonds, use "Forget all watches" on the Kindle's settings panel.
+//!
 //! The app (`xiaoc6`) only reads settings. Erasing the partition and storing
 //! the access point's SSID and password happen here, in a binary flashed on
 //! purpose and replaced by the app afterwards. The credentials come from the

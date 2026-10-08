@@ -15,6 +15,13 @@ pub const WIFI_CHANNEL: u8 = 10;
 pub const BLE_NAME: &str = "nacra";
 /// Concurrent BLE centrals: the watch plus a phone or a debugging tool.
 pub const MAX_BLE_CONNECTIONS: usize = 2;
+/// Bonded devices kept (BLE.md "Security"): a crew's watches and a phone.
+/// When all are taken, a new pairing replaces the oldest bond.
+pub const MAX_BLE_BONDS: usize = 4;
+/// How long "Pair watch" on the Kindle's settings panel lets a new device
+/// bond (BLE.md "Pairing a watch"). Bonding is refused at any other time;
+/// bonded devices reconnect whenever they like.
+pub const BLE_PAIRING_WINDOW_SECS: u64 = 120;
 
 /// The device's own address on the access point network. It is also the
 /// gateway and DNS server handed out by DHCP.

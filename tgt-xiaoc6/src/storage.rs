@@ -16,16 +16,21 @@
 //! partition table at boot -- no offsets in code. Flashing the app does not
 //! touch it (see partitions.csv for why).
 //!
-//! The app only reads: it never writes or erases at boot. Erasing the
-//! partition and writing the WiFi credentials is the `provision` binary's
-//! job (src/bin/provision.rs); `dump` (src/bin/dump.rs) prints what is
-//! stored.
+//! The app never writes or erases at boot. It writes a bond record when a
+//! device pairs during the pairing window and removes them all on "Forget
+//! all watches" (BLE.md "Security"). Erasing the partition (WiFi credentials
+//! and bonds alike) and writing the WiFi credentials is the `provision`
+//! binary's job (src/bin/provision.rs); `dump` (src/bin/dump.rs) prints what
+//! is stored.
 //!
 //! Records:
-//!   `KEY_WIFI`  [ssid_len][ssid..][psk_len][psk..]   (`WifiCreds`)
+//!   `KEY_WIFI`           [ssid_len][ssid..][psk_len][psk..]   (`WifiCreds`)
+//!   `KEY_BOND_BASE + n`  bond slot n < MAX_BLE_BONDS, 46 bytes
+//!                        (`common::ble_settings::BondRecord`)
 
 use core::ops::Range;
 
+use common::{ble_settings::BondRecord, config::MAX_BLE_BONDS};
 use defmt::{info, warn};
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -39,11 +44,14 @@ use sequential_storage::map::{MapConfig, MapStorage};
 
 pub type Key = [u8; 1];
 pub const KEY_WIFI: Key = [0x10];
+/// Bond slots: `KEY_BOND_BASE + slot`, slot < `MAX_BLE_BONDS`.
+pub const KEY_BOND_BASE: u8 = 0x20;
 
 /// sequential-storage's scratch buffer. It must hold the largest item of
 /// ANY key plus its key, word-rounded: a page migration triggered by storing
-/// one key copies every live item through it. Generous for today's single
-/// ~100-byte record, so a new key does not have to resize it.
+/// one key copies every live item through it. Generous for today's largest
+/// record (WiFi, ~100 bytes; a bond is 46), so a new key does not have to
+/// resize it.
 pub const SCRATCH_LEN: usize = 512;
 
 /// Label of the settings partition in `partitions.csv`.
@@ -517,4 +525,51 @@ pub async fn wifi_creds() -> Option<WifiCreds> {
 pub async fn set_wifi_creds(creds: &WifiCreds) -> bool {
     let mut raw = [0u8; WIFI_RECORD_MAX];
     store(KEY_WIFI, creds.encode(&mut raw)).await
+}
+
+fn bond_key(slot: usize) -> Key {
+    [KEY_BOND_BASE + slot as u8]
+}
+
+/// The stored bonds by slot. A slot whose record does not decode is logged
+/// and read as empty (and is overwritten by the next pairing that needs it).
+pub async fn bonds() -> [Option<BondRecord>; MAX_BLE_BONDS] {
+    let mut out = [None; MAX_BLE_BONDS];
+    for (slot, entry) in out.iter_mut().enumerate() {
+        *entry = with_value(bond_key(slot), |v| {
+            let v = v?;
+            let r = BondRecord::decode(v);
+            if r.is_none() {
+                warn!("storage: bond slot {=usize}: {=usize}-byte record does not decode", slot, v.len());
+            }
+            r
+        })
+        .await;
+    }
+    out
+}
+
+pub async fn store_bond(slot: usize, bond: &BondRecord) -> bool {
+    if slot >= MAX_BLE_BONDS {
+        return false;
+    }
+    store(bond_key(slot), &bond.encode()).await
+}
+
+/// Removes every bond slot. `true` if all removals succeeded (removing an
+/// absent key succeeds).
+pub async fn clear_bonds() -> bool {
+    let mut guard = STORE.lock().await;
+    let Some(store) = guard.as_mut() else {
+        return false;
+    };
+    let mut ok = true;
+    for slot in 0..MAX_BLE_BONDS {
+        let key = bond_key(slot);
+        if let Err(e) = store.map.remove_item(&mut store.buf[..], &key).await {
+            warn!("storage: remove {=u8:#04x} failed: {:?}", key[0], defmt::Debug2Format(&e));
+            ok = false;
+        }
+    }
+    ok
 }

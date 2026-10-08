@@ -45,7 +45,8 @@ edge-nal-std = { version = "0.7", default-features = false }
 edge-dhcp = { version = "0.8", default-features = false, features = ["io"] }
 
 #
-# BLE (trouble-host 0.7 pairs with esp-radio 1.0.0-beta.1 via bt-hci 0.9)
+# BLE (trouble-host 0.7 pairs with esp-radio 1.0.0-beta.1 via bt-hci 0.9).
+# Patched to a local clone below, see [patch.crates-io].
 #
 trouble-host = { version = "0.7", default-features = false, features = ["derive", "gatt", "peripheral", "default-packet-pool"] }
 edge-captive = { version = "0.8", default-features = false, features = ["io"] }
@@ -71,6 +72,25 @@ opt-level = 3
 # Debug info only lives in the ELF, not the flashed image; probe-rs needs it
 # to show each defmt log line's source location.
 debug = 2
+
+# Bonding (BLE.md "Security"): trouble-host 0.7.0 on crates.io cannot keep a
+# bond with an Apple device working. Re-pairing a bonded peer that connects
+# from a resolvable private address (every iPhone and Apple Watch) fails the
+# DHKey check every time, because the bonded identity address instead of the
+# on-air address goes into f5/f6; a peer holding a bond we lost (provision,
+# "Forget all watches") is disconnected instead of getting an LTK negative
+# reply; an encryption event for a link that already dropped stops the host
+# runner. Upstream PR embassy-rs/trouble#660 fixes most of this, plus local
+# commits (on-air address for pairing, LESC keypair generated once), in the
+# local clone hilux/wireless-can also builds against (branch
+# hilux-keypair-once, not pushed):
+# `git -C /Users/sensible-1/src/trouble log origin/main..` lists them. Same bt-hci 0.9 as esp-radio 1.0.0-beta.1, and the same package
+# version, so the patch applies. By absolute host path like hilux's; a dev
+# container needs the clone at that path (or a `--config` patch override).
+# Drop this when a trouble-host release has those fixes.
+[patch.crates-io]
+trouble-host = { path = "/Users/sensible-1/src/trouble/host" }
+trouble-host-macros = { path = "/Users/sensible-1/src/trouble/host-macros" }
 
 # The esp-radio blobs require optimization to work correctly, even in debug builds
 [profile.dev.package.esp-radio]
