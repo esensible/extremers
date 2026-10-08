@@ -42,9 +42,32 @@ struct ContentView: View {
 
   @ViewBuilder private var appScreen: some View {
     switch shell.screen {
-    case .app:
-      // The bundle's buttons are disabled (and dimmed) while the link is
-      // down: events cannot be sent.
+    case .app(let id, _, _):
+      // The bundle has the whole screen, as a Kindle page has its own: its
+      // (0, 0) is the screen's top-left corner and its ctx the screen's
+      // size, no safe areas. Its buttons are disabled (and dimmed) while
+      // the link is down: events cannot be sent. The shell's menu shows
+      // only over Choose, at the left edge, clear of Choose's buttons
+      // (ShellMenuButton.frame).
+      ZStack(alignment: .topLeading) {
+        bundleView
+        if id == Packages.choose {
+          GeometryReader { g in
+            ShellMenuButton()
+              .frame(width: ShellMenuButton.size, height: ShellMenuButton.size)
+              .offset(x: ShellMenuButton.frame(in: g.size).minX, y: ShellMenuButton.frame(in: g.size).minY)
+          }
+        }
+      }
+      .ignoresSafeArea()
+    case .missing(let id):
+      MissingAppView(id: id)
+    case .none:
+      ConnectingView()
+    }
+  }
+
+  @ViewBuilder private var bundleView: some View {
       MountView(session: shell.session)
         .disabled(!computer.isLive)
         .opacity(computer.isLive ? 1 : 0.6)
@@ -61,11 +84,6 @@ struct ContentView: View {
           ShellLog.shared(String(format: "tap at (%.1f, %.1f)%@", tap.location.x, tap.location.y,
                                  computer.isLive ? "" : " (link down: buttons disabled)"))
         })
-    case .missing(let id):
-      MissingAppView(id: id)
-    case .none:
-      ConnectingView()
-    }
   }
 }
 

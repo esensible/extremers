@@ -110,3 +110,19 @@ final class Shell: ObservableObject {
 private struct CompiledBundlesEmpty: BundleSource {
   func bundle(id: PackageId, uiHash: [UInt8]) -> AppBundle? { nil }
 }
+
+/// Where the shell's menu button sits over Choose: at the screen's left
+/// edge, vertically centred. Choose's buttons are half the screen wide and
+/// centred, so they start a quarter of the width in; on every watch screen
+/// the button is left of them (ShellFlowTests checks it against the drawn
+/// Choose). Race and Tune get no native chrome.
+enum ShellMenuPlacement {
+  /// Side of the button, points.
+  static let size: CGFloat = 30
+  /// Gap to the screen's left edge.
+  static let inset: CGFloat = 4
+
+  static func frame(in screen: CGSize) -> CGRect {
+    CGRect(x: inset, y: (screen.height - size) / 2, width: size, height: size)
+  }
+}

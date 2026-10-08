@@ -155,6 +155,59 @@ final class ShellFlowTests: XCTestCase {
     }
   }
 
+  /// Watch screens (points): 40/41, 42 (2024), 44/45, 46, 49 mm.
+  static let screens: [CGSize] = [
+    CGSize(width: 162, height: 197), CGSize(width: 187, height: 223), CGSize(width: 198, height: 242),
+    CGSize(width: 208, height: 248), CGSize(width: 205, height: 251),
+    // as the simulators report their bundle area: SE 3 44 mm, Ultra 4 49 mm
+    CGSize(width: 184, height: 224), CGSize(width: 211, height: 257),
+  ]
+
+  /// The shell's menu over Choose covers none of Choose's buttons on any
+  /// screen, with each package list of the Choose fixtures (up to three).
+  func testMenuClearOfChooseButtons() throws {
+    let source = try bundles()
+    let choose = try states("extreme-traits")
+    for size in Self.screens {
+      for state in choose {
+        guard case .success(let e) = Envelope.decode(state), e.active == Packages.choose else { continue }
+        let shell = Shell(source: source) { _ in }
+        shell.session.setViewport(size)
+        receive(shell, state)
+        let menu = ShellMenuPlacement.frame(in: size)
+        XCTAssertTrue(CGRect(origin: .zero, size: size).contains(menu), "\(size)")
+        for b in buttons(shell) {
+          XCTAssertFalse(b.frame.intersects(menu), "\(size): menu \(menu) covers button \(b.tag) \(b.frame)")
+        }
+      }
+    }
+  }
+
+  /// Race, every phase of its fixture script, on every screen: everything
+  /// it draws is inside the screen (nothing laid out past the bottom).
+  func testRaceFitsEveryScreen() throws {
+    let source = try bundles()
+    let race = try states("extreme-race")
+    for size in Self.screens {
+      let shell = Shell(source: source) { _ in }
+      shell.session.setViewport(size)
+      for state in race {
+        guard case .success = Envelope.decode(state) else { continue }
+        receive(shell, state)
+        guard case .app(_, _, "race") = shell.screen, let snap = shell.session.snapshot, let root = snap.root else { continue }
+        let screen = CGRect(origin: .zero, size: size)
+        func walk(_ n: LayoutNode, _ origin: CGPoint) {
+          let f = n.frame.offsetBy(dx: origin.x, dy: origin.y)
+          if n.props["display"] != .string("none"), n.type != "haptic", !f.isEmpty {
+            XCTAssertTrue(screen.insetBy(dx: -0.01, dy: -0.01).contains(f), "\(size): \(n.type) \(n.tag) at \(f)")
+          }
+          for c in n.children { if let k = snap[c] { walk(k, f.origin) } }
+        }
+        walk(root, .zero)
+      }
+    }
+  }
+
   /// The image's pixels, as a digest (short failure messages).
   func pixels(_ image: CGImage?) -> String? {
     guard let image, let data = image.dataProvider?.data as Data? else { return nil }

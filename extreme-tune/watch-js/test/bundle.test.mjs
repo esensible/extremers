@@ -81,8 +81,8 @@ test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the 
   assert.deepEqual([props.position, props.left, props.top, props.marginLeft, props.marginTop, props.width], ["absolute", "50%", "50%", -30, -30, 60]);
 });
 
-// Watch screens (points): 40/41 mm, 44/45 mm (the fixtures'), 46 mm, 49 mm.
-const SCREENS = [[162, 197], [198, 242], [208, 248], [205, 251]];
+// Watch screens (points): 40/41, 42, 44 (SE 3), 44/45 (the fixtures'), 46, 49, 49 mm (Ultra 4).
+const SCREENS = [[162, 197], [187, 223], [184, 224], [198, 242], [208, 248], [205, 251], [211, 257]];
 
 test("the exit button is 30 % of the height, square, top left, and covers no other button on any screen", () => {
   const script = JSON.parse(read("script.json"));

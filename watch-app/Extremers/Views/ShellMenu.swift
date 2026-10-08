@@ -7,12 +7,22 @@ import SwiftUI
 struct ShellMenuButton: View {
   @State private var shown = false
 
+  static let size = ShellMenuPlacement.size
+
+  static func frame(in screen: CGSize) -> CGRect {
+    ShellMenuPlacement.frame(in: screen)
+  }
+
   var body: some View {
     Button {
       shown = true
     } label: {
       Image(systemName: "ellipsis")
+        .font(.system(size: 14, weight: .semibold))
+        .frame(width: Self.size, height: Self.size)
+        .background(Palette.button, in: Circle())
     }
+    .buttonStyle(.plain)
     .sheet(isPresented: $shown) { ShellMenu(dismiss: { shown = false }) }
   }
 }

@@ -26,12 +26,7 @@ struct ExtremersApp: App {
 
   var body: some Scene {
     WindowGroup {
-      NavigationStack {
-        ContentView()
-          .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ShellMenuButton() }
-          }
-      }
+      ContentView()
       .environmentObject(computer)
       .environmentObject(shell)
       .onAppear {
