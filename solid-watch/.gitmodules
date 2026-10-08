@@ -1,0 +1,6 @@
+# quickjs-ng, pinned to v0.17.0 (6d46d07d04041b40f4f49eaa7fdebe44c314c699):
+# the source of Frameworks/CQuickJS.xcframework (scripts/build-quickjs-xcframework.sh)
+# and of the qjs CLI the tests use (test/build-qjs.sh).
+[submodule "quickjs-ng"]
+	path = quickjs-ng
+	url = https://github.com/quickjs-ng/quickjs.git

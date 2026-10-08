@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds Frameworks/CQuickJS.xcframework: the vendored quickjs-ng
-# (quickjs-ng/, see VENDORED.txt) as an optimised static library for every
-# platform Package.swift supports, with its header and a module map.
+# Builds Frameworks/CQuickJS.xcframework: quickjs-ng (the quickjs-ng/
+# submodule, v0.17.0) as an optimised static library for every platform
+# Package.swift supports, with its header and a module map.
 #
 # Why a prebuilt binary: the interpreter must always be optimised. Built
 # from source by SwiftPM it follows the app's configuration, and at -O0
@@ -11,15 +11,25 @@
 # used as a versioned dependency), so the library is built here, -O2,
 # and the package links it as a binaryTarget.
 #
+# The framework is a build output (Frameworks/ is ignored): run this once
+# after cloning, and again after updating the submodule. The build is
+# reproducible (same sources, same Xcode: same bytes).
+#
 # Needs Xcode's command line tools (xcrun, clang, libtool, lipo,
-# xcodebuild). Run from the package root after updating quickjs-ng/:
+# xcodebuild) and the submodule checked out:
+#   git submodule update --init quickjs-ng     # in solid-watch/
 #   sh scripts/build-quickjs-xcframework.sh
 set -eu
 cd "$(dirname "$0")/.."
-# reproducible archives: no member timestamps
-export ZERO_AR_DATE=1
 SRC=quickjs-ng
 OUT=Frameworks/CQuickJS.xcframework
+if [ ! -f "$SRC/quickjs.c" ] || [ ! -f "$SRC/quickjs.h" ]; then
+  echo "error: $SRC/ is not checked out. Run 'git submodule update --init quickjs-ng'" >&2
+  echo "in solid-watch/ (or 'git submodule update --init' at the repository root)." >&2
+  exit 1
+fi
+# reproducible archives: no member timestamps
+export ZERO_AR_DATE=1
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -33,7 +43,7 @@ build() {
   dir="$WORK/obj/$triple"
   mkdir -p "$dir"
   for f in $FILES; do
-    xcrun --sdk "$sdk" clang -target "$triple" $CFLAGS -I "$SRC" -I "$SRC/include" -c "$SRC/$f" -o "$dir/${f%.c}.o"
+    xcrun --sdk "$sdk" clang -target "$triple" $CFLAGS -I "$SRC" -c "$SRC/$f" -o "$dir/${f%.c}.o"
   done
   xcrun --sdk "$sdk" libtool -static -o "$dir/libCQuickJS.a" "$dir"/*.o
   echo "$dir/libCQuickJS.a"
@@ -57,7 +67,7 @@ platform macos macosx arm64-apple-macos14.0 x86_64-apple-macos14.0
 
 HDR="$WORK/include"
 mkdir -p "$HDR"
-cp "$SRC/include/quickjs.h" "$HDR/"
+cp "$SRC/quickjs.h" "$HDR/"
 cat > "$HDR/module.modulemap" <<'EOF'
 module CQuickJS {
     header "quickjs.h"
@@ -73,4 +83,4 @@ for p in watchos watchsim ios iossim macos; do
 done
 xcodebuild -create-xcframework $args -output "$OUT"
 cp "$SRC/LICENSE" "$OUT/LICENSE"
-echo "built $OUT"
+echo "built $OUT from quickjs-ng $(git -C "$SRC" describe --tags --always 2>/dev/null || echo '(unknown version)')"

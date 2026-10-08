@@ -2,6 +2,8 @@ node_modules/
 dist/
 .build/
 .swiftpm/
+# a library: its dependencies' versions are pinned in Package.swift
+Package.resolved
 test/types/demo-jsx.d.ts
 # build output of scripts/build-quickjs-xcframework.sh
 Frameworks/

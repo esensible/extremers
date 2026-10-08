@@ -23,13 +23,30 @@ fonts/                   the one font both hosts use (Inter, OFL)
 test/                    node tests, qjs runner, fixture generators
 fixtures/                golden mutation logs, expected frames, layout-parity cases
 Sources/SolidWatch/      Swift package (Generated/NodeProps.swift is generated)
-quickjs-ng/              the vendored engine (VENDORED.txt), source of the framework below
-Frameworks/CQuickJS.xcframework   quickjs-ng prebuilt, optimised (scripts/build-quickjs-xcframework.sh)
+quickjs-ng/              the engine: a git submodule, quickjs-ng v0.17.0, source of the framework below
+Frameworks/CQuickJS.xcframework   quickjs-ng prebuilt, optimised: a build output (scripts/build-quickjs-xcframework.sh)
 ```
 
 Licence: MIT (see `LICENSE`). Inter is under the SIL OFL 1.1
 (`fonts/LICENSE-Inter.txt`). quickjs-ng and Yoga are MIT (their `LICENSE`
 files).
+
+### Dependencies
+
+- **quickjs-ng** v0.17.0: the `quickjs-ng/` submodule, pinned to that
+  tag's commit. Linked as `Frameworks/CQuickJS.xcframework`, which is
+  built from it and not committed (next section). After cloning:
+
+  ```sh
+  git submodule update --init quickjs-ng   # from the repository root: git submodule update --init
+  sh scripts/build-quickjs-xcframework.sh  # Xcode command line tools; again after updating quickjs-ng
+  ```
+
+  Without the framework the package does not load: SwiftPM (and Xcode)
+  stop with "solid-watch: Frameworks/CQuickJS.xcframework is missing" and
+  these steps.
+- **Yoga** 3.2.1: facebook/yoga's own Swift package (`exact: "3.2.1"`),
+  fetched by SwiftPM; its C API is the `yoga` module.
 
 ### Why QuickJS is prebuilt
 
@@ -41,9 +58,12 @@ optimisation setting. `unsafeFlags(["-O2"])` would work, but SwiftPM refuses
 a package that uses it as a versioned dependency. So the package links
 quickjs-ng as a `binaryTarget`: an XCFramework of static libraries for
 watchOS, iOS and macOS (devices and simulators), built `-O2 -DNDEBUG` by
-`scripts/build-quickjs-xcframework.sh` from `quickjs-ng/`. The build is
-reproducible: rerun it after updating the vendored sources and commit the
-result. The glue (`CSolidHost`) and Yoga stay source targets.
+`scripts/build-quickjs-xcframework.sh` from the `quickjs-ng/` submodule.
+The framework is a build output (`Frameworks/` is ignored): the build is
+reproducible (the same sources and Xcode give the same bytes), so it is
+built where it is used rather than committed; rerun it after updating the
+submodule. The glue (`CSolidHost`) is a source target and Yoga a package
+dependency, both built with the app.
 
 ## Writing a bundle
 
@@ -359,5 +379,6 @@ holds 40–160 ms across repaints; it reports
 `dispatched/tried` in the log and `window.__selftest`.
 
 `test/build-qjs.sh <quickjs-ng checkout at v0.17.0> <out>` builds `qjs`
+(e.g. `sh test/build-qjs.sh "$PWD/quickjs-ng" /tmp/qjs` with the submodule)
 without cmake. `test/boundary.mjs` fails on any path that leaves this
 directory, so it can be split out on its own.
