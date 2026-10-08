@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "extremers",
+  "doc": "Extremers' solid-watch fragment: the palette and the native press handler that writes BLE events (BLE.md Events).",
+  "colors": {
+    "accent": "#FF9F0A",
+    "button": "#333333",
+    "caption": "#999999"
+  },
+  "pressHandlers": {
+    "send": { "doc": "Write the button's `event` bytes to the event characteristic. If `stampAgo` is set, first write the ms from the tap to the write as a u16 LE at that byte offset (BLE.md: Bump `ago`)." }
+  },
+  "extends": {
+    "button": {
+      "props": {
+        "event": { "kind": "behavior", "type": "bytes", "default": null, "doc": "Event bytes for press=\"send\" (BLE.md Events)." },
+        "stampAgo": { "kind": "behavior", "type": "number", "default": null, "doc": "Byte offset of the u16 LE tap-to-send delay in `event`." }
+      }
+    }
+  }
+}
