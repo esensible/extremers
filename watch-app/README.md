@@ -25,11 +25,6 @@ For now the bundles are compiled in. A build phase copies each package's
 `Bundles/<package name>/`. Delivery over BLE takes the place of
 `CompiledBundles` later.
 
-Build the Release configuration for the watch. In Debug the QuickJS
-interpreter is unoptimized and its C frames are several times larger, so
-the Race bundle's first render overflows the engine's 256 KB stack limit
-("Maximum call stack size exceeded").
-
 ## Build
 
 Needs a Mac with Xcode 16 or later (watchOS 10 SDK or later; the code uses
