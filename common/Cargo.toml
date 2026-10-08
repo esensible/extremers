@@ -13,8 +13,12 @@ embassy-time = { workspace = true }
 edge-http = { workspace = true }
 edge-ws = { workspace = true }
 edge-nal = { workspace = true }
-# BLE transport (feature `ble`)
-trouble-host = { workspace = true, optional = true }
+# BLE transport (feature `ble`); `security`: pairing, bonding, encryption.
+# A pairing posts several connection events back to back (encrypted, pairing
+# complete, plus whatever link updates the central asks for) while `serve`
+# may be busy storing a bond; trouble drops what does not fit the queue
+# (default 2), and a lost `PairingComplete` would be a lost bond.
+trouble-host = { workspace = true, optional = true, features = ["security", "connection-event-queue-size-8"] }
 # trouble-host's heapless (characteristic values); the engines use 0.8
 heapless09 = { package = "heapless", version = "0.9", default-features = false, optional = true }
 # `#[gatt_service]` names `static_cell::StaticCell` in the code it generates

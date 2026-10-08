@@ -38,9 +38,12 @@ use crate::network_tasks::{
     wifi_task,
 };
 use common::{
-    ble::{CONNECTIONS_MAX, serve_ble},
-    ble_settings::static_random_address,
-    config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
+    ble::{BondStore, CONNECTIONS_MAX, serve_ble},
+    ble_settings::{BondRecord, static_random_address},
+    config::{
+        AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
+        SOCKET_BUFFER_SIZE,
+    },
     nmea::AsyncReader,
     runtime::EngineRuntime,
     tasks::{read_gps, serve_http},
@@ -194,7 +197,24 @@ async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
 
 #[embassy_executor::task]
 async fn ble_task(controller: BleController, runtime: &'static Runtime, address: [u8; 6]) -> ! {
-    serve_ble(controller, runtime, address).await
+    serve_ble(controller, runtime, address, &FlashBonds).await
+}
+
+/// BLE bonds in the settings partition (storage.rs).
+struct FlashBonds;
+
+impl BondStore for FlashBonds {
+    async fn load(&self) -> [Option<BondRecord>; MAX_BLE_BONDS] {
+        storage::bonds().await
+    }
+
+    async fn save(&self, slot: usize, bond: &BondRecord) -> bool {
+        storage::store_bond(slot, bond).await
+    }
+
+    async fn clear(&self) -> bool {
+        storage::clear_bonds().await
+    }
 }
 
 /// This unit's BLE static random address, from the base MAC address burnt
