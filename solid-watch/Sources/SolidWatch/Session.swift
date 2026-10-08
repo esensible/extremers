@@ -116,7 +116,9 @@ public final class SolidWatchSession: ObservableObject {
     func press(_ node: LayoutNode, tappedAt: Date) {
         if let name = node.button?.press {
             if let handler = registry.pressHandlers[name] {
-                handler(PressEvent(tag: node.tag, handler: name, props: node.props, tappedAt: tappedAt))
+                let offset = host?.tree.offsetMs ?? 0
+                handler(PressEvent(tag: node.tag, handler: name, props: node.props, tappedAt: tappedAt,
+                                   tappedAtDeviceMs: (tappedAt.timeIntervalSince1970 * 1000 + offset).rounded()))
             } else {
                 onLog?("no press handler registered as \"\(name)\"")
             }

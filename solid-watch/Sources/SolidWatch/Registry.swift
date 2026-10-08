@@ -26,8 +26,14 @@ public struct PressEvent {
     public let handler: String
     /// All of the button's props (including ones an app fragment adds).
     public let props: [String: PropValue]
-    /// When the user tapped (before any confirm sheet).
+    /// When the user tapped (before any confirm sheet), on the host's
+    /// local clock.
     public let tappedAt: Date
+    /// The same tap on the device timeline (README: Time): `tappedAt` in
+    /// epoch ms plus the clock offset from the bundle's latest `syncClock`
+    /// (0 before the first one). A handler that tells the device when
+    /// something happened sends this, not the local time.
+    public let tappedAtDeviceMs: Double
 }
 
 /// App extensions (Fabric-components style): schema fragments (new node

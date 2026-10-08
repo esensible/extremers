@@ -307,7 +307,8 @@ the string changes.
 - **button**: on tap the host stamps the tap time; if `confirm` is set it shows
   a sheet (title, detail, a `label` button and Cancel) and stops on cancel;
   then runs the native `press` handler (with the node's props and the tap
-  time) if set; then, if `onPress` is set, `dispatch(tag, "press", { agoMs })`
+  time, both local and on the device timeline: local + the `syncClock`
+  offset, see Time) if set; then, if `onPress` is set, `dispatch(tag, "press", { agoMs })`
   (ms from tap to dispatch). `disabled` ignores taps. Pressed: opacity × 0.6;
   disabled: × 0.35.
 - **haptic**: plays `pattern` (watchOS `WKHapticType` names) at each commit
