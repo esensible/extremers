@@ -5,17 +5,23 @@ edition.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# Common crate for shared code
-common = { path = "../common" }
+# Common crate for shared code; it logs through defmt here
+common = { path = "../common", features = ["defmt"] }
+
+#
+# Logging: defmt over RTT, read with probe-rs
+#
+defmt = "1.0"
+rtt-target = { version = "0.6", features = ["defmt"] }
 
 #
 # esp32
 #
-esp-hal = { version = "1.2", features = ["log-04", "unstable"] }
-esp-rtos = { version = "0.4", features = ["esp-radio", "embassy", "log-04"] }
-esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "log-04", "unstable"] }
-esp-println = { version = "0.18", features = ["log-04"] }
-esp-backtrace = { version = "0.20", features = ["panic-handler", "println"] }
+esp-hal = { version = "1.2", features = ["defmt", "unstable"] }
+esp-rtos = { version = "0.4", features = ["esp-radio", "embassy", "defmt"] }
+esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "defmt", "unstable"] }
+# panics and backtraces go to defmt/RTT like everything else
+esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt"] }
 esp-alloc = { version = "0.11" }
 esp-bootloader-esp-idf = { version = "0.6" }
 
@@ -39,8 +45,6 @@ edge-nal = { workspace = true }
 edge-nal-embassy = { workspace = true, features = ["proto-ipv4", "medium-ethernet", "tcp", "udp"] }
 edge-dhcp = { workspace = true }
 
-log = { workspace = true }
-
 static_cell = { workspace = true }
 
 # AtomicU64 (used by common) on riscv32imac needs emulation
@@ -56,7 +60,6 @@ esp32c6 = [
     "esp-hal/esp32c6",
     "esp-rtos/esp32c6",
     "esp-radio/esp32c6",
-    "esp-println/esp32c6",
     "esp-backtrace/esp32c6",
     "esp-alloc/esp32c6",
     "esp-bootloader-esp-idf/esp32c6",

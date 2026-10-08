@@ -19,7 +19,6 @@ use esp_hal::{
     timer::timg::TimerGroup,
     uart::{Config as UartConfig, RxConfig, Uart, UartRx},
 };
-use esp_println::logger::init_logger;
 use esp_radio::wifi::{
     ControllerConfig, CountryInfo, Interface, OperatingClass, PowerSaveMode, WifiController,
 };
@@ -47,9 +46,15 @@ define_engines! {
 
 type Runtime = EngineRuntime<EngineType>;
 
+// Every log line carries the uptime (probe-rs shows it as seconds with ms).
+// esp-hal's clock, not embassy-time's, so it works before esp_rtos::start.
+defmt::timestamp!("{=u64:ms}", esp_hal::time::Instant::now().duration_since_epoch().as_millis());
+
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    init_logger(log::LevelFilter::Info);
+    // Logs go over RTT as defmt, read with probe-rs (`probe-rs run` or
+    // `probe-rs attach`). 4 KiB covers boot when attaching late.
+    rtt_target::rtt_init_defmt!(rtt_target::ChannelMode::NoBlockSkip, 4096);
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -95,6 +100,11 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(httpd_task(stack, runtime).unwrap());
     spawner.spawn(timer_task(runtime).unwrap());
 
+    // The GPS's EN pin (Adafruit Ultimate GPS v2) is wired to D0 = GPIO0:
+    // high = GPS on, low = GPS off (for power saving later). Held for the
+    // life of the program.
+    let _gps_enable = Output::new(peripherals.GPIO0, Level::High, OutputConfig::default());
+
     let (tx_pin, rx_pin) = (peripherals.GPIO16, peripherals.GPIO17);
     let config = UartConfig::default()
         .with_baudrate(GPS_BAUD)
@@ -139,7 +149,7 @@ impl AsyncReader for UartReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
         // returns as soon as some bytes have arrived
         self.0.read_async(buf).await.map_err(|e| {
-            log::warn!("gps: UART read failed: {:?}", e);
+            defmt::warn!("gps: UART read failed: {:?}", defmt::Debug2Format(&e));
         })
     }
 }

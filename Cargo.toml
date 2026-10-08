@@ -62,6 +62,9 @@ paste = "1.0"
 [profile.release]
 lto = "fat"
 opt-level = 3
+# Debug info only lives in the ELF, not the flashed image; probe-rs needs it
+# to show each defmt log line's source location.
+debug = 2
 
 # The esp-radio blobs require optimization to work correctly, even in debug builds
 [profile.dev.package.esp-radio]

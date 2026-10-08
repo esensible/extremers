@@ -1,3 +1,4 @@
+use defmt::{Debug2Format, debug, error, info, warn};
 use embassy_time::{Duration, Timer};
 
 use embassy_net::{Runner, Stack};
@@ -56,7 +57,7 @@ pub async fn dhcp_task(stack: Stack<'static>) {
         {
             Ok(socket) => break socket,
             Err(e) => {
-                log::error!("DHCP server cannot bind, retrying: {e:?}");
+                error!("DHCP server cannot bind, retrying: {:?}", Debug2Format(&e));
                 Timer::after(Duration::from_millis(1000)).await;
             }
         }
@@ -68,7 +69,7 @@ pub async fn dhcp_task(stack: Stack<'static>) {
     loop {
         _ = io::server::run(&mut server, &server_options, &mut bound_socket, &mut buf)
             .await
-            .inspect_err(|e| log::warn!("DHCP server error: {e:?}"));
+            .inspect_err(|e| warn!("DHCP server error: {:?}", Debug2Format(e)));
         Timer::after(Duration::from_millis(500)).await;
     }
 }
@@ -78,7 +79,7 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
     // The access point is configured and started by `WifiController::new`,
     // so this reports on stations coming and going, and restarts the access
     // point should it ever stop.
-    log::debug!("start connection task");
+    debug!("start connection task");
     loop {
         // the subscriber borrows the controller, so it is dropped before
         // the restart below
@@ -88,13 +89,13 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
                     EventInfo::AccessPointStop => break,
                     event @ (EventInfo::AccessPointStationConnected { .. }
                     | EventInfo::AccessPointStationDisconnected { .. }) => {
-                        log::info!("{:?}", event)
+                        info!("Wifi: {:?}", Debug2Format(&event))
                     }
                     _ => {}
                 }
             },
             Err(e) => {
-                log::warn!("Wifi: cannot subscribe to events: {:?}", e);
+                warn!("Wifi: cannot subscribe to events: {:?}", Debug2Format(&e));
                 Timer::after(Duration::from_millis(5000)).await;
                 continue;
             }
@@ -105,12 +106,12 @@ pub async fn wifi_task(mut controller: WifiController<'static>) {
         // also leaves the mode other than access point (another mode, or
         // none after a failed set_config), so setting the access point
         // configuration again starts it.
-        log::warn!("Wifi: access point stopped, restarting");
+        warn!("Wifi: access point stopped, restarting");
         while let Err(e) = controller.set_config(&access_point_config()) {
-            log::error!("Wifi: cannot restart access point: {:?}", e);
+            error!("Wifi: cannot restart access point: {:?}", Debug2Format(&e));
             Timer::after(Duration::from_millis(5000)).await;
         }
-        log::info!("Wifi: access point restarted");
+        info!("Wifi: access point restarted");
     }
 }
 
