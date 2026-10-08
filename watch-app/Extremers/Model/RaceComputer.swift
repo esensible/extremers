@@ -4,59 +4,6 @@ import os
 
 private let bleLog = Logger(subsystem: "au.esensible.extremers.watch", category: "ble")
 
-/// Why a Bluetooth step failed.
-enum BleFailure: Error {
-  case poweredOff
-  case unauthorized
-  case unsupported
-  /// Scan, connect or a GATT step ran out of time.
-  case timeout
-  /// The link dropped.
-  case disconnected(underlying: Error?)
-  /// The device refused an ATT request (CBATTError codes).
-  case att(CBATTError.Code)
-  case missingService
-  case cancelled
-  case other(Error)
-
-  static func from(_ error: Error?) -> BleFailure? {
-    guard let error else { return nil }
-    let ns = error as NSError
-    if ns.domain == CBATTErrorDomain, let code = CBATTError.Code(rawValue: ns.code) {
-      return .att(code)
-    }
-    if ns.domain == CBErrorDomain, let code = CBError.Code(rawValue: ns.code) {
-      switch code {
-      case .connectionTimeout, .peripheralDisconnected, .connectionFailed, .notConnected:
-        return .disconnected(underlying: error)
-      case .operationCancelled:
-        return .cancelled
-      default:
-        return .other(error)
-      }
-    }
-    return .other(error)
-  }
-
-  /// Bluetooth itself is off, refused or missing: no other route helps.
-  var isBluetoothUnavailable: Bool {
-    switch self {
-    case .poweredOff, .unauthorized, .unsupported: return true
-    default: return false
-    }
-  }
-
-  /// For the Connecting screen and the banner; nil when a retry is all it needs.
-  var message: String? {
-    switch self {
-    case .poweredOff: return "Bluetooth is off. Turn it on in Settings."
-    case .unauthorized: return "Extremers may not use Bluetooth. Allow it in Settings \u{203A} Privacy & Security \u{203A} Bluetooth."
-    case .unsupported: return "This watch has no Bluetooth LE."
-    default: return nil
-    }
-  }
-}
-
 /// The link as the screens see it.
 enum LinkState: Equatable {
   /// No state yet: looking for the device for the first time.
@@ -215,16 +162,21 @@ final class RaceComputer: NSObject, ObservableObject {
   // MARK: - Events
 
   /// Writes an event; dropped when the link is down (the buttons are
-  /// disabled then). Without response when the device can take one now.
+  /// disabled then).
+  ///
+  /// Always with response. The box needs a bonded, encrypted link for
+  /// `event`, and on any other link it does not answer a write command
+  /// (write without response) at all, as ATT requires: the event is
+  /// silently lost and, with no error to react to, CoreBluetooth never
+  /// encrypts or pairs. A write request is answered, so a refusal comes
+  /// back to `didWriteValueFor` and is shown (`0x13`: the engine did not
+  /// take it; `0x08`: not bonded).
   func send(_ event: DeviceEvent) {
     guard link == .connected, let p = peripheral, let c = eventCharacteristic else {
       bleLog.info("event dropped, link down: \(event.bytes.description, privacy: .public)")
       return
     }
-    let type: CBCharacteristicWriteType =
-      c.properties.contains(.writeWithoutResponse) && p.canSendWriteWithoutResponse
-      ? .withoutResponse : .withResponse
-    p.writeValue(event.data, for: c, type: type)
+    p.writeValue(event.data, for: c, type: .withResponse)
   }
 
   // MARK: - The link
@@ -612,12 +564,13 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
   }
 
   func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-    // Only writes with response report back; a refusal (ATT 0x13, the
-    // engine did not take the event) changes nothing on the device, and
-    // the screen keeps showing what the device says.
-    if let error {
-      bleLog.error("event refused: \(String(describing: BleFailure.from(error)), privacy: .public)")
-    }
+    // Every event write reports back here. A refusal changes nothing on
+    // the device, and the screen keeps showing what the device says; the
+    // notice says why the tap did nothing. Not after Quit: the answer to
+    // a write sent just before belongs to a session that is over.
+    guard isCurrent(peripheral), characteristic.uuid == Self.eventUUID, let error, link != .stopped else { return }
+    bleLog.error("event refused: \(String(describing: BleFailure.from(error)), privacy: .public)")
+    show(notice: BleFailure.refusedEventNotice(error))
   }
 
   func peripheral(

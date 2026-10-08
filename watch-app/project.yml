@@ -70,6 +70,7 @@ targets:
       - path: Extremers/Model/Commands.swift
       - path: Extremers/Model/Formatting.swift
       - path: Extremers/Model/LinkPolicy.swift
+      - path: Extremers/Model/Security.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.esensible.extremers.watch.tests
