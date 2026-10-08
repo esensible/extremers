@@ -3,7 +3,8 @@
 // writes bundle.js.sha256, log.jsonl (qjs, checked against node) and
 // frames.jsonl.
 //   npm run build && QJS=/path/to/qjs npm run fixtures
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tagOf, CONFIRM as CONFIRM_BUTTON } from "../../../host-js/test/fixture-tags.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { encodeEnvelope } from "../../../host-js/host.js";
@@ -59,7 +60,10 @@ steps[50] = {
 steps[51] = { stateHex: "02ffff" };
 // Exit behind the confirm widget (2 taps): once left to time out after 5 s,
 // then confirmed, which sends SelectDefault.
-const EXIT = 11, CONFIRM = 28; // button tags (from the mount in log.jsonl)
+const bundle = readFileSync(HERE + "dist/watch.js", "utf8");
+const ctx = { width: 198, height: 242 };
+const EXIT = tagOf(bundle, { ctx, steps }, (p) => p.left === 0 && p.top === 0);
+const CONFIRM = tagOf(bundle, { ctx, steps: steps.concat([{ dispatch: { tag: EXIT, name: "press" } }]) }, CONFIRM_BUTTON);
 steps.push(
   { dispatch: { tag: EXIT, name: "press" } },
   { wait: 6000 },
@@ -71,6 +75,6 @@ steps.push(
 const dir = HERE + "fixtures";
 mkdirSync(dir, { recursive: true });
 copyFileSync(HERE + "dist/watch.js", dir + "/bundle.js");
-writeFileSync(dir + "/script.json", JSON.stringify({ ctx: { width: 198, height: 242 }, steps }, null, 1) + "\n");
+writeFileSync(dir + "/script.json", JSON.stringify({ ctx, steps }, null, 1) + "\n");
 const r = spawnSync(process.execPath, [SOLID_WATCH + "test/make-fixtures.mjs", "--qjs", process.env.QJS || "qjs", "--fragment", FRAGMENT, dir], { stdio: "inherit" });
 process.exit(r.status ?? 1);

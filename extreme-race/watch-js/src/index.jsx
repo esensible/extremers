@@ -30,10 +30,10 @@ export const Main = () => (
   </Switch>
 );
 
-const App = () => (
+const App = (props) => (
   <view flexGrow={1}>
     <Main />
-    <button position="absolute" left={0} top={0} width={40} height={40} onPress={() => doConfirm(() => selectDefault(), 2)} />
+    <button position="absolute" left={0} top={0} width={props.height * 0.15} height={props.height * 0.15} onPress={() => doConfirm(() => selectDefault(), 2)} />
     <Confirm />
     <Haptic />
   </view>

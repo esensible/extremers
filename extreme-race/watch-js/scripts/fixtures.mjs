@@ -61,7 +61,7 @@ function wait(ms) {
   steps.push({ wait: ms });
   clock += ms;
 }
-const EXIT = (p) => p.width === 40 && p.top === 0;
+const EXIT = (p) => p.left === 0 && p.top === 0;
 
 // Active: no line, then each end, then both (the boat 75 s from the line)
 envelope(active(NONE));

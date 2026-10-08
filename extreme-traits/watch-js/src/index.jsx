@@ -1,8 +1,9 @@
 // Choose, the host's built-in package, on the watch: as the Kindle's
-// chooser (extreme-traits/client-js): a button per installed package, a tap
-// asks the host to select it (HostEvent Select(id)); the host decides and
-// the shell shows whatever it then makes active. The package list is the
-// host's ChooseView, in a store applied with reconcile.
+// chooser (extreme-traits/client-js): a button per installed package (by
+// name, as the Kindle labels each engine by its name), a tap asks the host
+// to select it (HostEvent Select(id)); the host decides and the shell shows
+// whatever it then makes active. The package list is the host's ChooseView,
+// in a store applied with reconcile.
 //
 // The Kindle's watch-pairing settings are left out: the BLE status is sent
 // on the websocket only (ChooseView.ble is None over BLE), and a pairing
@@ -42,20 +43,25 @@ function selectPackage(id) {
   send(encodeHostEvent({ tag: "Select", value: id }));
 }
 
+// As the Kindle's style.css: .engines (a scrolling column, centred, 10
+// padding) of .engine-button (half the width, 20 % of the height, 5 apart,
+// outlined in the text colour, the name at 8 % of the height).
 const App = () => (
   <scroll flexGrow={1}>
-    <view gap={6} alignItems="stretch">
+    <view alignItems="center" padding={10}>
       <For each={choose.packages}>
         {(p) => (
           <button
             onPress={() => selectPackage(p.id)}
-            minHeight={44}
-            background="button"
-            borderRadius={10}
+            width="50%"
+            height={48}
+            marginVertical={5}
+            borderWidth={1}
+            borderColor="#FFFFFF"
             alignItems="center"
             justifyContent="center"
           >
-            <text fontSize={20} fontWeight="600" numberOfLines={1} minScale={0.6}>{p.name}</text>
+            <text fontSize={19} numberOfLines={1} minScale={0.6}>{p.name}</text>
           </button>
         )}
       </For>

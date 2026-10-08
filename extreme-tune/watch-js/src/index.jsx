@@ -1,49 +1,47 @@
-// TuneSpeed watch screen: speed, and how it and the heading differ from the
-// 30 s average. Structured as the Kindle's tune page (client-js): the state
-// in a store (api.js), Exit behind the confirm widget (2 taps), back to the
-// default app (SelectDefault).
+// TuneSpeed watch screen, as the Kindle's tune page (client-js/index.jsx):
+// the speed and how it and the heading differ from the 30 s average, the
+// state in a store (api.js), and the exit button (top left, no fill, as on
+// the Kindle) asking the confirm widget for 2 taps, then back to the
+// default app (SelectDefault). The Kindle's "connection lost" line is the
+// watch shell's (it owns the link).
 import { createApp } from "solid-watch";
 import { tune, onState, selectDefault } from "./api.js";
 import { confirm } from "./confirm.jsx";
-import { knots, signed } from "./format.js";
 
 const [Confirm, doConfirm] = confirm();
 
-// Yoga has no text baselines here: a row of text leaves aligned flex-end
-// lines their bottom edges up.
-function Deviation(props) {
-  return (
-    <view flexDirection="row" alignItems="flex-end" justifyContent="center" gap={2} flexGrow={1} flexBasis={0}>
-      <text fontSize={22} fontWeight="600" tabular>{props.value}</text>
-      <text fontSize={12} color="caption">{props.unit}</text>
-    </view>
-  );
-}
+// .speed / .deviation (style.css)
+const BIG = 46;
+// span.small-deviation: a quarter of the big size
+const SMALL = BIG / 4;
 
-function Tune() {
+// Format deviations with '+' or '-' prefix: the Kindle's formatDeviation,
+// as a component so a new value updates the two texts rather than
+// rebuilding them (the Kindle's e-ink page redraws either way).
+const FormatDeviation = (props) => {
+  const sign = () => (props.value == 0 ? "" : (props.value > 0 ? "+" : "-"));
   return (
-    <view flexGrow={1}>
-      <scroll flexGrow={1}>
-        <view alignItems="center" gap={6}>
-          <text fontSize={11} fontWeight="600" color="caption" alignSelf="stretch">TUNE</text>
-          <view flexDirection="row" alignItems="flex-end" gap={2}>
-            <text fontSize={40} fontWeight="600" tabular minScale={0.5} flexShrink={1}>{knots(tune.speed)}</text>
-            <text fontSize={22} color="caption">kn</text>
-          </view>
-          <view flexDirection="row" alignSelf="stretch">
-            <Deviation value={signed(tune.speed_dev)} unit="kn" />
-            <Deviation value={signed(tune.heading_dev)} unit={"°"} />
-          </view>
-          <text fontSize={11} color="caption">vs 30 s average</text>
-          <button onPress={() => doConfirm(() => selectDefault(), 2)} alignSelf="stretch" minHeight={32} background="button" borderRadius={10} alignItems="center" justifyContent="center">
-            <text fontSize={15} fontWeight="600" numberOfLines={1} minScale={0.6}>Exit</text>
-          </button>
-        </view>
-      </scroll>
-      <Confirm />
-    </view>
+    <>
+      <text fontSize={SMALL}>{sign()}</text>
+      {Math.abs(props.value).toFixed(props.precision ?? 1)}
+    </>
   );
-}
+};
 
-// `bytes`: the BLE state value, a host Envelope (api.js).
-createApp(Tune, { onState });
+const Big = (props) => (
+  <text fontSize={BIG} tabular textAlign="center" minScale={0.5} alignSelf="stretch">
+    {props.children}
+  </text>
+);
+
+const App = (props) => (
+  <view flexGrow={1} justifyContent="space-between" alignItems="center">
+    <Big>{tune.speed.toFixed(1)}</Big>
+    <Big><FormatDeviation value={tune.speed_dev} /><text fontSize={SMALL}>k</text></Big>
+    <Big><FormatDeviation value={tune.heading_dev} precision={0} /><text fontSize={SMALL}>°</text></Big>
+    <button position="absolute" left={0} top={0} width={props.height * 0.15} height={props.height * 0.15} onPress={() => doConfirm(() => selectDefault(), 2)} />
+    <Confirm />
+  </view>
+);
+
+createApp(App, { onState });
