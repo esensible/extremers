@@ -6,13 +6,18 @@ nRF Connect) subscribes to the device's **state** and writes **events**, and
 sees exactly what the Kindle sees: the device is the only source of truth,
 and both transports are fed from the same `EngineRuntime` broadcast.
 
-Firmware: `common/src/ble.rs` (transport), `extreme-traits` (`compact_state`
-/ `compact_event` on the `Engine` trait), each engine's own encoding.
-Client: `watch-app/Extremers/Model/Protocol.swift`.
+Firmware: `common/src/ble.rs` (transport), `common/src/protocol.rs` (the
+messages), each engine's view and events (`Engine::View`, `Engine::Event`).
+Clients: the watch bundles (`extreme-*/watch-js/`) decode and encode with
+the generated `protocol-js/protocol.js`, the same bindings the Kindle pages
+use. (`watch-app/Extremers/Model/Protocol.swift` still speaks the earlier
+hand-packed format and needs porting to postcard; see "State".)
 
-Everything is little-endian. Nothing here is JSON: every message fits one
-notification at the default ATT MTU (23 bytes, 20 of payload), so no MTU
-negotiation and no reassembly is needed.
+Everything is [postcard](https://postcard.jamesmunns.com/wire-format): the
+same messages as the websocket (README "Wire protocols"), less the BLE
+status the Kindle's settings panel shows. A `state` value is up to 58
+bytes, more than one notification at the default ATT MTU (23 bytes, 20 of
+payload) carries: a central must exchange a larger ATT MTU (see "State").
 
 ## Advertising
 
@@ -112,38 +117,44 @@ From then on the watch reconnects whenever it likes, window or not.
 
 ### On the Kindle (websocket)
 
-The selector page sends (exact text, `ble_settings::BleCommand`):
+The selector page sends a `WsEvent::Ble(BleCommand)` (postcard bytes;
+`ble_settings::BleCommand`):
 
-| message | effect |
-|---|---|
-| `{"Ble":"Pair"}` | open the pairing window (restarts it if open) |
-| `{"Ble":"Cancel"}` | close it |
-| `{"Ble":"ForgetAll"}` | delete every bond |
+| message | bytes | effect |
+|---|---|---|
+| `Ble(Pair)` | `01 00` | open the pairing window (restarts it if open) |
+| `Ble(Cancel)` | `01 01` | close it |
+| `Ble(ForgetAll)` | `01 02` | delete every bond |
 
-Every state message from a box with BLE carries one more field, after
-`engine` (clients that do not know it ignore it; the race and tune pages are
-unchanged):
+BLE centrals cannot send these: the `event` characteristic takes engine
+events only.
 
-    {"timestamp":…,"kind":"Selector","engine":{…},
-     "ble":{"addr":"D0:BD:A3:8E:96:10","pair_ms":117000,
-            "bonds":["4F:21:…","…"],"max":4,"note":"Paired 4F:21:…"}}
+Every websocket state message (`WsState`) ends with `ble`, a
+`BleStatusView` on a box with BLE and `null` without (tgt-std, the Pico;
+the page then shows no Settings button):
 
-`pair_ms` is what is left of the window when the message was sent (0 =
-closed), `bonds` the bonded devices' identity addresses, oldest first, and
-`note` the last pairing event in words ("" for none). A change is sent at
-once, not at the next heartbeat. Without BLE (tgt-std, the Pico) there is no
-`ble` field and the page shows no Settings button.
+| field | type | meaning |
+|---|---|---|
+| `addr` | `[u8; 6]` | this box's address |
+| `pair_ms` | u32 | what is left of the pairing window when the message was sent, ms (0 = closed) |
+| `bonds` | sequence of `[u8; 6]` | the bonded devices' identity addresses, oldest first |
+| `max_bonds` | u8 | how many bonds the box keeps |
+| `note` | `BleNote` | the last pairing event: `None`, `Paired(addr)`, `PairedNotSaved(addr)`, `Rejected`, `Failed`, `Expired`, `StaleBond`, `Forgotten`; the page puts it in words |
+
+Addresses are in BLE byte order (least significant first): print them
+reversed, `D0:BD:A3:8E:96:10`. A change is sent at once, not at the next
+heartbeat.
 
 ## GATT service `e4a1c000-6b2f-4f77-9a0d-3c5e7b9d1f20`
 
 | characteristic | UUID (`e4a1c00X-…`) | props | size | meaning |
 |---|---|---|---|---|
-| `state` | `…001` | read, notify (bonded link only) | 1–20 | the engine state, sent on every change |
-| `event` | `…002` | write, write-without-response (bonded link only) | 1–8 | a client event |
+| `state` | `…001` | read, notify (bonded link only) | 2–58 | the engine state (a postcard `State`), sent on every change |
+| `event` | `…002` | write, write-without-response (bonded link only) | 1–20 | a client event (a postcard `EngineEvent`) |
 
 `state` is pushed on every change of engine state (the same moments the
 websocket clients get a message) and can be read at any time; a read
-captures the state afresh, so its relative times are relative to the read.
+captures the state afresh, stamped with the time of the read.
 A central subscribes first, then reads once, so it misses nothing. A write
 request to `event` that the engine does not understand is refused with ATT
 `0x13` Value Not Allowed; a write command (write without response) is never
@@ -153,52 +164,101 @@ causes, if it changed anything.
 
 ## State
 
-    [kind: u8][engine bytes…]
+A postcard `State` (`common::protocol::State`):
 
-`kind` is the active engine: `0` the selector (chooser), then the engines in
-the order they are declared in the firmware's `define_engines!`: **1 Race,
-2 TuneSpeed**. The bytes after it are that engine's; the selector has none.
+| field | type | meaning |
+|---|---|---|
+| `timestamp` | u64 (varint) | the device's clock when the value was sent, epoch ms (uptime until the GPS has given it the time) |
+| `engine` | `EngineState` (enum) | the active engine and its view |
 
-Times are **relative to the moment the state was captured**, in
-milliseconds, signed: a central anchors them to its own clock when the
-notification arrives (the error is one connection interval, ~30 ms) and
-needs no clock sync. A negative "start in" means the start has passed.
+`EngineState`'s tag (a varint, one byte) is the active engine: `0` the
+chooser, then the engines in the order `extreme-engines` declares them:
+**1 Race, 2 TuneSpeed**. Then that engine's view (the chooser has none).
 
-### Race (`kind` 1), 15 bytes
+Times in the views are absolute device times. A central keeps
+`offset = timestamp − its own clock at arrival` from every value (the error
+is one connection interval, ~30 ms) and counts down against its own clock
+plus the offset, so a dropped link does not stop the countdown. The
+solid-watch host does this when a bundle calls `syncClock(timestamp)`.
 
-| offset | field | type | meaning |
-|---|---|---|---|
-| 0 | state | u8 | 0 Active, 1 InSequence, 2 Racing |
-| 1 | line | u8 | 0 none, 1 stbd set, 2 port set, 3 both |
-| 2 | line_cross | u8 | 0–100, where along the line the boat will cross (100 = stbd end); only meaningful when `line` = 3 |
-| 3 | start_in | i32 | ms until the start (InSequence/Racing); 0 when Active |
-| 7 | line_in | i32 | ms until the boat reaches the line (line = 3), else 0 |
-| 11 | speed | u16 | knots × 100 |
-| 13 | heading | u16 | course over ground, degrees × 10 |
+The JS shape of each type is in `protocol-js/protocol.d.ts`; enums decode
+to `{ tag, value }`, and `null` is a unit variant's value and a `None`.
 
-### TuneSpeed (`kind` 2), 6 bytes
+### Race (`EngineState` 1): `RaceView`
 
-| offset | field | type | meaning |
-|---|---|---|---|
-| 0 | speed | u16 | knots × 100 |
-| 2 | speed_dev | i16 | knots × 100, current minus the 30 s average |
-| 4 | heading_dev | i16 | degrees × 10, current minus the 30 s average, −1800..1800 |
+| field | type | meaning |
+|---|---|---|
+| `speed` | f32 | speed over ground, knots |
+| `phase` | `Phase` | below |
+
+`Phase`:
+
+| tag | variant | fields |
+|---|---|---|
+| 0 | `Active` | `line: LineView` |
+| 1 | `InSequence` | `start_time: u64`, `line: LineView` |
+| 2 | `Racing` | `start_time: u64`, `heading: f32` (course over ground, degrees; 0 until the first GPS update after the start) |
+
+`LineView`: `0 None`, `1 Stbd` (only the starboard end set), `2 Port`,
+`3 Both { cross: u8, time: u64 }`: on the current course the boat crosses
+the line `cross` percent of the way along it (0 = port end, 100 =
+starboard end) at `time`.
+
+### TuneSpeed (`EngineState` 2): `TuneView`
+
+| field | type | meaning |
+|---|---|---|
+| `speed` | f32 | knots |
+| `speed_dev` | f32 | knots, current minus the 30 s average |
+| `heading_dev` | f32 | degrees, current minus the 30 s average, −180..180 |
+
+### Sizes and the ATT MTU
+
+With a 2026 timestamp (a 6-byte varint; `tools/bindgen` test
+`ble_state_sizes`):
+
+| state | bytes |
+|---|---|
+| chooser | 7 |
+| Race Active, no line / line both | 13 / 20 |
+| Race InSequence, no line / line both | 19 / 26 |
+| Race Racing | 22 |
+| TuneSpeed | 19 |
+
+The characteristic holds up to 58 (`MAX_STATE_MESSAGE`: a 10-byte
+timestamp and the 48-byte engine state buffer). A notification carries at
+most ATT MTU − 3 bytes and the host cuts a longer value short, so a central
+must exchange an ATT MTU of at least 29 for Race today (61 for the
+largest possible value). The device accepts up to 247 (its packet pool);
+CoreBluetooth exchanges the MTU by itself on connecting (185 or more), and
+the device logs `… the central must exchange a larger MTU` once per
+connection if a value did not fit. A read of a longer value is answered in
+parts (Read Blob), which centrals do by themselves.
+
+A truncated value does not decode (the decoder refuses a short or
+over-long value), so a central with too small an MTU sees no state rather
+than a wrong one.
 
 ## Events
 
-    [op: u8][payload…]
+A postcard `EngineEvent` (`extreme-engines`):
 
-| op | payload | engine | meaning |
+| tag | variant | data | meaning |
 |---|---|---|---|
-| `0x01` | `[kind: u8]` | any | select the engine with that kind code; an unknown code returns to the selector. Cancels any pending timer. |
-| `0x10` | — | Race | set the starboard end of the line at the current position |
-| `0x11` | — | Race | set the port end |
-| `0x12` | `[seconds: i16][ago: u16]` | Race | bump the start sequence, see below |
-| `0x13` | — | Race | finish the race (or abort a start sequence) |
+| 0 | `Select` | `EngineKind` (`0` chooser, `1` Race, `2` TuneSpeed) | switch engine; cancels any pending timer |
+| 1 | `Race` | `RaceEvent` | an event for the race engine |
+| 2 | `TuneSpeed` | `()` (nothing) | (the tuning engine takes no events) |
 
-Events for an engine that is not active are refused.
+`RaceEvent`: `0 LineStbd` (set the starboard end of the line at the
+current position), `1 LinePort`, `2 BumpSeq { seconds: i32, ago: u32 }`,
+`3 RaceFinish` (finish the race, or abort a start sequence). Integers wider
+than a byte are varints, signed ones zigzag-coded.
 
-**Bump (`0x12`)** is the same `BumpSeq` the Kindle sends:
+Events for an engine that is not active are refused, and so is anything
+that is not exactly one `EngineEvent` (unknown tags, short, trailing
+bytes): a write request gets ATT `0x13` Value Not Allowed.
+
+**Bump** is the same `BumpSeq` the Kindle sends:
 
 - not in a sequence: start a sequence with the gun `seconds` from the tap
   (so 300 = a 5-minute sequence);
@@ -207,8 +267,8 @@ Events for an engine that is not active are refused.
   time remaining down to a whole minute;
 - `ago` is how many milliseconds before the write the tap happened. The
   confirm step takes a second or two, and a sync must be timed from the tap,
-  not from the confirmation, so the client sends the delay and the device
-  back-dates the event.
+  not from the confirmation, so the client sends the delay, measured on its
+  own clock, and the device back-dates the event.
 
 The sign convention is the engine's. The watch labels its buttons by their
 effect on the countdown (+5 / +1 / −1 / −5 minutes), so **"+5" sends
@@ -216,26 +276,29 @@ effect on the countdown (+5 / +1 / −1 / −5 minutes), so **"+5" sends
 
 ## Test vectors
 
-From `extreme-race/src/race_tests.rs` and `extreme-tune/src/tune_tests.rs`;
-the Swift tests check the same bytes.
+`protocol-js/test/vectors.json`, written by `tools/bindgen` from the Rust
+encoder with the JS value each decodes to; `protocol-js/test` checks the
+generated decoder and encoder against every one under node and QuickJS.
+A few, with a 2026 timestamp (`fbd8c1a28c34` = 1 790 000 000 123):
 
 | | bytes | meaning |
 |---|---|---|
-| state | `01 00 00 00 00 00 00 00 00 00 00 00 80 02 84 03` | Race, Active, no line, 6.40 kn, heading 90.0° |
-| state | `01 01 01 00 48 71 00 00 …` | Race, InSequence, stbd set, start in 29 000 ms |
-| state | `00` | selector |
-| event | `01 01` | select Race |
-| event | `10` | line stbd |
-| event | `12 1e 00 dc 05` | bump +30 s (`seconds` 30), tapped 1500 ms ago |
-| event | `13` | finish |
+| state | `fbd8c1a28c34 00` | the chooser |
+| state | `fbd8c1a28c34 01 cdcccc40 00 00` | Race, 6.4 kn, Active, no line |
+| state | `fbd8c1a28c34 01 9a99b941 01 db80d4a28c34 01` | Race, 23.2 kn, InSequence, start at 1 790 000 300 123, stbd set |
+| state | `fbd8c1a28c34 02 cdcccc40 0000003f cdcc44c1` | TuneSpeed, 6.4 kn, +0.5 kn, −12.3° |
+| event | `00 01` | select Race |
+| event | `01 00` | line stbd |
+| event | `01 02 3c dc0b` | bump +30 s (`seconds` 30, zigzag 60), tapped 1500 ms ago |
+| event | `01 03` | finish |
 
 ## On the watch
 
 - Scan by service UUID, connect, discover, subscribe to `state`, read it
   once. Reconnect on any drop; the device keeps advertising.
-- Anchor `start_in` / `line_in` to the arrival time and count down locally,
-  so a dropped link does not stop the countdown; every notification
-  re-anchors.
+- Take the clock offset from every state's `timestamp` and count down to
+  `start_time` / the line's `time` locally, so a dropped link does not stop
+  the countdown; every notification re-syncs.
 - watchOS suspends the app and its BLE link when the wrist drops unless a
   workout session is running: the app starts a sailing workout as soon as
   it starts looking for the box (not on connect, so scanning survives the

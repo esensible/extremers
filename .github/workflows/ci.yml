@@ -43,6 +43,13 @@ jobs:
           CHECK_CLEAN: 1
       # extremers' fragment outputs are current
       - run: sh watch-js/codegen.sh --check
+      # the generated wire bindings against the Rust encoder's golden
+      # vectors, under node and QuickJS (that they are current is checked
+      # by cargo test in the host job)
+      - run: npm test
+        working-directory: protocol-js
+      - run: ${{ runner.temp }}/qjs test/qjs.mjs
+        working-directory: protocol-js
       # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
       - run: npm ci
         working-directory: extreme-tune/watch-js
