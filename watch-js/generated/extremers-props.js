@@ -10,7 +10,7 @@ export const fragment = {
   },
   "pressHandlers": {
     "send": {
-      "doc": "Write the button's `event` bytes to the event characteristic. If `stampAgo` is set, first write the ms from the tap to the write as a u16 LE at that byte offset (BLE.md: Bump `ago`)."
+      "doc": "Write the button's `event` bytes to the event characteristic. If `stampTime` is set, `event` is the event's postcard without its last field, a u64 device time, and the handler appends the tap's device time (PressEvent.tappedAtDeviceMs: the local tap time plus the syncClock offset) as a postcard u64 varint first (BLE.md Events: Bump `timestamp`)."
     }
   },
   "extends": {
@@ -22,11 +22,11 @@ export const fragment = {
           "default": null,
           "doc": "Event bytes for press=\"send\" (BLE.md Events)."
         },
-        "stampAgo": {
+        "stampTime": {
           "kind": "behavior",
-          "type": "number",
-          "default": null,
-          "doc": "Byte offset of the u16 LE tap-to-send delay in `event`."
+          "type": "boolean",
+          "default": false,
+          "doc": "Append the tap's device time (epoch ms, postcard u64 varint) to `event` before writing it."
         }
       }
     }

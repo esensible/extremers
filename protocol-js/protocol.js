@@ -423,7 +423,7 @@ function r_RaceEvent(r) {
   switch (i) {
     case 0: return { tag: "LineStbd", value: null };
     case 1: return { tag: "LinePort", value: null };
-    case 2: return { tag: "BumpSeq", value: { seconds: ri32(r), ago: ru32(r) } };
+    case 2: return { tag: "BumpSeq", value: { seconds: ri32(r), timestamp: ru64(r) } };
     case 3: return { tag: "RaceFinish", value: null };
     default: throw new Error("RaceEvent: no variant " + i);
   }
@@ -433,7 +433,7 @@ function w_RaceEvent(w, v) {
   switch (v.tag) {
     case "LineStbd": wtag(w, 0); return;
     case "LinePort": wtag(w, 1); return;
-    case "BumpSeq": wtag(w, 2); wobj(v.value, "RaceEvent::BumpSeq"); wi32(w, v.value.seconds); wu32(w, v.value.ago); return;
+    case "BumpSeq": wtag(w, 2); wobj(v.value, "RaceEvent::BumpSeq"); wi32(w, v.value.seconds); wu64(w, v.value.timestamp); return;
     case "RaceFinish": wtag(w, 3); return;
     default: throw new Error("RaceEvent: no variant " + v.tag);
   }

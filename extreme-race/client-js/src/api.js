@@ -111,7 +111,7 @@ function send(event) {
 
 // A RaceEvent, e.g.
 //   postEvent({ tag: "LineStbd" })
-//   postEvent({ tag: "BumpSeq", value: { seconds: 30, ago: 1200 } })
+//   postEvent({ tag: "BumpSeq", value: { seconds: 30, timestamp: timestamp() } })
 export function postEvent(event) {
   send({ tag: "Race", value: event });
 }

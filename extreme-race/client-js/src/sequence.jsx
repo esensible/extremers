@@ -14,12 +14,9 @@ const [Confirm, doConfirm] = confirm();
 
 function bumpStart(seconds) {
     return () => {
-        // `ago` is measured on this clock: no clock sync needed
-        const clickTime = Date.now();
-        doConfirm(() => {
-            const ago = Math.max(0, Date.now() - clickTime);
-            postEvent({ tag: "BumpSeq", value: { seconds: seconds, ago: ago } });
-        });
+        // the tap, in device time (api.js timestamp()), before the confirm
+        const clickTime = timestamp();
+        doConfirm(() => { postEvent({ tag: "BumpSeq", value: { seconds: seconds, timestamp: clickTime } }) });
     }
 }
 

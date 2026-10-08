@@ -5,8 +5,8 @@ import type { Color } from "solid-watch/jsx";
 export interface ExtremersButtonProps {
   /** Event bytes for press="send" (BLE.md Events). */
   event?: number[] | null;
-  /** Byte offset of the u16 LE tap-to-send delay in `event`. */
-  stampAgo?: number | null;
+  /** Append the tap's device time (epoch ms, postcard u64 varint) to `event` before writing it. */
+  stampTime?: boolean | null;
 }
 
 declare module "solid-watch/jsx" {

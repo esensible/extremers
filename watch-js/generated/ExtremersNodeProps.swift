@@ -6,8 +6,8 @@ import SolidWatch
 public struct ExtremersButtonProps: Equatable, Sendable {
   /// Event bytes for press="send" (BLE.md Events).
   public var event: [UInt8]? = nil
-  /// Byte offset of the u16 LE tap-to-send delay in `event`.
-  public var stampAgo: Double? = nil
+  /// Append the tap's device time (epoch ms, postcard u64 varint) to `event` before writing it.
+  public var stampTime: Bool = false
 
   public init() {}
 
@@ -20,10 +20,10 @@ public struct ExtremersButtonProps: Equatable, Sendable {
       guard let v = PropDecode.bytes(value) else { self.event = nil; return .invalid }
       self.event = v
       return .ok
-    case "stampAgo":
-      if value == .null { self.stampAgo = nil; return .ok }
-      guard let v = PropDecode.number(value) else { self.stampAgo = nil; return .invalid }
-      self.stampAgo = v
+    case "stampTime":
+      if value == .null { self.stampTime = false; return .ok }
+      guard let v = PropDecode.bool(value) else { self.stampTime = false; return .invalid }
+      self.stampTime = v
       return .ok
     default:
       return .unknown
@@ -50,7 +50,7 @@ public enum ExtremersSchema {
   public static let extends: [String: [String: PropSpec]] = [
     "button": [
       "event": PropSpec(name: "event", kind: .behavior, type: .bytes, group: "extremers:button", inherits: false, values: []),
-      "stampAgo": PropSpec(name: "stampAgo", kind: .behavior, type: .number, group: "extremers:button", inherits: false, values: []),
+      "stampTime": PropSpec(name: "stampTime", kind: .behavior, type: .boolean, group: "extremers:button", inherits: false, values: []),
     ],
   ]
 }

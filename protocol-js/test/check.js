@@ -83,13 +83,20 @@ export function run(vectors) {
   check("not bytes refused", throws(() => D(42)), "decoded");
   // the encoder refuses values it cannot write exactly
   const E = protocol.encodeEngineEvent;
-  const bump = (seconds, ago) => ({ tag: "Race", value: { tag: "BumpSeq", value: { seconds, ago } } });
+  const bump = (seconds, timestamp) => ({ tag: "Race", value: { tag: "BumpSeq", value: { seconds, timestamp } } });
   check("i32 overflow refused", throws(() => E(bump(2147483648, 0))), "encoded");
-  check("negative u32 refused", throws(() => E(bump(0, -1))), "encoded");
+  check("negative timestamp refused", throws(() => E(bump(0, -1))), "encoded");
+  check("tap timestamp past 2^53 refused", throws(() => E(bump(0, 2 ** 53))), "encoded");
   check("fraction refused", throws(() => E(bump(0.5, 0))), "encoded");
   check("missing field refused", throws(() => E({ tag: "Race", value: { tag: "BumpSeq", value: { seconds: 1 } } })), "encoded");
   check("unknown tag refused", throws(() => E({ tag: "Nope", value: null })), "encoded");
   check("timestamp past 2^53 refused", throws(() => protocol.encodeState({ timestamp: 2 ** 53, engine: { tag: "Selector", value: null } })), "encoded");
+  // the watch's stampTime contract: a bump is its bytes with timestamp 0
+  // less the final 00, then the tap time as a varint
+  const T = 1790000000123;
+  const prefix = E(bump(-300, 0)).slice(0, -1);
+  const stamped = prefix.concat(protocol.encodeState({ timestamp: T, engine: { tag: "Selector", value: null } }).slice(0, -1));
+  check("bump timestamp is the last field (stampTime)", toHex(stamped) === toHex(E(bump(-300, T))), toHex(stamped));
   // a unit variant needs no value
   check("unit variant without value", toHex(E({ tag: "Select", value: { tag: "Race" } })) === "0001", "");
   check("VARIANTS in wire order", protocol.VARIANTS.EngineKind.join() === "Selector,Race,TuneSpeed", protocol.VARIANTS.EngineKind.join());

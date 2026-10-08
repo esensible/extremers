@@ -20,6 +20,8 @@ function frame(payload) {
 const socket = net.connect(Number(port), host);
 let buf = Buffer.alloc(0);
 let upgraded = false;
+// device clock minus ours, from every state's timestamp, as the clients keep it
+let offset = 0;
 const waiters = [];
 const states = [];
 
@@ -48,6 +50,7 @@ socket.on("data", (d) => {
     buf = buf.subarray(off + len);
     if (op === 0x2) {
       const state = decodeWsState(payload);
+      offset = state.timestamp - Date.now();
       states.push(state);
       const w = waiters.shift();
       if (w) w(state);
@@ -90,14 +93,15 @@ socket.on("connect", async () => {
     s = await next();
     check(s.engine.value.phase.value.line.tag === "Stbd", "line stbd: " + JSON.stringify(s.engine.value));
 
-    send({ tag: "Engine", value: { tag: "Race", value: { tag: "BumpSeq", value: { seconds: 300, ago: 1000 } } } });
+    // a tap stamped in device time (our clock + the offset), here 1 s back
+    // (after 1.5 s, so a fresh tgt-std's uptime clock is past 1 s)
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const tap = Math.max(0, Date.now() + offset - 1000);
+    check(tap > 0, "tap time " + tap);
+    send({ tag: "Engine", value: { tag: "Race", value: { tag: "BumpSeq", value: { seconds: 300, timestamp: tap } } } });
     s = await next();
     const phase = s.engine.value.phase;
-    const left = phase.value.start_time - s.timestamp;
-    // the tap is back-dated 1 s (to 0 at the earliest: tgt-std's clock is
-    // uptime until a GPS time arrives)
-    const expected = 300000 - Math.min(s.timestamp, 1000);
-    check(phase.tag === "InSequence" && Math.abs(left - expected) < 100, `bump 300 s, tapped 1 s ago: ${left} ms left, expected ~${expected}`);
+    check(phase.tag === "InSequence" && phase.value.start_time === tap + 300000, `bump 300 s from the tap at ${tap}: start ${phase.value.start_time}`);
 
     // an event for an engine that is not active is refused: no state
     send({ tag: "Engine", value: { tag: "TuneSpeed", value: null } });

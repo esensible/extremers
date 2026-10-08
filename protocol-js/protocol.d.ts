@@ -55,7 +55,7 @@ export type EngineKind =
 export type RaceEvent =
   | { tag: "LineStbd"; value: null }
   | { tag: "LinePort"; value: null }
-  | { tag: "BumpSeq"; value: { seconds: number; ago: number } }
+  | { tag: "BumpSeq"; value: { seconds: number; timestamp: number } }
   | { tag: "RaceFinish"; value: null };
 
 export type BleCommand =

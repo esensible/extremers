@@ -66,8 +66,8 @@ const EVENT_UUID: u128 = 0xe4a1c002_6b2f_4f77_9a0d_3c5e7b9d1f20;
 /// MTU less 4, 247.
 const STATE_MAX: usize = MAX_STATE_MESSAGE;
 /// Largest `event` value: an `EngineEvent`; a write longer than this is
-/// refused. Today's largest is 12 bytes (a bump with both varints at their
-/// longest), within the default MTU's 20.
+/// refused. Today's largest is 17 bytes (a bump with `seconds` and
+/// `timestamp` at their longest), within the default MTU's 20.
 const EVENT_MAX: usize = 20;
 
 /// Company identifier of the scan response's manufacturer data: 0xFFFF is

@@ -1487,22 +1487,22 @@
       "what": "line port"
     },
     {
-      "hex": "01023cdc0b",
+      "hex": "01023cfbd8c1a28c34",
       "type": "EngineEvent",
       "value": {
         "tag": "Race",
         "value": {
           "tag": "BumpSeq",
           "value": {
-            "ago": 1500,
-            "seconds": 30
+            "seconds": 30,
+            "timestamp": 1790000000123
           }
         }
       },
-      "what": "bump +30 s, tapped 1.5 s ago"
+      "what": "bump +30 s, tapped at NOW"
     },
     {
-      "hex": "0001023cdc0b",
+      "hex": "0001023cfbd8c1a28c34",
       "type": "WsEvent",
       "value": {
         "tag": "Engine",
@@ -1511,31 +1511,31 @@
           "value": {
             "tag": "BumpSeq",
             "value": {
-              "ago": 1500,
-              "seconds": 30
+              "seconds": 30,
+              "timestamp": 1790000000123
             }
           }
         }
       },
-      "what": "bump +30 s, tapped 1.5 s ago"
+      "what": "bump +30 s, tapped at NOW"
     },
     {
-      "hex": "0102d70400",
+      "hex": "0102d7049fcdc1a28c34",
       "type": "EngineEvent",
       "value": {
         "tag": "Race",
         "value": {
           "tag": "BumpSeq",
           "value": {
-            "ago": 0,
-            "seconds": -300
+            "seconds": -300,
+            "timestamp": 1789999998623
           }
         }
       },
-      "what": "bump -300 s (watch +5)"
+      "what": "bump -300 s (watch +5), tapped 1.5 s before NOW"
     },
     {
-      "hex": "000102d70400",
+      "hex": "000102d7049fcdc1a28c34",
       "type": "WsEvent",
       "value": {
         "tag": "Engine",
@@ -1544,31 +1544,31 @@
           "value": {
             "tag": "BumpSeq",
             "value": {
-              "ago": 0,
-              "seconds": -300
+              "seconds": -300,
+              "timestamp": 1789999998623
             }
           }
         }
       },
-      "what": "bump -300 s (watch +5)"
+      "what": "bump -300 s (watch +5), tapped 1.5 s before NOW"
     },
     {
-      "hex": "010200fa01",
+      "hex": "01020000",
       "type": "EngineEvent",
       "value": {
         "tag": "Race",
         "value": {
           "tag": "BumpSeq",
           "value": {
-            "ago": 250,
-            "seconds": 0
+            "seconds": 0,
+            "timestamp": 0
           }
         }
       },
-      "what": "sync"
+      "what": "sync, tapped at device time 0"
     },
     {
-      "hex": "00010200fa01",
+      "hex": "0001020000",
       "type": "WsEvent",
       "value": {
         "tag": "Engine",
@@ -1577,31 +1577,31 @@
           "value": {
             "tag": "BumpSeq",
             "value": {
-              "ago": 250,
-              "seconds": 0
+              "seconds": 0,
+              "timestamp": 0
             }
           }
         }
       },
-      "what": "sync"
+      "what": "sync, tapped at device time 0"
     },
     {
-      "hex": "0102ffffffff0fffffffff0f",
+      "hex": "0102ffffffff0fffffffffffffff0f",
       "type": "EngineEvent",
       "value": {
         "tag": "Race",
         "value": {
           "tag": "BumpSeq",
           "value": {
-            "ago": 4294967295,
-            "seconds": -2147483648
+            "seconds": -2147483648,
+            "timestamp": 9007199254740991
           }
         }
       },
       "what": "bump extremes"
     },
     {
-      "hex": "000102ffffffff0fffffffff0f",
+      "hex": "000102ffffffff0fffffffffffffff0f",
       "type": "WsEvent",
       "value": {
         "tag": "Engine",
@@ -1610,8 +1610,8 @@
           "value": {
             "tag": "BumpSeq",
             "value": {
-              "ago": 4294967295,
-              "seconds": -2147483648
+              "seconds": -2147483648,
+              "timestamp": 9007199254740991
             }
           }
         }

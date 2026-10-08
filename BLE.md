@@ -250,7 +250,7 @@ A postcard `EngineEvent` (`extreme-engines`):
 | 2 | `TuneSpeed` | `()` (nothing) | (the tuning engine takes no events) |
 
 `RaceEvent`: `0 LineStbd` (set the starboard end of the line at the
-current position), `1 LinePort`, `2 BumpSeq { seconds: i32, ago: u32 }`,
+current position), `1 LinePort`, `2 BumpSeq { seconds: i32, timestamp: u64 }`,
 `3 RaceFinish` (finish the race, or abort a start sequence). Integers wider
 than a byte are varints, signed ones zigzag-coded.
 
@@ -265,10 +265,21 @@ bytes): a write request gets ATT `0x13` Value Not Allowed.
 - in a sequence: `seconds` > 0 moves the start *earlier* (less time on the
   countdown), `seconds` < 0 *later*, and `seconds` = 0 syncs: rounds the
   time remaining down to a whole minute;
-- `ago` is how many milliseconds before the write the tap happened. The
-  confirm step takes a second or two, and a sync must be timed from the tap,
-  not from the confirmation, so the client sends the delay, measured on its
-  own clock, and the device back-dates the event.
+- `timestamp` is when the tap happened, in **device time** (epoch ms on the
+  device's clock). The device's clock is the one timeline: a client keeps
+  `offset = state timestamp − its own clock at arrival` from every state
+  (see State) and stamps the tap with `its clock at the tap + offset`,
+  before any confirm step (which takes a second or two; a sync must be
+  timed from the tap). The engine uses the stamp as is, whenever the event
+  arrives.
+
+A watch bundle stamps through the native `send` press handler
+(`watch-js/extremers.schema.json`): with `stampTime` set, the button's
+`event` is the bump's postcard without its last field, `timestamp`
+(`encodeEngineEvent(bump with timestamp 0)` less its final `00` byte), and
+the handler appends the tap's device time as a postcard u64 varint:
+solid-watch's `PressEvent.tappedAtDeviceMs`, the local tap time plus the
+offset the bundle last set with `syncClock`.
 
 The sign convention is the engine's. The watch labels its buttons by their
 effect on the countdown (+5 / +1 / −1 / −5 minutes), so **"+5" sends
@@ -289,7 +300,7 @@ A few, with a 2026 timestamp (`fbd8c1a28c34` = 1 790 000 000 123):
 | state | `fbd8c1a28c34 02 cdcccc40 0000003f cdcc44c1` | TuneSpeed, 6.4 kn, +0.5 kn, −12.3° |
 | event | `00 01` | select Race |
 | event | `01 00` | line stbd |
-| event | `01 02 3c dc0b` | bump +30 s (`seconds` 30, zigzag 60), tapped 1500 ms ago |
+| event | `01 02 3c fbd8c1a28c34` | bump +30 s (`seconds` 30, zigzag 60), tapped at device time 1 790 000 000 123 |
 | event | `01 03` | finish |
 
 ## On the watch

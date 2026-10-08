@@ -194,31 +194,25 @@ mod tests {
         );
     }
 
-    /// `ago` back-dates the tap: a sync confirmed 1.5 s after the tap
-    /// rounds from the tap.
+    /// The bump is timed from its own `timestamp` (the tap, in device
+    /// time); when the event arrives does not matter.
     #[test]
-    fn test_bump_ago() {
+    fn test_bump_uses_the_tap_time() {
         let mut race = Race::default();
         // tapped at 3500, arrived at 5000: the gun is 30 s from the tap
         assert_eq!(
-            race.external_event(5000, &RaceEvent::BumpSeq { seconds: 30, ago: 1500 }),
+            race.external_event(5000, &RaceEvent::BumpSeq { seconds: 30, timestamp: 3500 }),
             Outcome::CHANGED.with_timer(33_500)
         );
         assert!(matches!(
             race.state,
             State::InSequence { start_time: 33_500 }
         ));
-        // tapped at 3600 (29.9 s left), confirmed at 5100 (28.4 s left):
-        // the 29.9 s left round down to 0: the start moves to the tap
+        // sync tapped at 3600 (29.9 s left), arriving at 5100 (28.4 s
+        // left): the 29.9 s round down to 0, the start moves to the tap
         assert_eq!(
-            race.external_event(5100, &RaceEvent::BumpSeq { seconds: 0, ago: 1500 }),
+            race.external_event(5100, &RaceEvent::BumpSeq { seconds: 0, timestamp: 3600 }),
             Outcome::CHANGED.with_timer(3600)
-        );
-        // an `ago` from before the epoch clamps
-        let mut race = Race::default();
-        assert_eq!(
-            race.external_event(100, &RaceEvent::BumpSeq { seconds: 60, ago: 1000 }),
-            Outcome::CHANGED.with_timer(60_000)
         );
     }
 
@@ -326,10 +320,10 @@ mod tests {
         assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[0]), Ok(Outcome::CHANGED));
         assert!(matches!(race.line, Line::Stbd { .. }));
 
-        // bump +30 s (zigzag 60), tapped 1500 ms (dc 0b) before the event
-        // arrived at t = 5000
-        let bump = postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: 30, ago: 1500 }).unwrap();
-        assert_eq!(bump, [2, 60, 0xdc, 0x0b]);
+        // bump +30 s (zigzag 60), tapped at device time 3500 (ac 1b), the
+        // event arriving at t = 5000
+        let bump = postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: 30, timestamp: 3500 }).unwrap();
+        assert_eq!(bump, [2, 60, 0xac, 0x1b]);
         assert_eq!(
             extreme_traits::RawEngine::external_event(&mut race, 5000, &bump),
             Ok(Outcome::CHANGED.with_timer(3500 + 30_000))
@@ -340,7 +334,7 @@ mod tests {
         ));
         // -300 s: zigzag 599
         assert_eq!(
-            postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: -300, ago: 0 }).unwrap(),
+            postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: -300, timestamp: 0 }).unwrap(),
             [2, 0xd7, 0x04, 0]
         );
 
@@ -527,10 +521,10 @@ mod tests {
         }
     }
 
-    /// A bump tapped at `timestamp` (arriving then, `ago` 0).
+    /// A bump tapped at `timestamp`, arriving at 0 (which is ignored).
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
         assert_eq!(
-            race.external_event(timestamp, &RaceEvent::BumpSeq { seconds, ago: 0 }),
+            race.external_event(0, &RaceEvent::BumpSeq { seconds, timestamp }),
             Outcome::CHANGED.with_timer(expected_start),
         );
 

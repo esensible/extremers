@@ -41,11 +41,12 @@ pub enum RaceEvent {
     /// earlier (less time on the countdown), < 0 later, and 0 syncs:
     /// rounds the time remaining down to a whole minute.
     ///
-    /// `ago` is how many milliseconds before the event arrived the tap
-    /// happened: a confirm step takes a second or two, and a sync must be
-    /// timed from the tap. The client measures it on its own clock, so it
-    /// needs no clock sync.
-    BumpSeq { seconds: i32, ago: u32 },
+    /// `timestamp` is when the tap happened, in device time (epoch ms on
+    /// the device's clock): the client keeps its offset to the device clock
+    /// from every state's timestamp and stamps the tap with it, before any
+    /// confirm step, so a sync is timed from the tap. The engine uses it
+    /// as is; when the event arrives does not matter.
+    BumpSeq { seconds: i32, timestamp: u64 },
     /// Finish the race, or abort a start sequence.
     RaceFinish,
 }
@@ -149,13 +150,11 @@ impl Engine for Race {
         Outcome::CHANGED
     }
 
-    fn external_event(&mut self, timestamp: u64, event: &RaceEvent) -> Outcome {
+    fn external_event(&mut self, _timestamp: u64, event: &RaceEvent) -> Outcome {
         match *event {
             RaceEvent::LineStbd => Outcome::changed(self.line.set_stbd(self.location)),
             RaceEvent::LinePort => Outcome::changed(self.line.set_port(self.location)),
-            RaceEvent::BumpSeq { seconds, ago } => {
-                // when the tap happened
-                let timestamp = timestamp.saturating_sub(ago as u64);
+            RaceEvent::BumpSeq { seconds, timestamp } => {
                 let offset = seconds.unsigned_abs() as u64 * 1000;
                 let start_time = match &mut self.state {
                     State::InSequence { start_time } => {
