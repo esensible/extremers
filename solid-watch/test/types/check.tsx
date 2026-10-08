@@ -9,7 +9,7 @@ export const ok = (
     </text>
     <scroll flexGrow={1} />
     <button onPress={(p) => p} press="anything" confirm={{ title: "t", detail: "d", label: "l" }} disabled={false} />
-    <countdown toMs={1000} format="elapsed" />
+    <countdown at={1000} format="elapsed" cues={[{ atRemainingMs: 0, pattern: "success" }]} />
     <clock format="h:mm" />
     <haptic pattern="success" trigger={3} />
   </view>
@@ -21,5 +21,7 @@ export const bad1 = <view flexDirection="sideways" />;
 export const bad2 = <view colour="red" />;
 // @ts-expect-error: padding takes no "auto"
 export const bad3 = <view padding="auto" />;
+// @ts-expect-error: a cue needs atRemainingMs
+export const bad5 = <countdown cues={[{ pattern: "click" }]} />;
 // @ts-expect-error: countdown has no children
 export const bad4 = <countdown>x</countdown>;

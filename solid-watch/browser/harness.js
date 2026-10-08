@@ -47,7 +47,8 @@ function runTo(k, { quiet = false } = {}) {
   const onEvent = (kind, d) => {
     if (quiet && kind === "commit") return;
     if (kind === "commit") log(`commit (${d.ops} mutations)`);
-    else if (kind === "haptic") log(`haptic ${d.pattern} (tag ${d.tag})`, "tap");
+    else if (kind === "haptic") log(`haptic ${d.pattern} (tag ${d.tag}${d.cue !== undefined ? `, cue at ${d.cue} ms remaining` : ""})`, "tap");
+    else if (kind === "release") log(`release tag ${d.tag}`, "muted");
     else if (kind === "press") log(d.native ? `tap tag ${d.tag}: native press "${d.native}" props ${JSON.stringify(d.props)} (${d.agoMs} ms after tap)` : `tap tag ${d.tag}: dispatch press {agoMs: ${d.agoMs}} handled=${d.handled}`, "tap");
     else if (kind === "error") log(`error: ${d.error && d.error.stack ? d.error.stack : d.error}`, "err");
   };

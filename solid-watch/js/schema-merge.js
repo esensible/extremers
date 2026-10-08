@@ -9,7 +9,8 @@
 // New node types in a fragment are native views the app registers on each host.
 
 const KINDS = new Set(["layout", "measure", "paint", "behavior", "event"]);
-const TYPES = new Set(["number", "string", "boolean", "enum", "dimension", "color", "event", "object", "any", "bytes"]);
+const TYPES = new Set(["number", "string", "boolean", "enum", "dimension", "color", "event", "object", "array", "any", "bytes"]);
+const FIELD_TYPES = new Set(["number", "string"]);
 
 function checkProp(where, name, p) {
   if (!KINDS.has(p.kind)) throw new Error(`${where}.${name}: bad kind ${p.kind}`);
@@ -18,6 +19,8 @@ function checkProp(where, name, p) {
     if (!Array.isArray(p.values) || !p.values.length) throw new Error(`${where}.${name}: enum needs values`);
     if (p.default !== null && !p.values.includes(p.default)) throw new Error(`${where}.${name}: default not in values`);
   }
+  if (p.type === "array" && !p.fields) throw new Error(`${where}.${name}: array needs fields (its items are objects)`);
+  for (const [f, t] of Object.entries(p.fields || {})) if (!FIELD_TYPES.has(t)) throw new Error(`${where}.${name}.${f}: field type ${t}`);
   if ((p.type === "event") !== (p.kind === "event")) throw new Error(`${where}.${name}: event type and kind go together`);
   if (p.type === "event" && !/^on[A-Z]/.test(name)) throw new Error(`${where}.${name}: event props are named onXxx`);
   if (!("default" in p)) throw new Error(`${where}.${name}: missing default`);

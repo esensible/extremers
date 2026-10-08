@@ -51,7 +51,7 @@ public enum PropKind: String, Sendable {
 }
 
 public enum PropType: String, Sendable {
-  case number, string, boolean, enumeration = "enum", dimension, color, event, object, any, bytes
+  case number, string, boolean, enumeration = "enum", dimension, color, event, object, array, any, bytes
 }
 
 public enum ChildKind: String, Sendable {
@@ -108,6 +108,17 @@ public enum PropDecode {
   public static func bool(_ v: PropValue) -> Bool? {
     if case .bool(let b) = v { return b }
     return nil
+  }
+  /// An array whose every element `item` accepts; nil otherwise.
+  public static func items<T>(_ v: PropValue, _ item: (PropValue) -> T?) -> [T]? {
+    guard case .array(let a) = v else { return nil }
+    var out: [T] = []
+    out.reserveCapacity(a.count)
+    for e in a {
+      guard let x = item(e) else { return nil }
+      out.append(x)
+    }
+    return out
   }
   public static func bytes(_ v: PropValue) -> [UInt8]? {
     guard case .array(let a) = v else { return nil }
@@ -635,12 +646,12 @@ public struct TextLayoutProps: Equatable, Sendable {
   }
 }
 
-/// `confirm`: { title: string, detail: string, label: string }
+///  `confirm`: { title: string, detail: string, label: string }
 public struct ButtonConfirm: Equatable, Sendable {
   public var title: String
   public var detail: String
   public var label: String
-  /// nil unless `value` is an object; missing or non-string fields read as "".
+  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
   public init?(_ value: PropValue) {
     guard case .object(let o) = value else { return nil }
     title = PropDecode.string(o["title"] ?? .null) ?? ""
@@ -698,12 +709,26 @@ public enum CountdownFormat: String, CaseIterable, Sendable {
   case remaining = "remaining"
 }
 
+/// each item of `cues`: { atRemainingMs: number, pattern: string }
+public struct CountdownCuesItem: Equatable, Sendable {
+  public var atRemainingMs: Double
+  public var pattern: String
+  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
+  public init?(_ value: PropValue) {
+    guard case .object(let o) = value else { return nil }
+    atRemainingMs = PropDecode.number(o["atRemainingMs"] ?? .null) ?? 0
+    pattern = PropDecode.string(o["pattern"] ?? .null) ?? ""
+  }
+}
+
 /// `countdown`'s own props.
 public struct CountdownProps: Equatable, Sendable {
-  /// Target, ms after the receipt of the state being applied when this prop was set (negative = passed). null shows nothing.
-  public var toMs: Double? = nil
+  /// Target time in ms on the host clock (the clock of onState's receivedAtMs). null shows nothing.
+  public var at: Double? = nil
   /// README: Countdown formats.
   public var format: CountdownFormat = .countdown
+  /// Haptics the host plays natively as the remaining time (at - now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues.
+  public var cues: [CountdownCuesItem]? = nil
 
   public init() {}
 
@@ -711,15 +736,20 @@ public struct CountdownProps: Equatable, Sendable {
   /// resets it and returns `.invalid`; a name this struct doesn't own returns `.unknown`.
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
-    case "toMs":
-      if value == .null { self.toMs = nil; return .ok }
-      guard let v = PropDecode.number(value) else { self.toMs = nil; return .invalid }
-      self.toMs = v
+    case "at":
+      if value == .null { self.at = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.at = nil; return .invalid }
+      self.at = v
       return .ok
     case "format":
       if value == .null { self.format = .countdown; return .ok }
       guard let v = PropDecode.string(value).flatMap(CountdownFormat.init(rawValue:)) else { self.format = .countdown; return .invalid }
       self.format = v
+      return .ok
+    case "cues":
+      if value == .null { self.cues = nil; return .ok }
+      guard let v = PropDecode.items(value, CountdownCuesItem.init) else { self.cues = nil; return .invalid }
+      self.cues = v
       return .ok
     default:
       return .unknown
@@ -1085,8 +1115,9 @@ public enum CoreSchema {
       "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
       "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
       "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "toMs": PropSpec(name: "toMs", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
+      "at": PropSpec(name: "at", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
       "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "countdown", inherits: false, values: ["countdown", "elapsed", "remaining"]),
+      "cues": PropSpec(name: "cues", kind: .behavior, type: .array, group: "countdown", inherits: false, values: []),
     ]),
     "clock": NodeSpec(type: "clock", children: .none, native: false, layout: true, props: [
       "display": PropSpec(name: "display", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex", "none"]),

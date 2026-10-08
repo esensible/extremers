@@ -65,14 +65,19 @@ The bundle, evaluated as a script, sets:
 ```js
 globalThis.__app = {
   mount(rootTag, ctx),          // ctx = { width, height } (points); renders, then one commit
-  onState(state),               // runs the app's onState inside batch(), then one commit
+  onState(state, receivedAtMs), // runs the app's onState(state, receivedAtMs) inside batch(), then one commit
   dispatch(tag, name, payload), // runs the JS handler for event `name` on `tag` inside batch(),
                                 // then one commit; returns false (no commit) if there is none
 }
 ```
 
 `state` is whatever the app delivers (bytes as a `Uint8Array`, an object…);
-the package never looks at it. Exceptions propagate to the host (show an
+the package never looks at it. `receivedAtMs` is the **host clock** when the
+state arrived (any monotonic millisecond clock; it is the clock countdown
+`at` is on). A state that carries relative times ("starts in 65 s") becomes
+absolute once, in the bundle: `at = receivedAtMs + startIn`. So the same
+relative value in a later state is a different `at`, and nothing keeps a
+stale anchor. Exceptions propagate to the host (show an
 error screen; keep the app alive).
 
 ## Host interface
@@ -90,6 +95,16 @@ created nodes from `2`).
 | `insert(parent, child, before)` | insert `child` before `before` (`0` = append). Inserting an attached node moves it |
 | `remove(parent, child)` | detach `child`. The renderer may re-insert a removed node later, so keep it |
 | `commit()` | end of a batch: apply, lay out, draw |
+| `release(tag)` | JS can no longer reach `tag`: free it (props, Yoga node, view). Only now may a host free a node. Its parent, if any, is being released too; its children are released by their own calls, in any order |
+
+`release` comes from a `FinalizationRegistry` on the renderer's node
+objects: the engine calls it after a garbage collection, as a pending job,
+outside any batch and without a commit (a released node is never attached).
+On quickjs-ng the host must run pending jobs (`JS_ExecutePendingJob` until
+none) after each call into JS, and let the GC run (its own thresholds, or
+`JS_RunGC` now and then, e.g. on a state when idle). Verified under qjs
+v0.17.0 with `std.gc()` and under node (`test/release.test.mjs`): exactly
+the detached nodes are released.
 
 Host → JS: `__app.dispatch(tag, name, payload)`; the event name is the prop
 name without `on`, first letter lower-cased (`onPress` → `"press"`).
@@ -114,7 +129,8 @@ Rules every host follows:
 prop sets), `nodes` (type → `groups`, own `props`, `children`: `nodes` |
 `text` | `none`). A prop: `kind`, `type` (`number`, `string`, `boolean`,
 `enum` + `values`, `dimension` (number = points, `"N%"`, `"auto"` if
-`auto: true`), `color`, `event`, `object` (+ `fields`), `any`, `bytes`),
+`auto: true`), `color`, `event`, `object` (+ `fields`), `array` (of objects
+with `fields`; field types `number` | `string`), `any`, `bytes`),
 `default`, optional `inherit`, `doc`, `swiftNames`.
 
 Core nodes: `view`, `text`, `scroll`, `button`, `countdown`, `clock`,
@@ -229,9 +245,8 @@ layout each host re-runs `measure` with the leaf's **final content width**
 
 ### Countdown formats
 
-`remaining` = round(`toMs` − (now − anchor)) in integer ms, where anchor =
-when the state being applied (the `onState` call during which `toMs` was
-set) was received. Seconds rounded up for counting down, down for elapsed:
+`remaining` = round(`at` − now) in integer ms, both on the host clock.
+Seconds rounded up for counting down, down for elapsed:
 
 | `format` | text |
 |---|---|
@@ -239,11 +254,26 @@ set) was received. Seconds rounded up for counting down, down for elapsed:
 | `elapsed` | `s = max(0, floor(-remaining / 1000))`; `M:SS`, `H:MM:SS` from an hour |
 | `remaining` | `up` as above; `M:SS`, `H:MM:SS` from an hour |
 
-`toMs: null` shows nothing (zero size). The host re-measures (and lays out)
+`at: null` shows nothing (zero size). The host re-measures (and lays out)
 whenever the displayed string changes.
 
-Note: Solid only re-sends a prop when its value changes, so a `toMs` equal to
-the previous state's keeps the earlier anchor.
+### Countdown cues
+
+`cues: [{ atRemainingMs, pattern }]` on a `countdown`: haptics the host plays
+natively, so they keep time without the link or JS.
+
+- A cue is **armed** while `remaining > atRemainingMs`. It **fires** (plays
+  `pattern`, a `haptic` pattern name) once when the remaining time falls to
+  `<= atRemainingMs` while armed, then disarms; it re-arms if the remaining
+  time goes back above its mark (the target moved later).
+- When `at` or `cues` is set, every cue is armed from the current time: a
+  mark already passed does not play.
+- If several marks are crossed between two checks (a suspension, a bump),
+  only the last one (smallest `atRemainingMs`) plays.
+- Check at least every 50 ms, or schedule a timer for the next armed mark.
+
+E.g. a start sequence: `[60000, 30000, 10000, 5000, …, 1000].map(ms => ({atRemainingMs: ms, pattern: "click"}))`
+plus `{atRemainingMs: 0, pattern: "success"}` for the gun.
 
 ### Clock
 
@@ -267,16 +297,21 @@ Local time: `HH:mm` (default), `HH:mm:ss`, `h:mm` (12-hour, no AM/PM).
 |---|---|
 | `bundle.js` | the bundle |
 | `bundle.js.sha256` | `<sha256 hex>  bundle.js` (sha256sum format) |
-| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`) or `{ "dispatch": { tag, name, payload } }` |
+| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`) or `{ "dispatch": { tag, name, payload } }`. A state step may set `receivedAtMs`; by default step *i* arrives at T0 + 1000 × (*i* + 1), mount at T0 = 1 000 000 |
 | `log.jsonl` | the mutation log, one JSON array per line, recorded under **qjs** (quickjs-ng v0.17.0); node must produce the identical log |
 | `frames.jsonl` | after each `commit`, one line: `{ commit, frames: { tag: [x, y, w, h] }, text: { tag: { fontSize, lines } }, content: { scrollTag: height }, haptics: [{ tag, pattern }] }` with the stub measurer and fixed clock |
 
 Log lines: `["createNode", tag, type]`, `["createText", tag, s]`,
 `["setProp", tag, key, value]`, `["insert", parent, child, before]`,
 `["remove", parent, child]`, `["commit"]`, and driver markers
-`["#mount", rootTag, ctx]`, `["#state", stepIndex]`,
+`["#mount", rootTag, ctx]`, `["#state", stepIndex, receivedAtMs]`,
 `["#dispatch", tag, name, payload]`, `["#handled", bool]`,
-`["#error", message]`.
+`["#error", message]`. `release` calls are **not** in the logs (their
+timing is the engine's GC); compare logs without them.
+
+The frames' clock: now = T0 at mount and = the `#state` line's
+`receivedAtMs` from that line on (no time passes between a state's arrival
+and its layout).
 
 A host test can (a) run `bundle.js` with a recording host through
 `script.json` and compare with `log.jsonl`, and (b) apply `log.jsonl` to its
@@ -291,7 +326,7 @@ Apply `log` (same format as above), commit once, compare. Frames are exact
 **Stub measurer**: every character (code point) is 0.6 × fontSize × scale
 wide; line height ratio 1.25; wrapping is greedy by character (a character
 that would pass `maxWidth + 0.001` starts a new line; a line holds at least
-one); `"\n"` breaks. **Fixture clock**: now = receipt = 1 000 000 ms, local
+one); `"\n"` breaks. **Fixture clock**: now = T0 = 1 000 000 ms, local
 time 09:41:07.
 
 ## Font

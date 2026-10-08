@@ -96,7 +96,8 @@ function swiftType(g, name, p, prefix) {
     case "dimension": return "Dimension";
     case "color": return "String" + opt;
     case "event": return "Bool";
-    case "object": return p.fields ? enumName(g.group, name, prefix, g.isNodeGroup) + "?" : "PropValue?";
+    case "object": return p.fields ? itemStruct(g, name, p, prefix) + "?" : "PropValue?";
+    case "array": return `[${itemStruct(g, name, p, prefix)}]?`;
     case "any": return "PropValue";
     case "bytes": return "[UInt8]?";
   }
@@ -116,6 +117,7 @@ function swiftDefault(g, name, p, prefix) {
       return `.percent(${parseFloat(d)})`;
     case "event": return "false";
     case "object": return "nil";
+    case "array": return "nil";
     case "any": return ".null";
     case "bytes": return "nil";
   }
@@ -129,11 +131,16 @@ function swiftDecode(g, name, p, prefix) {
     case "enum": return `PropDecode.string(value).flatMap(${enumName(g.group, name, prefix, g.isNodeGroup)}.init(rawValue:))`;
     case "dimension": return `Dimension.parse(value, allowAuto: ${p.auto ? "true" : "false"})`;
     case "event": return "PropDecode.bool(value)";
-    case "object": return p.fields ? `${enumName(g.group, name, prefix, g.isNodeGroup)}(value)` : "Optional(value)";
+    case "object": return p.fields ? `${itemStruct(g, name, p, prefix)}(value)` : "Optional(value)";
+    case "array": return `PropDecode.items(value, ${itemStruct(g, name, p, prefix)}.init)`;
     case "any": return "Optional(value)";
     case "bytes": return "PropDecode.bytes(value)";
   }
   throw new Error(p.type);
+}
+// Struct for an object prop (ButtonConfirm) or an array prop's items (CountdownCuesItem).
+function itemStruct(g, name, p, prefix) {
+  return enumName(g.group, name, prefix, g.isNodeGroup) + (p.type === "array" ? "Item" : "");
 }
 
 function swiftEnumsAndStructs(groups, prefix) {
@@ -147,18 +154,18 @@ function swiftEnumsAndStructs(groups, prefix) {
         for (const v of p.values) out.push(`  case ${swiftCase(p, v)} = ${swiftStr(v)}`);
         out.push(`}`, ``);
       }
-      if (p.type === "object" && p.fields) {
-        const sn = enumName(g.group, name, prefix, g.isNodeGroup);
-        out.push(`/// \`${name}\`: { ${Object.entries(p.fields).map(([k, t]) => `${k}: ${t}`).join(", ")} }`);
+      if ((p.type === "object" || p.type === "array") && p.fields) {
+        const sn = itemStruct(g, name, p, prefix);
+        const what = p.type === "array" ? "each item of" : "";
+        out.push(`/// ${what} \`${name}\`: { ${Object.entries(p.fields).map(([k, t]) => `${k}: ${t}`).join(", ")} }`);
         out.push(`public struct ${sn}: Equatable, Sendable {`);
-        for (const [k, t] of Object.entries(p.fields)) {
-          if (t !== "string") throw new Error(`object field type ${t} not supported`);
-          out.push(`  public var ${swiftIdent(k)}: String`);
-        }
-        out.push(`  /// nil unless \`value\` is an object; missing or non-string fields read as "".`);
+        for (const [k, t] of Object.entries(p.fields)) out.push(`  public var ${swiftIdent(k)}: ${t === "number" ? "Double" : "String"}`);
+        out.push(`  /// nil unless \`value\` is an object; a missing or mistyped field reads as "" / 0.`);
         out.push(`  public init?(_ value: PropValue) {`);
         out.push(`    guard case .object(let o) = value else { return nil }`);
-        for (const k of Object.keys(p.fields)) out.push(`    ${swiftIdent(k)} = PropDecode.string(o[${swiftStr(k)}] ?? .null) ?? ""`);
+        for (const [k, t] of Object.entries(p.fields)) {
+          out.push(`    ${swiftIdent(k)} = PropDecode.${t === "number" ? "number" : "string"}(o[${swiftStr(k)}] ?? .null) ?? ${t === "number" ? "0" : '""'}`);
+        }
         out.push(`  }`, `}`, ``);
       }
     }
@@ -261,7 +268,7 @@ public enum PropKind: String, Sendable {
 }
 
 public enum PropType: String, Sendable {
-  case number, string, boolean, enumeration = "enum", dimension, color, event, object, any, bytes
+  case number, string, boolean, enumeration = "enum", dimension, color, event, object, array, any, bytes
 }
 
 public enum ChildKind: String, Sendable {
@@ -318,6 +325,17 @@ public enum PropDecode {
   public static func bool(_ v: PropValue) -> Bool? {
     if case .bool(let b) = v { return b }
     return nil
+  }
+  /// An array whose every element \`item\` accepts; nil otherwise.
+  public static func items<T>(_ v: PropValue, _ item: (PropValue) -> T?) -> [T]? {
+    guard case .array(let a) = v else { return nil }
+    var out: [T] = []
+    out.reserveCapacity(a.count)
+    for e in a {
+      guard let x = item(e) else { return nil }
+      out.append(x)
+    }
+    return out
   }
   public static func bytes(_ v: PropValue) -> [UInt8]? {
     guard case .array(let a) = v else { return nil }
@@ -426,6 +444,7 @@ function tsType(p, merged) {
     case "color": return "Color";
     case "event": return "(payload: any) => void";
     case "object": return p.fields ? `{ ${Object.entries(p.fields).map(([k, t]) => `${k}?: ${t}`).join("; ")} }` : "Record<string, unknown>";
+    case "array": return `{ ${Object.entries(p.fields).map(([k, t]) => `${k}: ${t}`).join("; ")} }[]`;
     case "any": return "unknown";
     case "bytes": return "number[]";
   }

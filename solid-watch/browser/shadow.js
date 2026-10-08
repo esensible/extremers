@@ -8,8 +8,8 @@
 //   tree.createRoot(1, { width, height })
 //   tree.createNode("view") -> tag ... tree.commit() -> layout result
 //
-// clock: { now(): ms (monotonic, for countdowns), receipt(): ms (when the
-// state being applied arrived; toMs is anchored to it), date(): Date (clock) }
+// clock: { now(): ms on the host clock (the clock of onState's receivedAtMs
+// and countdown `at`), date(): Date (wall clock, for <clock>) }
 import { Align, BoxSizing, Direction, Display, Edge, FlexDirection, Gutter, Justify, MeasureMode, Overflow, PositionType, Wrap } from "yoga-layout";
 import { measureText, formatCountdown, formatClock } from "./text-layout.js";
 import { mergeSchema } from "../js/schema-merge.js";
@@ -91,7 +91,7 @@ export class ShadowTree {
     if (!spec) throw new Error(`<${n.type}> has no prop ${key}`);
     if (value === null) delete n.props[key];
     else n.props[key] = value;
-    if (key === "toMs") n.anchor = this.clock.receipt();
+    if (n.type === "countdown" && (key === "at" || key === "cues")) n.cuesDirty = true;
     if (spec.kind === "layout") this.dirtyStyle.add(tag);
     else if (spec.kind === "measure") this._dirtyText(n, true);
   }
@@ -112,6 +112,26 @@ export class ShadowTree {
     this._dirtyText(c);
     this._detach(c);
     this.dirtyChildren.add(p.tag);
+  }
+  /**
+   * The JS side can no longer reach `tag`: free it. Its parent (if any) is
+   * being released too; its children stay until their own release.
+   */
+  release(tag) {
+    const n = this.nodes.get(tag);
+    if (!n || n === this.root) return;
+    if (n.parent) this._detach(n);
+    for (const c of n.children) c.parent = null;
+    n.children = [];
+    if (n.yoga) {
+      const owner = n.yoga.getParent();
+      if (owner) owner.removeChild(n.yoga);
+      while (n.yoga.getChildCount() > 0) n.yoga.removeChild(n.yoga.getChild(0));
+      n.yoga.free();
+      n.yoga = null;
+    }
+    this.nodes.delete(tag);
+    this.releasedCount = (this.releasedCount || 0) + 1;
   }
 
   /** Lay out. Returns this.layout() (frames by tag). */
@@ -149,7 +169,14 @@ export class ShadowTree {
       const w = y.getComputedWidth() - y.getComputedPadding(Edge.Left) - y.getComputedPadding(Edge.Right) - y.getComputedBorder(Edge.Left) - y.getComputedBorder(Edge.Right);
       n.measured = this._measureLeaf(n, Math.max(0, w));
     }
-    // 6. haptics
+    // 6. haptics; countdown cues re-armed from the current time when their
+    //    `at` or `cues` changed (a mark already passed doesn't play)
+    for (const n of this.nodes.values()) {
+      if (n.cuesDirty) {
+        n.cuesDirty = false;
+        this._armCues(n);
+      }
+    }
     this.hapticsFired = [];
     for (const n of this.nodes.values()) {
       if (n.type !== "haptic" || !this._attached(n)) continue;
@@ -212,7 +239,9 @@ export class ShadowTree {
    */
   tick() {
     let changed = false;
+    this.tickHaptics = []; // cues that fired on this tick: [{tag, pattern, cue}]
     for (const n of this.nodes.values()) {
+      if (n.type === "countdown" && this._attached(n)) this._cues(n);
       if ((n.type !== "countdown" && n.type !== "clock") || !n.measured) continue;
       const s = this.displayText(n);
       const shown = n.measured.runs.length ? n.measured.runs[0].text : "";
@@ -227,11 +256,36 @@ export class ShadowTree {
   /** Current text of a countdown or clock. */
   displayText(n) {
     if (n.type === "countdown") {
-      if (n.props.toMs === undefined) return "";
-      const remaining = Math.round(n.props.toMs - (this.clock.now() - n.anchor));
-      return formatCountdown(n.props.format ?? "countdown", remaining);
+      if (typeof n.props.at !== "number") return "";
+      return formatCountdown(n.props.format ?? "countdown", this._remaining(n));
     }
     return formatClock(n.props.format ?? "HH:mm", this.clock.date());
+  }
+
+  // ---- countdowns (README: Countdown formats, Countdown cues) -------------------
+  _remaining(n) {
+    return Math.round(n.props.at - this.clock.now());
+  }
+  _armCues(n) {
+    const cues = Array.isArray(n.props.cues) ? n.props.cues : [];
+    const r = typeof n.props.at === "number" ? this._remaining(n) : -Infinity;
+    n.cueArmed = cues.map((c) => r > c.atRemainingMs);
+  }
+  // A cue fires once when the remaining time falls to (<=) its mark while it
+  // is armed; it re-arms if the remaining time goes back above the mark. If
+  // several fall on one tick only the last mark (smallest atRemainingMs) plays.
+  _cues(n) {
+    const cues = Array.isArray(n.props.cues) ? n.props.cues : [];
+    if (typeof n.props.at !== "number" || !cues.length || !n.cueArmed) return;
+    const r = this._remaining(n);
+    let fire = null;
+    cues.forEach((c, i) => {
+      if (r <= c.atRemainingMs) {
+        if (n.cueArmed[i] && (!fire || c.atRemainingMs < fire.atRemainingMs)) fire = c;
+        n.cueArmed[i] = false;
+      } else n.cueArmed[i] = true;
+    });
+    if (fire) this.tickHaptics.push({ tag: n.tag, pattern: fire.pattern, cue: fire.atRemainingMs });
   }
 
   // ---- internals ----------------------------------------------------------------

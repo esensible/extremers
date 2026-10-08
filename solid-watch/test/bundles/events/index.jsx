@@ -1,11 +1,14 @@
 // Events and the native nodes: onPress set, replaced and removed; a native
-// press handler with confirm; haptic trigger; countdown and clock.
+// press handler with confirm; haptic trigger; countdowns on the host clock
+// (at = receivedAtMs + a relative time from the state) with cues; clock.
 import { createSignal } from "solid-js";
 import { createApp } from "solid-watch";
 
 const [count, setCount] = createSignal(0);
 const [armed, setArmed] = createSignal(true);
-const [toMs, setToMs] = createSignal(null);
+const [at, setAt] = createSignal(null);
+
+const CUES = [60000, 30000, 10000, 5000, 4000, 3000, 2000, 1000].map((ms) => ({ atRemainingMs: ms, pattern: "click" })).concat([{ atRemainingMs: 0, pattern: "success" }]);
 
 function App() {
   return (
@@ -18,16 +21,17 @@ function App() {
       </button>
       <text tabular>{count()}</text>
       <haptic pattern="success" trigger={count()} />
-      <countdown toMs={toMs()} fontSize={40} tabular minScale={0.5} />
-      <countdown toMs={toMs()} format="elapsed" />
+      <countdown at={at()} fontSize={40} tabular minScale={0.5} cues={CUES} />
+      <countdown at={at()} format="elapsed" />
       <clock format="HH:mm" />
     </view>
   );
 }
 
 createApp(App, {
-  onState(s) {
+  onState(s, receivedAtMs) {
     setArmed(s.armed);
-    setToMs(s.toMs);
+    // the state carries "start in" (ms, relative to its capture); anchor it once, here
+    setAt(s.startIn == null ? null : receivedAtMs + s.startIn);
   },
 });

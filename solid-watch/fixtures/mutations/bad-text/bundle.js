@@ -647,6 +647,20 @@
 
   /** JS event handlers: tag -> { eventName: fn }. */
   const handlers = new Map();
+
+  // Host nodes live as long as their JS Node object: once the engine collects
+  // it (nothing in JS can reach it, so Solid can never re-insert it), the host
+  // is told to free the tag. Callbacks run as engine jobs after a GC, outside
+  // any batch; they are not part of the golden logs (timing is the engine's).
+  const released = typeof FinalizationRegistry === "function" ? new FinalizationRegistry(tag => {
+    handlers.delete(tag);
+    const h = host();
+    if (h && h.release) h.release(tag);
+  }) : null;
+  const track = node => {
+    if (released) released.register(node, node.tag);
+    return node;
+  };
   class Node {
     constructor(tag, type, text) {
       this.tag = tag;
@@ -688,11 +702,11 @@
     createTextNode,
     insertNode} = createRenderer({
     createElement(type) {
-      return new Node(host().createNode(type), type);
+      return track(new Node(host().createNode(type), type));
     },
     createTextNode(value) {
       const s = String(value);
-      return new Node(host().createText(s), "#text", s);
+      return track(new Node(host().createText(s), "#text", s));
     },
     replaceText(node, value) {
       node.text = String(value);
@@ -760,8 +774,11 @@
    *
    * - mount(rootTag, ctx): renders <Root {...ctx} /> into the host's root, then
    *   one commit. ctx = { width, height } in points.
-   * - onState(state): runs `onState` inside batch(), then one commit. `state` is
-   *   whatever the app delivers (bytes, an object); the package doesn't look.
+   * - onState(state, receivedAtMs): runs `onState(state, receivedAtMs)` inside
+   *   batch(), then one commit. `state` is whatever the app delivers (bytes, an
+   *   object); the package doesn't look. receivedAtMs is the host clock (the
+   *   clock countdown `at` is on) when the state arrived: relative times in a
+   *   state become absolute as receivedAtMs + relative.
    * - dispatch(tag, name, payload): runs the JS handler for event `name` on
    *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
    *   false (and doesn't commit) if there is no handler.
@@ -776,8 +793,8 @@
         dispose = render(() => createComponent(Root, ctx), wrapHostNode(rootTag));
         host().commit();
       },
-      onState(state) {
-        if (onState) batch(() => onState(state));
+      onState(state, receivedAtMs) {
+        if (onState) batch(() => onState(state, receivedAtMs));
         host().commit();
       },
       dispatch(tag, name, payload) {

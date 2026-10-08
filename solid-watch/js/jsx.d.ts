@@ -94,10 +94,12 @@ export interface ButtonProps {
 }
 
 export interface CountdownProps {
-  /** Target, ms after the receipt of the state being applied when this prop was set (negative = passed). null shows nothing. */
-  toMs?: number | null;
+  /** Target time in ms on the host clock (the clock of onState's receivedAtMs). null shows nothing. */
+  at?: number | null;
   /** README: Countdown formats. */
   format?: "countdown" | "elapsed" | "remaining" | null;
+  /** Haptics the host plays natively as the remaining time (at - now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues. */
+  cues?: { atRemainingMs: number; pattern: string }[] | null;
 }
 
 export interface ClockProps {
@@ -134,7 +136,7 @@ export interface ButtonElement extends LayoutProps, BoxProps, ButtonProps {
   ref?: unknown;
 }
 
-/** Text the host ticks locally towards (or from) a target time, so it keeps going without state updates. */
+/** Text the host ticks locally towards (or from) a target time on its own clock, so it keeps going without state updates; optional haptic cues at set remaining times. */
 export interface CountdownElement extends LayoutProps, BoxProps, TextStyleProps, TextLayoutProps, CountdownProps {
   children?: never;
   ref?: unknown;

@@ -18,40 +18,51 @@ export const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 /** Run a bundle in a fresh node vm context; returns the log lines. */
 export function runNode(bundleSrc, script) {
+  return runNodeCtx(bundleSrc, script).lines;
+}
+/** As runNode, also returning the vm context (its __swReleased fills after a GC). */
+export function runNodeCtx(bundleSrc, script) {
   const ctx = vm.createContext({});
   vm.runInContext(readFileSync(DRIVER, "utf8"), ctx, { filename: "driver.js" });
   // copy out of the vm realm (its arrays have their own prototype)
-  return Array.from(ctx.__swDriver(() => vm.runInContext(bundleSrc, ctx, { filename: "bundle.js" }), script), String);
+  const lines = Array.from(ctx.__swDriver(() => vm.runInContext(bundleSrc, ctx, { filename: "bundle.js" }), script), String);
+  return { lines, ctx };
 }
 
 /** Run a bundle under qjs; returns the log lines. */
-export function runQjs(qjs, bundlePath, scriptPath) {
-  const r = spawnSync(qjs, [QJS_RUNNER, DRIVER, bundlePath, scriptPath], { encoding: "utf8", maxBuffer: 1 << 28 });
+export function runQjs(qjs, bundlePath, scriptPath, extra = []) {
+  const r = spawnSync(qjs, [QJS_RUNNER, DRIVER, bundlePath, scriptPath, ...extra], { encoding: "utf8", maxBuffer: 1 << 28 });
   if (r.error) throw r.error;
   if (r.status !== 0) throw new Error(`qjs exited ${r.status}: ${r.stderr}`);
   return r.stdout.split("\n").filter((l) => l !== "");
 }
 
-// The fixed clock of the fixtures: every state arrives at T0 and the layout
-// is computed at T0, so a countdown shows toMs exactly.
+// The fixture clock: mount at T0; a state's commit is laid out at its
+// receivedAtMs (the #state line's third element), so no time passes between a
+// state's arrival and its layout. Wall clock fixed at 09:41:07.
 export const T0 = 1_000_000;
-export const fixtureClock = {
-  now: () => T0,
-  receipt: () => T0,
-  date: () => new Date(2026, 0, 1, 9, 41, 7),
-};
+export function fixtureClock(start = T0) {
+  let now = start;
+  return {
+    now: () => now,
+    set: (t) => (now = t),
+    date: () => new Date(2026, 0, 1, 9, 41, 7),
+  };
+}
 
 /**
  * Replay log lines through a ShadowTree (stub measurer, pointScaleFactor 2).
  * Returns one result per commit: { commit, frames, text, content, haptics }.
  */
 export function replay(lines, { fragments = [] } = {}) {
-  const tree = new ShadowTree(Yoga, { schema, fragments, measurer: stubMeasurer, clock: fixtureClock, pointScaleFactor: 2 });
+  const clock = fixtureClock();
+  const tree = new ShadowTree(Yoga, { schema, fragments, measurer: stubMeasurer, clock, pointScaleFactor: 2 });
   const out = [];
   for (const line of lines) {
     const [op, ...a] = JSON.parse(line);
     switch (op) {
-      case "#mount": tree.createRoot(a[0], a[1]); break;
+      case "#mount": clock.set(T0); tree.createRoot(a[0], a[1]); break;
+      case "#state": clock.set(a[1]); break;
       case "createNode": { const t = tree.createNode(a[1]); if (t !== a[0]) throw new Error(`tag mismatch ${t} != ${a[0]}`); break; }
       case "createText": { const t = tree.createText(a[1]); if (t !== a[0]) throw new Error(`tag mismatch ${t} != ${a[0]}`); break; }
       case "setProp": tree.setProp(a[0], a[1], a[2]); break;

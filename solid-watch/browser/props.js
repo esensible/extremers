@@ -493,7 +493,7 @@ export const schema = {
       }
     },
     "countdown": {
-      "doc": "Text the host ticks locally towards (or from) a target time, so it keeps going without state updates.",
+      "doc": "Text the host ticks locally towards (or from) a target time on its own clock, so it keeps going without state updates; optional haptic cues at set remaining times.",
       "groups": [
         "layout",
         "box",
@@ -502,11 +502,11 @@ export const schema = {
       ],
       "children": "none",
       "props": {
-        "toMs": {
+        "at": {
           "kind": "measure",
           "type": "number",
           "default": null,
-          "doc": "Target, ms after the receipt of the state being applied when this prop was set (negative = passed). null shows nothing."
+          "doc": "Target time in ms on the host clock (the clock of onState's receivedAtMs). null shows nothing."
         },
         "format": {
           "kind": "measure",
@@ -518,6 +518,16 @@ export const schema = {
           ],
           "default": "countdown",
           "doc": "README: Countdown formats."
+        },
+        "cues": {
+          "kind": "behavior",
+          "type": "array",
+          "default": null,
+          "fields": {
+            "atRemainingMs": "number",
+            "pattern": "string"
+          },
+          "doc": "Haptics the host plays natively as the remaining time (at - now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues."
         }
       }
     },

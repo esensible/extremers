@@ -90,8 +90,8 @@ export class DomHost {
     el.appendChild(this.screen);
     this.onEvent = onEvent;
     this.pressHandlers = pressHandlers;
-    this.receiptAt = performance.now();
-    const clock = { now: () => performance.now(), receipt: () => this.receiptAt, date: () => new Date() };
+    const clock = { now: () => performance.now(), date: () => new Date() };
+    this.clock = clock;
     this.tree = new ShadowTree(Yoga, { schema, fragments, measurer: domMeasurer(schema.font.lineHeightRatio), clock });
     this.colors = this.tree.schema.colors;
     this.els = new Map();
@@ -105,10 +105,20 @@ export class DomHost {
       insert: (p, c, b) => (this.ops++, t.insert(p, c, b)),
       remove: (p, c) => (this.ops++, t.remove(p, c)),
       commit: () => this._commit(),
+      release: (tag) => {
+        t.release(tag);
+        const el = this.els.get(tag);
+        if (el) el.remove();
+        this.els.delete(tag);
+        this.onEvent("release", { tag });
+      },
     };
     this.timer = setInterval(() => {
-      if (this.tree.root && this.tree.tick()) this._commit(true);
-    }, 100);
+      if (!this.tree.root) return;
+      const changed = this.tree.tick();
+      for (const h of this.tree.tickHaptics) this._haptic(h);
+      if (changed) this._commit(true);
+    }, 50);
   }
 
   dispose() {
@@ -122,10 +132,9 @@ export class DomHost {
     this._guard(() => app.mount(1, ctx));
   }
 
-  /** Deliver a state; toMs props set while applying it are anchored to now. */
-  state(value) {
-    this.receiptAt = performance.now();
-    this._guard(() => this.app.onState(value));
+  /** Deliver a state, stamped with the host clock at receipt. */
+  state(value, receivedAtMs = this.clock.now()) {
+    this._guard(() => this.app.onState(value, receivedAtMs));
   }
 
   _guard(fn) {
@@ -142,10 +151,12 @@ export class DomHost {
     this.tree.commit();
     this._paint();
     if (!tick) this.onEvent("commit", { ops });
-    for (const h of this.tree.hapticsFired) {
-      this.onEvent("haptic", h);
-      this.el.animate([{ boxShadow: "inset 0 0 0 3px #FF9F0A" }, { boxShadow: "inset 0 0 0 0 transparent" }], 400);
-    }
+    for (const h of this.tree.hapticsFired) this._haptic(h);
+  }
+
+  _haptic(h) {
+    this.onEvent("haptic", h);
+    this.el.animate([{ boxShadow: "inset 0 0 0 3px #FF9F0A" }, { boxShadow: "inset 0 0 0 0 transparent" }], 400);
   }
 
   // ---- painting ---------------------------------------------------------------
