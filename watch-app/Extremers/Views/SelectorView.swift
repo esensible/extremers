@@ -11,7 +11,9 @@ struct SelectorView: View {
           Circle()
             .fill(Color.green)
             .frame(width: 8, height: 8)
-          Text(verbatim: "\(RaceProtocol.deviceName) connected")
+          // the address's end, to match the Kindle's "This box"
+          Text(verbatim: [RaceProtocol.deviceName, computer.rememberedBox?.address?.short, "connected"]
+            .compactMap { $0 }.joined(separator: " "))
             .font(.footnote)
             .foregroundStyle(Palette.caption)
           Spacer(minLength: 0)

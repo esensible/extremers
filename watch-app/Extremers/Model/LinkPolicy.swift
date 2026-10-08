@@ -52,20 +52,6 @@ struct Backoff {
   }
 }
 
-/// Which race computer to connect to directly, without a scan. Kept only
-/// for the life of the app now; remembering the paired unit across
-/// launches (bonding) is another implementation of this.
-@MainActor
-protocol PeripheralMemory: AnyObject {
-  var identifier: UUID? { get set }
-}
-
-/// The last race computer this app run connected to.
-@MainActor
-final class LastPeripheral: PeripheralMemory {
-  var identifier: UUID?
-}
-
 /// Steps waiting on a delegate callback, one per key (the step's name).
 /// Each registration gets a token, so a timer or cancel handler completes
 /// only the registration it was made for, never a later one on the same key.

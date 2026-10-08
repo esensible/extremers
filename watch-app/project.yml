@@ -71,6 +71,7 @@ targets:
       - path: Extremers/Model/Formatting.swift
       - path: Extremers/Model/LinkPolicy.swift
       - path: Extremers/Model/Security.swift
+      - path: Extremers/Model/Box.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.esensible.extremers.watch.tests

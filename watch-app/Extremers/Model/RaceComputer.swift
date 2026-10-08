@@ -54,13 +54,21 @@ final class RaceComputer: NSObject, ObservableObject {
   @Published private(set) var mismatch: StateMismatch?
   /// A short line shown for a few seconds (the workout was ended and restarted).
   @Published private(set) var notice: String?
+  /// The box this watch is paired with (`memory.box`, published).
+  @Published private(set) var rememberedBox: RememberedBox?
+  /// Another box seen while scanning for the remembered one, and ignored.
+  @Published private(set) var otherBox: BoxAddress?
 
   private let workout = WorkoutKeeper()
   private let haptics = Haptics()
 
   private var manager: CBCentralManager?
-  /// The race computer to try directly before scanning.
+  /// The paired box: tried directly before scanning, and the only one a
+  /// scan accepts. Persistent (StoredPeripheral) unless a test passes another.
   private let memory: PeripheralMemory
+  /// Addresses from scan responses, by identifier: what to remember once
+  /// a session with that peripheral is trusted.
+  private var seenAddresses: [UUID: BoxAddress] = [:]
   /// The peripheral being connected or connected. Strong reference:
   /// CoreBluetooth does not keep a peripheral alive, and one released
   /// mid-connect never calls back.
@@ -81,11 +89,43 @@ final class RaceComputer: NSObject, ObservableObject {
   private var generation = LinkGeneration()
   private var noticeTimer: Task<Void, Never>?
 
-  /// `memory` nil: remember the last device for this app run only.
+  /// `memory` nil: remember the paired box across launches (UserDefaults).
   init(memory: PeripheralMemory? = nil) {
-    self.memory = memory ?? LastPeripheral()
+    let memory = memory ?? StoredPeripheral()
+    self.memory = memory
+    rememberedBox = memory.box
     super.init()
     workout.onNotice = { [weak self] text in self?.show(notice: text) }
+  }
+
+  /// "Forget this box": the next scan takes any box again. Only this app's
+  /// memory: the bond itself is the watch's, and only watchOS Settings ›
+  /// Bluetooth can remove it. A link to the box (or a connect under way)
+  /// is dropped, and the loop looks again.
+  func forgetBox() {
+    memory.box = nil
+    rememberedBox = nil
+    otherBox = nil
+    seenAddresses = [:]
+    show(notice: "Box forgotten. To remove the pairing too: Settings \u{203A} Bluetooth \u{203A} \(RaceProtocol.deviceName).")
+    guard link != .stopped else { return }
+    // The last screen was that box's: not this watch's any more.
+    state = nil
+    anchor = nil
+    mismatch = nil
+    haptics.follow(start: nil)
+    if let p = peripheral, p.state == .connected || p.state == .connecting {
+      manager?.cancelPeripheralConnection(p)
+    }
+  }
+
+  /// After a session the box trusted (its subscribe needs a bond): this is
+  /// the paired box, under this identifier.
+  private func remember(_ p: CBPeripheral) {
+    let box = RememberedBox.after(session: p.identifier, seen: seenAddresses[p.identifier], previous: memory.box)
+    if box != memory.box { memory.box = box }
+    rememberedBox = box
+    otherBox = nil
   }
 
   /// The app came to the front (or left it): an ended workout restarts
@@ -202,7 +242,7 @@ final class RaceComputer: NSObject, ObservableObject {
         try await open(p)
         try ensureCurrent(gen)
         guard p.state == .connected else { throw BleFailure.disconnected(underlying: nil) }
-        memory.identifier = p.identifier
+        remember(p)
         link = .connected
         problem = nil
         connectedAt = Date()
@@ -220,14 +260,14 @@ final class RaceComputer: NSObject, ObservableObject {
     }
   }
 
-  /// The device, connected: the remembered one directly when there is one
-  /// (no scan needed), else the first one advertising the service. The
-  /// remembered one is looked up by identifier on every attempt rather than
-  /// kept as an object, since CoreBluetooth invalidates its peripheral
-  /// objects when Bluetooth resets.
+  /// The device, connected: the paired box directly when there is one (no
+  /// scan needed), else a scan for it (or, before any box is paired, for
+  /// the first one advertising the service). The paired box is looked up
+  /// by identifier on every attempt rather than kept as an object, since
+  /// CoreBluetooth invalidates its peripheral objects when Bluetooth resets.
   private func reach() async throws -> CBPeripheral {
     let m = ensureManager()
-    if let id = memory.identifier, let known = m.retrievePeripherals(withIdentifiers: [id]).first {
+    if let id = memory.box?.identifier, let known = m.retrievePeripherals(withIdentifiers: [id]).first {
       do {
         try await connect(known)
         return known
@@ -248,7 +288,11 @@ final class RaceComputer: NSObject, ObservableObject {
       if m.isScanning { m.stopScan() }
     }
     let found: CBPeripheral = try await waitFor("find", timeout: Self.scanWindow) {
-      m.scanForPeripherals(withServices: [Self.service], options: nil)
+      // Duplicates: a box's first report may come without its scan
+      // response (no address yet); a later one carries it.
+      m.scanForPeripherals(
+        withServices: [Self.service],
+        options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
     return found
   }
@@ -482,6 +526,17 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     advertisementData: [String: Any],
     rssi RSSI: NSNumber
   ) {
+    let address = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)
+      .flatMap { BoxAddress(manufacturerData: $0) }
+    if let address { seenAddresses[peripheral.identifier] = address }
+    let known = address ?? seenAddresses[peripheral.identifier]
+    guard RememberedBox.accepts(memory.box, identifier: peripheral.identifier, address: known) else {
+      // Another boat's box (or one whose address has not been seen yet):
+      // not this watch's. Said on the Connecting screen, with the way to
+      // switch boxes.
+      if let known, otherBox != known { otherBox = known }
+      return
+    }
     complete("find", .success(peripheral))
   }
 
