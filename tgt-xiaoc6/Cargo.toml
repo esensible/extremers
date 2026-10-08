@@ -9,7 +9,7 @@ default-run = "xiaoc6"
 
 [dependencies]
 # Common crate for shared code; it logs through defmt here
-common = { path = "../common", features = ["defmt"] }
+common = { path = "../common", features = ["defmt", "ble"] }
 
 #
 # Logging: defmt over RTT, read with probe-rs
@@ -22,11 +22,12 @@ rtt-target = { version = "0.6", features = ["defmt"] }
 #
 esp-hal = { version = "1.2", features = ["defmt", "unstable"] }
 esp-rtos = { version = "0.4", features = ["esp-radio", "embassy", "defmt"] }
-esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "defmt", "unstable"] }
+esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "ble", "coex", "defmt", "unstable"] }
 # panics and backtraces go to defmt/RTT like everything else
 esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt"] }
 esp-alloc = { version = "0.11" }
 esp-bootloader-esp-idf = { version = "0.6" }
+trouble-host = { workspace = true, features = ["defmt"] }
 
 #
 # Persistent settings (src/storage.rs): esp-storage is the internal SPI

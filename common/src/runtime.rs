@@ -14,27 +14,36 @@ use embassy_sync::{
 use embassy_time::{Duration, Instant, with_timeout};
 use portable_atomic::AtomicU64;
 
-use extreme_traits::{MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
+use extreme_traits::{CompactState, MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
 
-use crate::{config::MAX_WEB_SOCKETS, fmt::Dbg, nmea::GpsUpdate};
+use crate::{
+    config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS},
+    fmt::Dbg,
+    nmea::GpsUpdate,
+};
 
-/// A snapshot of the engine state, as sent to clients.
+/// A snapshot of the engine state, as sent to clients, in both encodings.
 #[derive(Clone, Debug)]
 pub struct StateMessage {
     /// Name of the engine that produced `json`.
     pub kind: &'static str,
-    /// The engine state, serialized.
+    /// The engine state, serialized (the websocket clients).
     pub json: StateJson,
+    /// The same state in the compact binary form (BLE.md), with its times
+    /// relative to the moment it was captured.
+    pub compact: CompactState,
 }
 
 impl StateMessage {
-    /// Captures name and state together, so they always describe the same
-    /// engine. Call with the engine locked.
-    fn capture<E: RawEngine>(engine: &E) -> Result<Self, ()> {
+    /// Captures name and both encodings of the state together, so they
+    /// always describe the same engine at the same moment. Call with the
+    /// engine locked.
+    fn capture<E: RawEngine>(engine: &E, now: u64) -> Result<Self, ()> {
         match engine.serialize_state() {
             Ok(json) => Ok(Self {
                 kind: engine.kind(),
                 json,
+                compact: engine.compact_state(now),
             }),
             Err(()) => {
                 error!(
@@ -56,9 +65,16 @@ pub struct EngineRuntime<E: RawEngine> {
     /// published with the engine locked, so they arrive in the order the
     /// engine issued them; only the latest one matters, hence capacity 1.
     timer_channel: PubSubChannel<CriticalSectionRawMutex, Timer, 1, 1, 1>,
-    /// State changes for the connected clients. Each message is a complete
-    /// state, so a slow client that misses one loses nothing.
-    broadcast: PubSubChannel<CriticalSectionRawMutex, StateMessage, 1, MAX_WEB_SOCKETS, 1>,
+    /// State changes for the connected clients, one subscriber per possible
+    /// client on every transport. Each message is a complete state, so a
+    /// slow client that misses one loses nothing.
+    broadcast: PubSubChannel<
+        CriticalSectionRawMutex,
+        StateMessage,
+        1,
+        { MAX_WEB_SOCKETS + MAX_BLE_CONNECTIONS },
+        1,
+    >,
 }
 
 impl<E: RawEngine> EngineRuntime<E> {
@@ -112,9 +128,18 @@ impl<E: RawEngine> EngineRuntime<E> {
         Ok(())
     }
 
+    /// Feeds a client event in the compact binary form (BLE.md) to the
+    /// engine. `Err` if it was not understood.
+    pub async fn compact_event(&self, payload: &[u8]) -> Result<(), ()> {
+        let mut engine = self.engine.lock().await;
+        let outcome = engine.compact_event(self.now(), payload)?;
+        self.apply(&engine, outcome);
+        Ok(())
+    }
+
     /// The current engine state.
     pub async fn current_state(&self) -> Result<StateMessage, ()> {
-        StateMessage::capture(&*self.engine.lock().await)
+        StateMessage::capture(&*self.engine.lock().await, self.now())
     }
 
     /// Subscribes to state changes. Subscribe before reading
@@ -185,7 +210,7 @@ impl<E: RawEngine> EngineRuntime<E> {
     /// [`run_timer`]: Self::run_timer
     fn apply(&self, engine: &E, outcome: Outcome) {
         if outcome.changed
-            && let Ok(message) = StateMessage::capture(engine)
+            && let Ok(message) = StateMessage::capture(engine, self.now())
         {
             self.broadcast
                 .immediate_publisher()
@@ -263,6 +288,21 @@ mod tests {
         fn get_static(&self, _: &str) -> Option<&'static [u8]> {
             None
         }
+
+        fn kind_code(&self) -> u8 {
+            1
+        }
+
+        fn compact_state(&self, _now: u64) -> CompactState {
+            CompactState::from_slice(&[1, self.fired as u8]).unwrap()
+        }
+
+        fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
+            match *event {
+                [0x20] => RawEngine::external_event(self, timestamp, b"at:30"),
+                _ => Err(()),
+            }
+        }
     }
 
     async fn sleep_ms(ms: u64) {
@@ -289,6 +329,8 @@ mod tests {
             let state = updates.next_message_pure().await;
             assert_eq!(state.kind, "TimerEngine");
             assert_eq!(&state.json[..], b"1");
+            assert_eq!(&state.compact[..], &[1, 1]);
+            assert!(runtime.compact_event(&[0x99]).await.is_err());
             sleep_ms(600).await;
             assert_eq!(runtime.engine.lock().await.fired, 1);
             assert!(updates.try_next_message_pure().is_none());

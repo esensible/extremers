@@ -44,6 +44,10 @@ macro_rules! static_files {
 /// is active; `{"Select": "Race"}` switches engine (any unknown name returns
 /// to the selector) and cancels any pending timer.
 ///
+/// On the compact (BLE) protocol the selector is kind code 0 and the engines
+/// are numbered from 1 in declaration order; `[0x01, code]` selects one and
+/// any other event goes to the active engine's `compact_event`.
+///
 /// Every engine type must implement [`Engine`] and `Default`. Use the macro
 /// once per module: it also defines `EngineEvent` and `ENGINE_NAMES`.
 #[macro_export]
@@ -208,6 +212,77 @@ macro_rules! define_engines {
                     )*
                 }
             }
+
+            fn kind_code(&self) -> u8 {
+                match self {
+                    Self::Selector(_) => 0,
+                    $(
+                        Self::$variant(_) => $crate::engine_code(ENGINE_NAMES, stringify!($variant)),
+                    )*
+                }
+            }
+
+            fn compact_state(&self, now: u64) -> $crate::CompactState {
+                let code = $crate::RawEngine::kind_code(self);
+                match self {
+                    Self::Selector(engine) => $crate::compact_state(code, engine, now),
+                    $(
+                        Self::$variant(engine) => $crate::compact_state(code, engine, now),
+                    )*
+                }
+            }
+
+            fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<$crate::Outcome, ()> {
+                if let [$crate::COMPACT_SELECT, code] = *event {
+                    *self = match code {
+                        $(
+                            c if c == $crate::engine_code(ENGINE_NAMES, stringify!($variant)) => {
+                                Self::$variant(Default::default())
+                            }
+                        )*
+                        _ => Self::selector(),
+                    };
+                    return Ok($crate::Outcome::CHANGED.cancel_timer());
+                }
+                match self {
+                    Self::Selector(engine) => $crate::Engine::compact_event(engine, timestamp, event),
+                    $(
+                        Self::$variant(engine) => $crate::Engine::compact_event(engine, timestamp, event),
+                    )*
+                }
+            }
         }
     };
+}
+
+/// Compact-protocol opcode that selects an engine: `[0x01, kind code]`.
+pub const COMPACT_SELECT: u8 = 0x01;
+
+/// The compact-protocol code of an engine: its position in `names` plus one
+/// (0 is the selector).
+#[doc(hidden)]
+pub const fn engine_code(names: &[&str], name: &str) -> u8 {
+    let mut i = 0;
+    while i < names.len() {
+        if str_eq(names[i], name) {
+            return (i + 1) as u8;
+        }
+        i += 1;
+    }
+    0
+}
+
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }

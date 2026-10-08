@@ -33,6 +33,21 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
     const NAME: &'static str = "TuneSpeed";
     const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
 
+    /// `[speed u16][speed_dev i16][heading_dev i16]`, little-endian; speed
+    /// and its deviation in knots x 100, heading deviation in degrees x 10.
+    fn compact_state(&self, _now: u64, out: &mut [u8]) -> usize {
+        if out.len() < 6 {
+            return 0;
+        }
+        let speed = (self.speed * 100.0).clamp(0.0, u16::MAX as f64) as u16;
+        let speed_dev = (self.speed_dev * 100.0).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+        let heading_dev = (self.heading_dev * 10.0).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+        out[0..2].copy_from_slice(&speed.to_le_bytes());
+        out[2..4].copy_from_slice(&speed_dev.to_le_bytes());
+        out[4..6].copy_from_slice(&heading_dev.to_le_bytes());
+        6
+    }
+
     // we don't need events right now
     type Event<'a> = ();
 

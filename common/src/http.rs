@@ -57,7 +57,10 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         let mut updates = match self.runtime.subscribe() {
             Ok(updates) => updates,
             Err(e) => {
-                error!("websocket: cannot subscribe to state updates: {:?}", Dbg(&e));
+                error!(
+                    "websocket: cannot subscribe to state updates: {:?}",
+                    Dbg(&e)
+                );
                 return Ok(());
             }
         };
@@ -284,6 +287,7 @@ mod tests {
         let state = StateMessage {
             kind: "TuneSpeed",
             json,
+            compact: Default::default(),
         };
 
         let mut out = [0u8; MAX_MESSAGE_SIZE + 128];

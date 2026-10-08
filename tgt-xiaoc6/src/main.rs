@@ -19,9 +19,13 @@ use esp_hal::{
     timer::timg::TimerGroup,
     uart::{Config as UartConfig, RxConfig, Uart, UartRx},
 };
-use esp_radio::wifi::{
-    ControllerConfig, CountryInfo, Interface, OperatingClass, PowerSaveMode, WifiController,
+use esp_radio::{
+    ble::controller::BleConnector,
+    wifi::{
+        ControllerConfig, CountryInfo, Interface, OperatingClass, PowerSaveMode, WifiController,
+    },
 };
+use trouble_host::prelude::ExternalController;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -34,6 +38,7 @@ use crate::network_tasks::{
     wifi_task,
 };
 use common::{
+    ble::{CONNECTIONS_MAX, serve_ble},
     config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
     nmea::AsyncReader,
     runtime::EngineRuntime,
@@ -51,12 +56,20 @@ define_engines! {
 
 type Runtime = EngineRuntime<EngineType>;
 
+/// The BLE controller, with 20 HCI command slots.
+type BleController = ExternalController<BleConnector<'static>, 20>;
+
 /// Access point transmit power ceiling, 0.25 dBm units: 60 = 15 dBm.
 const WIFI_TX_POWER_QDBM: i8 = 60;
 
 // Every log line carries the uptime (probe-rs shows it as seconds with ms).
 // esp-hal's clock, not embassy-time's, so it works before esp_rtos::start.
-defmt::timestamp!("{=u64:ms}", esp_hal::time::Instant::now().duration_since_epoch().as_millis());
+defmt::timestamp!(
+    "{=u64:ms}",
+    esp_hal::time::Instant::now()
+        .duration_since_epoch()
+        .as_millis()
+);
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
@@ -67,9 +80,10 @@ async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    // esp-radio needs a heap
+    // esp-radio needs a heap; WiFi + BLE coexistence wants the larger
+    // second one the esp-hal coex example uses
     esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64 * 1024);
-    esp_alloc::heap_allocator!(size: 36 * 1024);
+    esp_alloc::heap_allocator!(size: 64 * 1024);
 
     // start the scheduler (also provides the embassy time driver)
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -91,6 +105,15 @@ async fn main(spawner: Spawner) -> ! {
     storage::init(peripherals.FLASH).await;
     choose_access_point_credentials().await;
 
+    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
+    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
+
+    // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
+    // controller's connection limit matches the host's.
+    let ble_config = esp_radio::ble::Config::default().with_max_connections(CONNECTIONS_MAX as u16);
+    let connector = BleConnector::new(peripherals.BT, ble_config).unwrap();
+    spawner.spawn(ble_task(ExternalController::new(connector), runtime).unwrap());
+
     // initialize wifi controller as an access point
     let controller_config = ControllerConfig::default()
         .with_country_info(
@@ -103,7 +126,10 @@ async fn main(spawner: Spawner) -> ! {
     // is 20 dBm), which a Kindle sees as a weak network. 15 dBm, under the
     // ~16 dBm esp-radio warns has broken authentication on some hardware.
     match controller.set_max_tx_power(WIFI_TX_POWER_QDBM) {
-        Ok(()) => defmt::info!("wifi: max tx power {=i8} (0.25 dBm units)", WIFI_TX_POWER_QDBM),
+        Ok(()) => defmt::info!(
+            "wifi: max tx power {=i8} (0.25 dBm units)",
+            WIFI_TX_POWER_QDBM
+        ),
         Err(e) => defmt::warn!(
             "wifi: set_max_tx_power failed: {:?}; still at the 5 dBm default",
             defmt::Debug2Format(&e)
@@ -128,9 +154,6 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(dhcp_task(stack).unwrap());
     spawner.spawn(dns_task(stack).unwrap());
-
-    static RUNTIME: StaticCell<Runtime> = StaticCell::new();
-    let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
 
     spawner.spawn(httpd_task(stack, runtime).unwrap());
     spawner.spawn(timer_task(runtime).unwrap());
@@ -166,6 +189,11 @@ async fn httpd_task(stack: Stack<'static>, runtime: &'static Runtime) -> ! {
     let buffers = TcpBuffers::<MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_BUFFER_SIZE>::new();
     let tcp = Tcp::new(stack, &buffers);
     serve_http(&tcp, HTTP_PORT, runtime).await
+}
+
+#[embassy_executor::task]
+async fn ble_task(controller: BleController, runtime: &'static Runtime) -> ! {
+    serve_ble(controller, runtime).await
 }
 
 #[embassy_executor::task]
