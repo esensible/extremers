@@ -8,7 +8,7 @@ and both transports are fed from the same `EngineRuntime` broadcast.
 
 Firmware: `common/src/ble.rs` (transport), `extreme-traits` (`compact_state`
 / `compact_event` on the `Engine` trait), each engine's own encoding.
-Client: `watch-app/Shared/Protocol.swift`.
+Client: `watch-app/Extremers/Model/Protocol.swift`.
 
 Everything is little-endian. Nothing here is JSON: every message fits one
 notification at the default ATT MTU (23 bytes, 20 of payload), so no MTU
@@ -54,7 +54,7 @@ milliseconds, signed: a central anchors them to its own clock when the
 notification arrives (the error is one connection interval, ~30 ms) and
 needs no clock sync. A negative "start in" means the start has passed.
 
-### Race (`kind` 1), 13 bytes
+### Race (`kind` 1), 15 bytes
 
 | offset | field | type | meaning |
 |---|---|---|---|
@@ -64,6 +64,7 @@ needs no clock sync. A negative "start in" means the start has passed.
 | 3 | start_in | i32 | ms until the start (InSequence/Racing); 0 when Active |
 | 7 | line_in | i32 | ms until the boat reaches the line (line = 3), else 0 |
 | 11 | speed | u16 | knots × 100 |
+| 13 | heading | u16 | course over ground, degrees × 10 |
 
 ### TuneSpeed (`kind` 2), 6 bytes
 
@@ -110,7 +111,7 @@ the Swift tests check the same bytes.
 
 | | bytes | meaning |
 |---|---|---|
-| state | `01 00 00 00 00 00 00 00 00 00 00 00 80 02` | Race, Active, no line, 6.40 kn |
+| state | `01 00 00 00 00 00 00 00 00 00 00 00 80 02 84 03` | Race, Active, no line, 6.40 kn, heading 90.0° |
 | state | `01 01 01 00 48 71 00 00 …` | Race, InSequence, stbd set, start in 29 000 ms |
 | state | `00` | selector |
 | event | `01 01` | select Race |

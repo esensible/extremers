@@ -64,7 +64,7 @@ mod compact {
     pub const OP_BUMP_SEQ: u8 = 0x12;
     pub const OP_RACE_FINISH: u8 = 0x13;
     /// Encoded state length.
-    pub const STATE_LEN: usize = 13;
+    pub const STATE_LEN: usize = 15;
 }
 
 /// Milliseconds from `now` to `at`, clamped to an `i32`.
@@ -78,8 +78,9 @@ impl Engine for Race {
 
     type Event<'a> = Event;
 
-    /// `[state][line][line_cross][start_in i32][line_in i32][speed u16]`,
-    /// little-endian; times in ms relative to `now`, speed in knots x 100.
+    /// `[state][line][line_cross][start_in i32][line_in i32][speed u16][heading u16]`,
+    /// little-endian; times in ms relative to `now`, speed in knots x 100,
+    /// heading in degrees x 10.
     fn compact_state(&self, now: u64, out: &mut [u8]) -> usize {
         if out.len() < compact::STATE_LEN {
             return 0;
@@ -100,6 +101,7 @@ impl Engine for Race {
             } => (compact::LINE_BOTH, line_cross, line_timestamp),
         };
         let speed = (self.velocity.speed * 100.0).clamp(0.0, u16::MAX as f64) as u16;
+        let heading = (self.velocity.heading * 10.0).clamp(0.0, u16::MAX as f64) as u16;
 
         out[0] = state;
         out[1] = line;
@@ -107,6 +109,7 @@ impl Engine for Race {
         out[3..7].copy_from_slice(&millis_until(now, start_time).to_le_bytes());
         out[7..11].copy_from_slice(&millis_until(now, line_timestamp).to_le_bytes());
         out[11..13].copy_from_slice(&speed.to_le_bytes());
+        out[13..15].copy_from_slice(&heading.to_le_bytes());
         compact::STATE_LEN
     }
 

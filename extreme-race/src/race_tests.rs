@@ -291,7 +291,7 @@ mod tests {
         let mut race = Race::default();
         let mut buf = [0u8; 32];
 
-        // active, nothing set, 6.4 kn
+        // active, nothing set, 6.4 kn heading 90.0
         let _ = race.location_event(
             1000,
             None,
@@ -300,25 +300,28 @@ mod tests {
                 heading: 90.0,
             }),
         );
-        assert_eq!(race.compact_state(1000, &mut buf), 13);
-        assert_eq!(&buf[..13], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x02]);
+        assert_eq!(race.compact_state(1000, &mut buf), 15);
+        assert_eq!(
+            &buf[..15],
+            &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x02, 0x84, 0x03]
+        );
 
         // in sequence, start in 31 s as seen 1 s after the bump; stbd set
         bump(&mut race, 1000, 30, 31_000);
         let _ = race.external_event(0, &ev(EventType::LineStbd));
-        assert_eq!(race.compact_state(2000, &mut buf), 13);
+        assert_eq!(race.compact_state(2000, &mut buf), 15);
         assert_eq!(buf[0], 1);
         assert_eq!(buf[1], 1);
         assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), 29_000);
 
         // a past start is negative
         assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
-        assert_eq!(race.compact_state(40_000, &mut buf), 13);
+        assert_eq!(race.compact_state(40_000, &mut buf), 15);
         assert_eq!(buf[0], 2);
         assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), -9_000);
 
         // too small a buffer writes nothing
-        assert_eq!(race.compact_state(0, &mut buf[..12]), 0);
+        assert_eq!(race.compact_state(0, &mut buf[..14]), 0);
     }
 
     #[test]
