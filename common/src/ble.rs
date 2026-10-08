@@ -20,8 +20,9 @@ use trouble_host::{att::AttClient, prelude::*};
 use extreme_traits::RawEngine;
 
 use crate::{
+    ble_settings::AddrText,
     config::{BLE_NAME, MAX_BLE_CONNECTIONS},
-    fmt::Dbg,
+    fmt::{Dbg, Disp},
     runtime::{EngineRuntime, StateMessage},
 };
 
@@ -42,9 +43,9 @@ const STATE_MAX: usize = 20;
 /// Largest `event` value.
 const EVENT_MAX: usize = 8;
 
-/// Random static address ("nacra", then 0xff: a static address has the two
-/// top bits of its most significant byte, the last here, set).
-const ADDRESS: [u8; 6] = [0x61, 0x72, 0x63, 0x61, 0x6e, 0xff];
+/// Company identifier of the scan response's manufacturer data: 0xFFFF is
+/// the Bluetooth SIG's value for internal use and testing, i.e. no company.
+const COMPANY_NONE: u16 = 0xffff;
 
 type StateValue = heapless09::Vec<u8, STATE_MAX>;
 type EventValue = heapless09::Vec<u8, EVENT_MAX>;
@@ -68,14 +69,18 @@ struct RaceService {
     event: EventValue,
 }
 
-/// Serves the BLE GATT transport on `controller`, forever.
-pub async fn serve_ble<C, E>(controller: C, runtime: &EngineRuntime<E>) -> !
+/// Serves the BLE GATT transport on `controller`, forever, as the static
+/// random `address` (BLE byte order; [`static_random_address`] makes one
+/// from the chip's MAC, so every unit has its own).
+///
+/// [`static_random_address`]: crate::ble_settings::static_random_address
+pub async fn serve_ble<C, E>(controller: C, runtime: &EngineRuntime<E>, address: [u8; 6]) -> !
 where
     C: Controller,
     E: RawEngine,
 {
-    let address = Address::random(ADDRESS);
-    info!("ble: address {:?}", Dbg(&address));
+    info!("ble: address {} (static random)", Disp(&AddrText(address)));
+    let address = Address::random(address);
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
         HostResources::new();
@@ -107,8 +112,9 @@ where
     };
 
     let advertising = Mutex::<NoopRawMutex, _>::new(&mut peripheral);
+    let unit = unit_id(address.addr.raw());
     let workers: [_; CONNECTIONS_MAX] =
-        core::array::from_fn(|me| worker(me, &stack, &advertising, &server, runtime));
+        core::array::from_fn(|me| worker(me, &stack, &advertising, &server, runtime, &unit));
 
     join(host, join_array(workers)).await;
     // both halves loop forever
@@ -123,6 +129,7 @@ async fn worker<'v, C, E>(
     advertising: &Mutex<NoopRawMutex, &mut Peripheral<'v, C, DefaultPacketPool>>,
     server: &Server<'_>,
     runtime: &EngineRuntime<E>,
+    unit: &[u8; 6],
 ) where
     C: Controller,
     E: RawEngine,
@@ -130,7 +137,7 @@ async fn worker<'v, C, E>(
     loop {
         let conn = {
             let mut peripheral = advertising.lock().await;
-            let Some(advertiser) = advertise(&mut peripheral).await else {
+            let Some(advertiser) = advertise(&mut peripheral, unit).await else {
                 Timer::after(Duration::from_secs(1)).await;
                 continue;
             };
@@ -160,33 +167,40 @@ async fn worker<'v, C, E>(
     }
 }
 
-/// Starts connectable advertising as [`BLE_NAME`] with the service UUID;
-/// `None` (logged) if the controller refused.
+/// The unit's address as it is printed (most significant byte first): the
+/// scan response's manufacturer data, so a central that cannot see BLE
+/// addresses (CoreBluetooth hides them) can still tell one box from another
+/// and match it to the address the Kindle shows.
+fn unit_id(address: &[u8]) -> [u8; 6] {
+    let mut id = [0u8; 6];
+    id.copy_from_slice(address);
+    id.reverse();
+    id
+}
+
+/// Starts connectable advertising as [`BLE_NAME`] with the service UUID,
+/// and `unit` in the scan response; `None` (logged) if the controller
+/// refused.
 async fn advertise<'v, C: Controller>(
     peripheral: &mut Peripheral<'v, C, DefaultPacketPool>,
+    unit: &[u8; 6],
 ) -> Option<Advertiser<'v, C, DefaultPacketPool>> {
-    // flags 3 + 128-bit UUID 18 + name 2 + 5 = 28 of the 31 bytes
     let mut adv_data = [0; 31];
-    let len = match AdStructure::encode_slice(
-        &[
-            AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-            AdStructure::CompleteServiceUuids128(&[SERVICE_UUID.to_le_bytes()]),
-            AdStructure::CompleteLocalName(BLE_NAME.as_bytes()),
-        ],
-        &mut adv_data[..],
-    ) {
-        Ok(len) => len,
-        Err(e) => {
-            error!("ble: advertising data does not fit: {:?}", Dbg(&e));
-            return None;
-        }
+    let mut scan_data = [0; 31];
+    let (Some(len), Some(scan_len)) = (
+        adv_data_encode(&mut adv_data),
+        scan_data_encode(unit, &mut scan_data),
+    ) else {
+        // the unit tests check both fit
+        error!("ble: advertising data does not fit");
+        return None;
     };
     match peripheral
         .advertise(
             &Default::default(),
             Advertisement::ConnectableScannableUndirected {
                 adv_data: &adv_data[..len],
-                scan_data: &[],
+                scan_data: &scan_data[..scan_len],
             },
         )
         .await
@@ -197,6 +211,33 @@ async fn advertise<'v, C: Controller>(
             None
         }
     }
+}
+
+/// The advertising data: flags 3 + 128-bit UUID 18 + name 2 + 5 = 28 of the
+/// 31 bytes.
+fn adv_data_encode(out: &mut [u8; 31]) -> Option<usize> {
+    AdStructure::encode_slice(
+        &[
+            AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+            AdStructure::CompleteServiceUuids128(&[SERVICE_UUID.to_le_bytes()]),
+            AdStructure::CompleteLocalName(BLE_NAME.as_bytes()),
+        ],
+        &mut out[..],
+    )
+    .ok()
+}
+
+/// The scan response: manufacturer data, company [`COMPANY_NONE`] then the
+/// unit's address, 2 + 2 + 6 = 10 bytes.
+fn scan_data_encode(unit: &[u8; 6], out: &mut [u8; 31]) -> Option<usize> {
+    AdStructure::encode_slice(
+        &[AdStructure::ManufacturerSpecificData {
+            company_identifier: COMPANY_NONE,
+            payload: unit,
+        }],
+        &mut out[..],
+    )
+    .ok()
 }
 
 /// One connection, until it drops: state changes out as notifications,
@@ -362,18 +403,24 @@ mod tests {
     #[test]
     fn advertising_data_fits() {
         let mut adv_data = [0; 31];
-        let len = AdStructure::encode_slice(
-            &[
-                AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-                AdStructure::CompleteServiceUuids128(&[SERVICE_UUID.to_le_bytes()]),
-                AdStructure::CompleteLocalName(BLE_NAME.as_bytes()),
-            ],
-            &mut adv_data[..],
-        )
-        .unwrap();
+        let len = adv_data_encode(&mut adv_data).unwrap();
         assert_eq!(len, 3 + 18 + 2 + BLE_NAME.len());
         // the UUID goes over the air little-endian
         assert_eq!(&adv_data[5..21], &SERVICE_UUID.to_le_bytes());
         assert_eq!(adv_data[20], 0xe4);
+    }
+
+    /// The scan response carries the unit's address as printed, after the
+    /// "no company" identifier (little-endian on air).
+    #[test]
+    fn scan_response_carries_the_unit() {
+        let unit = unit_id(&[0x03, 0x02, 0x01, 0x04, 0x32, 0xd4]);
+        assert_eq!(unit, [0xd4, 0x32, 0x04, 0x01, 0x02, 0x03]);
+        let mut scan_data = [0; 31];
+        let len = scan_data_encode(&unit, &mut scan_data).unwrap();
+        assert_eq!(
+            &scan_data[..len],
+            &[9, 0xff, 0xff, 0xff, 0xd4, 0x32, 0x04, 0x01, 0x02, 0x03]
+        );
     }
 }
