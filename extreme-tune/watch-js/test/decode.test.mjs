@@ -1,29 +1,31 @@
-// decode() against the vectors extreme-tune's Rust test writes from the real
-// encoder (test/vectors.json), and the text formats against Formatting.swift.
+// The bundle decodes BLE states with the generated decoder
+// (protocol-js/protocol.js, from tools/bindgen); here it is checked against
+// the TuneSpeed states of the Rust encoder's golden vectors, and the text
+// formats against Formatting.swift. protocol-js/test has the full checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { decode, KIND } from "../src/decode.js";
+import { decodeState } from "../../../protocol-js/protocol.js";
 import { signed, knots } from "../src/format.js";
 
-const vectors = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url), "utf8"));
+const vectors = JSON.parse(readFileSync(new URL("../../../protocol-js/test/vectors.json", import.meta.url), "utf8"));
+const tune = vectors.vectors.filter((v) => v.type === "State" && v.value.engine.tag === "TuneSpeed");
 const hex = (h) => Uint8Array.from(h.match(/../g).map((x) => parseInt(x, 16)));
 
-test("vectors.json comes from the Rust encoder and covers the edges", () => {
-  assert.equal(vectors.kind, KIND);
-  assert.ok(vectors.vectors.length >= 8);
+test("the vectors have TuneSpeed states", () => {
+  assert.ok(tune.length >= 7);
 });
 
-for (const v of vectors.vectors) {
-  test(`decode ${v.compact} -> ${JSON.stringify(v.decoded)}`, () => {
-    assert.deepEqual(decode(Uint8Array.of(vectors.kind, ...hex(v.compact))), v.decoded);
+for (const v of tune) {
+  test(`decodeState ${v.hex} -> ${JSON.stringify(v.value.engine.value)}`, () => {
+    assert.deepEqual(decodeState(hex(v.hex)), v.value);
   });
 }
 
-test("decode refuses other kinds and short buffers", () => {
-  assert.equal(decode(Uint8Array.of(1, 0, 0, 0, 0, 0, 0)), null);
-  assert.equal(decode(Uint8Array.of(2, 0, 0, 0, 0, 0)), null);
-  assert.equal(decode(null), null);
+test("decodeState refuses short and foreign bytes", () => {
+  assert.throws(() => decodeState(Uint8Array.of(2, 0xff, 0xff)));
+  assert.throws(() => decodeState(Uint8Array.of()));
+  assert.throws(() => decodeState(null));
 });
 
 test("signed() as Format.signed: one decimal, U+2212, half away from zero", () => {

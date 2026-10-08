@@ -1,47 +1,56 @@
 // Builds the golden fixtures in fixtures/: bundle.js (= dist/watch.js),
-// script.json (100 TuneSpeed states), then solid-watch's make-fixtures writes
-// bundle.js.sha256, log.jsonl (qjs, checked against node) and frames.jsonl.
+// script.json (100 BLE state values), then solid-watch's make-fixtures
+// writes bundle.js.sha256, log.jsonl (qjs, checked against node) and
+// frames.jsonl.
 //   npm run build && QJS=/path/to/qjs npm run fixtures
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { encodeState } from "../../../protocol-js/protocol.js";
 
 const HERE = fileURLToPath(new URL("..", import.meta.url));
 const SOLID_WATCH = fileURLToPath(new URL("../../../solid-watch/", import.meta.url));
 const FRAGMENT = fileURLToPath(new URL("../../../watch-js/extremers.schema.json", import.meta.url));
 
-// [kind 2][speed u16 kn x100][speed_dev i16 kn x100][heading_dev i16 deg x10]
-function state(speed, speedDev, headingDev) {
-  const b = Buffer.alloc(7);
-  b[0] = 2;
-  b.writeUInt16LE(speed, 1);
-  b.writeInt16LE(speedDev, 3);
-  b.writeInt16LE(headingDev, 5);
-  return b.toString("hex");
+// Device clock of state i: a second apart, in 2026.
+const T0 = 1_790_000_000_000;
+
+// A BLE state value (a postcard State, BLE.md "State"), from the
+// generated encoder (tested against the Rust encoder in protocol-js/).
+const hex = (state) => Buffer.from(encodeState(state)).toString("hex");
+function tune(i, speed, speed_dev, heading_dev) {
+  return { stateHex: hex({ timestamp: T0 + 1000 * i, engine: { tag: "TuneSpeed", value: { speed, speed_dev, heading_dev } } }) };
 }
 
 // Mostly a boat sailing around 5-8 kn, plus the edges: zero, sign changes,
-// values that round to 0.0, -0.05 (rounds away from zero to -0.1), the largest
+// values that round to 0.0, -0.05 (rounds away from zero to -0.1), a large
 // speed (shrinks the 40 pt number), heading deviation at +-180.
 const steps = [];
 const edges = [
   [0, 0, 0],
-  [640, 4, -4],
-  [640, -5, 5],
-  [65535, 32767, 1800],
-  [12345, -32768, -1800],
-  [999, 0, 1],
-  [1000, -1, -1],
+  [6.4, 0.04, -0.4],
+  [6.4, -0.05, 0.5],
+  [655.35, 327.67, 180],
+  [123.45, -327.68, -180],
+  [9.99, 0, 0.1],
+  [10, -0.01, -0.1],
 ];
-for (const e of edges) steps.push({ stateHex: state(...e) });
+for (const e of edges) steps.push(tune(steps.length, ...e));
 for (let i = 0; steps.length < 100; i++) {
-  const speed = 500 + ((i * 37) % 300);
-  const dev = Math.round(Math.sin(i / 3) * 80);
-  const hdg = Math.round(Math.cos(i / 5) * 250);
-  steps.push({ stateHex: state(speed, dev, hdg) });
+  const speed = (500 + ((i * 37) % 300)) / 100;
+  const dev = Math.round(Math.sin(i / 3) * 80) / 100;
+  const hdg = Math.round(Math.cos(i / 5) * 250) / 10;
+  steps.push(tune(steps.length, speed, dev, hdg));
 }
-// another engine's state: decode returns null, nothing changes
-steps[50] = { stateHex: "01000000000000000000000000000000" };
+// another engine's state: the clock syncs, nothing else changes
+steps[50] = {
+  stateHex: hex({
+    timestamp: T0 + 50_000,
+    engine: { tag: "Race", value: { speed: 6.4, phase: { tag: "Active", value: { line: { tag: "None", value: null } } } } },
+  }),
+};
+// bytes that are not a State: nothing at all
+steps[51] = { stateHex: "02ffff" };
 
 const dir = HERE + "fixtures";
 mkdirSync(dir, { recursive: true });
