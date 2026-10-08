@@ -58,6 +58,9 @@ final class RaceComputer: NSObject, ObservableObject {
   @Published private(set) var rememberedBox: RememberedBox?
   /// Another box seen while scanning for the remembered one, and ignored.
   @Published private(set) var otherBox: BoxAddress?
+  /// Why the box will not serve this watch (not paired, bond lost), while
+  /// that is why the link is down.
+  @Published private(set) var pairingProblem: PairingProblem?
 
   private let workout = WorkoutKeeper()
   private let haptics = Haptics()
@@ -69,6 +72,11 @@ final class RaceComputer: NSObject, ObservableObject {
   /// Addresses from scan responses, by identifier: what to remember once
   /// a session with that peripheral is trusted.
   private var seenAddresses: [UUID: BoxAddress] = [:]
+  /// Set while the subscribe (then read) that secures the link is under
+  /// way, to whether the box is the paired one; nil otherwise. Read by the
+  /// loop when the link fails, to tell a refused bond from a plain drop.
+  private var securingPaired: Bool?
+  private var pairing = PairingPolicy()
   /// The peripheral being connected or connected. Strong reference:
   /// CoreBluetooth does not keep a peripheral alive, and one released
   /// mid-connect never calls back.
@@ -106,17 +114,20 @@ final class RaceComputer: NSObject, ObservableObject {
     memory.box = nil
     rememberedBox = nil
     otherBox = nil
-    seenAddresses = [:]
-    show(notice: "Box forgotten. To remove the pairing too: Settings \u{203A} Bluetooth \u{203A} \(RaceProtocol.deviceName).")
-    guard link != .stopped else { return }
+    pairingProblem = nil
+    pairing.secured()
+    show(notice: "Box forgotten. To remove the pairing too: Settings \u{2192} Bluetooth \u{2192} \(RaceProtocol.deviceName).")
     // The last screen was that box's: not this watch's any more.
     state = nil
     anchor = nil
     mismatch = nil
     haptics.follow(start: nil)
+    guard link != .stopped else { return }
     if let p = peripheral, p.state == .connected || p.state == .connecting {
       manager?.cancelPeripheralConnection(p)
     }
+    // Waiting out a pairing problem: look again now.
+    retryNow()
   }
 
   /// After a session the box trusted (its subscribe needs a bond): this is
@@ -189,6 +200,7 @@ final class RaceComputer: NSObject, ObservableObject {
     }
     loop = nil
     link = .stopped
+    pairingProblem = nil
     failAll(CancellationError())
     if let m = manager, m.isScanning { m.stopScan() }
     if let p = peripheral { manager?.cancelPeripheralConnection(p) }
@@ -233,6 +245,7 @@ final class RaceComputer: NSObject, ObservableObject {
     var backoff = Backoff(first: Self.firstRetry, max: Self.maxRetry, stableAfter: Self.stableLink)
     while generation.isCurrent(gen), !Task.isCancelled {
       var connectedAt: Date?
+      securingPaired = nil
       do {
         try await waitPoweredOn()
         try ensureCurrent(gen)
@@ -242,7 +255,11 @@ final class RaceComputer: NSObject, ObservableObject {
         try await open(p)
         try ensureCurrent(gen)
         guard p.state == .connected else { throw BleFailure.disconnected(underlying: nil) }
+        // The box served `state`, which it does only on a bonded link:
+        // this is the paired box.
         remember(p)
+        pairing.secured()
+        pairingProblem = nil
         link = .connected
         problem = nil
         connectedAt = Date()
@@ -252,12 +269,36 @@ final class RaceComputer: NSObject, ObservableObject {
         if Task.isCancelled || !generation.isCurrent(gen) || error is CancellationError { return }
         let failure = (error as? BleFailure) ?? .other(error)
         bleLog.info("link down: \(String(describing: failure), privacy: .public)")
+        let securing = securingPaired
+        securingPaired = nil
         closeLink()
+        if let found = pairing.linkDown(failure, securing: securing != nil, paired: securing ?? false) {
+          // Retrying at the usual pace cannot fix this: say what will,
+          // and look again now and then (the window may open, the user
+          // may have forgotten the box on the watch), or when asked.
+          bleLog.info("pairing problem: \(String(describing: found), privacy: .public)")
+          pairingProblem = found
+          problem = nil
+          await pause(PairingPolicy.problemRetry)
+          continue
+        }
+        if failure.isBluetoothUnavailable { pairingProblem = nil }
         problem = failure.message
         if let connectedAt { backoff.linkDropped(after: Date().timeIntervalSince(connectedAt)) }
         try? await Task.sleep(nanoseconds: UInt64(backoff.next() * 1_000_000_000))
       }
     }
+  }
+
+  /// Waits `seconds`, or until `retryNow()`. Returns early, never throws,
+  /// when the loop is cancelled: the loop's own check ends it.
+  private func pause(_ seconds: TimeInterval) async {
+    let _: Bool? = try? await waitFor("nudge", timeout: seconds) {}
+  }
+
+  /// "Try again" on a pairing problem: the next attempt now, not in 10 s.
+  func retryNow() {
+    complete("nudge", .success(true))
   }
 
   /// The device, connected: the paired box directly when there is one (no
@@ -312,7 +353,9 @@ final class RaceComputer: NSObject, ObservableObject {
     }
   }
 
-  /// Discover, subscribe to `state`, then read it once, so nothing is missed.
+  /// Discover, subscribe to `state`, then read it once, so nothing is
+  /// missed. The buttons come on only after this (`link = .connected`), so
+  /// no event is written before the box trusts the link.
   private func open(_ p: CBPeripheral) async throws {
     let chars = try await discover(p)
     guard let stateChar = chars[Self.stateUUID], let eventChar = chars[Self.eventUUID] else {
@@ -320,11 +363,50 @@ final class RaceComputer: NSObject, ObservableObject {
     }
     stateCharacteristic = stateChar
     eventCharacteristic = eventChar
-    let _: Any = try await waitFor("notify", timeout: Self.gattTimeout) {
-      p.setNotifyValue(true, for: stateChar)
+    try await secure(p, stateChar)
+  }
+
+  /// The subscribe is the first access the box guards (BLE.md, Security),
+  /// so it is what encrypts the link (a bonded watch) or pairs it (the
+  /// prompt, while the Kindle's pairing window is open): CoreBluetooth does
+  /// both by itself on the box's 0x05 and retries the request, so the app
+  /// hears an error only when that did not work. Insufficient
+  /// authentication or encryption is then retried on the same link, a
+  /// few times (PairingPolicy); 0x08 or a refused bond ends it with a
+  /// PairingProblem for the loop to show.
+  private func secure(_ p: CBPeripheral, _ stateChar: CBCharacteristic) async throws {
+    let paired = memory.box?.matches(identifier: p.identifier, address: seenAddresses[p.identifier]) ?? false
+    securingPaired = paired
+    let began = Date()
+    var attempt = 1
+    while true {
+      do {
+        // Long enough for the pairing prompt to be answered.
+        let _: Any = try await waitFor("notify", timeout: PairingPolicy.accessTimeout) {
+          p.setNotifyValue(true, for: stateChar)
+        }
+        let _: Any = try await waitFor("read", timeout: Self.gattTimeout) {
+          p.readValue(for: stateChar)
+        }
+        break
+      } catch let failure as BleFailure {
+        switch PairingPolicy.afterAccessFailure(failure, attempt: attempt, paired: paired) {
+        case .retry(let delay):
+          bleLog.info(
+            "securing failed (attempt \(attempt)): \(String(describing: failure), privacy: .public); again in \(delay) s")
+          try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+          guard p.state == .connected, isCurrent(p) else { throw BleFailure.disconnected(underlying: nil) }
+          attempt += 1
+        case .problem(let found):
+          throw BleFailure.pairing(found)
+        case .fail:
+          throw failure
+        }
+      }
     }
-    let _: Any = try await waitFor("read", timeout: Self.gattTimeout) {
-      p.readValue(for: stateChar)
+    securingPaired = nil
+    if PairingPolicy.repaired(paired: paired, attempts: attempt, took: Date().timeIntervalSince(began)) {
+      show(notice: PairingPolicy.repairedNotice)
     }
   }
 
@@ -417,10 +499,14 @@ final class RaceComputer: NSObject, ObservableObject {
         return
       case .unauthorized:
         problem = BleFailure.unauthorized.message
+        pairingProblem = nil
       case .unsupported:
         problem = BleFailure.unsupported.message
+        pairingProblem = nil
       case .poweredOff:
+        // the first thing to fix, whatever the box said before
         problem = BleFailure.poweredOff.message
+        pairingProblem = nil
       default:
         // Unknown or resetting: settling, the next change says how.
         break
@@ -573,8 +659,11 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     stateCharacteristic = nil
     eventCharacteristic = nil
     if link == .connected { link = .reconnecting }
-    // Nor does it end the scan that replaced a stalled connect.
-    failAll(BleFailure.disconnected(underlying: error), keeping: ["find", "power"])
+    // Nor does it end the scan that replaced a stalled connect, or the
+    // pause while a pairing problem shows (a late disconnect from the
+    // link given up on must not make that a tight loop). The error may
+    // say the box refused the watch's bond (CBError 14).
+    failAll(BleFailure.dropped(error), keeping: ["find", "power", "nudge"])
   }
 }
 

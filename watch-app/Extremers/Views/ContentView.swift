@@ -12,7 +12,7 @@ struct ContentView: View {
       Color.black.ignoresSafeArea()
       screen
       if computer.link == .reconnecting {
-        ReconnectingBanner(text: computer.problem ?? "Reconnecting\u{2026}")
+        ReconnectingBanner(text: computer.pairingProblem?.banner ?? computer.problem ?? "Reconnecting\u{2026}")
       }
     }
     .overlay(alignment: .bottom) {
@@ -40,6 +40,10 @@ struct ContentView: View {
       ConnectingView()
     } else if let mismatch = computer.mismatch {
       FirmwareMismatchView(mismatch: mismatch)
+    } else if computer.state == nil, let pairingProblem = computer.pairingProblem {
+      // With a last state the dimmed screen stays (its countdown still
+      // runs) and the banner says it in one line.
+      PairingProblemView(problem: pairingProblem)
     } else if computer.state == nil {
       ConnectingView()
     } else {
@@ -154,6 +158,34 @@ struct FirmwareMismatchView: View {
         Button("Exit") { computer.send(.select(.selector)) }
           .buttonStyle(PadButtonStyle())
           .liveOnly()
+        Button("Quit") { computer.stop() }
+          .buttonStyle(PadButtonStyle(fill: .clear, foreground: Palette.caption, height: 30, fontSize: 14))
+      }
+      .padding(.horizontal, 4)
+    }
+  }
+}
+
+/// The box will not serve this watch (not paired, the bond lost): what to
+/// do about it. The loop keeps trying every few seconds and this clears by
+/// itself once the box accepts the watch.
+struct PairingProblemView: View {
+  @EnvironmentObject private var computer: RaceComputer
+  let problem: PairingProblem
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 8) {
+        Text(problem.title)
+          .font(.headline)
+          .foregroundStyle(Color.orange)
+        Text(problem.detail)
+          .font(.footnote)
+          .foregroundStyle(Palette.caption)
+          .multilineTextAlignment(.center)
+        Button("Try again") { computer.retryNow() }
+          .buttonStyle(PadButtonStyle.primary)
+        BoxIdentity()
         Button("Quit") { computer.stop() }
           .buttonStyle(PadButtonStyle(fill: .clear, foreground: Palette.caption, height: 30, fontSize: 14))
       }
