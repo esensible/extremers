@@ -62,8 +62,10 @@ stored, or they are invalid (SSID 1..=32 bytes, password 8..=63), it uses
 (`Wifi: stored credentials, ssid …` or `Wifi: no valid stored credentials,
 compiled-in default ssid …`); the password itself is never logged.
 
-The app never writes settings. To store credentials, flash the `provision`
-tool, then the app again:
+The app writes only BLE bonds there: one when a watch pairs during the
+pairing window, and it deletes them all on "Forget all watches" (Kindle:
+Settings; see `../BLE.md` "Security"). To store credentials, flash the
+`provision` tool, then the app again:
 
     EXTREMERS_SSID=nacra EXTREMERS_PSK='a passphrase' cargo run --release --bin provision
     cargo run --release
@@ -75,10 +77,18 @@ variables at build time: they are never in the source. Give them to the
 same `cargo run` that flashes (cargo rebuilds when they change, so a bare
 `cargo run --bin provision` would rebuild without them). Both or neither:
 out-of-range values fail the build, and with neither set `provision` only
-erases (a reset to the compiled-in defaults).
+erases (a reset to the compiled-in defaults). Erasing deletes the BLE bonds
+too: every watch must then forget `nacra` and pair again.
 
 To see what is stored without changing it:
 
     cargo run --release --bin dump
 
-It logs the stored SSID and the password's length. Flash the app afterwards.
+It logs the stored SSID and the password's length, and the BLE bonds: how
+many, and each one's address (never a key). Flash the app afterwards.
+
+The firmware builds against a patched trouble-host clone at
+`/Users/sensible-1/src/trouble` (root `Cargo.toml`, `[patch.crates-io]`); a
+dev container needs it at that path, or the patch overridden on the command
+line (`cargo --config 'patch.crates-io.trouble-host.path="…/host"' --config
+'patch.crates-io.trouble-host-macros.path="…/host-macros"' …`).
