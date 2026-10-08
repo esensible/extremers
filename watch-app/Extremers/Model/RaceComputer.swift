@@ -20,11 +20,12 @@ enum LinkState: Equatable {
 /// app. Everything runs on the main queue.
 ///
 /// The device is the only source of truth: this object never changes
-/// `state` itself, it sends events and publishes what the device notifies.
-/// One task (`run`) owns the link: find the device, connect, discover,
-/// subscribe, read once, wait for the drop, and round again, for as long as
-/// the app runs. Times in the state are anchored to `anchor`, the arrival of
-/// the latest value, so the countdown keeps running while the link is down.
+/// `envelope` itself, it sends events and publishes what the device
+/// notifies. One task (`run`) owns the link: find the device, connect,
+/// discover, subscribe, read once, wait for the drop, and round again, for
+/// as long as the app runs. Each state value goes to `onState` (the shell,
+/// which hands it to the active package's bundle); the bundle keeps its own
+/// clock offset, so its countdown keeps running while the link is down.
 @MainActor
 final class RaceComputer: NSObject, ObservableObject {
   static let service = CBUUID(string: RaceProtocol.serviceUUID)
@@ -42,16 +43,21 @@ final class RaceComputer: NSObject, ObservableObject {
   /// A link up this long was a good one: the next drop is retried at once.
   private static let stableLink: TimeInterval = 10
 
-  @Published private(set) var link: LinkState = .connecting
+  @Published private(set) var link: LinkState = .connecting {
+    didSet { if link != oldValue { log("link \(oldValue) -> \(link)") } }
+  }
+  private let log = ShellLog.shared
   /// Why the link cannot come up (Bluetooth off, not allowed), if that is why.
   @Published private(set) var problem: String?
-  /// The latest state from the device; nil until the first one.
-  @Published private(set) var state: DeviceState?
-  /// When `state` arrived: its relative times count from here.
-  @Published private(set) var anchor: Date?
-  /// Set while the latest value could not be decoded: the device speaks
-  /// another version of BLE.md. `state` is then out of date and is not shown.
+  /// The latest state's envelope from the device; nil until the first one.
+  @Published private(set) var envelope: Envelope?
+  /// Set while the latest value is not an envelope: the device speaks
+  /// another protocol. The last screen is then out of date and not shown.
   @Published private(set) var mismatch: StateMismatch?
+  /// Every state value that is an envelope: its bytes and its header.
+  var onState: (([UInt8], Envelope) -> Void)?
+  /// The box was forgotten: what was shown was that box's.
+  var onForget: (() -> Void)?
   /// A short line shown for a few seconds (the workout was ended and restarted).
   @Published private(set) var notice: String?
   /// The box this watch is paired with (`memory.box`, published).
@@ -63,7 +69,6 @@ final class RaceComputer: NSObject, ObservableObject {
   @Published private(set) var pairingProblem: PairingProblem?
 
   private let workout = WorkoutKeeper()
-  private let haptics = Haptics()
 
   private var manager: CBCentralManager?
   /// The paired box: tried directly before scanning, and the only one a
@@ -118,10 +123,9 @@ final class RaceComputer: NSObject, ObservableObject {
     pairing.secured()
     show(notice: "Box forgotten. To remove the pairing too: Settings \u{2192} Bluetooth \u{2192} \(RaceProtocol.deviceName).")
     // The last screen was that box's: not this watch's any more.
-    state = nil
-    anchor = nil
+    envelope = nil
     mismatch = nil
-    haptics.follow(start: nil)
+    onForget?()
     guard link != .stopped else { return }
     if let p = peripheral, p.state == .connected || p.state == .connecting {
       manager?.cancelPeripheralConnection(p)
@@ -142,10 +146,12 @@ final class RaceComputer: NSObject, ObservableObject {
   /// The app came to the front (or left it): an ended workout restarts
   /// when the sailor is back.
   func appActive(_ active: Bool) {
+    log("app \(active ? "active" : "not active")")
     workout.appActive(active)
   }
 
   private func show(notice text: String) {
+    log("notice: \(text)")
     notice = text
     noticeTimer?.cancel()
     noticeTimer = Task { [weak self] in
@@ -157,18 +163,6 @@ final class RaceComputer: NSObject, ObservableObject {
 
   var isLive: Bool { link == .connected }
 
-  /// The gun on this watch's clock, while a sequence or race is on.
-  var startDate: Date? {
-    guard let anchor, case .race(let race)? = state else { return nil }
-    return race.startDate(anchor: anchor)
-  }
-
-  /// When the boat reaches the line, if both ends are set.
-  var lineDate: Date? {
-    guard let anchor, case .race(let race)? = state else { return nil }
-    return race.lineDate(anchor: anchor)
-  }
-
   // MARK: - Lifecycle
 
   /// Starts (or restarts after `stop()`) looking for the device. Idempotent.
@@ -179,7 +173,7 @@ final class RaceComputer: NSObject, ObservableObject {
   func start() {
     guard loop == nil else { return }
     let gen = generation.advance()
-    link = state == nil ? .connecting : .reconnecting
+    link = envelope == nil ? .connecting : .reconnecting
     // Now, not on the first connection: without a running workout watchOS
     // suspends the app (and its scan) as soon as the wrist drops.
     workout.start()
@@ -191,7 +185,7 @@ final class RaceComputer: NSObject, ObservableObject {
     }
   }
 
-  /// Drops the link, ends the workout and stops the haptics.
+  /// Drops the link and ends the workout.
   func stop() {
     generation.advance()
     if let loop {
@@ -208,12 +202,12 @@ final class RaceComputer: NSObject, ObservableObject {
     eventCharacteristic = nil
     mismatch = nil
     workout.stop()
-    haptics.follow(start: nil)
   }
 
   // MARK: - Events
 
-  /// Writes an event; dropped when the link is down (the buttons are
+  /// Writes an event (a postcard `HostEvent`, from a bundle's send(bytes)
+  /// or the shell); dropped when the link is down (the bundle's buttons are
   /// disabled then).
   ///
   /// Always with response. The box needs a bonded, encrypted link for
@@ -223,13 +217,22 @@ final class RaceComputer: NSObject, ObservableObject {
   /// encrypts or pairs. A write request is answered, so a refusal comes
   /// back to `didWriteValueFor` and is shown (`0x13`: the engine did not
   /// take it; `0x08`: not bonded).
-  func send(_ event: DeviceEvent) {
+  func send(_ bytes: [UInt8]) {
     guard link == .connected, let p = peripheral, let c = eventCharacteristic else {
-      bleLog.info("event dropped, link down: \(event.bytes.description, privacy: .public)")
+      bleLog.info("event dropped, link down: \(bytes.description, privacy: .public)")
+      log("event DROPPED (link \(link), peripheral \(peripheral == nil ? "none" : "set"), "
+          + "event characteristic \(eventCharacteristic == nil ? "none" : "set")): \(ShellLog.hex(bytes))")
       return
     }
-    p.writeValue(event.data, for: c, type: .withResponse)
+    writesPending += 1
+    log("write \(ShellLog.hex(bytes)) (\(bytes.count) B, with response; peripheral \(p.state.rawValue), "
+        + "max \(p.maximumWriteValueLength(for: .withResponse)) B; \(writesPending) awaiting a response)")
+    p.writeValue(Data(bytes), for: c, type: .withResponse)
   }
+
+  /// Writes sent and not yet answered (logged: a write the box never
+  /// answers shows as this growing).
+  private var writesPending = 0
 
   // MARK: - The link
 
@@ -260,6 +263,9 @@ final class RaceComputer: NSObject, ObservableObject {
         remember(p)
         pairing.secured()
         pairingProblem = nil
+        log("connected to \(p.identifier.uuidString): notification payload max \(p.maximumWriteValueLength(for: .withoutResponse)) B "
+            + "(ATT MTU - 3), write max \(p.maximumWriteValueLength(for: .withResponse)) B")
+        writesPending = 0
         link = .connected
         problem = nil
         connectedAt = Date()
@@ -269,6 +275,7 @@ final class RaceComputer: NSObject, ObservableObject {
         if Task.isCancelled || !generation.isCurrent(gen) || error is CancellationError { return }
         let failure = (error as? BleFailure) ?? .other(error)
         bleLog.info("link down: \(String(describing: failure), privacy: .public)")
+        log("link down: \(String(describing: failure))")
         let securing = securingPaired
         securingPaired = nil
         closeLink()
@@ -289,6 +296,7 @@ final class RaceComputer: NSObject, ObservableObject {
       }
     }
   }
+
 
   /// Waits `seconds`, or until `retryNow()`. Returns early, never throws,
   /// when the loop is cancelled: the loop's own check ends it.
@@ -440,43 +448,34 @@ final class RaceComputer: NSObject, ObservableObject {
     if let p = peripheral, p.state == .connected || p.state == .connecting {
       manager?.cancelPeripheralConnection(p)
     }
-    link = state == nil ? .connecting : .reconnecting
+    link = envelope == nil ? .connecting : .reconnecting
   }
+
+  #if DEBUG
+  /// A state value as if the box had notified it (the simulator demo).
+  func inject(_ value: Data) {
+    receive(value)
+  }
+  #endif
 
   private func receive(_ value: Data) {
     // After Quit the link is being cancelled, but a notification already
-    // on its way still lands here: it must not restart the haptics.
-    guard link != .stopped else { return }
-    let decoded: DeviceState
-    switch DeviceState.decode([UInt8](value)) {
-    case .success(let state):
-      decoded = state
-      mismatch = nil
-    case .failure(let failure):
-      bleLog.error("undecodable state: \([UInt8](value).description, privacy: .public)")
-      // The countdown in the last good state may no longer be the
-      // device's: no cues from it.
-      mismatch = failure
-      haptics.follow(start: nil)
+    // on its way still lands here: it must not reach the screen.
+    guard link != .stopped else {
+      log("state ignored: stopped")
       return
     }
-    var wasInSequence = false
-    if case .race(let previous)? = state, previous.phase == .inSequence {
-      wasInSequence = true
+    let bytes = [UInt8](value)
+    switch Envelope.decode(bytes) {
+    case .success(let decoded):
+      mismatch = nil
+      envelope = decoded
+      onState?(bytes, decoded)
+    case .failure(let failure):
+      bleLog.error("undecodable state: \(bytes.description, privacy: .public)")
+      log("UNDECODABLE state (\(failure.detail)): \(bytes.count) B \(ShellLog.hex(bytes))")
+      mismatch = failure
     }
-    anchor = Date()
-    state = decoded
-    var sequenceStart: Date?
-    var raceStarted = false
-    if case .race(let race) = decoded {
-      if race.phase == .inSequence { sequenceStart = startDate }
-      // Only a gun that just went: not one passed while the link was down.
-      if race.phase == .racing, wasInSequence, let start = startDate {
-        raceStarted = Date().timeIntervalSince(start) < 5
-      }
-    }
-    haptics.follow(start: sequenceStart)
-    if raceStarted { haptics.raceStarted() }
   }
 
   // MARK: - Manager and power
@@ -588,6 +587,7 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
   /// the loop's wait on the link included, and forget the objects; the
   /// remembered identifier finds the device again once Bluetooth is back.
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
+    log("bluetooth state \(central.state.rawValue) (5 = on)")
     complete("power", .success(true))
     guard central.state != .poweredOn else { return }
     let failure: BleFailure
@@ -650,6 +650,7 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     // Error nil: this app cancelled the link (Quit, or giving up on a
     // step); otherwise the device or the radio dropped it.
     bleLog.info("disconnected: \(String(describing: BleFailure.from(error)), privacy: .public)")
+    log("disconnected \(peripheral.identifier.uuidString) (current: \(isCurrent(peripheral))): \(String(describing: BleFailure.from(error)))")
     guard isCurrent(peripheral) else { return }
     // A late disconnect from cancelling a stalled connect, arriving after
     // the loop already asked for a new connection to the same device: the
@@ -698,8 +699,12 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
 
   /// Both the read and every notification land here; each is the latest state.
   func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-    guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else { return }
+    guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else {
+      log("value ignored: \(characteristic.uuid) from \(peripheral.identifier.uuidString) (current: \(isCurrent(peripheral)))")
+      return
+    }
     if let failure = BleFailure.from(error) {
+      log("state read/notify error: \(String(describing: failure))")
       complete("read", .failure(failure))
       return
     }
@@ -712,6 +717,10 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
     // the device, and the screen keeps showing what the device says; the
     // notice says why the tap did nothing. Not after Quit: the answer to
     // a write sent just before belongs to a session that is over.
+    if isCurrent(peripheral), characteristic.uuid == Self.eventUUID {
+      writesPending = max(0, writesPending - 1)
+      log("write answered: \(error.map { String(describing: BleFailure.from($0)) } ?? "ok")")
+    }
     guard isCurrent(peripheral), characteristic.uuid == Self.eventUUID, let error, link != .stopped else { return }
     bleLog.error("event refused: \(String(describing: BleFailure.from(error)), privacy: .public)")
     show(notice: BleFailure.refusedEventNotice(error))
@@ -723,6 +732,7 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
     error: Error?
   ) {
     guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else { return }
+    log("state notifications \(characteristic.isNotifying ? "on" : "off")\(error.map { ": \(String(describing: BleFailure.from($0)))" } ?? "")")
     if let failure = BleFailure.from(error) {
       complete("notify", .failure(failure))
     } else {

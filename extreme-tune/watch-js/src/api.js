@@ -1,17 +1,16 @@
-// The link to the host, as the Kindle pages' api.js: the state arrives from
-// the watch app (the BLE `state` value: a host Envelope, protocol-js/) and
-// events leave with send(bytes) (the app writes them to the BLE `event`
-// characteristic as they are: a HostEvent). While tune is active the
-// envelope's `state` is a TuneView (../protocol-js/, this package's own
-// bindings).
+// The link to the device, as the Kindle pages' api.js: the state arrives
+// from the watch shell (the BLE `state` value: a host Envelope whose
+// `state` is this package's TuneView) and events leave with send(bytes)
+// (the shell writes them to the BLE `event` characteristic as HostEvents).
+// Encoding and decoding: the generated host bindings (protocol-js/) and
+// this package's own (../protocol-js/).
 import { createStore, reconcile } from "solid-js/store";
 import { send } from "solid-watch";
 import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
+import { packageId } from "../../../client-common/host.js";
 import { decodeTuneView } from "../../protocol-js/protocol.js";
-import { packageId, backEvent } from "../../../client-common/host.js";
 
-// This package's id.
-const TUNE = packageId("tune");
+const PACKAGE = packageId("tune");
 
 // Device clock minus ours, from the timestamp every state carries (as the
 // Kindle's api.js). The initial value is large so nothing looks synced
@@ -27,7 +26,7 @@ export function timestamp() {
   return new Date().getTime() + timestampOffset;
 }
 
-// A state from the host (bytes).
+// A state from the shell (bytes).
 export function onState(bytes) {
   var message;
   var view;
@@ -37,9 +36,8 @@ export function onState(bytes) {
     return;
   }
   timestampOffset = message.timestamp - new Date().getTime();
-  // another package is active: this screen has nothing to show for it (the
-  // app shows that package's bundle)
-  if (message.active !== TUNE) return;
+  // another package is active: the shell loads its bundle
+  if (message.active !== PACKAGE) return;
   try {
     view = decodeTuneView(message.state);
   } catch (e) {
@@ -48,7 +46,8 @@ export function onState(bytes) {
   setTune(reconcile(view));
 }
 
-// Back to the chooser (or the host's default).
-export function exit() {
-  send(encodeHostEvent(backEvent()));
+// Back to the default app (Choose if installed): the Kindle's
+// selectEngine("Selector").
+export function selectDefault() {
+  send(encodeHostEvent({ tag: "SelectDefault", value: null }));
 }

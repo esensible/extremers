@@ -3,12 +3,14 @@
 // writes bundle.js.sha256, log.jsonl (qjs, checked against node) and
 // frames.jsonl.
 //   npm run build && QJS=/path/to/qjs npm run fixtures
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tagOf, CONFIRM as CONFIRM_BUTTON } from "../../../watch-js/test/fixture-tags.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { encodeEnvelope } from "../../../protocol-js/protocol.js";
-import { encodeTuneView } from "../../protocol-js/protocol.js";
 import { packageId } from "../../../client-common/host.js";
+import { encodeTuneView } from "../../protocol-js/protocol.js";
+import { encodeRaceView } from "../../../extreme-race/protocol-js/protocol.js";
 
 const HERE = fileURLToPath(new URL("..", import.meta.url));
 const SOLID_WATCH = fileURLToPath(new URL("../../../solid-watch/", import.meta.url));
@@ -17,14 +19,13 @@ const FRAGMENT = fileURLToPath(new URL("../../../watch-js/extremers.schema.json"
 // Device clock of state i: a second apart, in 2026.
 const T0 = 1_790_000_000_000;
 
-// A BLE state value (a host Envelope, BLE.md "State"), from the generated
-// encoders (tested against the Rust encoder in protocol-js/ and
+// A BLE state value (a host Envelope carrying a TuneView), from the
+// generated encoders (tested against the Rust encoder in protocol-js/ and
 // ../protocol-js/).
-const HASH = [1, 2, 3, 4, 5, 6, 7, 8];
+const HASH = [0, 1, 2, 3, 4, 5, 6, 7];
 const hex = (envelope) => Buffer.from(encodeEnvelope(envelope)).toString("hex");
 function tune(i, speed, speed_dev, heading_dev) {
-  const state = encodeTuneView({ speed, speed_dev, heading_dev });
-  return { stateHex: hex({ timestamp: T0 + 1000 * i, active: packageId("tune"), ui_hash: HASH, state }) };
+  return { stateHex: hex({ timestamp: T0 + 1000 * i, active: packageId("tune"), ui_hash: HASH, state: encodeTuneView({ speed, speed_dev, heading_dev }) }) };
 }
 
 // Mostly a boat sailing around 5-8 kn, plus the edges: zero, sign changes,
@@ -47,21 +48,23 @@ for (let i = 0; steps.length < 100; i++) {
   const hdg = Math.round(Math.cos(i / 5) * 250) / 10;
   steps.push(tune(steps.length, speed, dev, hdg));
 }
-// another package's state (race, Active, no line): the clock syncs,
-// nothing else changes
+// another package's envelope: the clock syncs, nothing else changes
 steps[50] = {
   stateHex: hex({
     timestamp: T0 + 50_000,
     active: packageId("race"),
     ui_hash: HASH,
-    state: [0xcd, 0xcc, 0xcc, 0x40, 0, 0],
+    state: encodeRaceView({ speed: 6.4, phase: { tag: "Active", value: { line: { tag: "None", value: null } } } }),
   }),
 };
 // bytes that are not an Envelope: nothing at all
 steps[51] = { stateHex: "02ffff" };
 // Exit behind the confirm widget (2 taps): once left to time out after 5 s,
 // then confirmed, which sends SelectDefault.
-const EXIT = 11, CONFIRM = 28; // button tags (from the mount in log.jsonl)
+const bundle = readFileSync(HERE + "dist/watch.js", "utf8");
+const ctx = { width: 198, height: 242 };
+const EXIT = tagOf(bundle, { ctx, steps }, (p) => p.left === 0 && p.top === 0);
+const CONFIRM = tagOf(bundle, { ctx, steps: steps.concat([{ dispatch: { tag: EXIT, name: "press" } }]) }, CONFIRM_BUTTON);
 steps.push(
   { dispatch: { tag: EXIT, name: "press" } },
   { wait: 6000 },
@@ -73,6 +76,6 @@ steps.push(
 const dir = HERE + "fixtures";
 mkdirSync(dir, { recursive: true });
 copyFileSync(HERE + "dist/watch.js", dir + "/bundle.js");
-writeFileSync(dir + "/script.json", JSON.stringify({ ctx: { width: 198, height: 242 }, steps }, null, 1) + "\n");
+writeFileSync(dir + "/script.json", JSON.stringify({ ctx, steps }, null, 1) + "\n");
 const r = spawnSync(process.execPath, [SOLID_WATCH + "test/make-fixtures.mjs", "--qjs", process.env.QJS || "qjs", "--fragment", FRAGMENT, dir], { stdio: "inherit" });
 process.exit(r.status ?? 1);

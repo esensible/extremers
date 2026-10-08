@@ -56,6 +56,17 @@ jobs:
       # the confirm widget the Kindle pages and the watch bundles share
       - run: npm test
         working-directory: client-common
+      # each package's watch bundle: rebuild, regenerate its fixtures under
+      # qjs, no diff, tests
+      - name: watch bundles
+        env:
+          QJS: ${{ runner.temp }}/qjs
+        run: |
+          for d in extreme-race/watch-js extreme-tune/watch-js choose/watch-js; do
+            (cd $d && npm ci && npm run build && npm run fixtures)
+            git diff --exit-code -- $d/fixtures
+            (cd $d && npm test)
+          done
 
   swift:
     name: Host protocol in Swift (protocol-swift)
@@ -64,18 +75,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift test
         working-directory: protocol-swift
-      # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
-      - run: npm ci
-        working-directory: extreme-tune/watch-js
-      - run: npm run build
-        working-directory: extreme-tune/watch-js
-      - run: npm run fixtures
-        working-directory: extreme-tune/watch-js
-        env:
-          QJS: ${{ runner.temp }}/qjs
-      - run: git diff --exit-code -- extreme-tune/watch-js/fixtures
-      - run: npm test
-        working-directory: extreme-tune/watch-js
 
   firmware:
     name: ${{ matrix.name }}

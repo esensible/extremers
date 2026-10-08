@@ -9,10 +9,11 @@ and both transports are fed from the same host broadcast
 
 Firmware: `common/src/ble.rs` (transport), `extreme-protocol` (the
 messages: README "Host protocol"), each package's view and events.
-Clients: the watch app decodes the envelope with the generated Swift
-(`protocol-swift/`) and hands the active package's view to that package's
-watch bundle, which decodes it with the package's generated JS
-(`<package>/protocol-js/`).
+Clients: the watch app reads each envelope's header with the generated
+Swift (`protocol-swift/`) to pick the active package's watch bundle and
+hands it the envelope; the bundle decodes it with the generated JS
+(`protocol-js/`, then the package's own `<package>/protocol-js/` for its
+view).
 
 Everything is [postcard](https://postcard.jamesmunns.com/wire-format): the
 same `Envelope` and `HostEvent` as the websocket. A `state` value is up to

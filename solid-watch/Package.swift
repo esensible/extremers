@@ -12,13 +12,12 @@ let package = Package(
     targets: [
         // quickjs-ng core only: no qjs/qjsc CLI and no quickjs-libc (fork,
         // system, signals, worker threads are not available on watchOS).
-        .target(
+        // Prebuilt and always optimised, whatever the app's configuration:
+        // at -O0 the interpreter's frames overflow the engine's stack limit.
+        // scripts/build-quickjs-xcframework.sh builds it from quickjs-ng/.
+        .binaryTarget(
             name: "CQuickJS",
-            exclude: ["LICENSE"],
-            cSettings: [
-                .define("_GNU_SOURCE"),
-                .define("NDEBUG", .when(configuration: .release)),
-            ]
+            path: "Frameworks/CQuickJS.xcframework"
         ),
         // facebook/yoga C++ sources; the C API headers are public under
         // include/yoga, the internal C++ headers stay private under yoga/.

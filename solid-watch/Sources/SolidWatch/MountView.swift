@@ -19,7 +19,13 @@ public struct MountView: View {
                 if let e = session.error {
                     SolidErrorView(error: e)
                 } else if let root = store.root {
+                    // Tags are unique only within one mounted tree: a new
+                    // bundle (or a remount) numbers its nodes from the same
+                    // tags again. Keyed by the root's model, each mount gets
+                    // fresh views rather than the last tree's views fed new
+                    // models.
                     NodeView(model: root, ctx: MountContext(session: session))
+                        .id(ObjectIdentifier(root))
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)

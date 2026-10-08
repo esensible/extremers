@@ -17,16 +17,18 @@ Choose picks between them.
 |---|---|
 | `extreme-protocol` | The host protocol: `Envelope`, `HostEvent`, `ChooseView`, `Manifest`, package ids (see "Host protocol"). |
 | `extreme-sdk` | Writing an engine package: the `Engine` trait, `Location`/`Fix`/`Velocity`, and `export_engine!`, which makes an engine a WebAssembly module speaking ABI v1 (`extreme_sdk::abi`). |
-| `extreme-race` | The `race` package: start sequence, line setting, time and distance to the line. Engine (Rust), Kindle page (`client-js/`), generated bindings (`protocol-js/`). |
+| `extreme-race` | The `race` package: start sequence, line setting, time and distance to the line. Engine (Rust), Kindle page (`client-js/`), watch bundle (`watch-js/`), generated bindings (`protocol-js/`). |
 | `extreme-tune` | The `tune` package: speed and heading deviation over a rolling window. Engine, Kindle page, watch bundle (`watch-js/`), bindings. |
-| `choose/` | The built-in Choose package's Kindle page (no engine: the host makes its view). |
+| `choose/` | The built-in Choose package's Kindle page and watch bundle (no engine: the host makes its view). |
 | `extreme-packages` | What the firmware ships with: Race and Tune preinstalled, and Choose; `build.rs` builds them with `tools/package` and embeds them. |
 | `extreme-wasm3` | The vendored [wasm3](https://github.com/wasm3/wasm3) interpreter (v0.9.0, C, built with clang) and a thin Rust API. |
 | `common` | Platform-independent runtime: the package host (`host.rs`: registry, selection, clock, engine timer, broadcast), engines under wasm3 (`engine.rs`), HTTP/websocket and BLE transports, GPS (NMEA) parsing, configuration. |
 | `tgt-xiaoc6` | Firmware for the Seeed XIAO ESP32-C6 (the board in use). |
 | `tgt-pico` | Firmware for the Raspberry Pi Pico W (secondary; builds, not run since the packages). |
 | `tgt-std` | Host build for development: the same host and packages, wasm3 built for the machine, the UIs on `http://localhost:8080`. |
-| `watch-app` | Standalone Apple Watch app over BLE (see `BLE.md`). |
+| `watch-app` | Standalone Apple Watch app over BLE (see `BLE.md`): a shell that runs the active package's watch bundle. |
+| `solid-watch` | The watch bundles' host: SolidJS UIs run by QuickJS-ng, laid out by Yoga, drawn by SwiftUI (its own README). |
+| `watch-js` | Extremers' solid-watch schema fragment (palette) and the bundles' shared test helpers. |
 | `tools/bindgen` | Generates the bindings from the Rust types: `protocol-js/` and `protocol-swift/` (host protocol), each package's `protocol-js/` (its view and events), and golden vectors. |
 | `tools/package` | Builds packages (`cargo run -p extreme-pack` writes them to `target/packages/`). |
 | `client-common` | JS shared by the pages and bundles: the confirm widget, the host protocol's reload rule and events (`host.js`). |

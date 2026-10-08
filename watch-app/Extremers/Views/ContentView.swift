@@ -1,11 +1,13 @@
+import SolidWatch
 import SwiftUI
 
-/// Picks the screen from the device's state; the device decides, the watch
-/// only renders. Holds the one confirm sheet, so every screen asks through
-/// `ask` and the sheet outlives a state change underneath it.
+/// The shell: the link's own screens (connecting, pairing problems, a box
+/// speaking another protocol) and, once the box sends states, the active
+/// package's UI, its bundle drawn by solid-watch. The box decides which
+/// package is active; the watch only renders.
 struct ContentView: View {
   @EnvironmentObject private var computer: RaceComputer
-  @State private var confirm: ConfirmRequest?
+  @EnvironmentObject private var shell: Shell
 
   var body: some View {
     ZStack(alignment: .top) {
@@ -20,67 +22,73 @@ struct ContentView: View {
         NoticeBanner(text: notice)
       }
     }
-    .sheet(item: $confirm) { request in
-      ConfirmSheet(
-        request: request,
-        enabled: computer.isLive,
-        onConfirm: {
-          computer.send(request.event(confirmedAt: Date()))
-          confirm = nil
-        },
-        onCancel: { confirm = nil }
-      )
-    }
   }
 
-  /// The buttons inside each screen dim through `liveOnly()`, not the whole
-  /// screen, so a dropped link still lets the screen scroll.
   @ViewBuilder private var screen: some View {
     if computer.link == .stopped {
       ConnectingView()
     } else if let mismatch = computer.mismatch {
       FirmwareMismatchView(mismatch: mismatch)
-    } else if computer.state == nil, let pairingProblem = computer.pairingProblem {
+    } else if computer.envelope == nil, let pairingProblem = computer.pairingProblem {
       // With a last state the dimmed screen stays (its countdown still
       // runs) and the banner says it in one line.
       PairingProblemView(problem: pairingProblem)
-    } else if computer.state == nil {
+    } else if computer.envelope == nil {
       ConnectingView()
     } else {
-      deviceScreen
+      appScreen
     }
   }
 
-  @ViewBuilder private var deviceScreen: some View {
-    let anchor = computer.anchor ?? Date()
-    switch computer.state {
-    case .selector?:
-      SelectorView()
-    case .race(let race)?:
-      switch race.phase {
-      case .active:
-        ActiveView(race: race, ask: ask)
-      case .inSequence:
-        SequenceView(race: race, anchor: anchor, ask: ask)
-      case .racing:
-        RacingView(race: race, anchor: anchor, ask: ask)
+  @ViewBuilder private var appScreen: some View {
+    switch shell.screen {
+    case .app(let id, _, _):
+      // The bundle has the whole screen, as a Kindle page has its own: its
+      // (0, 0) is the screen's top-left corner and its ctx the screen's
+      // size, no safe areas. Its buttons are disabled (and dimmed) while
+      // the link is down: events cannot be sent. The shell's menu shows
+      // only over Choose, at the left edge, clear of Choose's buttons
+      // (ShellMenuButton.frame).
+      ZStack(alignment: .topLeading) {
+        bundleView
+        if id == Packages.choose {
+          GeometryReader { g in
+            ShellMenuButton()
+              .frame(width: ShellMenuButton.size, height: ShellMenuButton.size)
+              .offset(x: ShellMenuButton.frame(in: g.size).minX, y: ShellMenuButton.frame(in: g.size).minY)
+          }
+        }
       }
-    case .tune(let tune)?:
-      TuneView(tune: tune)
-    case .other(let kind)?:
-      UnknownModeView(kind: kind)
-    case nil:
-      EmptyView()
+      .ignoresSafeArea()
+    case .missing(let id):
+      MissingAppView(id: id)
+    case .none:
+      ConnectingView()
     }
   }
 
-  private func ask(_ request: ConfirmRequest) {
-    confirm = request
+  @ViewBuilder private var bundleView: some View {
+      MountView(session: shell.session)
+        .disabled(!computer.isLive)
+        .opacity(computer.isLive ? 1 : 0.6)
+        // shell.log: every tap's location (the bundle's points), next to
+        // the press it dispatched, if any, so a tap that misses shows as a
+        // location with no press after it; and the size and origin of the
+        // area the bundles are laid out in (their ctx).
+        .background(GeometryReader { g in
+          Color.clear
+            .onAppear { ShellLog.shared("bundle area \(g.size) at \(g.frame(in: .global).origin) (appear)") }
+            .onChange(of: g.size) { _, s in ShellLog.shared("bundle area \(s) at \(g.frame(in: .global).origin) (changed)") }
+        })
+        .simultaneousGesture(SpatialTapGesture().onEnded { tap in
+          ShellLog.shared(String(format: "tap at (%.1f, %.1f)%@", tap.location.x, tap.location.y,
+                                 computer.isLive ? "" : " (link down: buttons disabled)"))
+        })
   }
 }
 
-/// Over any screen while the link is down: the countdown keeps running
-/// from the last anchor, the buttons are dimmed.
+/// Over any screen while the link is down: the bundle's countdown keeps
+/// running on its last clock offset, its buttons are dimmed.
 struct ReconnectingBanner: View {
   let text: String
 
@@ -98,6 +106,7 @@ struct ReconnectingBanner: View {
     .padding(.horizontal, 10)
     .padding(.vertical, 5)
     .background(Color.yellow, in: Capsule())
+    .allowsHitTesting(false)
   }
 }
 
@@ -120,27 +129,38 @@ struct NoticeBanner: View {
   }
 }
 
-/// A mode this app does not know (newer firmware): the way back out.
-struct UnknownModeView: View {
-  @EnvironmentObject private var computer: RaceComputer
-  let kind: UInt8
+/// The box made a package active that this watch has no UI for: the way
+/// back to the default app.
+struct MissingAppView: View {
+  @EnvironmentObject private var shell: Shell
+  let id: PackageId
 
   var body: some View {
-    VStack(spacing: 10) {
-      Text(verbatim: "Mode \(kind) is not on the watch yet.")
-        .multilineTextAlignment(.center)
-      Button("Exit") { computer.send(.select(.selector)) }
-        .buttonStyle(PadButtonStyle())
+    ScrollView {
+      VStack(spacing: 10) {
+        Text("This app isn\u{2019}t on the watch")
+          .font(.headline)
+          .multilineTextAlignment(.center)
+        Text(verbatim: "Package \(String(format: "%08x", id)). Update the watch app to use it here.")
+          .font(.footnote)
+          .foregroundStyle(Palette.caption)
+          .multilineTextAlignment(.center)
+        Button("Exit") { shell.selectDefault() }
+          .buttonStyle(PadButtonStyle.primary)
+          .liveOnly()
+      }
+      .padding(.horizontal, 4)
     }
   }
 }
 
-/// The device sent a state this app cannot read (a known mode with another
-/// layout): the watch and the race computer run different versions of
-/// BLE.md. Nothing from the last good state is shown, since it may be
-/// wrong. Clears by itself when a readable state arrives.
+/// The device sent a state this app cannot read (not an envelope): the
+/// watch and the race computer speak different protocols. Nothing from the
+/// last good state is shown, since it may be wrong. Clears by itself when
+/// a readable state arrives.
 struct FirmwareMismatchView: View {
   @EnvironmentObject private var computer: RaceComputer
+  @EnvironmentObject private var shell: Shell
   let mismatch: StateMismatch
 
   var body: some View {
@@ -153,9 +173,8 @@ struct FirmwareMismatchView: View {
           .font(.footnote)
           .foregroundStyle(Palette.caption)
           .multilineTextAlignment(.center)
-        // Choose mode is readable in every version: the way back to a
-        // screen that works.
-        Button("Exit") { computer.send(.select(.selector)) }
+        // The way back to the default app, in case only this one changed.
+        Button("Exit") { shell.selectDefault() }
           .buttonStyle(PadButtonStyle())
           .liveOnly()
         Button("Quit") { computer.stop() }

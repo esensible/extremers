@@ -578,9 +578,15 @@ static int fail(sw_engine *e, char *err, size_t errlen) {
     if (!msg) msg = JS_ToCString(ctx, exc);
     if (JS_HasException(ctx)) JS_FreeValue(ctx, JS_GetException(ctx));
     int code = SW_ERR_EXCEPTION;
+    // Out of memory comes in two shapes: the InternalError "out of memory",
+    // or, when the limit leaves no room to allocate even that error,
+    // `null` (QuickJS's JS_ThrowError2 throws JS_NULL rather than recurse).
+    // A script's own `throw null` is reported as out of memory too: QuickJS
+    // gives no way to tell them apart.
+    bool oom = !msg || JS_IsNull(exc) || (JS_IsError(exc) && strcmp(msg, "out of memory") == 0);
     if (e->interrupted) code = SW_ERR_TIMEOUT;
-    else if (!msg || (JS_IsError(exc) && strcmp(msg, "out of memory") == 0)) code = SW_ERR_OOM;
-    if (err && errlen) snprintf(err, errlen, "%s", msg ? msg : "out of memory");
+    else if (oom) code = SW_ERR_OOM;
+    if (err && errlen) snprintf(err, errlen, "%s", (!msg || JS_IsNull(exc)) ? "out of memory" : msg);
     snprintf(e->last_stack, sizeof(e->last_stack), "%s", st ? st : "");
     JS_FreeValue(ctx, message);
     // The exception (uncatchable or not) is consumed here, so nothing stays
