@@ -71,10 +71,10 @@ struct ContentView: View {
       MountView(session: shell.session)
         .disabled(!computer.isLive)
         .opacity(computer.isLive ? 1 : 0.6)
-        // TEST: every tap's location (the bundle's points) in shell.log,
-        // next to the press it dispatched, if any: taps that miss show
-        // as a location with no press after it.
-        // TEST: the size the bundles are laid out in (their ctx).
+        // shell.log: every tap's location (the bundle's points), next to
+        // the press it dispatched, if any, so a tap that misses shows as a
+        // location with no press after it; and the size and origin of the
+        // area the bundles are laid out in (their ctx).
         .background(GeometryReader { g in
           Color.clear
             .onAppear { ShellLog.shared("bundle area \(g.size) at \(g.frame(in: .global).origin) (appear)") }
