@@ -2,12 +2,21 @@
 // on a ShadowTree (yoga-layout) and draws it with absolutely positioned divs.
 //
 //   const host = new DomHost(Yoga, element, { schema, fragments, onEvent })
-//   globalThis.__host = host.api;  // then evaluate the bundle
-//   host.mount(__app, { width, height }); host.state(__app, value)
+//   realm.__host = host.api;  // then evaluate the bundle in `realm`
+//   host.mount(realm.__app, { width, height }); host.state(value)
+//
+// A bundle installs its own setTimeout & co. (README: Timers) on its global
+// object, so evaluate it in a realm of its own (the harness uses an iframe),
+// not in the page.
 //
 // Text is measured with the DOM in the bundled font (fonts/Inter-roman.ttf,
 // loaded as a web font): canvas measureText can't apply tabular figures.
 import { ShadowTree } from "./shadow.js";
+
+// The page's own timers, for the host's timers (a bundle evaluated in this
+// realm would replace the globals).
+const pageSetTimeout = globalThis.setTimeout.bind(globalThis);
+const pageClearTimeout = globalThis.clearTimeout.bind(globalThis);
 
 const FONT_FAMILY = "SolidWatchInter";
 const WEIGHT = { normal: 400, bold: 700 };
@@ -79,21 +88,21 @@ export class DomHost {
   /**
    * el: the element to draw into (the watch screen).
    * onEvent(kind, detail): "commit" {ops}, "haptic" {pattern}, "press" {tag,
-   * native, props, agoMs, handled}, "error" {error}.
-   * pressHandlers: { name(props, tappedAt) } native press handlers.
+   * handled}, "timer" {id, handled}, "send" {bytes}, "log" {message},
+   * "error" {error}.
+   * onSend(bytes): the bundle's send(bytes), an array of byte values (the
+   * app's native side; default: nothing beyond the "send" event).
    */
-  constructor(Yoga, el, { schema, fragments = [], onEvent = () => {}, pressHandlers = {} }) {
+  constructor(Yoga, el, { schema, fragments = [], onEvent = () => {}, onSend = () => {} }) {
     this.el = el;
     el.style.position = "relative";
-    this.screen = document.createElement("div"); // nodes; confirm sheets go beside it
+    this.screen = document.createElement("div");
     Object.assign(this.screen.style, { position: "absolute", inset: "0", overflow: "hidden" });
     el.appendChild(this.screen);
     this.onEvent = onEvent;
-    this.pressHandlers = pressHandlers;
-    // local clock: epoch ms, so before any syncClock the clock shows real UTC time
-    const clock = { now: () => performance.timeOrigin + performance.now() };
-    this.clock = clock;
-    this.tree = new ShadowTree(Yoga, { schema, fragments, measurer: domMeasurer(schema.font.lineHeightRatio), clock });
+    this.onSend = onSend;
+    this.timers = new Map(); // id -> page timeout handle
+    this.tree = new ShadowTree(Yoga, { schema, fragments, measurer: domMeasurer(schema.font.lineHeightRatio) });
     this.colors = this.tree.schema.colors;
     this.els = new Map();
     this.ops = 0;
@@ -106,7 +115,19 @@ export class DomHost {
       insert: (p, c, b) => (this.ops++, t.insert(p, c, b)),
       remove: (p, c) => (this.ops++, t.remove(p, c)),
       commit: () => this._commit(),
-      syncClock: (deviceNowMs) => (this.ops++, t.syncClock(deviceNowMs)),
+      setTimer: (id, ms) => {
+        pageClearTimeout(this.timers.get(id));
+        this.timers.set(id, pageSetTimeout(() => this._fire(id), ms));
+      },
+      clearTimer: (id) => {
+        pageClearTimeout(this.timers.get(id));
+        this.timers.delete(id);
+      },
+      log: (message) => this.onEvent("log", { message: String(message) }),
+      send: (bytes) => {
+        this.onEvent("send", { bytes });
+        this.onSend(bytes);
+      },
       release: (tag) => {
         t.release(tag);
         const el = this.els.get(tag);
@@ -115,17 +136,22 @@ export class DomHost {
         this.onEvent("release", { tag });
       },
     };
-    this.timer = setInterval(() => {
-      if (!this.tree.root) return;
-      const changed = this.tree.tick();
-      for (const h of this.tree.tickHaptics) this._haptic(h);
-      if (changed) this._commit(true);
-    }, 50);
   }
 
   dispose() {
-    clearInterval(this.timer);
+    for (const h of this.timers.values()) pageClearTimeout(h);
+    this.timers.clear();
+    this.disposed = true;
     this.el.textContent = "";
+  }
+
+  /** A bundle timer is due: __app.timer(id) (it commits itself). */
+  _fire(id) {
+    this.timers.delete(id);
+    if (this.disposed || !this.app) return;
+    let handled = false;
+    this._guard(() => (handled = this.app.timer(id)));
+    this.onEvent("timer", { id, handled });
   }
 
   mount(app, ctx) {
@@ -134,9 +160,8 @@ export class DomHost {
     this._guard(() => app.mount(1, ctx));
   }
 
-  /** Deliver a state; its local receipt time anchors the bundle's syncClock. */
+  /** Deliver a state. */
   state(value) {
-    this.tree.receivedState(this.clock.now());
     this._guard(() => this.app.onState(value));
   }
 
@@ -148,12 +173,12 @@ export class DomHost {
     }
   }
 
-  _commit(tick = false) {
+  _commit() {
     const ops = this.ops;
     this.ops = 0;
     this.tree.commit();
     this._paint();
-    if (!tick) this.onEvent("commit", { ops });
+    this.onEvent("commit", { ops });
     for (const h of this.tree.hapticsFired) this._haptic(h);
   }
 
@@ -271,37 +296,10 @@ export class DomHost {
     el.addEventListener("pointerleave", () => el.dataset.pressed && press(false));
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (n.props.disabled) return;
-      const tappedAt = performance.now();
-      const go = () => {
-        const P = n.props;
-        if (P.press) {
-          const h = this.pressHandlers[P.press];
-          if (h) h({ ...P }, tappedAt);
-          this.onEvent("press", { tag: n.tag, native: P.press, props: { ...P }, agoMs: Math.round(performance.now() - tappedAt) });
-        }
-        if (P.onPress) {
-          const agoMs = Math.round(performance.now() - tappedAt);
-          let handled = false;
-          this._guard(() => (handled = this.app.dispatch(n.tag, "press", { agoMs })));
-          this.onEvent("press", { tag: n.tag, js: true, agoMs, handled });
-        }
-      };
-      if (n.props.confirm) this._confirm(n.props.confirm, go);
-      else go();
+      if (n.props.disabled || !n.props.onPress) return;
+      let handled = false;
+      this._guard(() => (handled = this.app.dispatch(n.tag, "press", null)));
+      this.onEvent("press", { tag: n.tag, handled });
     });
-  }
-
-  _confirm({ title = "", detail = "", label = "OK" }, onOk) {
-    const sheet = document.createElement("div");
-    sheet.className = "sw-confirm";
-    sheet.innerHTML = `<div class="sw-confirm-title"></div><div class="sw-confirm-detail"></div><button class="sw-confirm-ok"></button><button class="sw-confirm-cancel">Cancel</button>`;
-    sheet.querySelector(".sw-confirm-title").textContent = title;
-    sheet.querySelector(".sw-confirm-detail").textContent = detail;
-    sheet.querySelector(".sw-confirm-ok").textContent = label;
-    const close = () => sheet.remove();
-    sheet.querySelector(".sw-confirm-ok").onclick = () => (close(), onOk());
-    sheet.querySelector(".sw-confirm-cancel").onclick = close;
-    this.el.appendChild(sheet);
   }
 }

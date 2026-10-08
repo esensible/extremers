@@ -69,6 +69,47 @@ final class FixtureTests: XCTestCase {
         }
     }
 
+    /// The timers bundle on the Swift host: the bundle's setTimeout calls arm
+    /// host timers (JSHost.onSetTimer), which fire in due order on the
+    /// runner's fixed clock (fireTimer -> __app.timer); clearTimeout disarms;
+    /// Date reads the clock; send(bytes) arrives through onSend; the confirm
+    /// pattern (re-tap within 5 s, else it times out) ends in one send.
+    func testTimersAndSend() throws {
+        let dir = Fx.fixtures.appendingPathComponent("mutations/timers")
+        let bundle = try Data(contentsOf: dir.appendingPathComponent("bundle.js"))
+        let script = try JSData(json: Fx.text("mutations/timers/script.json"))
+        let runner = ScriptRunner(measurer: StubTextMeasurer())
+        let r = runner.run(bundle: bundle, script: script)
+        XCTAssertNil(r.error)
+        XCTAssertEqual(r.log, try Fx.lines("mutations/timers/log.jsonl"))
+        // tapped at local 1_003_500 with the device 3_999_000 ahead: 5_002_500
+        XCTAssertEqual(runner.sent, [[1, 0x04, 0x55, 0x4c, 0, 0, 0]])
+        XCTAssertTrue(r.log.contains(##"["#timer",14,1011000]"##), "the confirm times out 5 s after the second Send")
+        XCTAssertEqual(runner.localMs, 1_018_000)
+    }
+
+    /// App fixtures (env SOLID_WATCH_APP_FIXTURES: ":"-separated directories
+    /// with bundle.js, script.json and log.jsonl, as make-fixtures writes
+    /// them): the Swift host reproduces each golden log line for line.
+    func testAppFixtures() throws {
+        let dirs = (ProcessInfo.processInfo.environment["SOLID_WATCH_APP_FIXTURES"] ?? "").split(separator: ":")
+        try XCTSkipIf(dirs.isEmpty, "SOLID_WATCH_APP_FIXTURES not set")
+        for d in dirs {
+            let dir = URL(fileURLWithPath: String(d))
+            let bundle = try Data(contentsOf: dir.appendingPathComponent("bundle.js"))
+            let script = try JSData(json: String(contentsOf: dir.appendingPathComponent("script.json"), encoding: .utf8))
+            let golden = try String(contentsOf: dir.appendingPathComponent("log.jsonl"), encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            let r = ScriptRunner(measurer: StubTextMeasurer()).run(bundle: bundle, script: script)
+            XCTAssertNil(r.error, "\(d): \(String(describing: r.error))")
+            XCTAssertEqual(r.log.count, golden.count, "\(d): line count")
+            for (i, (a, b)) in zip(r.log, golden).enumerated() where a != b {
+                XCTFail("\(d) line \(i + 1):\n  host:   \(a)\n  golden: \(b)")
+                break
+            }
+        }
+    }
+
     /// After a GC, the renderer's FinalizationRegistry releases exactly the
     /// nodes that are no longer attached, and the layout is unchanged.
     func testReleaseFreesExactlyTheDetachedNodes() throws {

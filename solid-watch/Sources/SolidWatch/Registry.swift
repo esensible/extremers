@@ -19,26 +19,9 @@ public struct CustomNodeContext {
     }
 }
 
-/// A button press, as delivered to a native press handler.
-public struct PressEvent {
-    public let tag: Int32
-    /// The button's `press` prop: the handler name.
-    public let handler: String
-    /// All of the button's props (including ones an app fragment adds).
-    public let props: [String: PropValue]
-    /// When the user tapped (before any confirm sheet), on the host's
-    /// local clock.
-    public let tappedAt: Date
-    /// The same tap on the device timeline (README: Time): `tappedAt` in
-    /// epoch ms plus the clock offset from the bundle's latest `syncClock`
-    /// (0 before the first one). A handler that tells the device when
-    /// something happened sends this, not the local time.
-    public let tappedAtDeviceMs: Double
-}
-
 /// App extensions (Fabric-components style): schema fragments (new node
-/// types, props on core types, colors), the views for new node types, and
-/// native press handlers. Configure it before loading a bundle; main thread.
+/// types, props on core types, colors) and the views for new node types.
+/// Configure it before loading a bundle; main thread.
 public final class NodeRegistry {
     struct CustomView {
         let measure: (([String: PropValue], CGSize) -> CGSize)?
@@ -48,7 +31,6 @@ public final class NodeRegistry {
     private(set) var nodes: [String: NodeSpec] = CoreSchema.nodes
     private(set) var colors: [String: String] = CoreSchema.colors
     private(set) var views: [String: CustomView] = [:]
-    private(set) var pressHandlers: [String: (PressEvent) -> Void] = [:]
 
     public init() {}
 
@@ -146,11 +128,6 @@ public final class NodeRegistry {
     ) {
         precondition(nodes[type]?.native == true, "\(type): add its schema fragment first (core types are built in)")
         views[type] = CustomView(measure: measure, view: { AnyView(view($0)) })
-    }
-
-    /// Registers the native handler a `button` with `press="<name>"` runs.
-    public func registerPressHandler(_ name: String, _ handler: @escaping (PressEvent) -> Void) {
-        pressHandlers[name] = handler
     }
 
     func color(_ s: String?) -> RGBA? {

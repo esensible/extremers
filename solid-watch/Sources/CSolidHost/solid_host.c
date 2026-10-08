@@ -411,13 +411,36 @@ static JSValue h_commit(JSContext *ctx, JSValueConst this_val, int argc, JSValue
     return JS_UNDEFINED;
 }
 
-static JSValue h_sync_clock(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+static JSValue h_set_timer(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     sw_engine *e = engine_of(ctx);
-    record_fixed(ctx, "syncClock", 1, argc, argv);
-    double d = 0;
-    if (argc < 1 || JS_ToFloat64(ctx, &d, argv[0])) return JS_ThrowTypeError(ctx, "syncClock(deviceNowMs)");
-    int rc = e->cb.sync_clock ? e->cb.sync_clock(e->cb.user, d) : 0;
-    if (rc) return host_fail(ctx, "syncClock");
+    record_fixed(ctx, "setTimer", 2, argc, argv);
+    double ms = 0;
+    if (argc < 2 || JS_ToFloat64(ctx, &ms, argv[1])) return JS_ThrowTypeError(ctx, "setTimer(id, ms)");
+    int rc = e->cb.set_timer ? e->cb.set_timer(e->cb.user, arg_i32(ctx, argc, argv, 0, -1), ms) : 0;
+    if (rc) return host_fail(ctx, "setTimer");
+    return JS_UNDEFINED;
+}
+
+static JSValue h_clear_timer(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    sw_engine *e = engine_of(ctx);
+    record_fixed(ctx, "clearTimer", 1, argc, argv);
+    int rc = e->cb.clear_timer ? e->cb.clear_timer(e->cb.user, arg_i32(ctx, argc, argv, 0, -1)) : 0;
+    if (rc) return host_fail(ctx, "clearTimer");
+    return JS_UNDEFINED;
+}
+
+static JSValue h_send(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    sw_engine *e = engine_of(ctx);
+    record_fixed(ctx, "send", 1, argc, argv);
+    buf b = {0};
+    if (encode(ctx, &b, argc > 0 ? argv[0] : JS_UNDEFINED, 0)) {
+        free(b.p);
+        return JS_EXCEPTION;
+    }
+    if (b.oom) { free(b.p); return JS_ThrowOutOfMemory(ctx); }
+    int rc = e->cb.send ? e->cb.send(e->cb.user, b.p, b.len) : 0;
+    free(b.p);
+    if (rc) return host_fail(ctx, "send");
     return JS_UNDEFINED;
 }
 
@@ -429,7 +452,9 @@ static JSValue h_release(JSContext *ctx, JSValueConst this_val, int argc, JSValu
 }
 
 static const JSCFunctionListEntry host_funcs[] = {
-    JS_CFUNC_DEF("syncClock", 1, h_sync_clock),
+    JS_CFUNC_DEF("setTimer", 2, h_set_timer),
+    JS_CFUNC_DEF("clearTimer", 1, h_clear_timer),
+    JS_CFUNC_DEF("send", 1, h_send),
     JS_CFUNC_DEF("release", 1, h_release),
     JS_CFUNC_DEF("log", 1, h_log),
     JS_CFUNC_DEF("createNode", 1, h_create_node),

@@ -11,11 +11,13 @@ const load = (name) => {
   return runNode(src, script).map((l) => JSON.parse(l));
 };
 
-// Split a log into segments starting at each driver marker (#mount, #state, #dispatch).
+// Split a log into segments starting at each driver marker (#mount, #state,
+// #dispatch, #timer, #wait).
+const MARKERS = new Set(["#mount", "#state", "#dispatch", "#timer", "#wait"]);
 function segments(log) {
   const out = [];
   for (const m of log) {
-    if (m[0] === "#mount" || m[0] === "#state" || m[0] === "#dispatch") out.push({ marker: m, ops: [] });
+    if (MARKERS.has(m[0])) out.push({ marker: m, ops: [] });
     else if (out.length) out[out.length - 1].ops.push(m);
   }
   return out;
@@ -23,9 +25,13 @@ function segments(log) {
 const ops = (seg) => seg.ops.filter((m) => !m[0].startsWith("#"));
 const names = (seg) => ops(seg).map((m) => m[0]);
 
-test("every mount, state and handled dispatch ends in exactly one commit", () => {
-  for (const name of ["basic", "show", "list", "events"]) {
+test("every mount, state, handled dispatch and timer ends in exactly one commit; a wait has none", () => {
+  for (const name of ["basic", "show", "list", "events", "timers"]) {
     for (const seg of segments(load(name))) {
+      if (seg.marker[0] === "#wait") {
+        assert.deepEqual(seg.ops, [], `${name}: nothing happens at the end of a wait`);
+        continue;
+      }
       const handled = seg.ops.find((m) => m[0] === "#handled");
       const commits = names(seg).filter((n) => n === "commit").length;
       if (handled && handled[1] === false) assert.equal(commits, 0, `${name} ${JSON.stringify(seg.marker)}`);
@@ -125,15 +131,14 @@ test("events: the host sees onPress as true/null; dispatch runs the handler with
   const d1 = segs.find((s) => s.marker[0] === "#dispatch");
   assert.ok(ops(d1).some((m) => m[2] === "text" && m[3] === "1"));
   const d2 = segs.filter((s) => s.marker[0] === "#dispatch")[1];
-  assert.ok(ops(d2).some((m) => m[2] === "text" && m[3] === "11"), "payload reached the handler (agoMs 1500 -> +10)");
+  assert.ok(ops(d2).some((m) => m[2] === "text" && m[3] === "11"), "payload reached the handler (big -> +10)");
   const handled = log.filter((m) => m[0] === "#handled").map((m) => m[1]);
   assert.deepEqual(handled, [true, true, false, false]); // unknown tag; handler removed
 });
 
-test("events: native press, confirm and haptic trigger go to the host as plain props", () => {
+test("events: disabled and the haptic trigger go to the host as plain props", () => {
   const log = load("events");
-  assert.ok(log.some((m) => m[0] === "setProp" && m[2] === "press" && m[3] === "example"));
-  assert.ok(log.some((m) => m[0] === "setProp" && m[2] === "confirm" && m[3].label === "Go"));
+  assert.deepEqual(log.filter((m) => m[2] === "disabled").map((m) => m[3]), [false, true, false]);
   assert.deepEqual(log.filter((m) => m[2] === "trigger").map((m) => m[3]), [0, 1, 11]);
 });
 

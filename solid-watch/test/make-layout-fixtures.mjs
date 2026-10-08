@@ -2,7 +2,7 @@
 // Layout-parity fixtures): the mutations that build the tree, and the frames
 // yoga-layout computes with the stub measurer at pointScaleFactor 2.
 import { mkdirSync, writeFileSync } from "node:fs";
-import { ROOT, replay, T0 } from "./lib.mjs";
+import { ROOT, replay } from "./lib.mjs";
 import { cases } from "./layout-cases.mjs";
 
 export function treeToLog(tree, viewport) {
@@ -30,7 +30,7 @@ for (const c of cases) {
   const log = treeToLog(c.tree, c.viewport);
   const [result] = replay(log);
   const { commit, haptics, ...expected } = result;
-  const fixture = { name: c.name, viewport: c.viewport, pointScaleFactor: 2, measure: "stub", clock: { localNow: T0, offset: 0 }, log, expected };
+  const fixture = { name: c.name, viewport: c.viewport, pointScaleFactor: 2, measure: "stub", log, expected };
   writeFileSync(ROOT + `fixtures/layout/${c.name}.json`, JSON.stringify(fixture, null, 1) + "\n");
 }
 console.log(`wrote ${cases.length} layout fixtures`);

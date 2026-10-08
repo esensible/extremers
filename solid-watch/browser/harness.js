@@ -11,7 +11,21 @@ let catalog = [];
 let fragments = [];
 let current = null; // { name, src, script }
 let host = null;
+let realm = null; // the iframe window the current bundle runs in
 let playing = null;
+
+// A fresh global object for each bundle run: a bundle installs its own
+// setTimeout & co. (README: Timers), which must not replace the page's.
+function newRealm() {
+  if (realm) realm.frameElement.remove();
+  const f = document.createElement("iframe");
+  f.style.display = "none";
+  document.body.appendChild(f);
+  realm = f.contentWindow;
+  return realm;
+}
+
+const hex = (bytes) => Array.from(bytes, (b) => (b < 16 ? "0" : "") + b.toString(16)).join(" ");
 
 function log(text, cls = "") {
   const d = document.createElement("div");
@@ -47,21 +61,24 @@ function runTo(k, { quiet = false } = {}) {
   const onEvent = (kind, d) => {
     if (quiet && kind === "commit") return;
     if (kind === "commit") log(`commit (${d.ops} mutations)`);
-    else if (kind === "haptic") log(`haptic ${d.pattern} (tag ${d.tag}${d.cue !== undefined ? `, cue at ${d.cue} ms remaining` : ""})`, "tap");
+    else if (kind === "haptic") log(`haptic ${d.pattern} (tag ${d.tag})`, "tap");
     else if (kind === "release") log(`release tag ${d.tag}`, "muted");
-    else if (kind === "press") log(d.native ? `tap tag ${d.tag}: native press "${d.native}" props ${JSON.stringify(d.props)} (${d.agoMs} ms after tap)` : `tap tag ${d.tag}: dispatch press {agoMs: ${d.agoMs}} handled=${d.handled}`, "tap");
+    else if (kind === "press") log(`tap tag ${d.tag}: dispatch press handled=${d.handled}`, "tap");
+    else if (kind === "log") log(`bundle: ${d.message}`);
+    else if (kind === "send") log(`send ${d.bytes.length} bytes: ${hex(d.bytes)}`, "tap");
+    else if (kind === "timer" && !quiet) log(`timer ${d.id} handled=${d.handled}`, "muted");
     else if (kind === "error") log(`error: ${d.error && d.error.stack ? d.error.stack : d.error}`, "err");
   };
   host = new DomHost(Yoga, els.screen, { schema, fragments, onEvent });
-  globalThis.__host = host.api;
-  globalThis.__app = undefined;
+  const g = newRealm();
+  g.__host = host.api;
   try {
-    new Function(current.src)();
+    g.Function(current.src)();
   } catch (e) {
     log(`bundle failed to evaluate: ${e.stack || e}`, "err");
     return;
   }
-  const app = globalThis.__app;
+  const app = g.__app;
   if (!app) return log("bundle did not set globalThis.__app", "err");
   host.mount(app, current.script.ctx ? { ...current.script.ctx, ...size() } : size());
   const steps = current.script.steps;
@@ -70,6 +87,7 @@ function runTo(k, { quiet = false } = {}) {
     if ("state" in s) host.state(s.state);
     else if ("stateHex" in s) host.state(hexBytes(s.stateHex));
     else if ("dispatch" in s) host._guard(() => app.dispatch(s.dispatch.tag, s.dispatch.name, s.dispatch.payload ?? null));
+    // "wait" steps are real time here: timers run live
   }
   els.pos.textContent = `${k} / ${steps.length}`;
   els.step.textContent = k === 0 ? "(mounted, no state yet)" : JSON.stringify(steps[k - 1]);
@@ -136,7 +154,7 @@ async function selfTestTaps(n) {
   };
   const buttons = [...els.screen.querySelectorAll('[data-type="button"]')].filter((b) => {
     const node = host.tree.nodes.get(Number(b.dataset.tag));
-    return node && node.props.onPress && !node.props.confirm && !node.props.disabled;
+    return node && node.props.onPress && !node.props.disabled;
   });
   let tries = 0;
   for (let i = 0; i < n; i++) {
@@ -146,7 +164,7 @@ async function selfTestTaps(n) {
       const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, isPrimary: true };
       const down = document.elementFromPoint(x, y);
       down.dispatchEvent(new PointerEvent("pointerdown", opts));
-      await sleep(40 + (i % 5) * 30); // 40-160 ms: across 50 ms ticks and 1 s countdown repaints
+      await sleep(40 + (i % 5) * 30); // 40-160 ms: across repaints
       const up = document.elementFromPoint(x, y);
       up.dispatchEvent(new PointerEvent("pointerup", opts));
       // the browser clicks the nearest common ancestor of the down and up targets

@@ -4,7 +4,6 @@
 const box = (props = {}, children = []) => ({ type: "view", props, children });
 const text = (props, ...children) => ({ type: "text", props, children });
 const W = { width: 198, height: 242 };
-const T0 = 1_000_000; // the fixture clock (test/lib.mjs)
 
 export const cases = [
   { name: "column-stretch", viewport: W, tree: box({}, [box({ height: 20 }), box({ height: 30 }), box({ height: 10, width: 50 })]) },
@@ -30,5 +29,5 @@ export const cases = [
   { name: "text-row-shrink", viewport: W, tree: box({ flexDirection: "row", padding: 4, gap: 4, alignItems: "center" }, [text({ fontSize: 20, minScale: 0.5, flexShrink: 1 }, "Count 123456789012 items"), box({ flexGrow: 1, height: 10 })]) },
   { name: "empty-text", viewport: W, tree: box({ alignItems: "flex-start" }, [text({ fontSize: 20 }, ""), text({ fontSize: 20 }), box({ height: 5 })]) },
   { name: "scroll-content", viewport: { width: 176, height: 215 }, tree: box({ height: 215 }, [{ type: "scroll", props: { flexGrow: 1, paddingBottom: 6 }, children: [1, 2, 3, 4, 5, 6].map(() => box({ height: 50, marginBottom: 4 })) }]) },
-  { name: "button-countdown-clock", viewport: W, tree: box({ gap: 4 }, [{ type: "button", props: { height: 32, alignItems: "center", justifyContent: "center", onPress: true }, children: [text({}, "Go")] }, { type: "countdown", props: { at: T0 + 65000, fontSize: 54, minScale: 0.5, tabular: true, cues: [{ atRemainingMs: 60000, pattern: "notification" }] } }, { type: "countdown", props: { at: T0 - 3_725_000, format: "elapsed" } }, { type: "countdown", props: { at: T0 + 61500, format: "remaining" } }, { type: "clock", props: { format: "h:mm" } }, { type: "clock", props: { format: "HH:mm:ss", tzOffsetMin: 630 } }, { type: "haptic", props: { pattern: "click", trigger: 1 } }]) },
+  { name: "button-haptic", viewport: W, tree: box({ gap: 4 }, [{ type: "button", props: { height: 32, alignItems: "center", justifyContent: "center", onPress: true }, children: [text({}, "Go")] }, text({ fontSize: 54, minScale: 0.5, tabular: true }, "01:05"), { type: "haptic", props: { pattern: "click", trigger: 1 } }]) },
 ];

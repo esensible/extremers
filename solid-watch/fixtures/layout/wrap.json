@@ -6,10 +6,6 @@
  },
  "pointScaleFactor": 2,
  "measure": "stub",
- "clock": {
-  "localNow": 1000000,
-  "offset": 0
- },
  "log": [
   "[\"#mount\",1,{\"width\":176,\"height\":215}]",
   "[\"createNode\",2,\"view\"]",

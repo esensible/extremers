@@ -1,0 +1,16 @@
+{
+  "ctx": { "width": 198, "height": 242 },
+  "steps": [
+    { "state": { "now": 5000000, "start": 5065000 } },
+    { "wait": 2500 },
+    { "dispatch": { "tag": 7, "name": "press" } },
+    { "dispatch": { "tag": 12, "name": "press" } },
+    { "dispatch": { "tag": 12, "name": "press" } },
+    { "dispatch": { "tag": 7, "name": "press" } },
+    { "wait": 6000 },
+    { "state": { "now": 5020000, "start": null } },
+    { "wait": 3000 },
+    { "state": { "now": 5030000, "start": 5031500 } },
+    { "wait": 3000 }
+  ]
+}

@@ -63,9 +63,15 @@ typedef struct sw_host_callbacks {
     int (*insert)(void *user, int32_t parent, int32_t child, int32_t before);
     int (*remove)(void *user, int32_t parent, int32_t child);
     int (*commit)(void *user);
-    /// `syncClock(deviceNowMs)`: the state being applied was captured at
-    /// this device time (README: Time).
-    int (*sync_clock)(void *user, double device_now_ms);
+    /// `setTimer(id, ms)`: arm timer `id` (replacing it if armed) to fire in
+    /// `ms` milliseconds; the host then calls `__app.timer(id)` (README:
+    /// Timers).
+    int (*set_timer)(void *user, int32_t id, double ms);
+    /// `clearTimer(id)`: disarm timer `id` (unknown ids are ignored).
+    int (*clear_timer)(void *user, int32_t id);
+    /// `send(bytes)`: the bundle's `send`; `value` is one encoded value (an
+    /// array of byte values).
+    int (*send)(void *user, const uint8_t *value, size_t valuelen);
     /// `release(tag)`: JS can no longer reach `tag` (from the renderer's
     /// FinalizationRegistry, as a pending job after a GC). Not recorded.
     int (*release)(void *user, int32_t tag);
@@ -74,7 +80,7 @@ typedef struct sw_host_callbacks {
     /// engine itself so it matches a JS recording host byte for byte:
     /// ["createNode",tag,type] ["createText",tag,text] ["setProp",tag,key,value]
     /// ["insert",parent,child,before] ["remove",parent,child] ["commit"]
-    /// ["syncClock",deviceNowMs].
+    /// ["setTimer",id,ms] ["clearTimer",id] ["send",[bytes]].
     void (*record)(void *user, const char *line, size_t len);
 } sw_host_callbacks;
 

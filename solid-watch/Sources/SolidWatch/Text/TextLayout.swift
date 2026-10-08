@@ -38,7 +38,7 @@ public protocol TextMeasurer: AnyObject {
     func lines(_ runs: [TextRun], scale: Double, maxWidth: Double) -> TextLines
 }
 
-/// A measured text leaf (outermost `text`, `countdown`, `clock`).
+/// A measured text leaf (the outermost `text`).
 public struct MeasuredText: Hashable, Sendable {
     public var width: Double
     public var height: Double
@@ -151,42 +151,4 @@ public final class StubTextMeasurer: TextMeasurer {
         }
         return TextLines(count: lines, widest: max(widest, line))
     }
-}
-
-// MARK: - countdown / clock text (README: Countdown formats)
-
-public enum TimeFormat {
-    private static func pad2(_ n: Int) -> String { n < 10 ? "0\(n)" : String(n) }
-
-    private static func hms(_ s: Int) -> String {
-        s >= 3600 ? "\(s / 3600):\(pad2((s / 60) % 60)):\(pad2(s % 60))" : "\(s / 60):\(pad2(s % 60))"
-    }
-
-    /// `remainingMs`: integer ms until the target (negative once passed).
-    public static func countdown(_ format: CountdownFormat, remainingMs: Int) -> String {
-        let up = remainingMs <= 0 ? 0 : Int((Double(remainingMs + 999) / 1000).rounded(.down))
-        switch format {
-        case .elapsed: return hms(max(0, Int((Double(-remainingMs) / 1000).rounded(.down))))
-        case .remaining: return hms(up)
-        case .countdown: return "\(pad2(up / 60)):\(pad2(up % 60))"
-        }
-    }
-
-    /// Wall-clock text for device time `deviceMs` (UTC epoch ms) in the zone
-    /// `tzOffsetMin` minutes east of UTC (README: Clock).
-    public static func clock(_ format: ClockFormat, deviceMs: Double, tzOffsetMin: Double) -> String {
-        let t = Int64(((deviceMs + tzOffsetMin * 60000) / 1000).rounded(.down))
-        let day = Int(((t % 86400) + 86400) % 86400)
-        let h = day / 3600, m = (day / 60) % 60, s = day % 60
-        let h12 = h % 12 == 0 ? 12 : h % 12
-        switch format {
-        case .hourMinuteSecond24: return "\(pad2(h)):\(pad2(m)):\(pad2(s))"
-        case .hourMinute12: return "\(h12):\(pad2(m))"
-        case .hourMinute12Padded: return "\(pad2(h12)):\(pad2(m))"
-        case .hourMinute24: return "\(pad2(h)):\(pad2(m))"
-        }
-    }
-
-    /// JS `Math.round`.
-    static func jsRound(_ x: Double) -> Int { Int((x + 0.5).rounded(.down)) }
 }

@@ -38,7 +38,7 @@ export function fitScale(measurer, runs, F, minScale, maxWidth) {
 }
 
 /**
- * Measure a text leaf (outermost <text>, countdown, clock) for Yoga.
+ * Measure a text leaf (the outermost <text>) for Yoga.
  * leaf: { fontSize, numberOfLines, minScale } of the leaf itself.
  * Returns { width, height, fontSize (effective, after shrink), lines }.
  */
@@ -95,36 +95,3 @@ export const stubMeasurer = {
     return { lines, widest: Math.max(widest, line) };
   },
 };
-
-// ---- countdown / clock text (README: Countdown formats) ---------------------
-
-const pad2 = (n) => String(n).padStart(2, "0");
-const hms = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}` : `${Math.floor(s / 60)}:${pad2(s % 60)}`);
-
-/** remainingMs: integer ms until the target (negative once passed). */
-export function formatCountdown(format, remainingMs) {
-  const up = remainingMs <= 0 ? 0 : Math.floor((remainingMs + 999) / 1000);
-  switch (format) {
-    case "elapsed": return hms(Math.max(0, Math.floor(-remainingMs / 1000)));
-    case "remaining": return hms(up);
-    default: return `${pad2(Math.floor(up / 60))}:${pad2(up % 60)}`;
-  }
-}
-
-/**
- * Wall-clock text for device time `deviceMs` (UTC epoch ms) in the zone
- * `tzOffsetMin` minutes east of UTC: t = floor((deviceMs + tzOffsetMin x
- * 60000) / 1000) seconds; h = floor(t / 3600) mod 24 (non-negative), m, s.
- */
-export function formatClock(format, deviceMs, tzOffsetMin = 0) {
-  const t = Math.floor((deviceMs + tzOffsetMin * 60000) / 1000);
-  const day = ((t % 86400) + 86400) % 86400;
-  const h = Math.floor(day / 3600), m = Math.floor(day / 60) % 60, s = day % 60;
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  switch (format) {
-    case "HH:mm:ss": return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
-    case "h:mm": return `${h12}:${pad2(m)}`;
-    case "hh:mm": return `${pad2(h12)}:${pad2(m)}`;
-    default: return `${pad2(h)}:${pad2(m)}`;
-  }
-}

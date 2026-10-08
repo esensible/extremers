@@ -147,15 +147,50 @@ export const {
   },
 });
 
+// ---- timers (README: Timers) ------------------------------------------------
+// setTimeout / setInterval for the bundle, on the host's timers: the host
+// arms one native timer per id and calls __app.timer(id) when it is due,
+// which runs the callback inside batch() and then commits, like any other
+// call into the app. Installed as globals, so app code and libraries use the
+// standard names. The clock (Date) is the host's own and is left alone.
+const timers = new Map(); // id -> { fn, args, every }
+let nextTimer = 1;
+const delayOf = (ms) => {
+  const d = Number(ms);
+  return d > 0 ? d : 0;
+};
+function arm(fn, ms, args, repeat) {
+  if (typeof fn !== "function") throw new TypeError("setTimeout/setInterval: a function is required");
+  const id = nextTimer++;
+  const d = delayOf(ms);
+  timers.set(id, { fn, args, every: repeat ? d : null });
+  host().setTimer(id, d);
+  return id;
+}
+export function setTimeout(fn, ms, ...args) {
+  return arm(fn, ms, args, false);
+}
+export function setInterval(fn, ms, ...args) {
+  return arm(fn, ms, args, true);
+}
+export function clearTimeout(id) {
+  if (timers.delete(id)) host().clearTimer(id);
+}
+export const clearInterval = clearTimeout;
+globalThis.setTimeout = setTimeout;
+globalThis.setInterval = setInterval;
+globalThis.clearTimeout = clearTimeout;
+globalThis.clearInterval = clearInterval;
+
 /**
- * The state being applied was captured when the device's clock read
- * `deviceNowMs`. The host keeps offset = deviceNowMs - (its local clock when
- * it received this state) and runs countdowns on localNow + offset, so `at`
- * props are plain device times (e.g. a start time from the state). Call it
- * from onState; bundles never see the host's local clock.
+ * Hands `bytes` (a Uint8Array or an array of byte values) to the app's
+ * native side, which decides what to do with them (e.g. write them to a
+ * device). The host gets a plain array of numbers.
  */
-export function syncClock(deviceNowMs) {
-  host().syncClock(deviceNowMs);
+export function send(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i++) out.push(bytes[i] & 255);
+  host().send(out);
 }
 
 /**
@@ -167,11 +202,13 @@ export function syncClock(deviceNowMs) {
  *   one commit. ctx = { width, height } in points.
  * - onState(state): runs `onState(state)` inside batch(), then one commit.
  *   `state` is whatever the app delivers (bytes, an object); the package
- *   doesn't look. If the state carries the device's clock, call
- *   syncClock(deviceNowMs) from onState (README: Time).
+ *   doesn't look.
  * - dispatch(tag, name, payload): runs the JS handler for event `name` on
  *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
  *   false (and doesn't commit) if there is no handler.
+ * - timer(id): a timer the bundle set is due: runs its callback inside
+ *   batch(), then one commit (an interval is re-armed first). Returns false
+ *   (and doesn't commit) for a timer that was cleared.
  */
 export function createApp(Root, { onState } = {}) {
   let dispose = null;
@@ -190,6 +227,15 @@ export function createApp(Root, { onState } = {}) {
       const fn = h && h[name];
       if (!fn) return false;
       batch(() => fn(payload));
+      host().commit();
+      return true;
+    },
+    timer(id) {
+      const t = timers.get(id);
+      if (!t) return false;
+      if (t.every === null) timers.delete(id);
+      else host().setTimer(id, t.every);
+      batch(() => t.fn(...t.args));
       host().commit();
       return true;
     },

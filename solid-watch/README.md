@@ -9,8 +9,9 @@ a browser harness (DOM host + `yoga-layout`) for development.
 The architecture follows React Native's Fabric: three trees (Solid tree →
 shadow tree with props and Yoga → mounted views), batched commits, integer
 tags across the boundary, one schema that generates every side's prop code,
-React Native's style names and defaults, raw text only inside `<text>`, and
-time (countdowns, clocks) handled natively.
+React Native's style names and defaults, and raw text only inside `<text>`.
+Time is the bundle's business, as in a web app: it has `setTimeout` /
+`setInterval` (on the host's timers) and `Date` (the host's clock).
 
 ```
 schema/nodes.json        the node types and props: THE contract
@@ -56,7 +57,7 @@ SVG `<text>`); `test/types/` type-checks it with `tsc`.
 
 Build with `solidWatchBundle()` from `solid-watch/rollup` (babel-preset-solid
 `generate: "universal"`, `moduleName: "solid-watch"`). The bundle uses no
-browser globals.
+browser globals; `setTimeout` and friends are the package's own (Timers).
 
 ## Bundle contract
 
@@ -68,36 +69,37 @@ globalThis.__app = {
   onState(state),               // runs the app's onState(state) inside batch(), then one commit
   dispatch(tag, name, payload), // runs the JS handler for event `name` on `tag` inside batch(),
                                 // then one commit; returns false (no commit) if there is none
+  timer(id),                    // timer `id` is due: runs its callback inside batch(), then one
+                                // commit; returns false (no commit) if it was cleared
 }
 ```
 
 `state` is whatever the app delivers (bytes as a `Uint8Array`, an object…);
 the package never looks at it.
 
-## Time
+## Timers
 
-One timeline: the **device clock** (the clock of the system that produces
-the states). Bundles only ever see device times; the host's local clock is
-hidden from them.
+The bundle has the web's `setTimeout(fn, ms, ...args)`, `clearTimeout(id)`,
+`setInterval(fn, ms, ...args)` and `clearInterval(id)` (exported by
+`solid-watch` and installed as globals when the bundle loads, so code written
+for a browser runs unchanged). They run on the host's timers: the renderer
+calls `setTimer(id, ms)` / `clearTimer(id)` and the host calls
+`__app.timer(id)` when one is due; the callback runs inside `batch()` and is
+followed by one commit, like a state or an event. An interval re-arms itself
+before its callback runs. A delay under 0 is 0.
 
-- A state that carries the device's clock reports it from the bundle's
-  `onState`: `syncClock(deviceNowMs)` (exported by `solid-watch`; host op
-  `syncClock`). Decoding stays in the bundle, so the host doesn't need to
-  know where the timestamp is in the state.
-- The host notes its local clock when each state arrives (before calling
-  `onState`) and on `syncClock` sets
-  `offset = deviceNowMs − localReceiptMs` (the last sample wins, as a
-  browser client syncing to a server timestamp does). Before the first
-  `syncClock`, offset = 0.
-- Device now = local now + offset. A `countdown`'s `at` is a device time
-  (e.g. a start time from the state); the host ticks it locally, so it keeps
-  going between states and without the link. States only refresh the offset
-  and the values; an unchanged `at` is simply not re-sent, nothing to
-  re-anchor.
-- `clock` is on the same timeline: it shows device now (read as UTC epoch
-  ms) shifted by its `tzOffsetMin` prop — the device decides the zone and
-  the bundle passes it, the watch's own zone is not used. Exceptions propagate to the host (show an
-error screen; keep the app alive).
+`Date` is the host's own clock, untouched. A bundle that shows times of
+another system (a device it talks to) keeps the offset itself, as a web
+client of a server does: `offset = state.timestamp − new Date().getTime()`
+on each state, `now = new Date().getTime() + offset`, and a countdown is a
+`setTimeout` loop that re-renders each second (`test/bundles/timers`).
+
+## send
+
+`send(bytes)` (exported by `solid-watch`; a `Uint8Array` or an array of byte
+values) hands bytes to the app's native side: host op `send([b, ...])`. What
+happens to them (written to a device over BLE, …) is the app's business:
+`SolidWatchSession.onSend`, `DomHost`'s `onSend` option.
 
 ## Host interface
 
@@ -114,7 +116,9 @@ created nodes from `2`).
 | `insert(parent, child, before)` | insert `child` before `before` (`0` = append). Inserting an attached node moves it |
 | `remove(parent, child)` | detach `child`. The renderer may re-insert a removed node later, so keep it |
 | `commit()` | end of a batch: apply, lay out, draw |
-| `syncClock(deviceNowMs)` | the state being applied was captured at this device time: offset = deviceNowMs − local receipt time (see Time) |
+| `setTimer(id, ms)` | arm timer `id` (replacing it if armed) to fire in `ms` ms: then call `__app.timer(id)` (see Timers) |
+| `clearTimer(id)` | disarm timer `id` (unknown ids are ignored) |
+| `send(bytes)` | the bundle's `send`: an array of byte values for the app (see send) |
 | `release(tag)` | JS can no longer reach `tag`: free it (props, Yoga node, view). Only now may a host free a node. Its parent, if any, is being released too; its children are released by their own calls, in any order |
 
 `release` comes from a `FinalizationRegistry` on the renderer's node
@@ -128,6 +132,7 @@ the detached nodes are released.
 
 Host → JS: `__app.dispatch(tag, name, payload)`; the event name is the prop
 name without `on`, first letter lower-cased (`onPress` → `"press"`).
+`__app.timer(id)` when a timer is due.
 
 Rules every host follows:
 
@@ -153,17 +158,14 @@ prop sets), `nodes` (type → `groups`, own `props`, `children`: `nodes` |
 with `fields`; field types `number` | `string`), `any`, `bytes`),
 `default`, optional `inherit`, `doc`, `swiftNames`.
 
-Core nodes: `view`, `text`, `scroll`, `button`, `countdown`, `clock`,
-`haptic`. Nothing app-specific lives in the core schema.
+Core nodes: `view`, `text`, `scroll`, `button`, `haptic`. Nothing app-specific lives in the core schema.
 
 ### App fragments (the extension point)
 
 An app adds its own schema fragment, same shape plus:
 
-- `extends: { <core type>: { props, groups } }` — props on existing types
-  (e.g. bytes a native press handler sends);
+- `extends: { <core type>: { props, groups } }` — props on existing types;
 - `nodes` — new node types, native views the app registers on each host;
-- `pressHandlers: { <name>: { doc } }` — native press handlers (`button press="name"`);
 - `colors`, `groups`.
 
 Names may not collide with the core or other fragments. Generate the app's
@@ -174,7 +176,7 @@ node codegen/codegen.mjs --fragment app.json --ts app-jsx.d.ts --swift AppNodePr
 ```
 
 The Swift file imports `SolidWatch` and adds `<Name>…Props` structs and a
-`<Name>Schema` table (`nodes`, `extends`, `colors`, `pressHandlers`); the
+`<Name>Schema` table (`nodes`, `extends`, `colors`); the
 `.d.ts` augments `solid-watch/jsx`. The browser harness loads fragments from
 `SOLID_WATCH_FRAGMENTS`.
 
@@ -182,7 +184,7 @@ The Swift file imports `SolidWatch` and adds `<Name>…Props` structs and a
 
 `PropValue` (JSON-shaped), `Dimension`, a typed struct per prop group
 (`LayoutProps`, `BoxProps`, `TextStyleProps`, `TextLayoutProps`,
-`ButtonProps`, `CountdownProps`, `ClockProps`, `HapticProps`) with defaults
+`ButtonProps`, `HapticProps`) with defaults
 and `mutating set(_ name:, _ value:) -> PropSetResult` (`.unknown` if not
 its prop, `.invalid` resets to default), an enum per enum prop,
 `CoreSchema.nodes` (`NodeSpec`/`PropSpec`: kind, type, group, inherits),
@@ -219,9 +221,8 @@ Implemented once in `browser/text-layout.js`; a host supplies only a
 and explicit line height × `scale`; wrap at `maxWidth`, `Infinity` = no
 wrapping; `"\n"` always breaks).
 
-A **text leaf** (outermost `<text>`, `countdown`, `clock`) is a Yoga leaf
-with a measure function. Its runs: each raw string with the style of its
-nearest `<text>` (countdown/clock: one run, the current display string).
+A **text leaf** (the outermost `<text>`) is a Yoga leaf with a measure
+function. Its runs: each raw string with the style of its nearest `<text>`.
 
 ```
 measure(runs, leaf, maxWidth):          maxWidth = Infinity when Yoga's width mode is Undefined
@@ -263,54 +264,12 @@ layout each host re-runs `measure` with the leaf's **final content width**
 (frame width − horizontal padding − horizontal border) and draws at that
 `fontSize` and line count (the fixtures' `text` entries).
 
-### Countdown formats
-
-`remaining` = round(`at` − (local now + offset)) in integer ms (device time).
-Seconds rounded up for counting down, down for elapsed:
-
-| `format` | text |
-|---|---|
-| `countdown` (default) | `up = remaining <= 0 ? 0 : floor((remaining + 999) / 1000)`; `MM:SS` (minutes ≥ 2 digits, unbounded) |
-| `elapsed` | `s = max(0, floor(-remaining / 1000))`; `M:SS`, `H:MM:SS` from an hour |
-| `remaining` | `up` as above; `M:SS`, `H:MM:SS` from an hour |
-
-`at: null` shows nothing (zero size). The host re-measures (and lays out)
-whenever the displayed string changes.
-
-### Countdown cues
-
-`cues: [{ atRemainingMs, pattern }]` on a `countdown`: haptics the host plays
-natively, so they keep time without the link or JS.
-
-- A cue is **armed** while `remaining > atRemainingMs`. It **fires** (plays
-  `pattern`, a `haptic` pattern name) once when the remaining time falls to
-  `<= atRemainingMs` while armed, then disarms; it re-arms if the remaining
-  time goes back above its mark (the target moved later).
-- When `at` or `cues` is set, every cue is armed from the current time: a
-  mark already passed does not play.
-- If several marks are crossed between two checks (a suspension, a bump),
-  only the last one (smallest `atRemainingMs`) plays.
-- Check at least every 50 ms, or schedule a timer for the next armed mark.
-
-E.g. a start sequence: `[60000, 30000, 10000, 5000, …, 1000].map(ms => ({atRemainingMs: ms, pattern: "click"}))`
-plus `{atRemainingMs: 0, pattern: "success"}` for the gun.
-
-### Clock
-
-`t = floor((deviceNow + tzOffsetMin × 60000) / 1000)` seconds; within the
-day (`t mod 86400`, non-negative): `HH:mm` (default), `HH:mm:ss`, `h:mm`
-(12-hour, no AM/PM, 0 → 12), `hh:mm` (the same, two digits). Re-measured when
-the string changes.
-
 ## Behaviour
 
-- **button**: on tap the host stamps the tap time; if `confirm` is set it shows
-  a sheet (title, detail, a `label` button and Cancel) and stops on cancel;
-  then runs the native `press` handler (with the node's props and the tap
-  time, both local and on the device timeline: local + the `syncClock`
-  offset, see Time) if set; then, if `onPress` is set, `dispatch(tag, "press", { agoMs })`
-  (ms from tap to dispatch). `disabled` ignores taps. Pressed: opacity × 0.6;
-  disabled: × 0.35.
+- **button**: on a tap, if `onPress` is set, `dispatch(tag, "press", null)`.
+  `disabled` ignores taps. Pressed: opacity × 0.6; disabled: × 0.35. A
+  confirm step, if an app wants one, is the app's own UI (a button that
+  appears, e.g. `test/bundles/timers`).
 - **haptic**: plays `pattern` (watchOS `WKHapticType` names) at each commit
   where `trigger` differs from its value at the previous commit; the initial
   value doesn't play; `null` never plays.
@@ -321,38 +280,36 @@ the string changes.
 |---|---|
 | `bundle.js` | the bundle |
 | `bundle.js.sha256` | `<sha256 hex>  bundle.js` (sha256sum format) |
-| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`) or `{ "dispatch": { tag, name, payload } }`. Host-local clock: mount at T0 = 1 000 000; state step *i* is received at local T0 + 1000 × (*i* + 1) unless it sets `localMs`. Device time comes only from the bundle's `syncClock` |
+| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`), `{ "dispatch": { tag, name, payload } }` or `{ "wait": ms }`. The driver's clock (which the bundle's `Date` reads): T0 = 1 000 000 at mount; state or dispatch step *i* at T0 + 1000 × (*i* + 1) unless it sets `localMs`, never earlier than the clock already is; a wait moves it on by `ms`. Before each step the timers due by its time fire in due order (then by id), each at its due time; a delay under 1 ms counts as 1 ms |
 | `log.jsonl` | the mutation log, one JSON array per line, recorded under **qjs** (quickjs-ng v0.17.0); node must produce the identical log |
-| `frames.jsonl` | after each `commit`, one line: `{ commit, frames: { tag: [x, y, w, h] }, text: { tag: { fontSize, lines } }, content: { scrollTag: height }, haptics: [{ tag, pattern }] }` with the stub measurer and fixed clock |
+| `frames.jsonl` | after each `commit`, one line: `{ commit, frames: { tag: [x, y, w, h] }, text: { tag: { fontSize, lines } }, content: { scrollTag: height }, haptics: [{ tag, pattern }] }` with the stub measurer |
 
 Log lines: `["createNode", tag, type]`, `["createText", tag, s]`,
 `["setProp", tag, key, value]`, `["insert", parent, child, before]`,
-`["remove", parent, child]`, `["commit"]`, `["syncClock", deviceNowMs]`,
-and driver markers `["#mount", rootTag, ctx]`,
-`["#state", stepIndex, localReceiptMs]`, `["#dispatch", tag, name, payload]`,
-`["#handled", bool]`, `["#error", message]`. `release` calls are **not** in
-the logs (their timing is the engine's GC); compare logs without them.
-
-The frames' local clock: T0 at mount, then each `#state` line's
-`localReceiptMs` (the host's receipt time for the following `syncClock`; no
-time passes between a state's arrival and its layout). The events fixture
-uses a fixed offset of 4 000 000 ms, and 3 999 750 for one late state.
+`["remove", parent, child]`, `["commit"]`, `["setTimer", id, ms]`,
+`["clearTimer", id]`, `["send", [bytes]]`, and driver markers
+`["#mount", rootTag, ctx]`, `["#state", stepIndex, clockMs]`,
+`["#dispatch", tag, name, payload]`, `["#handled", bool]`,
+`["#timer", id, clockMs]`, `["#wait", ms, clockMs]`, `["#error", message]`.
+`release` calls are **not** in the logs (their timing is the engine's GC);
+compare logs without them. The Swift `ScriptRunner` is the same driver.
 
 A host test can (a) run `bundle.js` with a recording host through
 `script.json` and compare with `log.jsonl`, and (b) apply `log.jsonl` to its
-shadow tree and compare with `frames.jsonl`.
+shadow tree and compare with `frames.jsonl`. The Swift tests also run an
+app's own fixtures (same layout) from `SOLID_WATCH_APP_FIXTURES`
+(`:`-separated directories).
 
 ## Layout-parity fixtures (`fixtures/layout/<case>.json`)
 
-`{ name, viewport, pointScaleFactor: 2, measure: "stub", clock, log, expected: { frames, text, content } }`.
+`{ name, viewport, pointScaleFactor: 2, measure: "stub", log, expected: { frames, text, content } }`.
 Apply `log` (same format as above), commit once, compare. Frames are exact
 (multiples of 0.5 pt).
 
 **Stub measurer**: every character (code point) is 0.6 × fontSize × scale
 wide; line height ratio 1.25; wrapping is greedy by character (a character
 that would pass `maxWidth + 0.001` starts a new line; a line holds at least
-one); `"\n"` breaks. **Fixture clock**: local now = T0 = 1 000 000 ms,
-offset 0 (no `syncClock`), so a `clock` shows 00:16:40 UTC + its `tzOffsetMin`.
+one); `"\n"` breaks.
 
 ## Font
 
@@ -381,7 +338,7 @@ Taps in the DOM host: a press must never repaint the element under the
 pointer (the browser then drops or retargets the click), so pressing only
 changes the button's opacity and text is re-rendered only when its content
 changes. The tap self-test hit-tests each JS-handled button's centre and
-holds 40–160 ms across host ticks and countdown repaints; it reports
+holds 40–160 ms across repaints; it reports
 `dispatched/tried` in the log and `window.__selftest`.
 
 `test/build-qjs.sh <quickjs-ng checkout at v0.17.0> <out>` builds `qjs`

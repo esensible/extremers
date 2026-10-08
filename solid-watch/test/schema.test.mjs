@@ -9,14 +9,13 @@ import { ROOT, schema } from "./lib.mjs";
 const fragment = {
   name: "demo",
   colors: { accent: "#FF9F0A" },
-  pressHandlers: { send: { doc: "send bytes" } },
   extends: { button: { props: { payload: { kind: "behavior", type: "bytes", default: null } } } },
   nodes: { gauge: { doc: "a dial", groups: ["layout", "box"], children: "none", props: { value: { kind: "paint", type: "number", default: 0 } } } },
 };
 
 test("core schema: every node type resolves; RN defaults", () => {
   const m = mergeSchema(schema);
-  assert.deepEqual(Object.keys(m.nodes), ["view", "text", "scroll", "button", "countdown", "clock", "haptic"]);
+  assert.deepEqual(Object.keys(m.nodes), ["view", "text", "scroll", "button", "haptic"]);
   const p = m.nodes.view.props;
   assert.equal(p.flexDirection.default, "column");
   assert.equal(p.flexShrink.default, 0);
@@ -27,17 +26,16 @@ test("core schema: every node type resolves; RN defaults", () => {
   assert.equal(m.nodes.text.children, "text");
 });
 
-test("fragments add props, node types, colours and press handlers", () => {
+test("fragments add props, node types and colours", () => {
   const m = mergeSchema(schema, fragment);
   assert.equal(m.nodes.button.props.payload.group, "demo:button");
   assert.equal(m.nodes.gauge.native, true);
   assert.equal(m.colors.accent, "#FF9F0A");
-  assert.ok(m.pressHandlers.send);
 });
 
 test("fragments can't redefine", () => {
   assert.throws(() => mergeSchema(schema, { name: "x", nodes: { view: { groups: [] } } }), /defined twice/);
-  assert.throws(() => mergeSchema(schema, { name: "x", extends: { button: { props: { press: { kind: "behavior", type: "string", default: null } } } } }), /defined twice/);
+  assert.throws(() => mergeSchema(schema, { name: "x", extends: { button: { props: { disabled: { kind: "behavior", type: "boolean", default: false } } } } }), /defined twice/);
   assert.throws(() => mergeSchema(schema, { name: "x", extends: { nope: { props: {} } } }), /unknown node/);
 });
 
@@ -53,8 +51,7 @@ test("codegen: core outputs are up to date; a fragment generates", () => {
   assert.match(swift, /public var payload: \[UInt8\]\? = nil/);
   assert.match(swift, /public struct DemoGaugeProps/);
   assert.match(swift, /self\.value = v/); // a prop named like the parameter
-  assert.match(swift, /public static let pressHandlers: \[String\] = \["send"\]/);
+  assert.doesNotMatch(swift, /pressHandlers/);
   const ts = readFileSync(dir + "/f.d.ts", "utf8");
-  assert.match(ts, /interface PressHandlers \{\n    "send": true;/);
   assert.match(ts, /"gauge": GaugeElement;/);
 });

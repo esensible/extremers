@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import vm from "node:vm";
 import Yoga from "yoga-layout";
-import { ROOT, runQjs, runNodeCtx, schema, fixtureClock } from "./lib.mjs";
+import { ROOT, runQjs, runNodeCtx, schema } from "./lib.mjs";
 import { ShadowTree } from "../browser/shadow.js";
 import { stubMeasurer } from "../browser/text-layout.js";
 
@@ -63,8 +63,7 @@ test("node: the same releases after gc()", async () => {
 
 test("shadow tree: release frees detached nodes (and their Yoga nodes); layout is unchanged", () => {
   const lines = readFileSync(dir("list") + "log.jsonl", "utf8").split("\n").filter(Boolean);
-  const clock = fixtureClock();
-  const tree = new ShadowTree(Yoga, { schema, measurer: stubMeasurer, clock });
+  const tree = new ShadowTree(Yoga, { schema, measurer: stubMeasurer });
   let last;
   for (const l of lines) {
     const [op, ...a] = JSON.parse(l);

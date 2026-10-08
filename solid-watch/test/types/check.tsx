@@ -8,9 +8,7 @@ export const ok = (
       a <text fontWeight="bold">b</text>
     </text>
     <scroll flexGrow={1} />
-    <button onPress={(p) => p} press="anything" confirm={{ title: "t", detail: "d", label: "l" }} disabled={false} />
-    <countdown at={1000} format="elapsed" cues={[{ atRemainingMs: 0, pattern: "success" }]} />
-    <clock format="h:mm" />
+    <button onPress={(p) => p} disabled={false} />
     <haptic pattern="success" trigger={3} />
   </view>
 );
@@ -21,7 +19,7 @@ export const bad1 = <view flexDirection="sideways" />;
 export const bad2 = <view colour="red" />;
 // @ts-expect-error: padding takes no "auto"
 export const bad3 = <view padding="auto" />;
-// @ts-expect-error: a cue needs atRemainingMs
-export const bad5 = <countdown cues={[{ pattern: "click" }]} />;
-// @ts-expect-error: countdown has no children
-export const bad4 = <countdown>x</countdown>;
+// @ts-expect-error: haptic has no children
+export const bad4 = <haptic>x</haptic>;
+// @ts-expect-error: no such node type
+export const bad5 = <countdown />;

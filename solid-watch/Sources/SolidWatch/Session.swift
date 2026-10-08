@@ -6,7 +6,8 @@ import WatchKit
 
 /// The app-facing object: owns a `JSHost` + `ShadowTree` for one bundle,
 /// diffs each committed snapshot into per-node view models (`store`) for
-/// `MountView`, ticks countdowns and clocks, and plays haptics.
+/// `MountView`, runs the bundle's timers, hands its `send(bytes)` to
+/// `onSend`, and plays haptics.
 ///
 /// Loading is the app's job: hand it bundle source (and the hash you expect)
 /// and feed it states. The bundle mounts once `MountView` reports its size;
@@ -31,11 +32,15 @@ public final class SolidWatchSession: ObservableObject {
     public var onCommit: ((LayoutSnapshot) -> Void)?
     /// Plays a haptic pattern. Defaults to `WKInterfaceDevice.play`.
     public var playHaptic: (HapticPattern) -> Void = SolidWatchSession.defaultHaptic
+    /// The bundle's `send(bytes)` (README: send): what the app does with
+    /// them, e.g. write them to a device.
+    public var onSend: (([UInt8]) -> Void)?
 
     public private(set) var host: JSHost?
     private var viewport: CGSize?
-    private var pendingState: (JSData, Date)?
-    private var tickTimer: Timer?
+    private var pendingState: JSData?
+    /// The bundle's armed timers, by id (README: Timers).
+    private var timers: [Int32: Timer] = [:]
 
     public init(registry: NodeRegistry = NodeRegistry(), hostOptions: JSHost.Options = .init(),
                 treeOptions: ShadowTree.Options = .init()) {
@@ -51,6 +56,15 @@ public final class SolidWatchSession: ObservableObject {
         let tree = ShadowTree(registry: registry, measurer: makeMeasurer(), options: treeOptions)
         let h = JSHost(tree: tree, options: hostOptions)
         h.onLog = { [weak self] m in self?.onLog?(m) }
+        h.onSetTimer = { [weak self] id, ms in
+            MainActor.assumeIsolated { self?.setTimer(id, ms: ms) }
+        }
+        h.onClearTimer = { [weak self] id in
+            MainActor.assumeIsolated { self?.clearTimer(id) }
+        }
+        h.onSend = { [weak self] bytes in
+            MainActor.assumeIsolated { self?.onSend?(bytes) }
+        }
         tree.onWarning = { [weak self] m in self?.onLog?(m) }
         tree.onCommit = { [weak self] snap in
             MainActor.assumeIsolated { self?.committed(snap) }
@@ -61,10 +75,10 @@ public final class SolidWatchSession: ObservableObject {
     }
 
     /// Delivers a state to the bundle (`__app.onState`).
-    public func setState(_ state: JSData, receivedAt: Date = Date()) {
+    public func setState(_ state: JSData) {
         guard error == nil, let h = host else { return }
-        guard h.rootTag != nil else { pendingState = (state, receivedAt); return }
-        attempt { try h.onState(state, receivedAt: receivedAt) }
+        guard h.rootTag != nil else { pendingState = state; return }
+        attempt { try h.onState(state) }
         statesSinceGC += 1
         if statesSinceGC >= gcEveryStates { collectGarbage() }
     }
@@ -100,8 +114,7 @@ public final class SolidWatchSession: ObservableObject {
     }
 
     public func unload() {
-        tickTimer?.invalidate()
-        tickTimer = nil
+        clearTimers()
         host = nil
         snapshot = nil
         error = nil
@@ -111,22 +124,37 @@ public final class SolidWatchSession: ObservableObject {
 
     // MARK: Button presses
 
-    /// A tap on `node` (after its confirm sheet, if any): the native press
-    /// handler, then `press` to JS if `onPress` is set (README: button).
-    func press(_ node: LayoutNode, tappedAt: Date) {
-        if let name = node.button?.press {
-            if let handler = registry.pressHandlers[name] {
-                let offset = host?.tree.offsetMs ?? 0
-                handler(PressEvent(tag: node.tag, handler: name, props: node.props, tappedAt: tappedAt,
-                                   tappedAtDeviceMs: (tappedAt.timeIntervalSince1970 * 1000 + offset).rounded()))
-            } else {
-                onLog?("no press handler registered as \"\(name)\"")
-            }
-        }
+    /// A tap on `node`: `press` to JS if `onPress` is set (README: button).
+    func press(_ node: LayoutNode) {
         if node.button?.onPress == true {
-            let ago = (Date().timeIntervalSince(tappedAt) * 1000).rounded()
-            dispatch(tag: node.tag, name: "press", payload: .object(["agoMs": .number(max(0, ago))]))
+            dispatch(tag: node.tag, name: "press")
         }
+    }
+
+    // MARK: Timers (README: Timers)
+
+    private func setTimer(_ id: Int32, ms: Double) {
+        timers[id]?.invalidate()
+        let t = Timer(timeInterval: max(ms, 0) / 1000, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fire(id) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timers[id] = t
+    }
+
+    private func clearTimer(_ id: Int32) {
+        timers.removeValue(forKey: id)?.invalidate()
+    }
+
+    private func clearTimers() {
+        for t in timers.values { t.invalidate() }
+        timers.removeAll()
+    }
+
+    private func fire(_ id: Int32) {
+        timers.removeValue(forKey: id)
+        guard error == nil, let h = host, h.rootTag != nil else { return }
+        attempt { _ = try h.fireTimer(id) }
     }
 
     // MARK: Internals
@@ -135,37 +163,15 @@ public final class SolidWatchSession: ObservableObject {
         snapshot = snap
         store.apply(snap)
         for h in snap.haptics { playHaptic(h.pattern) }
-        scheduleTick()
         onCommit?(snap)
-    }
-
-    private func scheduleTick() {
-        tickTimer?.invalidate()
-        tickTimer = nil
-        guard let tree = host?.tree, let next = tree.nextTick() else { return }
-        let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.error == nil, let tree = self.host?.tree else { return }
-                let changed = tree.tick()
-                for h in tree.tickHaptics { self.playHaptic(h.pattern) }
-                if changed {
-                    self.attempt { try tree.relayout() }
-                } else {
-                    self.scheduleTick()
-                }
-            }
-        }
-        t.tolerance = 0.02
-        RunLoop.main.add(t, forMode: .common)
-        tickTimer = t
     }
 
     private func mountIfReady() {
         guard error == nil, let h = host, h.isLoaded, h.rootTag == nil, let v = viewport else { return }
         guard attempt({ try h.mount(width: v.width, height: v.height) }) else { return }
-        if let (s, at) = pendingState {
+        if let s = pendingState {
             pendingState = nil
-            attempt { try h.onState(s, receivedAt: at) }
+            attempt { try h.onState(s) }
         }
     }
 
@@ -179,7 +185,7 @@ public final class SolidWatchSession: ObservableObject {
         } catch {
             self.error = .engine("\(error)")
         }
-        tickTimer?.invalidate()
+        clearTimers()
         if let e = error { onLog?("solid-watch: \(e)") }
         return false
     }

@@ -87,7 +87,7 @@
       }
     },
     "textLayout": {
-      "doc": "Measurement of a text leaf (outermost <text>, countdown, clock). Ignored on spans.",
+      "doc": "Measurement of a text leaf (the outermost <text>). Ignored on spans.",
       "props": {
         "numberOfLines": { "kind": "measure", "type": "number", "default": 0, "doc": "0 = no limit. Lines past the limit are cut with a tail ellipsis." },
         "minScale": { "kind": "measure", "type": "number", "default": 1, "doc": "< 1 makes the text single-line and shrinks it to fit its width, down to fontSize x minScale (README: Shrink-to-fit)." }
@@ -111,33 +111,12 @@
       "children": "nodes"
     },
     "button": {
-      "doc": "Tappable box. On a tap the host stamps the tap time, shows the confirm sheet if `confirm` is set (and stops if it is cancelled), then runs the native `press` handler if set, then dispatches `press` to JS if `onPress` is set. The host dims a pressed button (opacity x 0.6) and a disabled one (x 0.35).",
+      "doc": "Tappable box. On a tap the host dispatches `press` to JS if `onPress` is set. The host dims a pressed button (opacity x 0.6) and a disabled one (x 0.35).",
       "groups": ["layout", "box"],
       "children": "nodes",
       "props": {
-        "onPress": { "kind": "event", "type": "event", "default": null, "doc": "JS handler; payload { agoMs }: ms from the tap to the dispatch." },
-        "press": { "kind": "behavior", "type": "string", "default": null, "doc": "Name of a press handler the app registered natively; it receives the node's props and the tap time." },
-        "confirm": { "kind": "behavior", "type": "object", "default": null, "fields": { "title": "string", "detail": "string", "label": "string" }, "doc": "Ask first: a sheet with title, detail and a confirm button labelled `label`." },
+        "onPress": { "kind": "event", "type": "event", "default": null, "doc": "JS handler, called with no payload (null)." },
         "disabled": { "kind": "behavior", "type": "boolean", "default": false }
-      }
-    },
-    "countdown": {
-      "doc": "Text the host ticks locally towards (or from) a target device time (local clock + the offset from syncClock), so it keeps going without state updates; optional haptic cues at set remaining times.",
-      "groups": ["layout", "box", "textStyle", "textLayout"],
-      "children": "none",
-      "props": {
-        "at": { "kind": "measure", "type": "number", "default": null, "doc": "Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing." },
-        "format": { "kind": "measure", "type": "enum", "values": ["countdown", "elapsed", "remaining"], "default": "countdown", "doc": "README: Countdown formats." },
-        "cues": { "kind": "behavior", "type": "array", "default": null, "fields": { "atRemainingMs": "number", "pattern": "string" }, "doc": "Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues." }
-      }
-    },
-    "clock": {
-      "doc": "Wall clock text on the device timeline (local clock + the syncClock offset, read as UTC ms), shifted by tzOffsetMin, ticked by the host.",
-      "groups": ["layout", "box", "textStyle", "textLayout"],
-      "children": "none",
-      "props": {
-        "format": { "kind": "measure", "type": "enum", "values": ["HH:mm", "HH:mm:ss", "h:mm", "hh:mm"], "default": "HH:mm", "swiftNames": { "HH:mm": "hourMinute24", "HH:mm:ss": "hourMinuteSecond24", "h:mm": "hourMinute12", "hh:mm": "hourMinute12Padded" }, "doc": "README: Clock." },
-        "tzOffsetMin": { "kind": "measure", "type": "number", "default": 0, "doc": "Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it." }
       }
     },
     "haptic": {

@@ -29,7 +29,9 @@ for (let r = 0; r < runs; r++) {
     insert() {},
     remove() {},
     commit() { calls.commit++; },
-    syncClock() {},
+    setTimer() {},
+    clearTimer() {},
+    send() {},
     release() {},
   };
   const t0 = performance.now();

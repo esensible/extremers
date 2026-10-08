@@ -41,7 +41,7 @@ let package = Package(
             name: "SolidWatch",
             dependencies: ["CSolidHost", "CYoga"]
         ),
-        // Reads ../../fixtures by path (tests run on the Mac or the simulator).
+        // Reads the package's fixtures/ by path (tests run on the Mac or the simulator).
         .testTarget(
             name: "SolidWatchTests",
             dependencies: ["SolidWatch"]

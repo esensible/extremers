@@ -5,10 +5,6 @@ import type { JSX as SolidJSX } from "solid-js";
 /** "#RRGGBB", "#RRGGBBAA" or a colour name from a schema's colors. */
 export type Color = `#${string}` | "white" | "black" | "transparent" | (string & {});
 
-/** Names of native press handlers; app fragments add to it. */
-export interface PressHandlers {}
-export type PressHandlerName = keyof PressHandlers extends never ? string : keyof PressHandlers;
-
 export interface LayoutProps {
   display?: "flex" | "none" | null;
   position?: "relative" | "absolute" | null;
@@ -84,29 +80,9 @@ export interface TextLayoutProps {
 }
 
 export interface ButtonProps {
-  /** JS handler; payload { agoMs }: ms from the tap to the dispatch. */
+  /** JS handler, called with no payload (null). */
   onPress?: (payload: any) => void | null;
-  /** Name of a press handler the app registered natively; it receives the node's props and the tap time. */
-  press?: PressHandlerName | null;
-  /** Ask first: a sheet with title, detail and a confirm button labelled `label`. */
-  confirm?: { title?: string; detail?: string; label?: string } | null;
   disabled?: boolean | null;
-}
-
-export interface CountdownProps {
-  /** Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing. */
-  at?: number | null;
-  /** README: Countdown formats. */
-  format?: "countdown" | "elapsed" | "remaining" | null;
-  /** Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues. */
-  cues?: { atRemainingMs: number; pattern: string }[] | null;
-}
-
-export interface ClockProps {
-  /** README: Clock. */
-  format?: "HH:mm" | "HH:mm:ss" | "h:mm" | "hh:mm" | null;
-  /** Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it. */
-  tzOffsetMin?: number | null;
 }
 
 export interface HapticProps {
@@ -133,21 +109,9 @@ export interface ScrollElement extends LayoutProps, BoxProps {
   ref?: unknown;
 }
 
-/** Tappable box. On a tap the host stamps the tap time, shows the confirm sheet if `confirm` is set (and stops if it is cancelled), then runs the native `press` handler if set, then dispatches `press` to JS if `onPress` is set. The host dims a pressed button (opacity x 0.6) and a disabled one (x 0.35). */
+/** Tappable box. On a tap the host dispatches `press` to JS if `onPress` is set. The host dims a pressed button (opacity x 0.6) and a disabled one (x 0.35). */
 export interface ButtonElement extends LayoutProps, BoxProps, ButtonProps {
   children?: SolidJSX.Element;
-  ref?: unknown;
-}
-
-/** Text the host ticks locally towards (or from) a target device time (local clock + the offset from syncClock), so it keeps going without state updates; optional haptic cues at set remaining times. */
-export interface CountdownElement extends LayoutProps, BoxProps, TextStyleProps, TextLayoutProps, CountdownProps {
-  children?: never;
-  ref?: unknown;
-}
-
-/** Wall clock text on the device timeline (local clock + the syncClock offset, read as UTC ms), shifted by tzOffsetMin, ticked by the host. */
-export interface ClockElement extends LayoutProps, BoxProps, TextStyleProps, TextLayoutProps, ClockProps {
-  children?: never;
   ref?: unknown;
 }
 
@@ -165,8 +129,6 @@ export namespace JSX {
     text: TextElement;
     scroll: ScrollElement;
     button: ButtonElement;
-    countdown: CountdownElement;
-    clock: ClockElement;
     haptic: HapticElement;
   }
 }

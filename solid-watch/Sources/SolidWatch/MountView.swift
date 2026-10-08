@@ -75,7 +75,7 @@ struct NodeView: View {
     @ViewBuilder
     private func content(_ n: LayoutNode) -> some View {
         switch n.type {
-        case "text", "countdown", "clock":
+        case "text":
             TextLeafView(node: n)
         case "scroll":
             ScrollView(.vertical, showsIndicators: false) {
@@ -200,56 +200,16 @@ struct ButtonNodeView<Label: View>: View {
     let node: LayoutNode
     let session: SolidWatchSession
     @ViewBuilder let label: () -> Label
-    @State private var confirming: Date?
 
     var body: some View {
-        let confirm = node.button?.confirm
         let disabled = node.button?.disabled ?? false
         Button {
-            let now = Date()
-            if confirm != nil { confirming = now } else { session.press(node, tappedAt: now) }
+            session.press(node)
         } label: {
             label().contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
-        .sheet(isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
-            if let c = confirm {
-                ConfirmSheet(confirm: c) {
-                    let at = confirming ?? Date()
-                    confirming = nil
-                    session.press(node, tappedAt: at)
-                } cancel: {
-                    confirming = nil
-                }
-            }
-        }
-    }
-}
-
-/// The package's confirm sheet: title, detail, confirm + cancel.
-struct ConfirmSheet: View {
-    let confirm: ButtonConfirm
-    let onConfirm: () -> Void
-    let cancel: () -> Void
-
-    init(confirm: ButtonConfirm, onConfirm: @escaping () -> Void, cancel: @escaping () -> Void) {
-        self.confirm = confirm
-        self.onConfirm = onConfirm
-        self.cancel = cancel
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                if !confirm.title.isEmpty { Text(confirm.title).font(.headline).multilineTextAlignment(.center) }
-                if !confirm.detail.isEmpty {
-                    Text(confirm.detail).font(.footnote).foregroundColor(.secondary).multilineTextAlignment(.center)
-                }
-                Button(confirm.label.isEmpty ? "Confirm" : confirm.label, action: onConfirm).tint(.red)
-                Button("Cancel", role: .cancel, action: cancel)
-            }
-        }
     }
 }

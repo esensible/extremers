@@ -3,7 +3,6 @@
   "name": "demo",
   "doc": "Example app fragment: exercises every extension point (tests and Swift typecheck).",
   "colors": { "accent": "#FF9F0A", "caption": "#999999" },
-  "pressHandlers": { "send": { "doc": "Send the button's payload bytes." } },
   "extends": {
     "button": {
       "props": {

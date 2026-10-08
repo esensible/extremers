@@ -6,7 +6,7 @@
 //     writes js/jsx.d.ts, Sources/SolidWatch/Generated/NodeProps.swift,
 //     browser/props.js from schema/nodes.json
 //
-// App fragment (custom node types, props on core types, press handlers):
+// App fragment (custom node types, props on core types, colors):
 //   node codegen/codegen.mjs --fragment app.json --ts out.d.ts --swift out.swift --js out.js
 //     The fragment's `name` prefixes its Swift types. Its Swift file imports
 //     SolidWatch and uses the core runtime types; its JS file exports the raw
@@ -56,7 +56,7 @@ function structName(group, prefix) {
   return prefix + upper(camel(group)) + "Props";
 }
 // Enum type for an enum prop: shared-group props by prop name (FlexDirection);
-// node-own props by node + prop (ClockFormat).
+// node-own props by node + prop (HapticPattern).
 function enumName(group, name, prefix, isNodeGroup) {
   if (group.includes(":")) {
     const [frag, node] = group.split(":");
@@ -195,14 +195,12 @@ function swiftEnumsAndStructs(groups, prefix) {
   return out;
 }
 
-function swiftSpecTable(nodes, colors, handlers) {
+function swiftSpecTable(nodes, colors) {
   const out = [];
   out.push(`  public static let colors: [String: String] = [`);
   for (const [k, v] of Object.entries(colors)) out.push(`    ${swiftStr(k)}: ${swiftStr(v)},`);
   if (!Object.keys(colors).length) out.push(`    :`);
   out.push(`  ]`, ``);
-  out.push(`  /// Native press handlers the app registers (\`button press=\`).`);
-  out.push(`  public static let pressHandlers: [String] = [${Object.keys(handlers).map(swiftStr).join(", ")}]`, ``);
   out.push(`  public static let nodes: [String: NodeSpec] = [`);
   for (const n of nodes) {
     out.push(`    ${swiftStr(n.type)}: NodeSpec(type: ${swiftStr(n.type)}, children: .${n.children}, native: ${n.native}, layout: ${n.layout}, props: [`);
@@ -389,7 +387,7 @@ function genSwiftCore(merged) {
     `  /// Yoga config both hosts use.`,
     `  public static let pointScaleFactor: Double = 2`,
     ``,
-    ...swiftSpecTable(nodes, merged.colors, merged.pressHandlers),
+    ...swiftSpecTable(nodes, merged.colors),
     `}`,
     ``,
   ].join("\n");
@@ -425,7 +423,7 @@ function genSwiftFragment(merged, frag, src) {
     ...swiftEnumsAndStructs(groups, prefix),
     `/// Schema fragment \`${frag.name}\`.`,
     `public enum ${prefix}Schema {`,
-    ...swiftSpecTable(newNodes, colors, frag.pressHandlers || {}),
+    ...swiftSpecTable(newNodes, colors),
     ``,
     ...ext,
     `}`,
@@ -451,7 +449,6 @@ function tsType(p, merged) {
   throw new Error(p.type);
 }
 function tsPropType(name, p) {
-  if (name === "press") return "PressHandlerName";
   return tsType(p);
 }
 const tsIface = (group) => {
@@ -485,10 +482,6 @@ function genTsCore(merged) {
     ``,
     `/** "#RRGGBB", "#RRGGBBAA" or a colour name from a schema's colors. */`,
     `export type Color = ${["`#${string}`", ...Object.keys(merged.colors).map(ts), "(string & {})"].join(" | ")};`,
-    ``,
-    `/** Names of native press handlers; app fragments add to it. */`,
-    `export interface PressHandlers {}`,
-    `export type PressHandlerName = keyof PressHandlers extends never ? string : keyof PressHandlers;`,
     ``,
     ...tsGroupIfaces(groups),
   ];
@@ -531,9 +524,6 @@ function genTsFragment(merged, frag, src) {
     out.push(`  children?: ${childrenType[n.children]};`, `  ref?: unknown;`, `}`, ``);
   }
   out.push(`declare module "solid-watch/jsx" {`);
-  out.push(`  interface PressHandlers {`);
-  for (const k of Object.keys(frag.pressHandlers || {})) out.push(`    ${ts(k)}: true;`);
-  out.push(`  }`);
   for (const [type] of Object.entries(frag.extends || {})) {
     const ifaces = groups.filter((g) => g.group === `${frag.name}:${type}`).map((g) => tsIface(g.group));
     if (ifaces.length) out.push(`  interface ${upper(type)}Element extends ${ifaces.join(", ")} {}`);

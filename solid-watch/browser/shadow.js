@@ -4,17 +4,11 @@
 // replay golden mutation logs through it with the stub measurer to produce
 // the expected frames the Swift host must match.
 //
-//   const tree = new ShadowTree(Yoga, { schema, measurer, clock })
+//   const tree = new ShadowTree(Yoga, { schema, measurer })
 //   tree.createRoot(1, { width, height })
 //   tree.createNode("view") -> tag ... tree.commit() -> layout result
-//
-// clock: { now(): host-local monotonic ms }. Countdowns and <clock> run on
-// device time = local now + offset, where
-// offset = deviceNowMs - local receipt time of the state that last called
-// syncClock (README: Time). The host calls receivedState(localMs) when a
-// state arrives, before handing it to the bundle.
 import { Align, BoxSizing, Direction, Display, Edge, FlexDirection, Gutter, Justify, MeasureMode, Overflow, PositionType, Wrap } from "yoga-layout";
-import { measureText, formatCountdown, formatClock } from "./text-layout.js";
+import { measureText } from "./text-layout.js";
 import { mergeSchema } from "../js/schema-merge.js";
 
 const ALIGN = { auto: Align.Auto, "flex-start": Align.FlexStart, center: Align.Center, "flex-end": Align.FlexEnd, stretch: Align.Stretch, baseline: Align.Baseline, "space-between": Align.SpaceBetween, "space-around": Align.SpaceAround, "space-evenly": Align.SpaceEvenly };
@@ -36,40 +30,19 @@ function dim(v, allowAuto, def) {
 }
 
 export class ShadowTree {
-  constructor(Yoga, { schema, fragments = [], measurer, clock, pointScaleFactor = 2 }) {
+  constructor(Yoga, { schema, fragments = [], measurer, pointScaleFactor = 2 }) {
     this.Yoga = Yoga;
     this.schema = mergeSchema(schema, ...fragments);
     this.measurer = measurer;
-    this.clock = clock;
     this.config = Yoga.Config.create();
     this.config.setPointScaleFactor(pointScaleFactor);
     this.nodes = new Map(); // tag -> node
     this.nextTag = 2;
     this.dirtyChildren = new Set(); // tags whose child list changed
     this.dirtyStyle = new Set(); // tags with a layout prop change
-    this.dirtyMeasure = new Set(); // text-ish tags whose content or measure props changed
+    this.dirtyMeasure = new Set(); // text leaves whose content or measure props changed
     this.hapticsFired = []; // [{tag, pattern}] at the last commit
     this.root = null;
-    this.offset = 0; // device ms - local ms; 0 until the first syncClock
-    this.receiptLocal = null;
-  }
-
-  // ---- time (README: Time) -------------------------------------------------------
-  /** A state arrived at local time localMs (call before __app.onState). */
-  receivedState(localMs) {
-    this.receiptLocal = localMs;
-  }
-  /** Host op: the state being applied was captured at device time deviceNowMs. */
-  syncClock(deviceNowMs) {
-    const local = this.receiptLocal ?? this.clock.now();
-    this.offset = deviceNowMs - local;
-    // every countdown's text may have moved; cues are not re-armed (a mark
-    // crossed by the correction fires or re-arms on the next tick as usual)
-    for (const n of this.nodes.values()) if (n.type === "countdown" || n.type === "clock") this.dirtyMeasure.add(n.tag);
-  }
-  /** Device time now. */
-  deviceNow() {
-    return this.clock.now() + this.offset;
   }
 
   // ---- host interface --------------------------------------------------------
@@ -88,7 +61,7 @@ export class ShadowTree {
     const n = this._make(this.nextTag++, type);
     if (spec.layout) {
       n.yoga = this.Yoga.Node.create(this.config);
-      if (type === "text" || type === "countdown" || type === "clock") {
+      if (type === "text") {
         n.yoga.setMeasureFunc((w, wm) => this._measure(n, wm === MeasureMode.Undefined ? Infinity : w));
       }
       this.dirtyStyle.add(n.tag);
@@ -114,7 +87,6 @@ export class ShadowTree {
     if (!spec) throw new Error(`<${n.type}> has no prop ${key}`);
     if (value === null) delete n.props[key];
     else n.props[key] = value;
-    if (n.type === "countdown" && (key === "at" || key === "cues")) n.cuesDirty = true;
     if (spec.kind === "layout") this.dirtyStyle.add(tag);
     else if (spec.kind === "measure") this._dirtyText(n, true);
   }
@@ -170,7 +142,7 @@ export class ShadowTree {
     const parents = [...this.dirtyChildren].map((t) => this.nodes.get(t)).filter((n) => n && n.yoga && !this._isSpan(n));
     for (const p of parents) while (p.yoga.getChildCount() > 0) p.yoga.removeChild(p.yoga.getChild(0));
     for (const p of parents) {
-      if (p.type === "text" || p.type === "countdown" || p.type === "clock") continue; // leaves
+      if (p.type === "text") continue; // leaves
       let i = 0;
       for (const c of p.children) if (this._hasLayout(c)) p.yoga.insertChild(c.yoga, i++);
     }
@@ -192,14 +164,7 @@ export class ShadowTree {
       const w = y.getComputedWidth() - y.getComputedPadding(Edge.Left) - y.getComputedPadding(Edge.Right) - y.getComputedBorder(Edge.Left) - y.getComputedBorder(Edge.Right);
       n.measured = this._measureLeaf(n, Math.max(0, w));
     }
-    // 6. haptics; countdown cues re-armed from the current time when their
-    //    `at` or `cues` changed (a mark already passed doesn't play)
-    for (const n of this.nodes.values()) {
-      if (n.cuesDirty) {
-        n.cuesDirty = false;
-        this._armCues(n);
-      }
-    }
+    // 6. haptics
     this.hapticsFired = [];
     for (const n of this.nodes.values()) {
       if (n.type !== "haptic" || !this._attached(n)) continue;
@@ -239,11 +204,6 @@ export class ShadowTree {
   /** The text runs of a leaf (raw text and spans, styles inherited). */
   runs(n) {
     const out = [];
-    if (n.type === "countdown" || n.type === "clock") {
-      const s = this.displayText(n);
-      if (s !== "") out.push({ text: s, ...this._textStyle(n, null) });
-      return out;
-    }
     const walk = (node, inherited) => {
       const style = this._textStyle(node, inherited);
       for (const c of node.children) {
@@ -253,62 +213,6 @@ export class ShadowTree {
     };
     walk(n, null);
     return out;
-  }
-
-  /**
-   * Time passed: re-derive every countdown / clock text; the ones that
-   * changed are re-measured at the next commit. Returns true if any changed
-   * (the host then commits to lay out and redraw).
-   */
-  tick() {
-    let changed = false;
-    this.tickHaptics = []; // cues that fired on this tick: [{tag, pattern, cue}]
-    for (const n of this.nodes.values()) {
-      if (n.type === "countdown" && this._attached(n)) this._cues(n);
-      if ((n.type !== "countdown" && n.type !== "clock") || !n.measured) continue;
-      const s = this.displayText(n);
-      const shown = n.measured.runs.length ? n.measured.runs[0].text : "";
-      if (s !== shown) {
-        this.dirtyMeasure.add(n.tag);
-        changed = true;
-      }
-    }
-    return changed;
-  }
-
-  /** Current text of a countdown or clock. */
-  displayText(n) {
-    if (n.type === "countdown") {
-      if (typeof n.props.at !== "number") return "";
-      return formatCountdown(n.props.format ?? "countdown", this._remaining(n));
-    }
-    return formatClock(n.props.format ?? "HH:mm", this.deviceNow(), typeof n.props.tzOffsetMin === "number" ? n.props.tzOffsetMin : 0);
-  }
-
-  // ---- countdowns (README: Countdown formats, Countdown cues) -------------------
-  _remaining(n) {
-    return Math.round(n.props.at - this.deviceNow());
-  }
-  _armCues(n) {
-    const cues = Array.isArray(n.props.cues) ? n.props.cues : [];
-    const r = typeof n.props.at === "number" ? this._remaining(n) : -Infinity;
-    n.cueArmed = cues.map((c) => r > c.atRemainingMs);
-  }
-  // A cue fires once when the remaining time falls to (<=) its mark while it
-  // is armed; it re-arms if the remaining time goes back above the mark. If
-  // several fall on one tick only the last mark (smallest atRemainingMs) plays.
-  _cues(n) {
-    const cues = Array.isArray(n.props.cues) ? n.props.cues : [];
-    if (typeof n.props.at !== "number" || !cues.length || !n.cueArmed) return;
-    const r = this._remaining(n);
-    let fire = null;
-    cues.forEach((c, i) => {
-      if (r <= c.atRemainingMs) {
-        if (n.cueArmed[i] && (!fire || c.atRemainingMs < fire.atRemainingMs)) fire = c;
-        n.cueArmed[i] = false;
-      } else n.cueArmed[i] = true;
-    });
-    if (fire) this.tickHaptics.push({ tag: n.tag, pattern: fire.pattern, cue: fire.atRemainingMs });
   }
 
   // ---- internals ----------------------------------------------------------------
@@ -332,7 +236,7 @@ export class ShadowTree {
     return n.type === "text" && n.parent && n.parent.type === "text";
   }
   _isLeaf(n) {
-    return n.type === "text" || n.type === "countdown" || n.type === "clock";
+    return n.type === "text";
   }
   // Has a Yoga node in its parent's Yoga children: layout types, not spans,
   // not raw text (ignored outside <text>).
@@ -347,7 +251,7 @@ export class ShadowTree {
   _dirtyText(n) {
     let leaf = null;
     for (let x = n; x; x = x.parent) {
-      if (x.type === "text" || x.type === "countdown" || x.type === "clock") leaf = x;
+      if (x.type === "text") leaf = x;
       else if (x.type !== "#text") break;
     }
     if (leaf) this.dirtyMeasure.add(leaf.tag);

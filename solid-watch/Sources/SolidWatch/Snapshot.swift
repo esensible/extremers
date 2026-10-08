@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// What a text leaf (outermost `text`, `countdown`, `clock`) draws.
+/// What a text leaf (the outermost `text`) draws.
 public struct TextLeaf: Equatable, Sendable {
     /// All runs, styles inherited, at the leaf's own sizes (scale 1).
     public let runs: [TextRun]

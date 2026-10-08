@@ -786,16 +786,44 @@
     }
   });
 
-  /**
-   * The state being applied was captured when the device's clock read
-   * `deviceNowMs`. The host keeps offset = deviceNowMs - (its local clock when
-   * it received this state) and runs countdowns on localNow + offset, so `at`
-   * props are plain device times (e.g. a start time from the state). Call it
-   * from onState; bundles never see the host's local clock.
-   */
-  function syncClock(deviceNowMs) {
-    host().syncClock(deviceNowMs);
+  // ---- timers (README: Timers) ------------------------------------------------
+  // setTimeout / setInterval for the bundle, on the host's timers: the host
+  // arms one native timer per id and calls __app.timer(id) when it is due,
+  // which runs the callback inside batch() and then commits, like any other
+  // call into the app. Installed as globals, so app code and libraries use the
+  // standard names. The clock (Date) is the host's own and is left alone.
+  const timers = new Map(); // id -> { fn, args, every }
+  let nextTimer = 1;
+  const delayOf = ms => {
+    const d = Number(ms);
+    return d > 0 ? d : 0;
+  };
+  function arm(fn, ms, args, repeat) {
+    if (typeof fn !== "function") throw new TypeError("setTimeout/setInterval: a function is required");
+    const id = nextTimer++;
+    const d = delayOf(ms);
+    timers.set(id, {
+      fn,
+      args,
+      every: repeat ? d : null
+    });
+    host().setTimer(id, d);
+    return id;
   }
+  function setTimeout(fn, ms, ...args) {
+    return arm(fn, ms, args, false);
+  }
+  function setInterval(fn, ms, ...args) {
+    return arm(fn, ms, args, true);
+  }
+  function clearTimeout(id) {
+    if (timers.delete(id)) host().clearTimer(id);
+  }
+  const clearInterval = clearTimeout;
+  globalThis.setTimeout = setTimeout;
+  globalThis.setInterval = setInterval;
+  globalThis.clearTimeout = clearTimeout;
+  globalThis.clearInterval = clearInterval;
 
   /**
    * Define the bundle's entry point: sets and returns `globalThis.__app`.
@@ -806,11 +834,13 @@
    *   one commit. ctx = { width, height } in points.
    * - onState(state): runs `onState(state)` inside batch(), then one commit.
    *   `state` is whatever the app delivers (bytes, an object); the package
-   *   doesn't look. If the state carries the device's clock, call
-   *   syncClock(deviceNowMs) from onState (README: Time).
+   *   doesn't look.
    * - dispatch(tag, name, payload): runs the JS handler for event `name` on
    *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
    *   false (and doesn't commit) if there is no handler.
+   * - timer(id): a timer the bundle set is due: runs its callback inside
+   *   batch(), then one commit (an interval is re-armed first). Returns false
+   *   (and doesn't commit) for a timer that was cleared.
    */
   function createApp(Root, {
     onState
@@ -833,6 +863,14 @@
         batch(() => fn(payload));
         host().commit();
         return true;
+      },
+      timer(id) {
+        const t = timers.get(id);
+        if (!t) return false;
+        if (t.every === null) timers.delete(id);else host().setTimer(id, t.every);
+        batch(() => t.fn(...t.args));
+        host().commit();
+        return true;
       }
     };
     globalThis.__app = app;
@@ -841,15 +879,6 @@
 
   const [count, setCount] = createSignal(0);
   const [armed, setArmed] = createSignal(true);
-  const [at, setAt] = createSignal(null);
-  const [tz, setTz] = createSignal(0);
-  const CUES = [60000, 30000, 10000, 5000, 4000, 3000, 2000, 1000].map(ms => ({
-    atRemainingMs: ms,
-    pattern: "click"
-  })).concat([{
-    atRemainingMs: 0,
-    pattern: "success"
-  }]);
   function App() {
     return (() => {
       var _el$ = createElement("view"),
@@ -858,17 +887,11 @@
         _el$5 = createElement("button"),
         _el$6 = createElement("text"),
         _el$8 = createElement("text"),
-        _el$9 = createElement("haptic"),
-        _el$0 = createElement("countdown"),
-        _el$1 = createElement("countdown"),
-        _el$10 = createElement("clock");
+        _el$9 = createElement("haptic");
       insertNode(_el$, _el$2);
       insertNode(_el$, _el$5);
       insertNode(_el$, _el$8);
       insertNode(_el$, _el$9);
-      insertNode(_el$, _el$0);
-      insertNode(_el$, _el$1);
-      insertNode(_el$, _el$10);
       setProp(_el$, "gap", 4);
       setProp(_el$, "padding", 4);
       insertNode(_el$2, _el$3);
@@ -879,55 +902,30 @@
       setProp(_el$2, "alignItems", "center");
       insertNode(_el$3, createTextNode(`Add`));
       insertNode(_el$5, _el$6);
-      setProp(_el$5, "press", "example");
-      setProp(_el$5, "confirm", {
-        title: "Sure?",
-        detail: "Runs the native handler",
-        label: "Go"
-      });
       setProp(_el$5, "height", 32);
-      insertNode(_el$6, createTextNode(`Native`));
+      insertNode(_el$6, createTextNode(`Idle`));
       setProp(_el$8, "tabular", true);
       insert(_el$8, count);
       setProp(_el$9, "pattern", "success");
-      setProp(_el$0, "fontSize", 40);
-      setProp(_el$0, "tabular", true);
-      setProp(_el$0, "minScale", 0.5);
-      setProp(_el$0, "cues", CUES);
-      setProp(_el$1, "format", "elapsed");
-      setProp(_el$10, "format", "hh:mm");
       effect(_p$ => {
-        var _v$ = armed() ? p => setCount(count() + (p && p.agoMs > 1000 ? 10 : 1)) : undefined,
+        var _v$ = armed() ? p => setCount(count() + (p && p.big ? 10 : 1)) : undefined,
           _v$2 = !armed(),
-          _v$3 = count(),
-          _v$4 = at(),
-          _v$5 = at(),
-          _v$6 = tz();
+          _v$3 = count();
         _v$ !== _p$.e && (_p$.e = setProp(_el$2, "onPress", _v$, _p$.e));
         _v$2 !== _p$.t && (_p$.t = setProp(_el$5, "disabled", _v$2, _p$.t));
         _v$3 !== _p$.a && (_p$.a = setProp(_el$9, "trigger", _v$3, _p$.a));
-        _v$4 !== _p$.o && (_p$.o = setProp(_el$0, "at", _v$4, _p$.o));
-        _v$5 !== _p$.i && (_p$.i = setProp(_el$1, "at", _v$5, _p$.i));
-        _v$6 !== _p$.n && (_p$.n = setProp(_el$10, "tzOffsetMin", _v$6, _p$.n));
         return _p$;
       }, {
         e: undefined,
         t: undefined,
-        a: undefined,
-        o: undefined,
-        i: undefined,
-        n: undefined
+        a: undefined
       });
       return _el$;
     })();
   }
   createApp(App, {
     onState(s) {
-      var _s$tz;
-      syncClock(s.now); // device clock when the state was captured
       setArmed(s.armed);
-      setAt(s.start); // device time of the start, or null
-      setTz((_s$tz = s.tz) !== null && _s$tz !== void 0 ? _s$tz : 0); // the device's zone, minutes east of UTC
     }
   });
 

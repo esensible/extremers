@@ -646,28 +646,10 @@ public struct TextLayoutProps: Equatable, Sendable {
   }
 }
 
-///  `confirm`: { title: string, detail: string, label: string }
-public struct ButtonConfirm: Equatable, Sendable {
-  public var title: String
-  public var detail: String
-  public var label: String
-  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
-  public init?(_ value: PropValue) {
-    guard case .object(let o) = value else { return nil }
-    title = PropDecode.string(o["title"] ?? .null) ?? ""
-    detail = PropDecode.string(o["detail"] ?? .null) ?? ""
-    label = PropDecode.string(o["label"] ?? .null) ?? ""
-  }
-}
-
 /// `button`'s own props.
 public struct ButtonProps: Equatable, Sendable {
-  /// JS handler; payload { agoMs }: ms from the tap to the dispatch.
+  /// JS handler, called with no payload (null).
   public var onPress: Bool = false
-  /// Name of a press handler the app registered natively; it receives the node's props and the tap time.
-  public var press: String? = nil
-  /// Ask first: a sheet with title, detail and a confirm button labelled `label`.
-  public var confirm: ButtonConfirm? = nil
   public var disabled: Bool = false
 
   public init() {}
@@ -681,112 +663,10 @@ public struct ButtonProps: Equatable, Sendable {
       guard let v = PropDecode.bool(value) else { self.onPress = false; return .invalid }
       self.onPress = v
       return .ok
-    case "press":
-      if value == .null { self.press = nil; return .ok }
-      guard let v = PropDecode.string(value) else { self.press = nil; return .invalid }
-      self.press = v
-      return .ok
-    case "confirm":
-      if value == .null { self.confirm = nil; return .ok }
-      guard let v = ButtonConfirm(value) else { self.confirm = nil; return .invalid }
-      self.confirm = v
-      return .ok
     case "disabled":
       if value == .null { self.disabled = false; return .ok }
       guard let v = PropDecode.bool(value) else { self.disabled = false; return .invalid }
       self.disabled = v
-      return .ok
-    default:
-      return .unknown
-    }
-  }
-}
-
-/// `format`: countdown | elapsed | remaining
-public enum CountdownFormat: String, CaseIterable, Sendable {
-  case countdown = "countdown"
-  case elapsed = "elapsed"
-  case remaining = "remaining"
-}
-
-/// each item of `cues`: { atRemainingMs: number, pattern: string }
-public struct CountdownCuesItem: Equatable, Sendable {
-  public var atRemainingMs: Double
-  public var pattern: String
-  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
-  public init?(_ value: PropValue) {
-    guard case .object(let o) = value else { return nil }
-    atRemainingMs = PropDecode.number(o["atRemainingMs"] ?? .null) ?? 0
-    pattern = PropDecode.string(o["pattern"] ?? .null) ?? ""
-  }
-}
-
-/// `countdown`'s own props.
-public struct CountdownProps: Equatable, Sendable {
-  /// Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing.
-  public var at: Double? = nil
-  /// README: Countdown formats.
-  public var format: CountdownFormat = .countdown
-  /// Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues.
-  public var cues: [CountdownCuesItem]? = nil
-
-  public init() {}
-
-  /// Applies one prop. `.null` resets it to its default; an invalid value also
-  /// resets it and returns `.invalid`; a name this struct doesn't own returns `.unknown`.
-  public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
-    switch name {
-    case "at":
-      if value == .null { self.at = nil; return .ok }
-      guard let v = PropDecode.number(value) else { self.at = nil; return .invalid }
-      self.at = v
-      return .ok
-    case "format":
-      if value == .null { self.format = .countdown; return .ok }
-      guard let v = PropDecode.string(value).flatMap(CountdownFormat.init(rawValue:)) else { self.format = .countdown; return .invalid }
-      self.format = v
-      return .ok
-    case "cues":
-      if value == .null { self.cues = nil; return .ok }
-      guard let v = PropDecode.items(value, CountdownCuesItem.init) else { self.cues = nil; return .invalid }
-      self.cues = v
-      return .ok
-    default:
-      return .unknown
-    }
-  }
-}
-
-/// `format`: HH:mm | HH:mm:ss | h:mm | hh:mm
-public enum ClockFormat: String, CaseIterable, Sendable {
-  case hourMinute24 = "HH:mm"
-  case hourMinuteSecond24 = "HH:mm:ss"
-  case hourMinute12 = "h:mm"
-  case hourMinute12Padded = "hh:mm"
-}
-
-/// `clock`'s own props.
-public struct ClockProps: Equatable, Sendable {
-  /// README: Clock.
-  public var format: ClockFormat = .hourMinute24
-  /// Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it.
-  public var tzOffsetMin: Double = 0
-
-  public init() {}
-
-  /// Applies one prop. `.null` resets it to its default; an invalid value also
-  /// resets it and returns `.invalid`; a name this struct doesn't own returns `.unknown`.
-  public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
-    switch name {
-    case "format":
-      if value == .null { self.format = .hourMinute24; return .ok }
-      guard let v = PropDecode.string(value).flatMap(ClockFormat.init(rawValue:)) else { self.format = .hourMinute24; return .invalid }
-      self.format = v
-      return .ok
-    case "tzOffsetMin":
-      if value == .null { self.tzOffsetMin = 0; return .ok }
-      guard let v = PropDecode.number(value) else { self.tzOffsetMin = 0; return .invalid }
-      self.tzOffsetMin = v
       return .ok
     default:
       return .unknown
@@ -855,9 +735,6 @@ public enum CoreSchema {
     "black": "#000000",
     "transparent": "#00000000",
   ]
-
-  /// Native press handlers the app registers (`button press=`).
-  public static let pressHandlers: [String] = []
 
   public static let nodes: [String: NodeSpec] = [
     "view": NodeSpec(type: "view", children: .nodes, native: false, layout: true, props: [
@@ -1064,128 +941,7 @@ public enum CoreSchema {
       "borderRadius": PropSpec(name: "borderRadius", kind: .paint, type: .number, group: "box", inherits: false, values: []),
       "opacity": PropSpec(name: "opacity", kind: .paint, type: .number, group: "box", inherits: false, values: []),
       "onPress": PropSpec(name: "onPress", kind: .event, type: .event, group: "button", inherits: false, values: []),
-      "press": PropSpec(name: "press", kind: .behavior, type: .string, group: "button", inherits: false, values: []),
-      "confirm": PropSpec(name: "confirm", kind: .behavior, type: .object, group: "button", inherits: false, values: []),
       "disabled": PropSpec(name: "disabled", kind: .behavior, type: .boolean, group: "button", inherits: false, values: []),
-    ]),
-    "countdown": NodeSpec(type: "countdown", children: .none, native: false, layout: true, props: [
-      "display": PropSpec(name: "display", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex", "none"]),
-      "position": PropSpec(name: "position", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["relative", "absolute"]),
-      "top": PropSpec(name: "top", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "right": PropSpec(name: "right", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "bottom": PropSpec(name: "bottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "left": PropSpec(name: "left", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "width": PropSpec(name: "width", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "height": PropSpec(name: "height", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "minWidth": PropSpec(name: "minWidth", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "minHeight": PropSpec(name: "minHeight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "maxWidth": PropSpec(name: "maxWidth", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "maxHeight": PropSpec(name: "maxHeight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "aspectRatio": PropSpec(name: "aspectRatio", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flex": PropSpec(name: "flex", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexGrow": PropSpec(name: "flexGrow", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexShrink": PropSpec(name: "flexShrink", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexBasis": PropSpec(name: "flexBasis", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "flexDirection": PropSpec(name: "flexDirection", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["column", "row", "column-reverse", "row-reverse"]),
-      "flexWrap": PropSpec(name: "flexWrap", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["nowrap", "wrap", "wrap-reverse"]),
-      "justifyContent": PropSpec(name: "justifyContent", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"]),
-      "alignItems": PropSpec(name: "alignItems", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "stretch", "baseline"]),
-      "alignSelf": PropSpec(name: "alignSelf", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["auto", "flex-start", "center", "flex-end", "stretch", "baseline"]),
-      "alignContent": PropSpec(name: "alignContent", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "stretch", "space-between", "space-around", "space-evenly"]),
-      "margin": PropSpec(name: "margin", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginHorizontal": PropSpec(name: "marginHorizontal", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginVertical": PropSpec(name: "marginVertical", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginTop": PropSpec(name: "marginTop", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginRight": PropSpec(name: "marginRight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginBottom": PropSpec(name: "marginBottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginLeft": PropSpec(name: "marginLeft", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "padding": PropSpec(name: "padding", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingHorizontal": PropSpec(name: "paddingHorizontal", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingVertical": PropSpec(name: "paddingVertical", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingTop": PropSpec(name: "paddingTop", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingRight": PropSpec(name: "paddingRight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingBottom": PropSpec(name: "paddingBottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingLeft": PropSpec(name: "paddingLeft", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "borderWidth": PropSpec(name: "borderWidth", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "gap": PropSpec(name: "gap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "rowGap": PropSpec(name: "rowGap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "columnGap": PropSpec(name: "columnGap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "overflow": PropSpec(name: "overflow", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["visible", "hidden", "scroll"]),
-      "boxSizing": PropSpec(name: "boxSizing", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["border-box", "content-box"]),
-      "background": PropSpec(name: "background", kind: .paint, type: .color, group: "box", inherits: false, values: []),
-      "borderColor": PropSpec(name: "borderColor", kind: .paint, type: .color, group: "box", inherits: false, values: []),
-      "borderRadius": PropSpec(name: "borderRadius", kind: .paint, type: .number, group: "box", inherits: false, values: []),
-      "opacity": PropSpec(name: "opacity", kind: .paint, type: .number, group: "box", inherits: false, values: []),
-      "color": PropSpec(name: "color", kind: .paint, type: .color, group: "textStyle", inherits: true, values: []),
-      "fontSize": PropSpec(name: "fontSize", kind: .measure, type: .number, group: "textStyle", inherits: true, values: []),
-      "fontWeight": PropSpec(name: "fontWeight", kind: .measure, type: .enumeration, group: "textStyle", inherits: true, values: ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"]),
-      "tabular": PropSpec(name: "tabular", kind: .measure, type: .boolean, group: "textStyle", inherits: true, values: []),
-      "lineHeight": PropSpec(name: "lineHeight", kind: .measure, type: .number, group: "textStyle", inherits: true, values: []),
-      "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
-      "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "at": PropSpec(name: "at", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
-      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "countdown", inherits: false, values: ["countdown", "elapsed", "remaining"]),
-      "cues": PropSpec(name: "cues", kind: .behavior, type: .array, group: "countdown", inherits: false, values: []),
-    ]),
-    "clock": NodeSpec(type: "clock", children: .none, native: false, layout: true, props: [
-      "display": PropSpec(name: "display", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex", "none"]),
-      "position": PropSpec(name: "position", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["relative", "absolute"]),
-      "top": PropSpec(name: "top", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "right": PropSpec(name: "right", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "bottom": PropSpec(name: "bottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "left": PropSpec(name: "left", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "width": PropSpec(name: "width", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "height": PropSpec(name: "height", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "minWidth": PropSpec(name: "minWidth", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "minHeight": PropSpec(name: "minHeight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "maxWidth": PropSpec(name: "maxWidth", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "maxHeight": PropSpec(name: "maxHeight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "aspectRatio": PropSpec(name: "aspectRatio", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flex": PropSpec(name: "flex", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexGrow": PropSpec(name: "flexGrow", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexShrink": PropSpec(name: "flexShrink", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "flexBasis": PropSpec(name: "flexBasis", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "flexDirection": PropSpec(name: "flexDirection", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["column", "row", "column-reverse", "row-reverse"]),
-      "flexWrap": PropSpec(name: "flexWrap", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["nowrap", "wrap", "wrap-reverse"]),
-      "justifyContent": PropSpec(name: "justifyContent", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"]),
-      "alignItems": PropSpec(name: "alignItems", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "stretch", "baseline"]),
-      "alignSelf": PropSpec(name: "alignSelf", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["auto", "flex-start", "center", "flex-end", "stretch", "baseline"]),
-      "alignContent": PropSpec(name: "alignContent", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex-start", "center", "flex-end", "stretch", "space-between", "space-around", "space-evenly"]),
-      "margin": PropSpec(name: "margin", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginHorizontal": PropSpec(name: "marginHorizontal", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginVertical": PropSpec(name: "marginVertical", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginTop": PropSpec(name: "marginTop", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginRight": PropSpec(name: "marginRight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginBottom": PropSpec(name: "marginBottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "marginLeft": PropSpec(name: "marginLeft", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "padding": PropSpec(name: "padding", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingHorizontal": PropSpec(name: "paddingHorizontal", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingVertical": PropSpec(name: "paddingVertical", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingTop": PropSpec(name: "paddingTop", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingRight": PropSpec(name: "paddingRight", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingBottom": PropSpec(name: "paddingBottom", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "paddingLeft": PropSpec(name: "paddingLeft", kind: .layout, type: .dimension, group: "layout", inherits: false, values: []),
-      "borderWidth": PropSpec(name: "borderWidth", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "gap": PropSpec(name: "gap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "rowGap": PropSpec(name: "rowGap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "columnGap": PropSpec(name: "columnGap", kind: .layout, type: .number, group: "layout", inherits: false, values: []),
-      "overflow": PropSpec(name: "overflow", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["visible", "hidden", "scroll"]),
-      "boxSizing": PropSpec(name: "boxSizing", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["border-box", "content-box"]),
-      "background": PropSpec(name: "background", kind: .paint, type: .color, group: "box", inherits: false, values: []),
-      "borderColor": PropSpec(name: "borderColor", kind: .paint, type: .color, group: "box", inherits: false, values: []),
-      "borderRadius": PropSpec(name: "borderRadius", kind: .paint, type: .number, group: "box", inherits: false, values: []),
-      "opacity": PropSpec(name: "opacity", kind: .paint, type: .number, group: "box", inherits: false, values: []),
-      "color": PropSpec(name: "color", kind: .paint, type: .color, group: "textStyle", inherits: true, values: []),
-      "fontSize": PropSpec(name: "fontSize", kind: .measure, type: .number, group: "textStyle", inherits: true, values: []),
-      "fontWeight": PropSpec(name: "fontWeight", kind: .measure, type: .enumeration, group: "textStyle", inherits: true, values: ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"]),
-      "tabular": PropSpec(name: "tabular", kind: .measure, type: .boolean, group: "textStyle", inherits: true, values: []),
-      "lineHeight": PropSpec(name: "lineHeight", kind: .measure, type: .number, group: "textStyle", inherits: true, values: []),
-      "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
-      "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "clock", inherits: false, values: ["HH:mm", "HH:mm:ss", "h:mm", "hh:mm"]),
-      "tzOffsetMin": PropSpec(name: "tzOffsetMin", kind: .measure, type: .number, group: "clock", inherits: false, values: []),
     ]),
     "haptic": NodeSpec(type: "haptic", children: .none, native: false, layout: false, props: [
       "pattern": PropSpec(name: "pattern", kind: .behavior, type: .enumeration, group: "haptic", inherits: false, values: ["notification", "directionUp", "directionDown", "success", "failure", "retry", "start", "stop", "click"]),

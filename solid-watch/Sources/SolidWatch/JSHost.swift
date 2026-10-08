@@ -46,7 +46,13 @@ public enum JSHostError: Error, CustomStringConvertible, Equatable {
 /// applies mutations to a `ShadowTree`.
 ///
 /// Bundle contract: the bundle sets `globalThis.__app = { mount(rootTag,
-/// {width, height}), onState(state), dispatch(tag, name, payload) }`.
+/// {width, height}), onState(state), dispatch(tag, name, payload),
+/// timer(id) }`.
+///
+/// Timers (README: Timers): the bundle's `setTimer(id, ms)` /
+/// `clearTimer(id)` go to `onSetTimer` / `onClearTimer`; whoever owns the
+/// host arms a real timer and calls `fireTimer(id)` when it is due
+/// (`SolidWatchSession` does). The bundle's `send(bytes)` goes to `onSend`.
 ///
 /// Not thread-safe: use it from one thread (the main thread in an app).
 public final class JSHost {
@@ -65,6 +71,12 @@ public final class JSHost {
     public let options: Options
     /// `console.*` and `__host.log` output.
     public var onLog: ((String) -> Void)?
+    /// `setTimer(id, ms)`: arm timer `id` (replacing it) to fire in `ms` ms.
+    public var onSetTimer: ((Int32, Double) -> Void)?
+    /// `clearTimer(id)`: disarm timer `id`.
+    public var onClearTimer: ((Int32) -> Void)?
+    /// `send(bytes)`: bytes for the app's native side.
+    public var onSend: (([UInt8]) -> Void)?
     public private(set) var isLoaded = false
     public private(set) var rootTag: Int32?
     /// SHA-256 (lowercase hex) of the loaded bundle.
@@ -124,8 +136,21 @@ public final class JSHost {
         cb.commit = { user in
             Box.get(user).status { _ = try $0.tree.commit() }
         }
-        cb.sync_clock = { user, ms in
-            Box.get(user).status { $0.tree.syncClock(deviceNowMs: ms) }
+        cb.set_timer = { user, id, ms in
+            Box.get(user).status { $0.onSetTimer?(id, ms) }
+        }
+        cb.clear_timer = { user, id in
+            Box.get(user).status { $0.onClearTimer?(id) }
+        }
+        cb.send = { user, value, valuelen in
+            Box.get(user).status { h in
+                let v: JSData
+                do { v = try JSDataCodec.decode(UnsafeRawBufferPointer(start: value, count: valuelen)) } catch {
+                    throw MutationError("send: undecodable value")
+                }
+                guard let bytes = JSHost.bytes(v) else { throw MutationError("send: expected bytes") }
+                h.onSend?(bytes)
+            }
         }
         cb.release = { user, tag in
             Box.get(user).status { h in
@@ -196,13 +221,34 @@ public final class JSHost {
         try callApp("mount", [.number(Double(root)), ctx])
     }
 
-    /// Calls `__app.onState(state)`. `receivedAt` is when the app received
-    /// the state (local clock); the bundle's `syncClock(deviceNowMs)` sets the
-    /// device clock offset against it (README: Time).
-    public func onState(_ state: JSData, receivedAt: Date? = nil) throws {
+    /// Calls `__app.onState(state)`.
+    public func onState(_ state: JSData) throws {
         guard rootTag != nil else { throw JSHostError.notReady("onState before mount") }
-        tree.receivedState(at: receivedAt ?? tree.now())
         try callApp("onState", [state])
+    }
+
+    /// Calls `__app.timer(id)`: timer `id` is due. Returns whether the bundle
+    /// still had it (a cleared timer is ignored).
+    @discardableResult
+    public func fireTimer(_ id: Int32) throws -> Bool {
+        guard rootTag != nil else { throw JSHostError.notReady("timer before mount") }
+        return try callApp("timer", [.number(Double(id))]) == .bool(true)
+    }
+
+    /// Byte values from an array of numbers or a byte buffer.
+    static func bytes(_ v: JSData) -> [UInt8]? {
+        switch v {
+        case .bytes(let b): return b
+        case .array(let a):
+            var out: [UInt8] = []
+            out.reserveCapacity(a.count)
+            for x in a {
+                guard case .number(let d) = x, d >= 0, d <= 255, d == d.rounded() else { return nil }
+                out.append(UInt8(d))
+            }
+            return out
+        default: return nil
+        }
     }
 
     /// Calls `__app.dispatch(tag, name, payload)`; returns its result

@@ -4,10 +4,13 @@ import os
 
 /// solid-watch demo: at launch, runs every fixture bundle through its golden
 /// driver script and diffs the mutation log against the golden one (the
-/// integrity check), then shows one bundle live, cycling its fixture states
-/// and timing each update. Results are printed (prefix "DEMO "), logged
-/// (subsystem au.esensible.solidwatch.demo) and written to
-/// Documents/demo-results.txt.
+/// integrity check), then shows one bundle live: by default the `timers`
+/// bundle, interactively (its countdown runs on the watch's clock against a
+/// device time from a state; Send asks for two confirm taps; the bundle's
+/// log lines and every send(bytes) are printed); another bundle named in
+/// LocalFixtures/live.txt instead cycles its fixture states, timing each
+/// update. Results are printed (prefix "DEMO "), logged (subsystem
+/// au.esensible.solidwatch.demo) and written to Documents/demo-results.txt.
 @main
 struct DemoApp: App {
     var body: some Scene {
@@ -188,17 +191,46 @@ enum Integrity {
 /// render (node view bodies evaluated, and time from the end of the update
 /// to the last body evaluation).
 enum Live {
+    /// The bundle to show: LocalFixtures/live.txt names one, else `timers`.
+    static var name: String {
+        if let url = Bundle.main.url(forResource: "LocalFixtures", withExtension: nil)?.appendingPathComponent("live.txt"),
+           let s = try? String(contentsOf: url, encoding: .utf8) {
+            let n = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if Fixtures.mutationNames.contains(n) { return n }
+        }
+        return "timers"
+    }
+
     @MainActor
     static func run(_ session: SolidWatchSession, _ out: Out) async {
-        let names = Fixtures.mutationNames
-        for name in names.contains("tune") ? ["tune"] : ["basic", "list"] { await run(name, session, out) }
+        session.onLog = { m in out("bundle: \(m)") }
+        session.onSend = { bytes in
+            out("send \(bytes.count) bytes: " + bytes.map { String(format: "%02x", $0) }.joined(separator: " "))
+        }
+        if name == "timers" { await interactive(session, out) } else { await run(name, session, out) }
+    }
+
+    /// The timers bundle, live: a state says the device clock reads the
+    /// watch's time + 3 h and the start is 65 s away; a new start each
+    /// time the countdown has run out. Tap Send, then the orange confirm
+    /// button twice within 5 s.
+    @MainActor
+    static func interactive(_ session: SolidWatchSession, _ out: Out) async {
+        guard let f = try? Fixtures.load("timers") else { out("live: no timers fixture"); return }
+        session.load(f.bundle, expectedSHA256: f.sha256)
+        out("live[timers]: tap Send, then the orange button twice within 5 s")
+        while true {
+            let now = (Date().timeIntervalSince1970 * 1000).rounded() + 3 * 3_600_000
+            session.setState(["now": .number(now), "start": .number(now + 65_000)])
+            if let e = session.error { out("live error: \(e)"); return }
+            out(String(format: "live[timers]: state now %.0f, start in 65 s", now))
+            try? await Task.sleep(nanoseconds: 75_000_000_000)
+        }
     }
 
     /// The live bundle's registry (with its fragment, if any).
     static func registry() -> NodeRegistry {
-        if Fixtures.mutationNames.contains("tune"), let f = try? Fixtures.load("tune"), let r = try? Fixtures.registry(f) {
-            return r
-        }
+        if let f = try? Fixtures.load(name), let r = try? Fixtures.registry(f) { return r }
         return NodeRegistry()
     }
 
