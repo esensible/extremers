@@ -107,7 +107,24 @@ final class JSHostTests: XCTestCase {
         o.memoryLimit = 4 << 20
         let h = host(o)
         XCTAssertThrowsError(try h.load(Data("const a = []; for (;;) a.push(new Array(1000).fill(1))".utf8))) { e in
-            guard case .outOfMemory = e as? JSHostError else { return XCTFail("\(e)") }
+            guard case .outOfMemory(let m) = e as? JSHostError else { return XCTFail("\(e)") }
+            XCTAssertEqual(m, "out of memory")
+        }
+        // usable again once the memory is free
+        XCTAssertEqual(try h.eval("2+2"), 4)
+    }
+
+    /// When the limit leaves no room even for the "out of memory" error,
+    /// QuickJS throws null: still out of memory, not a script exception.
+    func testOutOfMemoryWithoutRoomForTheError() {
+        var o = JSHost.Options()
+        o.memoryLimit = 4 << 20
+        let h = host(o)
+        // fill the heap to the last few bytes with small strings, then fail
+        let fill = "const a = []; let n = 1024; for (;;) { try { a.push('x'.repeat(n)) } catch (e) { if (n === 1) throw e; n = n >> 1 } }"
+        XCTAssertThrowsError(try h.load(Data(fill.utf8))) { e in
+            guard case .outOfMemory(let m) = e as? JSHostError else { return XCTFail("\(e)") }
+            XCTAssertEqual(m, "out of memory")
         }
     }
 
