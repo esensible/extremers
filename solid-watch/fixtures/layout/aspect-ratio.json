@@ -1,0 +1,59 @@
+{
+ "name": "aspect-ratio",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"alignItems\",\"flex-start\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"width\",80]",
+  "[\"setProp\",3,\"aspectRatio\",2]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"height\",30]",
+  "[\"setProp\",4,\"aspectRatio\",0.5]",
+  "[\"insert\",2,4,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    70
+   ],
+   "3": [
+    0,
+    0,
+    80,
+    40
+   ],
+   "4": [
+    0,
+    40,
+    15,
+    30
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

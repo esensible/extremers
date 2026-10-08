@@ -1,0 +1,62 @@
+{
+ "name": "border-content-box",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"borderWidth\",3]",
+  "[\"setProp\",3,\"padding\",2]",
+  "[\"setProp\",3,\"height\",30]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"borderWidth\",3]",
+  "[\"setProp\",4,\"padding\",2]",
+  "[\"setProp\",4,\"height\",30]",
+  "[\"setProp\",4,\"width\",50]",
+  "[\"setProp\",4,\"boxSizing\",\"content-box\"]",
+  "[\"insert\",2,4,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    70
+   ],
+   "3": [
+    0,
+    0,
+    198,
+    30
+   ],
+   "4": [
+    0,
+    30,
+    60,
+    40
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

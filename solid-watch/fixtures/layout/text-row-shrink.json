@@ -1,0 +1,70 @@
+{
+ "name": "text-row-shrink",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "now": 1000000,
+  "receipt": 1000000,
+  "local": "2026-01-01T09:41:07"
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"padding\",4]",
+  "[\"setProp\",2,\"gap\",4]",
+  "[\"setProp\",2,\"alignItems\",\"center\"]",
+  "[\"createNode\",3,\"text\"]",
+  "[\"setProp\",3,\"fontSize\",20]",
+  "[\"setProp\",3,\"minScale\",0.5]",
+  "[\"setProp\",3,\"flexShrink\",1]",
+  "[\"createText\",4,\"Count 123456789012 items\"]",
+  "[\"insert\",3,4,0]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"flexGrow\",1]",
+  "[\"setProp\",5,\"height\",10]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    23.5
+   ],
+   "3": [
+    4,
+    4,
+    186,
+    16
+   ],
+   "5": [
+    194,
+    7,
+    0,
+    10
+   ]
+  },
+  "text": {
+   "3": {
+    "fontSize": 12.5,
+    "lines": 1
+   }
+  },
+  "content": {}
+ }
+}
