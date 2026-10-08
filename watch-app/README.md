@@ -37,6 +37,7 @@ Swift 6 compiler) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 The Xcode project is generated from `project.yml` and is not checked in.
 
 ```sh
+git submodule update --init                           # once: solid-watch's quickjs-ng
 sh solid-watch/scripts/build-quickjs-xcframework.sh   # once, and after updating quickjs-ng
 brew install xcodegen
 cd watch-app
@@ -47,7 +48,9 @@ open Extremers.xcodeproj
 solid-watch links QuickJS as a prebuilt, always optimised XCFramework
 (`solid-watch/Frameworks/`, a build output, not committed; see
 `solid-watch/README.md`): build it once as above before the first Xcode
-build.
+build, or the package fails to load with "solid-watch:
+Frameworks/CQuickJS.xcframework is missing". Yoga comes from its own Swift
+package, which Xcode fetches.
 
 Re-run `xcodegen generate` after adding or removing files, or after
 editing `project.yml`. It rewrites the project, so any change made in

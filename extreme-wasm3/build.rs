@@ -1,5 +1,6 @@
-//! Compiles the vendored wasm3 interpreter (wasm3/, v0.9.0) with the
-//! settings in m3_extremers_config.h, for whatever the crate is built for.
+//! Compiles the wasm3 interpreter (the wasm3/ submodule, v0.9.0; its
+//! sources in wasm3/source/) with the settings in m3_extremers_config.h,
+//! for whatever the crate is built for.
 //!
 //! clang everywhere (env `WASM3_CC` overrides): wasm3 needs `musttail` for
 //! guaranteed tail calls between its op handlers, or every executed op costs
@@ -18,9 +19,15 @@ use std::{env, path::PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let src = manifest.join("wasm3");
+    let src = manifest.join("wasm3/source");
+    if !src.join("wasm3.h").is_file() {
+        panic!(
+            "extreme-wasm3: {} is not checked out; run `git submodule update --init` at the repository root",
+            src.display()
+        );
+    }
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=wasm3");
+    println!("cargo:rerun-if-changed=wasm3/source");
     println!("cargo:rerun-if-changed=m3_extremers_config.h");
     println!("cargo:rerun-if-env-changed=WASM3_CC");
     println!("cargo:rerun-if-env-changed=WASM3_AR");

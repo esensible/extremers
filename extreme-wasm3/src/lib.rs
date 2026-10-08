@@ -1,4 +1,4 @@
-//! The vendored wasm3 interpreter (v0.9.0, `wasm3/`, built by build.rs) and
+//! The wasm3 interpreter (v0.9.0, the `wasm3/` submodule, built by build.rs) and
 //! the few parts of its API the package host uses (`common::engine`).
 //!
 //! A [`Wasm3`] is one wasm3 environment and runtime holding at most one

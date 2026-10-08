@@ -21,7 +21,7 @@ Choose picks between them.
 | `extreme-tune` | The `tune` package: speed and heading deviation over a rolling window. Engine, Kindle page, watch bundle (`watch-js/`), bindings. |
 | `choose/` | The built-in Choose package's Kindle page and watch bundle (no engine: the host makes its view). |
 | `extreme-packages` | What the firmware ships with: Race and Tune preinstalled, and Choose; `build.rs` builds them with `tools/package` and embeds them. |
-| `extreme-wasm3` | The vendored [wasm3](https://github.com/wasm3/wasm3) interpreter (v0.9.0, C, built with clang) and a thin Rust API. |
+| `extreme-wasm3` | The [wasm3](https://github.com/wasm3/wasm3) interpreter (v0.9.0, C, built with clang; a git submodule, `extreme-wasm3/wasm3`) and a thin Rust API. |
 | `common` | Platform-independent runtime: the package host (`host.rs`: registry, selection, clock, engine timer, broadcast), engines under wasm3 (`engine.rs`), HTTP/websocket and BLE transports, GPS (NMEA) parsing, configuration. |
 | `tgt-xiaoc6` | Firmware for the Seeed XIAO ESP32-C6 (the board in use). |
 | `tgt-pico` | Firmware for the Raspberry Pi Pico W (secondary; builds, not run since the packages). |
@@ -49,6 +49,10 @@ firmware), Node.js/npm (the pages and bundles are built by
 and probe-rs to flash the C6.
 
 ```sh
+# once after cloning: wasm3 (extreme-wasm3/wasm3) and solid-watch's
+# quickjs-ng are git submodules
+git submodule update --init
+
 # tests (engines, host with the real packages under wasm3, parser, protocol)
 cargo test
 
