@@ -16,6 +16,12 @@ import { onState, selectDefault } from "./api.js";
 
 const [Confirm, doConfirm] = confirm();
 
+// The exit button's side, as a share of the screen height. The Kindle's is
+// 15 %; on the watch the rounded corner and the system bar eat into a
+// corner that small, so it is 30 % here (clear of every other button in
+// every phase: test/bundle.test.mjs).
+const EXIT_SIZE = 0.3;
+
 export const Main = () => (
   <Switch fallback={<text fontSize={20} textAlign="center">Loading...</text>}>
     <Match when={state() === STATE_ACTIVE}>
@@ -33,7 +39,7 @@ export const Main = () => (
 const App = (props) => (
   <view flexGrow={1}>
     <Main />
-    <button position="absolute" left={0} top={0} width={props.height * 0.15} height={props.height * 0.15} onPress={() => doConfirm(() => selectDefault(), 2)} />
+    <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} onPress={() => doConfirm(() => selectDefault(), 2)} />
     <Confirm />
     <Haptic />
   </view>

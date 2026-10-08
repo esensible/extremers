@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { runNode, replay } from "../../../solid-watch/test/lib.mjs";
 import { decodeHostEvent } from "../../../host-js/host.js";
 import { packageId } from "../../../host-js/package-id.js";
+import { exitClear, buttonsPerCommit } from "../../../host-js/test/fixture-tags.mjs";
 import { decodeRaceEvent } from "../../protocol-js/race.js";
 
 const dir = new URL("../fixtures/", import.meta.url);
@@ -94,4 +95,24 @@ test("haptics: the countdown's cues, one gun from the countdown, one from the de
 test("Exit: the top-left button, 2 confirm taps, SelectDefault", () => {
   const s = sends();
   assert.deepEqual(s.at(-1).event, { tag: "SelectDefault", value: null });
+});
+
+// Watch screens (points): 40/41 mm, 44/45 mm (the fixtures'), 46 mm, 49 mm.
+const SCREENS = [[162, 197], [198, 242], [208, 248], [205, 251]];
+
+test("the exit button is 30 % of the height, square, top left, and covers no other button in any phase or screen", () => {
+  const script = JSON.parse(read("script.json"));
+  for (const [width, height] of SCREENS) {
+    const ctx = { width, height };
+    const run = runNode(read("bundle.js"), { ...script, ctx });
+    const frames = replay(run, { fragments: [fragment] });
+    const [checked, problems] = exitClear(run, frames);
+    assert.equal(checked, frames.length, `${width}x${height}: every commit has it`);
+    assert.deepEqual(problems, [], `${width}x${height}`);
+    const exit = buttonsPerCommit(run, frames).at(-1).find((b) => b.props.left === 0 && b.props.top === 0);
+    assert.ok(Math.abs(exit.rect[2] - 0.3 * height) <= 0.5 && exit.rect[2] === exit.rect[3], `${width}x${height}: ${exit.rect}`);
+  }
+  // the script goes through every phase, with the confirm button shown in each
+  const texts = lines("log.jsonl").join("\n");
+  for (const label of ['"10"', '"Sync"', '"Port"']) assert.ok(texts.includes(label), label);
 });

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { runNode, replay } from "../../../solid-watch/test/lib.mjs";
+import { exitClear, buttonsPerCommit } from "../../../host-js/test/fixture-tags.mjs";
 
 const dir = new URL("../fixtures/", import.meta.url);
 const read = (f) => readFileSync(new URL(f, dir), "utf8");
@@ -78,4 +79,20 @@ test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the 
   // centred: absolute at 50% / 50%, pulled back by half its size
   const props = Object.fromEntries(segments()[0].ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag).map((m) => [m[2], m[3]]));
   assert.deepEqual([props.position, props.left, props.top, props.marginLeft, props.marginTop, props.width], ["absolute", "50%", "50%", -30, -30, 60]);
+});
+
+// Watch screens (points): 40/41 mm, 44/45 mm (the fixtures'), 46 mm, 49 mm.
+const SCREENS = [[162, 197], [198, 242], [208, 248], [205, 251]];
+
+test("the exit button is 30 % of the height, square, top left, and covers no other button on any screen", () => {
+  const script = JSON.parse(read("script.json"));
+  for (const [width, height] of SCREENS) {
+    const run = runNode(read("bundle.js"), { ...script, ctx: { width, height } });
+    const frames = replay(run, { fragments: [fragment] });
+    const [checked, problems] = exitClear(run, frames);
+    assert.equal(checked, frames.length, `${width}x${height}: every commit has it`);
+    assert.deepEqual(problems, [], `${width}x${height}`);
+    const exit = buttonsPerCommit(run, frames).at(-1).find((b) => b.props.left === 0 && b.props.top === 0);
+    assert.ok(Math.abs(exit.rect[2] - 0.3 * height) <= 0.5 && exit.rect[2] === exit.rect[3], `${width}x${height}: ${exit.rect}`);
+  }
 });

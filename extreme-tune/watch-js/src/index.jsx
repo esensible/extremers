@@ -10,6 +10,11 @@ import { confirm } from "./confirm.jsx";
 
 const [Confirm, doConfirm] = confirm();
 
+// The exit button's side, as a share of the screen height. The Kindle's is
+// 15 %; on the watch the rounded corner and the system bar eat into a
+// corner that small, so it is 30 % here, as in the race bundle.
+const EXIT_SIZE = 0.3;
+
 // .speed / .deviation (style.css)
 const BIG = 46;
 // span.small-deviation: a quarter of the big size
@@ -39,7 +44,7 @@ const App = (props) => (
     <Big>{tune.speed.toFixed(1)}</Big>
     <Big><FormatDeviation value={tune.speed_dev} /><text fontSize={SMALL}>k</text></Big>
     <Big><FormatDeviation value={tune.heading_dev} precision={0} /><text fontSize={SMALL}>°</text></Big>
-    <button position="absolute" left={0} top={0} width={props.height * 0.15} height={props.height * 0.15} onPress={() => doConfirm(() => selectDefault(), 2)} />
+    <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} onPress={() => doConfirm(() => selectDefault(), 2)} />
     <Confirm />
   </view>
 );
