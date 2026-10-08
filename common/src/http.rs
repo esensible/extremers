@@ -68,7 +68,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         let (mut rx, mut tx) = socket.split();
 
         if let Ok(state) = self.runtime.current_state().await {
-            send_state(&mut tx, self.runtime.now(), &state).await?;
+            send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
         }
 
         // A client that vanishes without closing (a Kindle going to sleep)
@@ -98,14 +98,26 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     last_heard = Instant::now();
 
                     match header.frame_type {
-                        FrameType::Text(_) | FrameType::Binary(_) => {
-                            if self.runtime.external_event(payload).await.is_err() {
+                        FrameType::Text(_) | FrameType::Binary(_) => match self
+                            .runtime
+                            .ble_command(payload)
+                        {
+                            Some(Ok(command)) => {
+                                info!("websocket: BLE command {:?}", Dbg(&command));
+                            }
+                            Some(Err(())) => {
+                                warn!(
+                                    "websocket: BLE command refused (no BLE on this target, or busy): {}",
+                                    core::str::from_utf8(payload).unwrap_or("<not utf-8>")
+                                );
+                            }
+                            None => if self.runtime.external_event(payload).await.is_err() {
                                 warn!(
                                     "websocket: undecodable event: {}",
                                     core::str::from_utf8(payload).unwrap_or("<not utf-8>")
                                 );
-                            }
-                        }
+                            },
+                        },
                         FrameType::Ping => {
                             let pong = FrameHeader {
                                 mask_key: None,
@@ -126,7 +138,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     }
                 }
                 Either3::Second(state) => {
-                    send_state(&mut tx, self.runtime.now(), &state).await?;
+                    send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
                 }
                 Either3::Third(()) => {
                     if last_heard.elapsed() >= Duration::from_millis(WS_CLIENT_TIMEOUT_MS) {
@@ -148,7 +160,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                         None => self.runtime.current_state().await,
                     };
                     if let Ok(state) = state {
-                        send_state(&mut tx, self.runtime.now(), &state).await?;
+                        send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
                     }
                 }
             }
@@ -225,12 +237,15 @@ where
 }
 
 /// Sends `{"timestamp":<timestamp>,"kind":"<kind>","engine":<state>}` as a
-/// single websocket text frame. The pieces are written straight to the
-/// socket, so there is no intermediate buffer to overflow.
+/// single websocket text frame, with `,"ble":<ble>` before the closing brace
+/// on a target with BLE (BLE.md "Pairing a watch"; clients that do not know
+/// the field ignore it). The pieces are written straight to the socket, so
+/// there is no intermediate buffer to overflow.
 async fn send_state<W>(
     socket: &mut W,
     timestamp: u64,
     state: &StateMessage,
+    ble: Option<&str>,
 ) -> Result<(), WsError<W::Error>>
 where
     W: Write,
@@ -238,6 +253,7 @@ where
     const PREFIX: &[u8] = b"{\"timestamp\":";
     const KIND: &[u8] = b",\"kind\":\"";
     const ENGINE: &[u8] = b"\",\"engine\":";
+    const BLE: &[u8] = b",\"ble\":";
     const SUFFIX: &[u8] = b"}";
 
     let mut digits: heapless::String<20> = heapless::String::new();
@@ -252,6 +268,8 @@ where
         state.kind.as_bytes(),
         ENGINE,
         &state.json,
+        if ble.is_some() { BLE } else { &[] },
+        ble.map(str::as_bytes).unwrap_or(&[]),
         SUFFIX,
     ];
 
@@ -294,7 +312,7 @@ mod tests {
         let capacity = out.len();
         let written = {
             let mut writer: &mut [u8] = &mut out;
-            block_on(send_state(&mut writer, u64::MAX, &state)).unwrap();
+            block_on(send_state(&mut writer, u64::MAX, &state, None)).unwrap();
             capacity - writer.len()
         };
 
@@ -309,5 +327,31 @@ mod tests {
             core::str::from_utf8(&state.json).unwrap()
         );
         assert_eq!(reader, expected.as_bytes());
+    }
+
+    /// With BLE the status is one more field at the end.
+    #[test]
+    fn send_state_with_ble_status() {
+        let mut json = StateJson::new();
+        json.extend_from_slice(b"{\"engines\":[]}").unwrap();
+        let state = StateMessage {
+            kind: "Selector",
+            json,
+            compact: Default::default(),
+        };
+        let mut out = [0u8; 256];
+        let capacity = out.len();
+        let written = {
+            let mut writer: &mut [u8] = &mut out;
+            block_on(send_state(&mut writer, 7, &state, Some(r#"{"pair_ms":0}"#))).unwrap();
+            capacity - writer.len()
+        };
+        let mut reader: &[u8] = &out[..written];
+        let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
+        assert_eq!(header.payload_len as usize, reader.len());
+        assert_eq!(
+            reader,
+            br#"{"timestamp":7,"kind":"Selector","engine":{"engines":[]},"ble":{"pair_ms":0}}"#
+        );
     }
 }

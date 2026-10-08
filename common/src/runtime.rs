@@ -4,10 +4,11 @@
 //! Transports (see [`crate::http`]) only move bytes; everything that touches
 //! the engine goes through [`EngineRuntime`].
 
-use core::sync::atomic::Ordering;
+use core::{cell::RefCell, sync::atomic::Ordering};
 
 use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
+    blocking_mutex::{Mutex as BlockingMutex, raw::CriticalSectionRawMutex},
+    channel::Channel,
     mutex::Mutex,
     pubsub::{DynSubscriber, Error as PubSubError, PubSubChannel},
 };
@@ -17,6 +18,7 @@ use portable_atomic::AtomicU64;
 use extreme_traits::{CompactState, MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
 
 use crate::{
+    ble_settings::{BleCommand, BleStatus, BleStatusJson},
     config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS},
     fmt::Dbg,
     nmea::GpsUpdate,
@@ -75,6 +77,12 @@ pub struct EngineRuntime<E: RawEngine> {
         { MAX_WEB_SOCKETS + MAX_BLE_CONNECTIONS },
         1,
     >,
+    /// The BLE transport's pairing state and bonds, for the web clients'
+    /// settings panel; `None` on a target without BLE (it is then left out
+    /// of the state messages and BLE commands are refused).
+    ble_status: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<BleStatus>>>,
+    /// BLE commands from the web clients to the BLE transport.
+    ble_commands: Channel<CriticalSectionRawMutex, BleCommand, 2>,
 }
 
 impl<E: RawEngine> EngineRuntime<E> {
@@ -84,7 +92,46 @@ impl<E: RawEngine> EngineRuntime<E> {
             tick_offset: AtomicU64::new(0),
             timer_channel: PubSubChannel::new(),
             broadcast: PubSubChannel::new(),
+            ble_status: BlockingMutex::new(RefCell::new(None)),
+            ble_commands: Channel::new(),
         }
+    }
+
+    /// A BLE command from a web client (BLE.md "Pairing a watch"). `None`
+    /// if `message` is not one, so it is an engine event; `Some(Err)` if
+    /// this target has no BLE transport or the command queue is full.
+    pub fn ble_command(&self, message: &[u8]) -> Option<Result<BleCommand, ()>> {
+        let command = BleCommand::parse(message)?;
+        if self.ble_status.lock(|s| s.borrow().is_none()) {
+            return Some(Err(()));
+        }
+        Some(self.ble_commands.try_send(command).map(|()| command).map_err(|_| ()))
+    }
+
+    /// The next BLE command, for the BLE transport.
+    pub async fn next_ble_command(&self) -> BleCommand {
+        self.ble_commands.receive().await
+    }
+
+    /// Publishes the BLE transport's status (which also marks this target
+    /// as having one), and sends every client the current state with it
+    /// straight away rather than at the next heartbeat.
+    pub async fn set_ble_status(&self, status: BleStatus) {
+        self.ble_status.lock(|s| *s.borrow_mut() = Some(status));
+        let engine = self.engine.lock().await;
+        if let Ok(message) = StateMessage::capture(&*engine, self.now()) {
+            self.broadcast
+                .immediate_publisher()
+                .publish_immediate(message);
+        }
+    }
+
+    /// The `ble` field of the websocket state message, rendered now (the
+    /// pairing window's time left is relative to the moment of sending);
+    /// `None` without BLE.
+    pub fn ble_status_json(&self) -> Option<BleStatusJson> {
+        self.ble_status
+            .lock(|s| s.borrow().as_ref().map(|s| s.json(Instant::now())))
     }
 
     /// Current time in epoch milliseconds, the units of GPS timestamps.
@@ -337,5 +384,26 @@ mod tests {
         };
 
         block_on(select(runtime.run_timer(), script));
+    }
+
+    /// BLE commands are refused until a BLE transport has published its
+    /// status; publishing it re-sends the state to the clients; engine
+    /// events are not BLE commands.
+    #[test]
+    fn ble_commands_and_status() {
+        let runtime = EngineRuntime::new(TimerEngine { fired: 0 });
+        let mut updates = runtime.subscribe().unwrap();
+        let pair = br#"{"Ble":"Pair"}"#;
+
+        assert_eq!(runtime.ble_command(pair), Some(Err(())));
+        assert!(runtime.ble_status_json().is_none());
+        assert_eq!(runtime.ble_command(b"at:30"), None);
+
+        block_on(runtime.set_ble_status(BleStatus::default()));
+        assert_eq!(updates.try_next_message_pure().map(|m| m.kind), Some("TimerEngine"));
+        assert!(runtime.ble_status_json().unwrap().starts_with(r#"{"addr":"#));
+
+        assert_eq!(runtime.ble_command(pair), Some(Ok(BleCommand::Pair)));
+        assert_eq!(block_on(runtime.next_ble_command()), BleCommand::Pair);
     }
 }
