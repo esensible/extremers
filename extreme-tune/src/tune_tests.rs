@@ -198,6 +198,57 @@ mod tests {
         assert_eq!(tune.location_event(7000, None, None), Outcome::NONE);
     }
 
+    /// Test vectors for the watch bundle's JS decoder
+    /// (watch-js/test/vectors.json): compact_state of a set of states,
+    /// including clamping and truncation, and the values the decoder must
+    /// return (the quantized fields). Fails if the committed file is stale;
+    /// `UPDATE_WATCH_VECTORS=1 cargo test -p extreme-tune` rewrites it.
+    #[test]
+    fn test_watch_vectors() {
+        use std::{format, fs, string::String, vec::Vec};
+        let cases: [(f64, f64, f64); 10] = [
+            (0.0, 0.0, 0.0),
+            (6.4, 0.5, -12.3),
+            (12.345, -0.055, 179.99),
+            (655.35, 327.67, 180.0),
+            (700.0, 400.0, 4000.0),
+            (-1.0, -400.0, -4000.0),
+            (5.0, -0.004, -0.04),
+            (7.25, 1.5, -180.0),
+            (3.999, 0.009, 0.09),
+            (25.5, -12.34, 45.6),
+        ];
+        let mut items = Vec::new();
+        for (speed, speed_dev, heading_dev) in cases {
+            let mut tune = TuneSpeed::<4>::default();
+            tune.speed = speed;
+            tune.speed_dev = speed_dev;
+            tune.heading_dev = heading_dev;
+            let mut buf = [0u8; 6];
+            assert_eq!(tune.compact_state(0, &mut buf), 6);
+            let hex: String = buf.iter().map(|b| format!("{b:02x}")).collect();
+            let s = u16::from_le_bytes([buf[0], buf[1]]) as f64 / 100.0;
+            let d = i16::from_le_bytes([buf[2], buf[3]]) as f64 / 100.0;
+            let h = i16::from_le_bytes([buf[4], buf[5]]) as f64 / 10.0;
+            items.push(format!(
+                "    {{\"state\": {{\"speed\": {speed:?}, \"speed_dev\": {speed_dev:?}, \"heading_dev\": {heading_dev:?}}}, \"compact\": \"{hex}\", \"decoded\": {{\"speed\": {s:?}, \"speed_dev\": {d:?}, \"heading_dev\": {h:?}}}}}"
+            ));
+        }
+        let json = format!(
+            "{{\n  \"doc\": \"Written by extreme-tune/src/tune_tests.rs test_watch_vectors from TuneSpeed::compact_state. compact = the engine bytes after the kind byte.\",\n  \"kind\": 2,\n  \"vectors\": [\n{}\n  ]\n}}\n",
+            items.join(",\n")
+        );
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/watch-js/test/vectors.json");
+        if std::env::var_os("UPDATE_WATCH_VECTORS").is_some() {
+            fs::write(path, &json).unwrap();
+        }
+        assert_eq!(
+            fs::read_to_string(path).unwrap_or_default(),
+            json,
+            "{path} is stale: run UPDATE_WATCH_VECTORS=1 cargo test -p extreme-tune"
+        );
+    }
+
     fn vel(speed: f64, heading: f64) -> Velocity {
         Velocity { speed, heading }
     }
