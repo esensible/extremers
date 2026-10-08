@@ -15,6 +15,9 @@ pub const WIFI_CHANNEL: u8 = 10;
 pub const BLE_NAME: &str = "nacra";
 /// Concurrent BLE centrals: the watch plus a phone or a debugging tool.
 pub const MAX_BLE_CONNECTIONS: usize = 2;
+/// Bonded devices kept (BLE.md "Security"): a crew's watches and a phone.
+/// When all are taken, a new pairing replaces the oldest bond.
+pub const MAX_BLE_BONDS: usize = 4;
 
 /// The device's own address on the access point network. It is also the
 /// gateway and DNS server handed out by DHCP.
