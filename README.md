@@ -21,6 +21,7 @@ firmware.
 | `tgt-xiaoc6` | Firmware for the Seeed XIAO ESP32-C6 (the board in use). |
 | `tgt-pico` | Firmware for the Raspberry Pi Pico W (secondary). |
 | `tgt-std` | Host build for development: serves the UI on `http://localhost:8080` without any hardware. |
+| `watch-app` | Standalone Apple Watch app: the same buttons and state as the Kindle, over BLE (see `BLE.md`). |
 
 An *engine* is a pure state machine (`extreme_traits::Engine`): it is fed GPS
 updates, timer expiries and client events, and reports whether its state
@@ -51,7 +52,14 @@ cd tgt-std && cargo run
 Wi-Fi name, password, channel and the device's address are in
 `common/src/config.rs`.
 
-## Wire protocol
+## Wire protocols
+
+Two transports carry the same engine state and the same events; the device
+is the only source of truth and every client is a view of it. The websocket
+protocol below is what the Kindle UIs speak; the BLE protocol the watch
+speaks is binary and documented in [`BLE.md`](BLE.md).
+
+### Websocket
 
 The device pushes its state on every change as a websocket text frame:
 
