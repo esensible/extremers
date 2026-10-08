@@ -17,6 +17,13 @@ pub const AP_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);
 /// Prefix length of the access point network.
 pub const AP_PREFIX_LEN: u8 = 24;
 
+/// The page DHCP advertises as the network's captive portal (option 114),
+/// so a client that looks for one opens the race page by itself. Any name
+/// resolves to [`AP_IP`] (the captive DNS server), so this one is only what
+/// clients see. A dotted name so browsers look it up rather than search, in
+/// a TLD browsers don't force to HTTPS.
+pub const CAPTIVE_URL: &str = "http://nacra.race/";
+
 /// Port the web UI is served on by the embedded targets.
 pub const HTTP_PORT: u16 = 80;
 

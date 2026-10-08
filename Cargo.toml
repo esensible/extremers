@@ -43,6 +43,7 @@ edge-nal = { version = "0.7", default-features = false }
 edge-nal-embassy = { version = "0.9", default-features = false }
 edge-nal-std = { version = "0.7", default-features = false }
 edge-dhcp = { version = "0.8", default-features = false, features = ["io"] }
+edge-captive = { version = "0.8", default-features = false, features = ["io"] }
 
 #
 # Other stuff

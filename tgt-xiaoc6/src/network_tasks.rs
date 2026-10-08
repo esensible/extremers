@@ -8,7 +8,7 @@ use esp_radio::wifi::{
     ap::AccessPointConfig, event::EventInfo,
 };
 
-use common::config::{AP_IP, WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID};
+use common::config::{AP_IP, CAPTIVE_URL, WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID};
 
 /// The access point's configuration: applied by `WifiController::new`, and
 /// again by [`wifi_task`] if the access point stops.
@@ -41,8 +41,11 @@ pub async fn dhcp_task(stack: Stack<'static>) {
     // overwritten with `ip` by ServerOptions::new
     let mut gw_buf = [Ipv4Addr::UNSPECIFIED];
     let mut server_options = ServerOptions::new(ip, Some(&mut gw_buf));
+    // ourselves as DNS (dns_task answers every name with `ip`), and the
+    // race page as the captive portal (option 114)
     let dns_servers = [ip];
     server_options.dns = &dns_servers;
+    server_options.captive_url = Some(CAPTIVE_URL);
 
     let buffers = UdpBuffers::<2, 1024, 1024, 10>::new();
 
@@ -70,6 +73,38 @@ pub async fn dhcp_task(stack: Stack<'static>) {
         _ = io::server::run(&mut server, &server_options, &mut bound_socket, &mut buf)
             .await
             .inspect_err(|e| warn!("DHCP server error: {:?}", Debug2Format(e)));
+        Timer::after(Duration::from_millis(500)).await;
+    }
+}
+
+/// Captive DNS: every query, whatever the name, is answered with our own
+/// address, so any URL typed on the Kindle lands on the race page.
+/// edge-captive does the protocol; this binds UDP 53 and restarts it on
+/// error.
+#[embassy_executor::task]
+pub async fn dns_task(stack: Stack<'static>) {
+    use core::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+    use edge_nal_embassy::{Udp, UdpBuffers};
+
+    let buffers = UdpBuffers::<2, 512, 512, 4>::new();
+    let udp = Udp::new(stack, &buffers);
+    let mut tx_buf = [0u8; 512];
+    let mut rx_buf = [0u8; 512];
+    info!("dns: captive resolver on :53, every name -> {}", Debug2Format(&AP_IP));
+    loop {
+        if let Err(e) = edge_captive::io::run(
+            &udp,
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 53)),
+            &mut tx_buf,
+            &mut rx_buf,
+            AP_IP,
+            core::time::Duration::from_secs(60),
+        )
+        .await
+        {
+            warn!("dns: {:?}", Debug2Format(&e));
+        }
         Timer::after(Duration::from_millis(500)).await;
     }
 }

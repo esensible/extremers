@@ -44,6 +44,7 @@ embassy-net = { workspace = true, features = [
 edge-nal = { workspace = true }
 edge-nal-embassy = { workspace = true, features = ["proto-ipv4", "medium-ethernet", "tcp", "udp"] }
 edge-dhcp = { workspace = true }
+edge-captive = { workspace = true }
 
 static_cell = { workspace = true }
 

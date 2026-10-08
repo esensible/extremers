@@ -27,7 +27,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 mod network_tasks;
 
-use crate::network_tasks::{access_point_config, dhcp_task, net_task, wifi_task};
+use crate::network_tasks::{access_point_config, dhcp_task, dns_task, net_task, wifi_task};
 use common::{
     config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
     nmea::AsyncReader,
@@ -45,6 +45,9 @@ define_engines! {
 }
 
 type Runtime = EngineRuntime<EngineType>;
+
+/// Access point transmit power ceiling, 0.25 dBm units: 60 = 15 dBm.
+const WIFI_TX_POWER_QDBM: i8 = 60;
 
 // Every log line carries the uptime (probe-rs shows it as seconds with ms).
 // esp-hal's clock, not embassy-time's, so it works before esp_rtos::start.
@@ -67,6 +70,17 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
+    // XIAO ESP32-C6 RF switch (Seeed wiki, "Getting Started"): GPIO3 LOW
+    // powers the switch and GPIO14 LOW selects the onboard ceramic antenna
+    // (HIGH = external U.FL). esp-hal and esp-radio know nothing about it;
+    // with GPIO3 floating the antenna path is effectively unpowered and the
+    // access point is barely visible (seen on hilux's XIAO C6). Held for the
+    // life of main, before WiFi starts.
+    let _rf_switch_power = Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default());
+    Timer::after(Duration::from_millis(100)).await;
+    let _rf_antenna_select = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
+    defmt::info!("rf switch: powered (GPIO3 low), onboard antenna (GPIO14 low)");
+
     // initialize wifi controller as an access point
     let controller_config = ControllerConfig::default()
         .with_country_info(
@@ -75,6 +89,16 @@ async fn main(spawner: Spawner) -> ! {
         .with_initial_config(access_point_config());
     let mut controller = WifiController::new(peripherals.WIFI, controller_config).unwrap();
     controller.set_power_saving(PowerSaveMode::None).unwrap();
+    // esp-radio starts the radio at 5 dBm (its documented default; ESP-IDF's
+    // is 20 dBm), which a Kindle sees as a weak network. 15 dBm, under the
+    // ~16 dBm esp-radio warns has broken authentication on some hardware.
+    match controller.set_max_tx_power(WIFI_TX_POWER_QDBM) {
+        Ok(()) => defmt::info!("wifi: max tx power {=i8} (0.25 dBm units)", WIFI_TX_POWER_QDBM),
+        Err(e) => defmt::warn!(
+            "wifi: set_max_tx_power failed: {:?}; still at the 5 dBm default",
+            defmt::Debug2Format(&e)
+        ),
+    }
     let device = Interface::access_point();
 
     let config = embassy_net::Config::ipv4_static(StaticConfigV4 {
@@ -93,6 +117,7 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(wifi_task(controller).unwrap());
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(dhcp_task(stack).unwrap());
+    spawner.spawn(dns_task(stack).unwrap());
 
     static RUNTIME: StaticCell<Runtime> = StaticCell::new();
     let runtime: &'static Runtime = RUNTIME.init(EngineRuntime::new(EngineType::default()));
