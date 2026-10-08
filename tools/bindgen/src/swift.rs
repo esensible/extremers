@@ -230,13 +230,15 @@ fn type_decl(nt: &NamedType) -> String {
     s
 }
 
-/// A field name as a Swift identifier: keywords in backticks.
+/// A field name as a Swift identifier: keywords in backticks. Contextual
+/// keywords (`package`, `open`, …) are plain identifiers in these positions,
+/// and Swift warns when they are escaped, so they are not listed.
 fn esc(name: &str) -> String {
     const KEYWORDS: &[&str] = &[
         "any", "as", "associatedtype", "break", "case", "catch", "class", "continue", "default",
         "defer", "do", "else", "enum", "extension", "fallthrough", "false", "for", "func",
         "guard", "if", "import", "in", "init", "inout", "internal", "is", "let", "nil",
-        "operator", "package", "private", "protocol", "public", "repeat", "return", "self",
+        "operator", "private", "protocol", "public", "repeat", "return", "self",
         "some", "static", "struct", "subscript", "switch", "throw", "throws", "true", "try",
         "typealias", "var", "where", "while",
     ];

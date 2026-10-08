@@ -218,7 +218,7 @@ public struct Envelope: Equatable, PostcardCodable {
 public enum HostEvent: Equatable, PostcardCodable {
     case select(UInt32)
     case selectDefault
-    case engine(`package`: UInt32, bytes: [UInt8])
+    case engine(package: UInt32, bytes: [UInt8])
     case ble(BleCommand)
 
     public init(from r: inout PostcardReader) throws {
@@ -226,7 +226,7 @@ public enum HostEvent: Equatable, PostcardCodable {
         switch tag {
         case 0: self = .select(try r.u32())
         case 1: self = .selectDefault
-        case 2: self = .engine(`package`: try r.u32(), bytes: try r.seq { r in try r.u8() })
+        case 2: self = .engine(package: try r.u32(), bytes: try r.seq { r in try r.u8() })
         case 3: self = .ble(try BleCommand(from: &r))
         default: throw PostcardError.unknownVariant("HostEvent", tag)
         }
@@ -236,7 +236,7 @@ public enum HostEvent: Equatable, PostcardCodable {
         switch self {
         case .select(let v0): w.u32(0); w.u32(v0)
         case .selectDefault: w.u32(1)
-        case .engine(let `package`, let bytes): w.u32(2); w.u32(`package`); w.seq(bytes) { w, v in w.u8(v) }
+        case .engine(let package, let bytes): w.u32(2); w.u32(package); w.seq(bytes) { w, v in w.u8(v) }
         case .ble(let v0): w.u32(3); v0.encode(to: &w)
         }
     }
