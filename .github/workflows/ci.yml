@@ -21,6 +21,41 @@ jobs:
       - run: cargo test --workspace --exclude xiaoc6 --exclude tgt-pico --exclude tgt-std
       - run: cargo build -p tgt-std --target x86_64-unknown-linux-gnu
 
+  watch-js:
+    name: Watch UI (solid-watch + engine bundles)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # qjs: the QuickJS-ng version the watch app vendors
+      - run: git clone --depth 1 --branch v0.17.0 https://github.com/quickjs-ng/quickjs.git "$RUNNER_TEMP/quickjs"
+      - run: sh solid-watch/test/build-qjs.sh "$RUNNER_TEMP/quickjs" "$RUNNER_TEMP/qjs"
+      # solid-watch: codegen check, test bundles under qjs and node, fixtures
+      # unchanged, unit + type tests, import boundary (nothing outside solid-watch/)
+      - run: npm ci
+        working-directory: solid-watch
+      - run: sh test/all.sh
+        working-directory: solid-watch
+        env:
+          QJS: ${{ runner.temp }}/qjs
+          CHECK_CLEAN: 1
+      # extremers' fragment outputs are current
+      - run: sh watch-js/codegen.sh --check
+      # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
+      - run: npm ci
+        working-directory: extreme-tune/watch-js
+      - run: npm run build
+        working-directory: extreme-tune/watch-js
+      - run: npm run fixtures
+        working-directory: extreme-tune/watch-js
+        env:
+          QJS: ${{ runner.temp }}/qjs
+      - run: git diff --exit-code -- extreme-tune/watch-js/fixtures
+      - run: npm test
+        working-directory: extreme-tune/watch-js
+
   firmware:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
