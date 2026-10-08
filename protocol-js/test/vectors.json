@@ -1,995 +1,1517 @@
 {
-  "doc": "Written by tools/bindgen (cargo run -p extreme-bindgen) from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to.",
+  "doc": "Written by tools/bindgen (cargo run -p extreme-bindgen) from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to. The host protocol.",
   "vectors": [
     {
-      "hex": "fbd8c1a28c3400",
-      "type": "State",
+      "hex": "fbd8c1a28c34005e1f00ff01807f4218029885eff508047261636501938984c2060474756e650100",
+      "type": "Envelope",
       "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
-      "what": "selector"
+      "what": "choose, BLE no BLE"
     },
     {
-      "hex": "fbd8c1a28c340000",
-      "type": "WsState",
+      "hex": "fbd8c1a28c34005e1f00ff01807f4222029885eff508047261636501938984c2060474756e65010110968ea3bdd000000400",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          0,
+          4,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
-      "what": "selector"
+      "what": "choose, BLE closed, no bonds"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc400000",
-      "type": "State",
+      "hex": "fbd8c1a28c34005e1f00ff01807f4224029885eff508047261636501938984c2060474756e65010110968ea3bdd0889207000400",
+      "type": "Envelope",
       "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "None",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          136,
+          146,
+          7,
+          0,
+          4,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE pairing open"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f422e029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f040101020304054f",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          1,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79,
+          4,
+          1,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE paired"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f422e029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f040201020304054f",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          1,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79,
+          4,
+          2,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE paired, not saved"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f4228029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f0403",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          1,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79,
+          4,
+          3
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE rejected"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f4223029885eff508047261636501938984c2060474756e65010110968ea3bdd08827000404",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          136,
+          39,
+          0,
+          4,
+          4
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE failed"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f4222029885eff508047261636501938984c2060474756e65010110968ea3bdd000000405",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          0,
+          4,
+          5
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE expired"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f4222029885eff508047261636501938984c2060474756e65010110968ea3bdd000000406",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          0,
+          4,
+          6
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE stale bond"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f4222029885eff508047261636501938984c2060474756e65010110968ea3bdd000000407",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          0,
+          4,
+          7
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE forgotten"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f423a029885eff508047261636501938984c2060474756e65010110968ea3bdd0000401020304054f10968ea3bdd0000000000000ffffffffffff0400",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          1,
+          1,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          4,
+          1,
+          2,
+          3,
+          4,
+          5,
+          79,
+          16,
+          150,
+          142,
+          163,
+          189,
+          208,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          4,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, BLE four bonds"
+    },
+    {
+      "hex": "fbd8c1a28c34005e1f00ff01807f42020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
+      },
+      "what": "choose, nothing installed"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f4206cdcccc400000",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race active, no line"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc40000000",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420c9a99b94101db80d4a28c3400",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "None",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race active, no line"
-    },
-    {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c3400",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "None",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence, no line"
     },
     {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c340000",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f4206cdcccc400001",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "None",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence, no line"
-    },
-    {
-      "hex": "fbd8c1a28c3401cdcccc400001",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Stbd",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          1
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race active, stbd set"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc40000100",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420c9a99b94101db80d4a28c3401",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Stbd",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race active, stbd set"
-    },
-    {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c3401",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Stbd",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          1
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence, stbd set"
     },
     {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c340100",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f4206cdcccc400002",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Stbd",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence, stbd set"
-    },
-    {
-      "hex": "fbd8c1a28c3401cdcccc400002",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Port",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          2
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race active, port set"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc40000200",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420c9a99b94101db80d4a28c3402",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Port",
-                  "value": null
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race active, port set"
-    },
-    {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c3402",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Port",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          2
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence, port set"
     },
     {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c340200",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420dcdcccc4000032fb4a1c3a28c34",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Port",
-                  "value": null
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence, port set"
-    },
-    {
-      "hex": "fbd8c1a28c3401cdcccc4000032fb4a1c3a28c34",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 47,
-                    "time": 1790000025780
-                  }
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          3,
+          47,
+          180,
+          161,
+          195,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race active, line both"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc4000032fb4a1c3a28c3400",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f42139a99b94101db80d4a28c34032fb4a1c3a28c34",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 47,
-                    "time": 1790000025780
-                  }
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race active, line both"
-    },
-    {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c34032fb4a1c3a28c34",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 47,
-                    "time": 1790000025780
-                  }
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          3,
+          47,
+          180,
+          161,
+          195,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence, line both"
     },
     {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c34032fb4a1c3a28c3400",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420dcdcccc4000030093d1c1a28c34",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 47,
-                    "time": 1790000025780
-                  }
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence, line both"
-    },
-    {
-      "hex": "fbd8c1a28c3401cdcccc4000030093d1c1a28c34",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 0,
-                    "time": 1789999999123
-                  }
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          3,
+          0,
+          147,
+          209,
+          193,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race active, line both, port end, crossing passed"
     },
     {
-      "hex": "fbd8c1a28c3401cdcccc4000030093d1c1a28c3400",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f42139a99b94101db80d4a28c34030093d1c1a28c34",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Active",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 0,
-                    "time": 1789999999123
-                  }
-                }
-              }
-            },
-            "speed": 6.400000095367432
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race active, line both, port end, crossing passed"
-    },
-    {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c34030093d1c1a28c34",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 0,
-                    "time": 1789999999123
-                  }
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          3,
+          0,
+          147,
+          209,
+          193,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence, line both, port end, crossing passed"
     },
     {
-      "hex": "fbd8c1a28c34019a99b94101db80d4a28c34030093d1c1a28c3400",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420f00008c4102b3fcbda28c3400007d43",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 0,
-                    "time": 1789999999123
-                  }
-                },
-                "start_time": 1790000300123
-              }
-            },
-            "speed": 23.200000762939453
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence, line both, port end, crossing passed"
-    },
-    {
-      "hex": "fbd8c1a28c340100008c4102b3fcbda28c3400007d43",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Racing",
-              "value": {
-                "heading": 253.0,
-                "start_time": 1789999939123
-              }
-            },
-            "speed": 17.5
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          0,
+          0,
+          140,
+          65,
+          2,
+          179,
+          252,
+          189,
+          162,
+          140,
+          52,
+          0,
+          0,
+          125,
+          67
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race racing"
     },
     {
-      "hex": "fbd8c1a28c340100008c4102b3fcbda28c3400007d4300",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f420f0000000002fbd8c1a28c3400000000",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Racing",
-              "value": {
-                "heading": 253.0,
-                "start_time": 1789999939123
-              }
-            },
-            "speed": 17.5
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race racing"
-    },
-    {
-      "hex": "fbd8c1a28c34010000000002fbd8c1a28c3400000000",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Racing",
-              "value": {
-                "heading": 0.0,
-                "start_time": 1790000000123
-              }
-            },
-            "speed": 0.0
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          0,
+          0,
+          0,
+          0,
+          2,
+          251,
+          216,
+          193,
+          162,
+          140,
+          52,
+          0,
+          0,
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race racing, heading not yet known, stopped"
     },
     {
-      "hex": "fbd8c1a28c34010000000002fbd8c1a28c340000000000",
-      "type": "WsState",
+      "hex": "fbd8c1a28c349885eff5085e1f00ff01807f421766d6234401ffffffffffffff0f0364ffffffffffffff0f",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "Racing",
-              "value": {
-                "heading": 0.0,
-                "start_time": 1790000000123
-              }
-            },
-            "speed": 0.0
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race racing, heading not yet known, stopped"
-    },
-    {
-      "hex": "fbd8c1a28c340166d6234401ffffffffffffff0f0364ffffffffffffff0f",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 100,
-                    "time": 9007199254740991
-                  }
-                },
-                "start_time": 9007199254740991
-              }
-            },
-            "speed": 655.3499755859375
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 2394669720,
+        "state": [
+          102,
+          214,
+          35,
+          68,
+          1,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          15,
+          3,
+          100,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          15
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "race in sequence at the largest times"
     },
     {
-      "hex": "fbd8c1a28c340166d6234401ffffffffffffff0f0364ffffffffffffff0f00",
-      "type": "WsState",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c000000000000000000000000",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Race",
-          "value": {
-            "phase": {
-              "tag": "InSequence",
-              "value": {
-                "line": {
-                  "tag": "Both",
-                  "value": {
-                    "cross": 100,
-                    "time": 9007199254740991
-                  }
-                },
-                "start_time": 9007199254740991
-              }
-            },
-            "speed": 655.3499755859375
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "race in sequence at the largest times"
-    },
-    {
-      "hex": "fbd8c1a28c3402000000000000000000000000",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 0.0,
-            "speed": 0.0,
-            "speed_dev": 0.0
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 0 0 0"
     },
     {
-      "hex": "fbd8c1a28c340200000000000000000000000000",
-      "type": "WsState",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420ccdcccc400000003fcdcc44c1",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 0.0,
-            "speed": 0.0,
-            "speed_dev": 0.0
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 0 0 0"
-    },
-    {
-      "hex": "fbd8c1a28c3402cdcccc400000003fcdcc44c1",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -12.300000190734863,
-            "speed": 6.400000095367432,
-            "speed_dev": 0.5
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 6.4 0.5 -12.3"
-    },
-    {
-      "hex": "fbd8c1a28c3402cdcccc400000003fcdcc44c100",
-      "type": "WsState",
-      "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -12.300000190734863,
-            "speed": 6.400000095367432,
-            "speed_dev": 0.5
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          0,
+          0,
+          63,
+          205,
+          204,
+          68,
+          193
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 6.4 0.5 -12.3"
     },
     {
-      "hex": "fbd8c1a28c34021f854541ae4761bd71fd3343",
-      "type": "State",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c1f854541ae4761bd71fd3343",
+      "type": "Envelope",
       "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 179.99000549316406,
-            "speed": 12.345000267028809,
-            "speed_dev": -0.054999999701976776
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          31,
+          133,
+          69,
+          65,
+          174,
+          71,
+          97,
+          189,
+          113,
+          253,
+          51,
+          67
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 12.345 -0.055 179.99"
     },
     {
-      "hex": "fbd8c1a28c34021f854541ae4761bd71fd334300",
-      "type": "WsState",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c66d62344c3d5a34300003443",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 179.99000549316406,
-            "speed": 12.345000267028809,
-            "speed_dev": -0.054999999701976776
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 12.345 -0.055 179.99"
-    },
-    {
-      "hex": "fbd8c1a28c340266d62344c3d5a34300003443",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 180.0,
-            "speed": 655.3499755859375,
-            "speed_dev": 327.6700134277344
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 655.35 327.67 180"
-    },
-    {
-      "hex": "fbd8c1a28c340266d62344c3d5a3430000344300",
-      "type": "WsState",
-      "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 180.0,
-            "speed": 655.3499755859375,
-            "speed_dev": 327.6700134277344
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          102,
+          214,
+          35,
+          68,
+          195,
+          213,
+          163,
+          67,
+          0,
+          0,
+          52,
+          67
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 655.35 327.67 180"
     },
     {
-      "hex": "fbd8c1a28c34020000a0406f1283bb0ad723bd",
-      "type": "State",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c0000a0406f1283bb0ad723bd",
+      "type": "Envelope",
       "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -0.03999999910593033,
-            "speed": 5.0,
-            "speed_dev": -0.004000000189989805
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          160,
+          64,
+          111,
+          18,
+          131,
+          187,
+          10,
+          215,
+          35,
+          189
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 5 -0.004 -0.04"
     },
     {
-      "hex": "fbd8c1a28c34020000a0406f1283bb0ad723bd00",
-      "type": "WsState",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c0000e8400000c03f000034c3",
+      "type": "Envelope",
       "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -0.03999999910593033,
-            "speed": 5.0,
-            "speed_dev": -0.004000000189989805
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 5 -0.004 -0.04"
-    },
-    {
-      "hex": "fbd8c1a28c34020000e8400000c03f000034c3",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -180.0,
-            "speed": 7.25,
-            "speed_dev": 1.5
-          }
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "tune 7.25 1.5 -180"
-    },
-    {
-      "hex": "fbd8c1a28c34020000e8400000c03f000034c300",
-      "type": "WsState",
-      "value": {
-        "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": -180.0,
-            "speed": 7.25,
-            "speed_dev": 1.5
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          232,
+          64,
+          0,
+          0,
+          192,
+          63,
+          0,
+          0,
+          52,
+          195
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 7.25 1.5 -180"
     },
     {
-      "hex": "fbd8c1a28c34020000cc41a47045c166663642",
-      "type": "State",
+      "hex": "fbd8c1a28c34938984c2065e1f00ff01807f420c0000cc41a47045c166663642",
+      "type": "Envelope",
       "value": {
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 45.599998474121094,
-            "speed": 25.5,
-            "speed_dev": -12.34000015258789
-          }
-        },
-        "timestamp": 1790000000123
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          204,
+          65,
+          164,
+          112,
+          69,
+          193,
+          102,
+          102,
+          54,
+          66
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ]
       },
       "what": "tune 25.5 -12.34 45.6"
     },
     {
-      "hex": "fbd8c1a28c34020000cc41a47045c16666364200",
-      "type": "WsState",
+      "hex": "00000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 0,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 0"
+    },
+    {
+      "hex": "07000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 7,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 7"
+    },
+    {
+      "hex": "7f000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 127,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 127"
+    },
+    {
+      "hex": "8001000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 128,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 128"
+    },
+    {
+      "hex": "808001000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 16384,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 16384"
+    },
+    {
+      "hex": "ffffffffffffff0f000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 9007199254740991,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose at 9007199254740991"
+    },
+    {
+      "hex": "029885eff508047261636501938984c2060474756e650100",
+      "type": "ChooseView",
       "value": {
         "ble": null,
-        "engine": {
-          "tag": "TuneSpeed",
-          "value": {
-            "heading_dev": 45.599998474121094,
-            "speed": 25.5,
-            "speed_dev": -12.34000015258789
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
           }
-        },
-        "timestamp": 1790000000123
+        ]
       },
-      "what": "tune 25.5 -12.34 45.6"
+      "what": "no BLE"
     },
     {
-      "hex": "0000",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 0
-      },
-      "what": "selector at 0"
-    },
-    {
-      "hex": "0700",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 7
-      },
-      "what": "selector at 7"
-    },
-    {
-      "hex": "7f00",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 127
-      },
-      "what": "selector at 127"
-    },
-    {
-      "hex": "800100",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 128
-      },
-      "what": "selector at 128"
-    },
-    {
-      "hex": "80800100",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 16384
-      },
-      "what": "selector at 16384"
-    },
-    {
-      "hex": "ffffffffffffff0f00",
-      "type": "State",
-      "value": {
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 9007199254740991
-      },
-      "what": "selector at 9007199254740991"
-    },
-    {
-      "hex": "fbd8c1a28c340000",
-      "type": "WsState",
-      "value": {
-        "ble": null,
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
-      },
-      "what": "selector, BLE no BLE"
-    },
-    {
-      "hex": "fbd8c1a28c34000110968ea3bdd000000400",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd000000400",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1008,17 +1530,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE closed, no bonds"
+      "what": "closed, no bonds"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd0889207000400",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd0889207000400",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1037,17 +1566,24 @@
           },
           "pair_ms": 117000
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE pairing open"
+      "what": "pairing open"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd0000101020304054f040101020304054f",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f040101020304054f",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1082,17 +1618,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE paired"
+      "what": "paired"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd0000101020304054f040201020304054f",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f040201020304054f",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1127,17 +1670,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE paired, not saved"
+      "what": "paired, not saved"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd0000101020304054f0403",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd0000101020304054f0403",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1165,17 +1715,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE rejected"
+      "what": "rejected"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd08827000404",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd08827000404",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1194,17 +1751,24 @@
           },
           "pair_ms": 5000
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE failed"
+      "what": "failed"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd000000405",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd000000405",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1223,17 +1787,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE expired"
+      "what": "expired"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd000000406",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd000000406",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1252,17 +1823,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE stale bond"
+      "what": "stale bond"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd000000407",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd000000407",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1281,17 +1859,24 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE forgotten"
+      "what": "forgotten"
     },
     {
-      "hex": "fbd8c1a28c34000110968ea3bdd0000401020304054f10968ea3bdd0000000000000ffffffffffff0400",
-      "type": "WsState",
+      "hex": "029885eff508047261636501938984c2060474756e65010110968ea3bdd0000401020304054f10968ea3bdd0000000000000ffffffffffff0400",
+      "type": "ChooseView",
       "value": {
         "ble": {
           "addr": [
@@ -1343,332 +1928,107 @@
           },
           "pair_ms": 0
         },
-        "engine": {
-          "tag": "Selector",
-          "value": null
-        },
-        "timestamp": 1790000000123
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 1
+          }
+        ]
       },
-      "what": "selector, BLE four bonds"
+      "what": "four bonds"
+    },
+    {
+      "hex": "009885eff508",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Select",
+        "value": 2394669720
+      },
+      "what": "select race"
+    },
+    {
+      "hex": "00938984c206",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Select",
+        "value": 1749091475
+      },
+      "what": "select tune"
     },
     {
       "hex": "0000",
-      "type": "EngineEvent",
+      "type": "HostEvent",
       "value": {
         "tag": "Select",
-        "value": {
-          "tag": "Selector",
-          "value": null
-        }
+        "value": 0
       },
-      "what": "select chooser"
+      "what": "select choose"
     },
     {
-      "hex": "000000",
-      "type": "WsEvent",
+      "hex": "01",
+      "type": "HostEvent",
       "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Select",
-          "value": {
-            "tag": "Selector",
-            "value": null
-          }
-        }
-      },
-      "what": "select chooser"
-    },
-    {
-      "hex": "0001",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Select",
-        "value": {
-          "tag": "Race",
-          "value": null
-        }
-      },
-      "what": "select race"
-    },
-    {
-      "hex": "000001",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Select",
-          "value": {
-            "tag": "Race",
-            "value": null
-          }
-        }
-      },
-      "what": "select race"
-    },
-    {
-      "hex": "0002",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Select",
-        "value": {
-          "tag": "TuneSpeed",
-          "value": null
-        }
-      },
-      "what": "select tune"
-    },
-    {
-      "hex": "000002",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Select",
-          "value": {
-            "tag": "TuneSpeed",
-            "value": null
-          }
-        }
-      },
-      "what": "select tune"
-    },
-    {
-      "hex": "0100",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "LineStbd",
-          "value": null
-        }
-      },
-      "what": "line stbd"
-    },
-    {
-      "hex": "000100",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "LineStbd",
-            "value": null
-          }
-        }
-      },
-      "what": "line stbd"
-    },
-    {
-      "hex": "0101",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "LinePort",
-          "value": null
-        }
-      },
-      "what": "line port"
-    },
-    {
-      "hex": "000101",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "LinePort",
-            "value": null
-          }
-        }
-      },
-      "what": "line port"
-    },
-    {
-      "hex": "01023cfbd8c1a28c34",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "BumpSeq",
-          "value": {
-            "seconds": 30,
-            "timestamp": 1790000000123
-          }
-        }
-      },
-      "what": "bump +30 s, tapped at NOW"
-    },
-    {
-      "hex": "0001023cfbd8c1a28c34",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "BumpSeq",
-            "value": {
-              "seconds": 30,
-              "timestamp": 1790000000123
-            }
-          }
-        }
-      },
-      "what": "bump +30 s, tapped at NOW"
-    },
-    {
-      "hex": "0102d7049fcdc1a28c34",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "BumpSeq",
-          "value": {
-            "seconds": -300,
-            "timestamp": 1789999998623
-          }
-        }
-      },
-      "what": "bump -300 s (watch +5), tapped 1.5 s before NOW"
-    },
-    {
-      "hex": "000102d7049fcdc1a28c34",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "BumpSeq",
-            "value": {
-              "seconds": -300,
-              "timestamp": 1789999998623
-            }
-          }
-        }
-      },
-      "what": "bump -300 s (watch +5), tapped 1.5 s before NOW"
-    },
-    {
-      "hex": "01020000",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "BumpSeq",
-          "value": {
-            "seconds": 0,
-            "timestamp": 0
-          }
-        }
-      },
-      "what": "sync, tapped at device time 0"
-    },
-    {
-      "hex": "0001020000",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "BumpSeq",
-            "value": {
-              "seconds": 0,
-              "timestamp": 0
-            }
-          }
-        }
-      },
-      "what": "sync, tapped at device time 0"
-    },
-    {
-      "hex": "0102ffffffff0fffffffffffffff0f",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "BumpSeq",
-          "value": {
-            "seconds": -2147483648,
-            "timestamp": 9007199254740991
-          }
-        }
-      },
-      "what": "bump extremes"
-    },
-    {
-      "hex": "000102ffffffff0fffffffffffffff0f",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "BumpSeq",
-            "value": {
-              "seconds": -2147483648,
-              "timestamp": 9007199254740991
-            }
-          }
-        }
-      },
-      "what": "bump extremes"
-    },
-    {
-      "hex": "0103",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "Race",
-        "value": {
-          "tag": "RaceFinish",
-          "value": null
-        }
-      },
-      "what": "finish"
-    },
-    {
-      "hex": "000103",
-      "type": "WsEvent",
-      "value": {
-        "tag": "Engine",
-        "value": {
-          "tag": "Race",
-          "value": {
-            "tag": "RaceFinish",
-            "value": null
-          }
-        }
-      },
-      "what": "finish"
-    },
-    {
-      "hex": "02",
-      "type": "EngineEvent",
-      "value": {
-        "tag": "TuneSpeed",
+        "tag": "SelectDefault",
         "value": null
       },
-      "what": "tune (no events)"
+      "what": "back"
     },
     {
-      "hex": "0002",
-      "type": "WsEvent",
+      "hex": "029885eff5080100",
+      "type": "HostEvent",
       "value": {
         "tag": "Engine",
         "value": {
-          "tag": "TuneSpeed",
-          "value": null
+          "bytes": [
+            0
+          ],
+          "package": 2394669720
         }
       },
-      "what": "tune (no events)"
+      "what": "race: line stbd"
     },
     {
-      "hex": "0100",
-      "type": "WsEvent",
+      "hex": "029885eff50808023cfbd8c1a28c34",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            2,
+            60,
+            251,
+            216,
+            193,
+            162,
+            140,
+            52
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race: bump +30 s, tapped at NOW"
+    },
+    {
+      "hex": "02938984c20600",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [],
+          "package": 1749091475
+        }
+      },
+      "what": "engine event, no bytes"
+    },
+    {
+      "hex": "0300",
+      "type": "HostEvent",
       "value": {
         "tag": "Ble",
         "value": {
@@ -1679,8 +2039,8 @@
       "what": "pair"
     },
     {
-      "hex": "0101",
-      "type": "WsEvent",
+      "hex": "0301",
+      "type": "HostEvent",
       "value": {
         "tag": "Ble",
         "value": {
@@ -1691,8 +2051,8 @@
       "what": "cancel"
     },
     {
-      "hex": "0102",
-      "type": "WsEvent",
+      "hex": "0302",
+      "type": "HostEvent",
       "value": {
         "tag": "Ble",
         "value": {
@@ -1701,6 +2061,48 @@
         }
       },
       "what": "forget all"
+    },
+    {
+      "hex": "9885eff508047261636501015e1f00ff01807f42",
+      "type": "Manifest",
+      "value": {
+        "abi": 1,
+        "content_hash": [
+          94,
+          31,
+          0,
+          255,
+          1,
+          128,
+          127,
+          66
+        ],
+        "id": 2394669720,
+        "name": "race",
+        "version": 1
+      },
+      "what": "race"
+    },
+    {
+      "hex": "c6f686e603107369787465656e2d63686172732d7878ffff0301ffffffffffffffff",
+      "type": "Manifest",
+      "value": {
+        "abi": 1,
+        "content_hash": [
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255
+        ],
+        "id": 1019329350,
+        "name": "sixteen-chars-xx",
+        "version": 65535
+      },
+      "what": "longest name"
     }
   ]
 }

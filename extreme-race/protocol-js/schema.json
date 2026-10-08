@@ -1,0 +1,194 @@
+{
+  "event": {
+    "name": "RaceEvent",
+    "ty": {
+      "Enum": [
+        {
+          "name": "LineStbd",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "LinePort",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "BumpSeq",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "seconds",
+                "ty": {
+                  "name": "i32",
+                  "ty": "I32"
+                }
+              },
+              {
+                "name": "timestamp",
+                "ty": {
+                  "name": "u64",
+                  "ty": "U64"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "RaceFinish",
+          "ty": "UnitVariant"
+        }
+      ]
+    }
+  },
+  "view": {
+    "name": "RaceView",
+    "ty": {
+      "Struct": [
+        {
+          "name": "speed",
+          "ty": {
+            "name": "f32",
+            "ty": "F32"
+          }
+        },
+        {
+          "name": "phase",
+          "ty": {
+            "name": "Phase",
+            "ty": {
+              "Enum": [
+                {
+                  "name": "Active",
+                  "ty": {
+                    "StructVariant": [
+                      {
+                        "name": "line",
+                        "ty": {
+                          "name": "LineView",
+                          "ty": {
+                            "Enum": [
+                              {
+                                "name": "None",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Stbd",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Port",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Both",
+                                "ty": {
+                                  "StructVariant": [
+                                    {
+                                      "name": "cross",
+                                      "ty": {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      }
+                                    },
+                                    {
+                                      "name": "time",
+                                      "ty": {
+                                        "name": "u64",
+                                        "ty": "U64"
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "InSequence",
+                  "ty": {
+                    "StructVariant": [
+                      {
+                        "name": "start_time",
+                        "ty": {
+                          "name": "u64",
+                          "ty": "U64"
+                        }
+                      },
+                      {
+                        "name": "line",
+                        "ty": {
+                          "name": "LineView",
+                          "ty": {
+                            "Enum": [
+                              {
+                                "name": "None",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Stbd",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Port",
+                                "ty": "UnitVariant"
+                              },
+                              {
+                                "name": "Both",
+                                "ty": {
+                                  "StructVariant": [
+                                    {
+                                      "name": "cross",
+                                      "ty": {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      }
+                                    },
+                                    {
+                                      "name": "time",
+                                      "ty": {
+                                        "name": "u64",
+                                        "ty": "U64"
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "Racing",
+                  "ty": {
+                    "StructVariant": [
+                      {
+                        "name": "start_time",
+                        "ty": {
+                          "name": "u64",
+                          "ty": "U64"
+                        }
+                      },
+                      {
+                        "name": "heading",
+                        "ty": {
+                          "name": "f32",
+                          "ty": "F32"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

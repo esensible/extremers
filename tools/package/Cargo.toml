@@ -1,0 +1,19 @@
+[package]
+name = "extreme-pack"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Builds packages: engine.wasm, the web and watch bundles, the manifest and its content hash"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "extreme-pack"
+path = "src/main.rs"
+
+[dependencies]
+extreme-protocol = { path = "../../extreme-protocol" }
+heapless = { workspace = true }
+postcard = { workspace = true, features = ["use-std"] }
+sha2 = "0.10"

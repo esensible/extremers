@@ -3,18 +3,16 @@ name = "extreme-bindgen"
 version = "0.1.0"
 edition.workspace = true
 publish = false
-description = "Generates the clients' JS bindings (protocol-js/) from the wire types' postcard schemas"
+description = "Generates the clients' JS and Swift bindings (protocol-js/, protocol-swift/, each package's protocol-js/) from the wire types' postcard schemas"
 
 [[bin]]
 name = "extreme-bindgen"
 path = "src/main.rs"
 
 [dependencies]
-extreme-engines = { path = "../../extreme-engines" }
-extreme-traits = { path = "../../extreme-traits" }
+extreme-protocol = { path = "../../extreme-protocol" }
 extreme-race = { path = "../../extreme-race" }
 extreme-tune = { path = "../../extreme-tune" }
-common = { path = "../../common" }
 heapless = { workspace = true }
 serde = { workspace = true, features = ["std"] }
 serde_json = { workspace = true }

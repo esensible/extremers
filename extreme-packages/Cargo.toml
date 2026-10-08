@@ -1,0 +1,11 @@
+[package]
+name = "extreme-packages"
+version = "0.1.0"
+edition.workspace = true
+description = "The packages the firmware ships with: Race and Tune preinstalled, and Choose's bundles, built by build.rs and embedded"
+
+[dependencies]
+extreme-protocol = { path = "../extreme-protocol" }
+
+[build-dependencies]
+extreme-pack = { path = "../tools/package" }

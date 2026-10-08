@@ -1,0 +1,34 @@
+{
+  "event": {
+    "name": "()",
+    "ty": "Unit"
+  },
+  "view": {
+    "name": "TuneView",
+    "ty": {
+      "Struct": [
+        {
+          "name": "speed",
+          "ty": {
+            "name": "f32",
+            "ty": "F32"
+          }
+        },
+        {
+          "name": "speed_dev",
+          "ty": {
+            "name": "f32",
+            "ty": "F32"
+          }
+        },
+        {
+          "name": "heading_dev",
+          "ty": {
+            "name": "f32",
+            "ty": "F32"
+          }
+        }
+      ]
+    }
+  }
+}

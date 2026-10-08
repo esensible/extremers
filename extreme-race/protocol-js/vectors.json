@@ -1,0 +1,318 @@
+{
+  "doc": "Written by tools/bindgen (cargo run -p extreme-bindgen) from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to. The race package's view and events.",
+  "vectors": [
+    {
+      "hex": "cdcccc400000",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Active",
+          "value": {
+            "line": {
+              "tag": "None",
+              "value": null
+            }
+          }
+        },
+        "speed": 6.400000095367432
+      },
+      "what": "active, no line"
+    },
+    {
+      "hex": "9a99b94101db80d4a28c3400",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "None",
+              "value": null
+            },
+            "start_time": 1790000300123
+          }
+        },
+        "speed": 23.200000762939453
+      },
+      "what": "in sequence, no line"
+    },
+    {
+      "hex": "cdcccc400001",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Active",
+          "value": {
+            "line": {
+              "tag": "Stbd",
+              "value": null
+            }
+          }
+        },
+        "speed": 6.400000095367432
+      },
+      "what": "active, stbd set"
+    },
+    {
+      "hex": "9a99b94101db80d4a28c3401",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "Stbd",
+              "value": null
+            },
+            "start_time": 1790000300123
+          }
+        },
+        "speed": 23.200000762939453
+      },
+      "what": "in sequence, stbd set"
+    },
+    {
+      "hex": "cdcccc400002",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Active",
+          "value": {
+            "line": {
+              "tag": "Port",
+              "value": null
+            }
+          }
+        },
+        "speed": 6.400000095367432
+      },
+      "what": "active, port set"
+    },
+    {
+      "hex": "9a99b94101db80d4a28c3402",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "Port",
+              "value": null
+            },
+            "start_time": 1790000300123
+          }
+        },
+        "speed": 23.200000762939453
+      },
+      "what": "in sequence, port set"
+    },
+    {
+      "hex": "cdcccc4000032fb4a1c3a28c34",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Active",
+          "value": {
+            "line": {
+              "tag": "Both",
+              "value": {
+                "cross": 47,
+                "time": 1790000025780
+              }
+            }
+          }
+        },
+        "speed": 6.400000095367432
+      },
+      "what": "active, line both"
+    },
+    {
+      "hex": "9a99b94101db80d4a28c34032fb4a1c3a28c34",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "Both",
+              "value": {
+                "cross": 47,
+                "time": 1790000025780
+              }
+            },
+            "start_time": 1790000300123
+          }
+        },
+        "speed": 23.200000762939453
+      },
+      "what": "in sequence, line both"
+    },
+    {
+      "hex": "cdcccc4000030093d1c1a28c34",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Active",
+          "value": {
+            "line": {
+              "tag": "Both",
+              "value": {
+                "cross": 0,
+                "time": 1789999999123
+              }
+            }
+          }
+        },
+        "speed": 6.400000095367432
+      },
+      "what": "active, line both, port end, crossing passed"
+    },
+    {
+      "hex": "9a99b94101db80d4a28c34030093d1c1a28c34",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "Both",
+              "value": {
+                "cross": 0,
+                "time": 1789999999123
+              }
+            },
+            "start_time": 1790000300123
+          }
+        },
+        "speed": 23.200000762939453
+      },
+      "what": "in sequence, line both, port end, crossing passed"
+    },
+    {
+      "hex": "00008c4102b3fcbda28c3400007d43",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Racing",
+          "value": {
+            "heading": 253.0,
+            "start_time": 1789999939123
+          }
+        },
+        "speed": 17.5
+      },
+      "what": "racing"
+    },
+    {
+      "hex": "0000000002fbd8c1a28c3400000000",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "Racing",
+          "value": {
+            "heading": 0.0,
+            "start_time": 1790000000123
+          }
+        },
+        "speed": 0.0
+      },
+      "what": "racing, heading not yet known, stopped"
+    },
+    {
+      "hex": "66d6234401ffffffffffffff0f0364ffffffffffffff0f",
+      "type": "RaceView",
+      "value": {
+        "phase": {
+          "tag": "InSequence",
+          "value": {
+            "line": {
+              "tag": "Both",
+              "value": {
+                "cross": 100,
+                "time": 9007199254740991
+              }
+            },
+            "start_time": 9007199254740991
+          }
+        },
+        "speed": 655.3499755859375
+      },
+      "what": "in sequence at the largest times"
+    },
+    {
+      "hex": "00",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "LineStbd",
+        "value": null
+      },
+      "what": "line stbd"
+    },
+    {
+      "hex": "01",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "LinePort",
+        "value": null
+      },
+      "what": "line port"
+    },
+    {
+      "hex": "023cfbd8c1a28c34",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "BumpSeq",
+        "value": {
+          "seconds": 30,
+          "timestamp": 1790000000123
+        }
+      },
+      "what": "bump +30 s, tapped at NOW"
+    },
+    {
+      "hex": "02d7049fcdc1a28c34",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "BumpSeq",
+        "value": {
+          "seconds": -300,
+          "timestamp": 1789999998623
+        }
+      },
+      "what": "bump -300 s (watch +5), tapped 1.5 s before NOW"
+    },
+    {
+      "hex": "020000",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "BumpSeq",
+        "value": {
+          "seconds": 0,
+          "timestamp": 0
+        }
+      },
+      "what": "sync, tapped at device time 0"
+    },
+    {
+      "hex": "02ffffffff0fffffffffffffff0f",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "BumpSeq",
+        "value": {
+          "seconds": -2147483648,
+          "timestamp": 9007199254740991
+        }
+      },
+      "what": "bump extremes"
+    },
+    {
+      "hex": "03",
+      "type": "RaceEvent",
+      "value": {
+        "tag": "RaceFinish",
+        "value": null
+      },
+      "what": "finish"
+    }
+  ]
+}

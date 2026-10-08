@@ -1,0 +1,475 @@
+{
+  "ChooseView": {
+    "name": "ChooseView",
+    "ty": {
+      "Struct": [
+        {
+          "name": "packages",
+          "ty": {
+            "name": "heapless::Vec<T, N>",
+            "ty": {
+              "Seq": {
+                "name": "PackageInfo",
+                "ty": {
+                  "Struct": [
+                    {
+                      "name": "id",
+                      "ty": {
+                        "name": "u32",
+                        "ty": "U32"
+                      }
+                    },
+                    {
+                      "name": "name",
+                      "ty": {
+                        "name": "heapless::String<N>",
+                        "ty": "String"
+                      }
+                    },
+                    {
+                      "name": "version",
+                      "ty": {
+                        "name": "u16",
+                        "ty": "U16"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "ble",
+          "ty": {
+            "name": "Option<T>",
+            "ty": {
+              "Option": {
+                "name": "BleStatusView",
+                "ty": {
+                  "Struct": [
+                    {
+                      "name": "addr",
+                      "ty": {
+                        "name": "[T; N]",
+                        "ty": {
+                          "Tuple": [
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            },
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            },
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            },
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            },
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            },
+                            {
+                              "name": "u8",
+                              "ty": "U8"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "name": "pair_ms",
+                      "ty": {
+                        "name": "u32",
+                        "ty": "U32"
+                      }
+                    },
+                    {
+                      "name": "bonds",
+                      "ty": {
+                        "name": "heapless::Vec<T, N>",
+                        "ty": {
+                          "Seq": {
+                            "name": "[T; N]",
+                            "ty": {
+                              "Tuple": [
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "name": "max_bonds",
+                      "ty": {
+                        "name": "u8",
+                        "ty": "U8"
+                      }
+                    },
+                    {
+                      "name": "note",
+                      "ty": {
+                        "name": "BleNote",
+                        "ty": {
+                          "Enum": [
+                            {
+                              "name": "None",
+                              "ty": "UnitVariant"
+                            },
+                            {
+                              "name": "Paired",
+                              "ty": {
+                                "NewtypeVariant": {
+                                  "name": "[T; N]",
+                                  "ty": {
+                                    "Tuple": [
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "name": "PairedNotSaved",
+                              "ty": {
+                                "NewtypeVariant": {
+                                  "name": "[T; N]",
+                                  "ty": {
+                                    "Tuple": [
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      },
+                                      {
+                                        "name": "u8",
+                                        "ty": "U8"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "name": "Rejected",
+                              "ty": "UnitVariant"
+                            },
+                            {
+                              "name": "Failed",
+                              "ty": "UnitVariant"
+                            },
+                            {
+                              "name": "Expired",
+                              "ty": "UnitVariant"
+                            },
+                            {
+                              "name": "StaleBond",
+                              "ty": "UnitVariant"
+                            },
+                            {
+                              "name": "Forgotten",
+                              "ty": "UnitVariant"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Envelope": {
+    "name": "Envelope",
+    "ty": {
+      "Struct": [
+        {
+          "name": "timestamp",
+          "ty": {
+            "name": "u64",
+            "ty": "U64"
+          }
+        },
+        {
+          "name": "active",
+          "ty": {
+            "name": "u32",
+            "ty": "U32"
+          }
+        },
+        {
+          "name": "ui_hash",
+          "ty": {
+            "name": "[T; N]",
+            "ty": {
+              "Tuple": [
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "state",
+          "ty": {
+            "name": "[T]",
+            "ty": {
+              "Seq": {
+                "name": "u8",
+                "ty": "U8"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "HostEvent": {
+    "name": "HostEvent",
+    "ty": {
+      "Enum": [
+        {
+          "name": "Select",
+          "ty": {
+            "NewtypeVariant": {
+              "name": "u32",
+              "ty": "U32"
+            }
+          }
+        },
+        {
+          "name": "SelectDefault",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "Engine",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "package",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "bytes",
+                "ty": {
+                  "name": "[T]",
+                  "ty": {
+                    "Seq": {
+                      "name": "u8",
+                      "ty": "U8"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Ble",
+          "ty": {
+            "NewtypeVariant": {
+              "name": "BleCommand",
+              "ty": {
+                "Enum": [
+                  {
+                    "name": "Pair",
+                    "ty": "UnitVariant"
+                  },
+                  {
+                    "name": "Cancel",
+                    "ty": "UnitVariant"
+                  },
+                  {
+                    "name": "ForgetAll",
+                    "ty": "UnitVariant"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Manifest": {
+    "name": "Manifest",
+    "ty": {
+      "Struct": [
+        {
+          "name": "id",
+          "ty": {
+            "name": "u32",
+            "ty": "U32"
+          }
+        },
+        {
+          "name": "name",
+          "ty": {
+            "name": "heapless::String<N>",
+            "ty": "String"
+          }
+        },
+        {
+          "name": "version",
+          "ty": {
+            "name": "u16",
+            "ty": "U16"
+          }
+        },
+        {
+          "name": "abi",
+          "ty": {
+            "name": "u16",
+            "ty": "U16"
+          }
+        },
+        {
+          "name": "content_hash",
+          "ty": {
+            "name": "[T; N]",
+            "ty": {
+              "Tuple": [
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                },
+                {
+                  "name": "u8",
+                  "ty": "U8"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

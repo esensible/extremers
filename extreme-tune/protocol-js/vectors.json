@@ -1,0 +1,75 @@
+{
+  "doc": "Written by tools/bindgen (cargo run -p extreme-bindgen) from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to. The tune package's view (it takes no events).",
+  "vectors": [
+    {
+      "hex": "000000000000000000000000",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 0.0,
+        "speed": 0.0,
+        "speed_dev": 0.0
+      },
+      "what": "0 0 0"
+    },
+    {
+      "hex": "cdcccc400000003fcdcc44c1",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": -12.300000190734863,
+        "speed": 6.400000095367432,
+        "speed_dev": 0.5
+      },
+      "what": "6.4 0.5 -12.3"
+    },
+    {
+      "hex": "1f854541ae4761bd71fd3343",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 179.99000549316406,
+        "speed": 12.345000267028809,
+        "speed_dev": -0.054999999701976776
+      },
+      "what": "12.345 -0.055 179.99"
+    },
+    {
+      "hex": "66d62344c3d5a34300003443",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 180.0,
+        "speed": 655.3499755859375,
+        "speed_dev": 327.6700134277344
+      },
+      "what": "655.35 327.67 180"
+    },
+    {
+      "hex": "0000a0406f1283bb0ad723bd",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": -0.03999999910593033,
+        "speed": 5.0,
+        "speed_dev": -0.004000000189989805
+      },
+      "what": "5 -0.004 -0.04"
+    },
+    {
+      "hex": "0000e8400000c03f000034c3",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": -180.0,
+        "speed": 7.25,
+        "speed_dev": 1.5
+      },
+      "what": "7.25 1.5 -180"
+    },
+    {
+      "hex": "0000cc41a47045c166663642",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 45.599998474121094,
+        "speed": 25.5,
+        "speed_dev": -12.34000015258789
+      },
+      "what": "25.5 -12.34 45.6"
+    }
+  ]
+}
