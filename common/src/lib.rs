@@ -10,5 +10,6 @@ pub mod ble_settings;
 pub mod config;
 pub mod http;
 pub mod nmea;
+pub mod protocol;
 pub mod runtime;
 pub mod tasks;

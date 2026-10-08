@@ -2,7 +2,8 @@ use core::f64::consts::PI;
 use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
 use heapless::Deque;
 use libm::{atan2, cos, fmod, sin};
-use serde::{Serialize, Serializer, ser::SerializeStruct};
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 
 /// Length of the averaging window, in milliseconds.
 const WINDOW_MS: u64 = 30_000;
@@ -14,9 +15,20 @@ pub struct TuneSpeed<const HISTORY_SIZE: usize> {
     pub speed_dev: f64,
     pub heading_dev: f64,
 
-    // Internal state variables (not serialized)
+    // Internal state variables (not in the view)
     history: Deque<(Velocity, u64), HISTORY_SIZE>, // (velocity, timestamp)
     last_timestamp: Option<u64>,
+}
+
+/// What clients see of the tuning engine.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub struct TuneView {
+    /// Current speed over ground, knots.
+    pub speed: f32,
+    /// Current speed minus its 30 s average, knots.
+    pub speed_dev: f32,
+    /// Current course minus its 30 s average, degrees, -180..180.
+    pub heading_dev: f32,
 }
 
 impl<const HISTORY_SIZE: usize> TuneSpeed<HISTORY_SIZE> {
@@ -33,23 +45,17 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
     const NAME: &'static str = "TuneSpeed";
     const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
 
-    /// `[speed u16][speed_dev i16][heading_dev i16]`, little-endian; speed
-    /// and its deviation in knots x 100, heading deviation in degrees x 10.
-    fn compact_state(&self, _now: u64, out: &mut [u8]) -> usize {
-        if out.len() < 6 {
-            return 0;
-        }
-        let speed = (self.speed * 100.0).clamp(0.0, u16::MAX as f64) as u16;
-        let speed_dev = (self.speed_dev * 100.0).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
-        let heading_dev = (self.heading_dev * 10.0).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
-        out[0..2].copy_from_slice(&speed.to_le_bytes());
-        out[2..4].copy_from_slice(&speed_dev.to_le_bytes());
-        out[4..6].copy_from_slice(&heading_dev.to_le_bytes());
-        6
-    }
-
+    type View = TuneView;
     // we don't need events right now
-    type Event<'a> = ();
+    type Event = ();
+
+    fn view(&self) -> TuneView {
+        TuneView {
+            speed: self.speed as f32,
+            speed_dev: self.speed_dev as f32,
+            heading_dev: self.heading_dev as f32,
+        }
+    }
 
     fn location_event(
         &mut self,
@@ -134,18 +140,5 @@ impl<const HISTORY_SIZE: usize> Engine for TuneSpeed<HISTORY_SIZE> {
     fn timer_event(&mut self, _timestamp: u64) -> Outcome {
         // No timer events needed
         Outcome::NONE
-    }
-}
-
-impl<const HISTORY_SIZE: usize> Serialize for TuneSpeed<HISTORY_SIZE> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("TuneSpeed", 3)?;
-        state.serialize_field("speed", &self.speed)?;
-        state.serialize_field("speed_dev", &self.speed_dev)?;
-        state.serialize_field("heading_dev", &self.heading_dev)?;
-        state.end()
     }
 }

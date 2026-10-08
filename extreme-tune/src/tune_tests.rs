@@ -2,9 +2,8 @@
 mod tests {
     extern crate std;
 
-    use crate::TuneSpeed;
-    use extreme_traits::{Engine, Outcome, Velocity};
-    use serde_json::json;
+    use crate::{TuneSpeed, TuneView};
+    use extreme_traits::{Engine, MAX_STATE_SIZE, Outcome, StateBytes, Velocity};
     use std::vec;
 
     #[test]
@@ -114,56 +113,27 @@ mod tests {
     }
 
     #[test]
-    fn test_compact_state() {
-        let mut tune = TuneSpeed::<100>::default();
-        let _ = tune.location_event(
-            0,
-            None,
-            Some(Velocity {
-                speed: 10.0,
-                heading: 90.0,
-            }),
-        );
-        let _ = tune.location_event(
-            1000,
-            None,
-            Some(Velocity {
-                speed: 12.0,
-                heading: 95.0,
-            }),
-        );
-
-        let mut buf = [0u8; 8];
-        assert_eq!(tune.compact_state(1000, &mut buf), 6);
-        assert_eq!(u16::from_le_bytes([buf[0], buf[1]]), 1200);
-        assert_eq!(
-            i16::from_le_bytes([buf[2], buf[3]]),
-            (tune.speed_dev * 100.0) as i16
-        );
-        assert_eq!(
-            i16::from_le_bytes([buf[4], buf[5]]),
-            (tune.heading_dev * 10.0) as i16
-        );
-        assert_eq!(tune.compact_state(1000, &mut buf[..5]), 0);
-    }
-
-    #[test]
-    fn test_serialization() {
+    fn test_view_and_postcard() {
         let mut tune = TuneSpeed::<100>::default();
 
         let _ = tune.location_event(0, None, Some(vel(10.0, 90.0)));
         let _ = tune.location_event(1000, None, Some(vel(12.0, 95.0)));
 
-        let serialized = extreme_traits::serialize_state(&tune).unwrap();
-        let expected_json = json!({
-            "speed": tune.speed,
-            "speed_dev": tune.speed_dev,
-            "heading_dev": tune.heading_dev,
-        });
+        let view = tune.view();
+        assert_eq!(view.speed, 12.0);
+        assert_eq!(view.speed_dev, tune.speed_dev as f32);
+        assert_eq!(view.heading_dev, tune.heading_dev as f32);
 
-        let parsed_json: serde_json::Value = serde_json::from_slice(&serialized).unwrap();
+        // three little-endian f32s, nothing else
+        let bytes = state_bytes(&tune);
+        assert_eq!(bytes.len(), 12);
+        assert_eq!(&bytes[..4], &12.0f32.to_le_bytes());
+        assert_eq!(postcard::from_bytes::<TuneView>(&bytes).unwrap(), view);
+        assert!(bytes.len() + 1 <= MAX_STATE_SIZE);
 
-        assert_eq!(parsed_json, expected_json);
+        // no events
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut tune, 0, &[]), Ok(Outcome::NONE));
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut tune, 0, &[0]), Err(()));
     }
 
     #[test]
@@ -198,58 +168,12 @@ mod tests {
         assert_eq!(tune.location_event(7000, None, None), Outcome::NONE);
     }
 
-    /// Test vectors for the watch bundle's JS decoder
-    /// (watch-js/test/vectors.json): compact_state of a set of states,
-    /// including clamping and truncation, and the values the decoder must
-    /// return (the quantized fields). Fails if the committed file is stale;
-    /// `UPDATE_WATCH_VECTORS=1 cargo test -p extreme-tune` rewrites it.
-    #[test]
-    fn test_watch_vectors() {
-        use std::{format, fs, string::String, vec::Vec};
-        let cases: [(f64, f64, f64); 10] = [
-            (0.0, 0.0, 0.0),
-            (6.4, 0.5, -12.3),
-            (12.345, -0.055, 179.99),
-            (655.35, 327.67, 180.0),
-            (700.0, 400.0, 4000.0),
-            (-1.0, -400.0, -4000.0),
-            (5.0, -0.004, -0.04),
-            (7.25, 1.5, -180.0),
-            (3.999, 0.009, 0.09),
-            (25.5, -12.34, 45.6),
-        ];
-        let mut items = Vec::new();
-        for (speed, speed_dev, heading_dev) in cases {
-            let mut tune = TuneSpeed::<4>::default();
-            tune.speed = speed;
-            tune.speed_dev = speed_dev;
-            tune.heading_dev = heading_dev;
-            let mut buf = [0u8; 6];
-            assert_eq!(tune.compact_state(0, &mut buf), 6);
-            let hex: String = buf.iter().map(|b| format!("{b:02x}")).collect();
-            let s = u16::from_le_bytes([buf[0], buf[1]]) as f64 / 100.0;
-            let d = i16::from_le_bytes([buf[2], buf[3]]) as f64 / 100.0;
-            let h = i16::from_le_bytes([buf[4], buf[5]]) as f64 / 10.0;
-            items.push(format!(
-                "    {{\"state\": {{\"speed\": {speed:?}, \"speed_dev\": {speed_dev:?}, \"heading_dev\": {heading_dev:?}}}, \"compact\": \"{hex}\", \"decoded\": {{\"speed\": {s:?}, \"speed_dev\": {d:?}, \"heading_dev\": {h:?}}}}}"
-            ));
-        }
-        let json = format!(
-            "{{\n  \"doc\": \"Written by extreme-tune/src/tune_tests.rs test_watch_vectors from TuneSpeed::compact_state. compact = the engine bytes after the kind byte.\",\n  \"kind\": 2,\n  \"vectors\": [\n{}\n  ]\n}}\n",
-            items.join(",\n")
-        );
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/watch-js/test/vectors.json");
-        if std::env::var_os("UPDATE_WATCH_VECTORS").is_some() {
-            fs::write(path, &json).unwrap();
-        }
-        assert_eq!(
-            fs::read_to_string(path).unwrap_or_default(),
-            json,
-            "{path} is stale: run UPDATE_WATCH_VECTORS=1 cargo test -p extreme-tune"
-        );
-    }
-
     fn vel(speed: f64, heading: f64) -> Velocity {
         Velocity { speed, heading }
+    }
+
+    /// The engine's serialized state ([`extreme_traits::RawEngine`]).
+    fn state_bytes<E: Engine>(engine: &E) -> StateBytes {
+        extreme_traits::RawEngine::serialize_state(engine).unwrap()
     }
 }

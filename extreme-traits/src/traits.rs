@@ -5,23 +5,28 @@
 //! and whether it wants a timer. It performs no I/O and knows nothing about
 //! clocks or hardware, which is what makes it testable on a host.
 //!
+//! What clients see of an engine is its [`Engine::View`], a plain typed
+//! value; what they send it is its [`Engine::Event`]. Both travel as
+//! [postcard](https://docs.rs/postcard), on the websocket and over BLE alike,
+//! and both derive postcard-schema's `Schema`, from which `tools/bindgen`
+//! generates the clients' JS decoders and encoders.
+//!
 //! [`RawEngine`] is the byte-level view of an engine that the runtime uses:
-//! events arrive as JSON bytes and state leaves as JSON bytes.
+//! events arrive as postcard bytes and state leaves as postcard bytes.
 
-use serde::{Deserialize, Serialize};
+use core::fmt::Debug;
 
-/// Largest serialized engine state or client event, in bytes.
-pub const MAX_MESSAGE_SIZE: usize = 512;
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-/// A serialized engine state.
-pub type StateJson = heapless::Vec<u8, MAX_MESSAGE_SIZE>;
+/// Largest serialized engine state ([`RawEngine::serialize_state`]), in
+/// bytes. The engines' own tests check their largest views against it.
+pub const MAX_STATE_SIZE: usize = 48;
 
-/// Largest compact state, kind byte included: one BLE notification at the
-/// default ATT MTU (23 bytes less the 3-byte ATT header).
-pub const MAX_COMPACT_STATE: usize = 20;
-
-/// A compact binary engine state: `[kind code][engine bytes]`. See BLE.md.
-pub type CompactState = heapless::Vec<u8, MAX_COMPACT_STATE>;
+/// A serialized engine state: postcard bytes of the engine's view (for a
+/// [`define_engines!`](crate::define_engines) engine, of its `EngineState`:
+/// the engine's tag, then its view).
+pub type StateBytes = heapless::Vec<u8, MAX_STATE_SIZE>;
 
 /// A GPS position, in degrees. South and west are negative.
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -98,15 +103,27 @@ impl Outcome {
 pub type StaticFiles = &'static [(&'static str, &'static [u8])];
 
 /// A typed engine. See the module docs.
-pub trait Engine: Serialize {
-    /// The name clients see in the `kind` field of every state message.
+pub trait Engine {
+    /// The engine's name, for logs ([`RawEngine::kind`]).
     const NAME: &'static str;
 
     /// The engine's web UI. See [`static_files!`](crate::static_files).
     const STATIC_FILES: StaticFiles;
 
-    /// Events sent by this engine's client, as JSON.
-    type Event<'a>: Deserialize<'a>;
+    /// What clients see of the engine: a typed value built from its state
+    /// by [`view`](Self::view), leaving out internals. Its serialized form
+    /// must fit [`MAX_STATE_SIZE`] (less the one-byte engine tag).
+    ///
+    /// Absolute times in it are epoch milliseconds of the device clock;
+    /// every state message also carries the device's time when it was
+    /// sent, so clients can count down against their own clocks.
+    type View: Clone + Debug + PartialEq + Serialize + DeserializeOwned + Schema;
+
+    /// Events from clients. `()` for an engine that takes none.
+    type Event: Clone + Debug + PartialEq + Serialize + DeserializeOwned + Schema;
+
+    /// The view of the current state.
+    fn view(&self) -> Self::View;
 
     /// A GPS update. `timestamp` is epoch milliseconds, from the GPS when
     /// available, otherwise the runtime's best estimate.
@@ -117,8 +134,8 @@ pub trait Engine: Serialize {
         velocity: Option<Velocity>,
     ) -> Outcome;
 
-    /// An event from a client.
-    fn external_event(&mut self, timestamp: u64, event: &Self::Event<'_>) -> Outcome;
+    /// An event from a client, arriving at `timestamp`.
+    fn external_event(&mut self, timestamp: u64, event: &Self::Event) -> Outcome;
 
     /// A timer requested through [`Timer::At`] has expired.
     fn timer_event(&mut self, timestamp: u64) -> Outcome;
@@ -130,38 +147,23 @@ pub trait Engine: Serialize {
             .find(|(name, _)| *name == path)
             .map(|(_, contents)| *contents)
     }
-
-    /// The state in compact binary form for low-bandwidth links (BLE, see
-    /// BLE.md), written to `out`; returns the number of bytes written, at
-    /// most `out.len()`. Absolute times are encoded relative to `now` so
-    /// clients need no clock sync. The default is an empty state.
-    fn compact_state(&self, now: u64, out: &mut [u8]) -> usize {
-        let _ = (now, out);
-        0
-    }
-
-    /// A client event in compact binary form (BLE.md). `Err` if the engine
-    /// does not understand it; the default understands nothing.
-    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
-        let _ = (timestamp, event);
-        Err(())
-    }
 }
 
 /// The byte-level view of an engine used by the runtime.
 ///
-/// Every [`Engine`] is a `RawEngine` through the blanket impl below;
+/// Every [`Engine`] is a `RawEngine` through the blanket impl below (state
+/// = its view, events = its events);
 /// [`define_engines!`](crate::define_engines) builds one that switches
 /// between several engines.
 pub trait RawEngine {
-    /// The name of the currently active engine.
+    /// The name of the currently active engine, for logs.
     fn kind(&self) -> &'static str;
 
-    /// Serialize the current state to JSON.
-    fn serialize_state(&self) -> Result<StateJson, ()>;
+    /// The current state, as postcard.
+    fn serialize_state(&self) -> Result<StateBytes, ()>;
 
-    /// Deliver a JSON event from a client. `Err` means the event could not
-    /// be decoded.
+    /// Deliver a postcard event from a client. `Err` means the event could
+    /// not be decoded, or is for an engine that is not active.
     fn external_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()>;
 
     fn location_event(
@@ -174,41 +176,28 @@ pub trait RawEngine {
     fn timer_event(&mut self, timestamp: u64) -> Outcome;
 
     fn get_static(&self, path: &str) -> Option<&'static [u8]>;
-
-    /// The active engine's code in the compact protocol (BLE.md): 0 is the
-    /// selector, then the engines in declaration order from 1.
-    fn kind_code(&self) -> u8;
-
-    /// The state in compact binary form: `[kind_code][engine bytes]`, times
-    /// relative to `now`.
-    fn compact_state(&self, now: u64) -> CompactState;
-
-    /// Deliver a compact binary event. `Err` means it was not understood.
-    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()>;
 }
 
-/// Builds a [`CompactState`] from a kind code and an engine's
-/// [`Engine::compact_state`]; truncated at [`MAX_COMPACT_STATE`] bytes.
-pub fn compact_state<E: Engine>(kind_code: u8, engine: &E, now: u64) -> CompactState {
-    let mut state = CompactState::new();
-    let _ = state.push(kind_code);
-    let mut body = [0u8; MAX_COMPACT_STATE - 1];
-    let n = engine.compact_state(now, &mut body).min(body.len());
-    let _ = state.extend_from_slice(&body[..n]);
-    state
+/// Serialize a state as postcard. `Err` if it does not fit in
+/// [`MAX_STATE_SIZE`].
+pub fn serialize_state<S: Serialize>(state: &S) -> Result<StateBytes, ()> {
+    let mut bytes = StateBytes::new();
+    // cannot fail: resizing to the capacity
+    let _ = bytes.resize(MAX_STATE_SIZE, 0);
+    let len = postcard::to_slice(state, &mut bytes[..])
+        .map_err(|_| ())?
+        .len();
+    bytes.truncate(len);
+    Ok(bytes)
 }
 
-/// Serialize an engine state to JSON. `Err` if it does not fit in
-/// [`MAX_MESSAGE_SIZE`].
-pub fn serialize_state<S: Serialize>(state: &S) -> Result<StateJson, ()> {
-    serde_json_core::to_vec(state).map_err(|_| ())
-}
-
-/// Decode a client event from JSON.
-pub fn deserialize_event<'a, E: Deserialize<'a>>(event: &'a [u8]) -> Result<E, ()> {
-    serde_json_core::from_slice(event)
-        .map(|(event, _)| event)
-        .map_err(|_| ())
+/// Decode a client event from postcard. `Err` unless `event` is exactly one
+/// value: trailing bytes are an error too.
+pub fn deserialize_event<E: DeserializeOwned>(event: &[u8]) -> Result<E, ()> {
+    match postcard::take_from_bytes(event) {
+        Ok((event, [])) => Ok(event),
+        _ => Err(()),
+    }
 }
 
 impl<E: Engine> RawEngine for E {
@@ -216,12 +205,12 @@ impl<E: Engine> RawEngine for E {
         E::NAME
     }
 
-    fn serialize_state(&self) -> Result<StateJson, ()> {
-        serialize_state(self)
+    fn serialize_state(&self) -> Result<StateBytes, ()> {
+        serialize_state(&self.view())
     }
 
     fn external_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
-        let event = deserialize_event::<E::Event<'_>>(event)?;
+        let event = deserialize_event::<E::Event>(event)?;
         Ok(Engine::external_event(self, timestamp, &event))
     }
 
@@ -240,17 +229,5 @@ impl<E: Engine> RawEngine for E {
 
     fn get_static(&self, path: &str) -> Option<&'static [u8]> {
         Engine::get_static(self, path)
-    }
-
-    fn kind_code(&self) -> u8 {
-        1
-    }
-
-    fn compact_state(&self, now: u64) -> CompactState {
-        compact_state(1, self, now)
-    }
-
-    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
-        Engine::compact_event(self, timestamp, event)
     }
 }

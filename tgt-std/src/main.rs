@@ -5,14 +5,8 @@ use embassy_executor::Executor;
 use static_cell::StaticCell;
 
 use common::{runtime::EngineRuntime, tasks::serve_http};
-use extreme_traits::define_engines;
-
-define_engines! {
-    EngineType {
-        Race(extreme_race::Race),
-        TuneSpeed(extreme_tune::TuneSpeed<32>),
-    }
-}
+// The engines, and their order on the wire: extreme-engines.
+use extreme_engines::EngineType;
 
 type Runtime = EngineRuntime<EngineType>;
 

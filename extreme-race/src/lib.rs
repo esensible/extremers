@@ -4,7 +4,7 @@ mod geo_math;
 mod line;
 mod race;
 mod types;
-pub use race::Race;
+pub use race::{LineView, Phase, Race, RaceEvent, RaceView};
 
 #[cfg(test)]
 mod race_tests;

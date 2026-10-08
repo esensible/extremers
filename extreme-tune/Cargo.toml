@@ -8,13 +8,14 @@ crate-type = ["lib"]
 
 [dependencies]
 serde = { workspace = true }
+postcard-schema = { workspace = true }
 libm = { workspace = true }
 heapless = { workspace = true }
 
 extreme-traits = { path = "../extreme-traits" }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+postcard = { workspace = true, features = ["use-std"] }
 
 [build-dependencies]
 extreme-build = { path = "../extreme-build" }

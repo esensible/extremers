@@ -70,9 +70,7 @@ static_cell = { workspace = true }
 # AtomicU64 (used by common) on riscv32imac needs emulation
 portable-atomic = { workspace = true, features = ["critical-section"] }
 
-extreme-traits = { path = "../extreme-traits/" }
-extreme-race = { path = "../extreme-race/" }
-extreme-tune = { path = "../extreme-tune/" }
+extreme-engines = { path = "../extreme-engines/" }
 
 [features]
 default = ["esp32c6"]

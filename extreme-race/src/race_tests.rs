@@ -1,9 +1,10 @@
 mod tests {
+    extern crate std;
+
     use crate::line::Line;
     use crate::race::*;
     use core::f64::consts::PI;
-    use extreme_traits::{Engine, Fix, Outcome, Velocity};
-    use serde_json::json;
+    use extreme_traits::{Engine, Fix, MAX_STATE_SIZE, Outcome, StateBytes, Velocity};
 
     #[test]
     fn test_sequence() {
@@ -12,75 +13,50 @@ mod tests {
         //
         // State: Active
         //
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 0.0,
-                "line": "None",
-            }),
-            race,
-        );
+        assert_view(&race, 0.0, Phase::Active { line: LineView::None });
 
         assert_eq!(
             race.location_event(0, None, Some(vel(23.2, 350.0))),
             Outcome::CHANGED,
         );
 
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 23.2,
-                "line": "None",
-            }),
-            race,
-        );
+        assert_view(&race, 23.2, Phase::Active { line: LineView::None });
 
         // set stbd pin
         assert_eq!(
-            race.external_event(0, &ev(EventType::LineStbd)),
+            race.external_event(0, &RaceEvent::LineStbd),
             Outcome::CHANGED,
         );
 
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 23.2,
-                "line": "Stbd",
-            }),
-            race,
-        );
+        assert_view(&race, 23.2, Phase::Active { line: LineView::Stbd });
 
         //
         // State: InSequence
         //
         bump(&mut race, 1000, 30, 31_000);
 
-        assert_json_eq(
-            json!({
-                "state": "InSequence",
-                "speed": 23.2,
-                "start_time": 31_000,
-                "line": "Stbd",
-            }),
-            race,
+        assert_view(
+            &race,
+            23.2,
+            Phase::InSequence {
+                start_time: 31_000,
+                line: LineView::Stbd,
+            },
         );
 
         // set port pin
         assert_eq!(
-            race.external_event(0, &ev(EventType::LinePort)),
+            race.external_event(0, &RaceEvent::LinePort),
             Outcome::CHANGED,
         );
 
-        assert_json_eq(
-            json!({
-                "state": "InSequence",
-                "speed": 23.2,
-                "start_time": 31_000,
-                "line": "Both",
-                "line_cross": 0,
-                "line_timestamp": 0,
-            }),
-            race,
+        assert_view(
+            &race,
+            23.2,
+            Phase::InSequence {
+                start_time: 31_000,
+                line: LineView::Both { cross: 0, time: 0 },
+            },
         );
 
         //
@@ -88,15 +64,15 @@ mod tests {
         //
         assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
 
-        assert_json_eq(
-            json!({
-                "state": "Racing",
-                "speed": 23.2,
-                // we don't keep heading across the state change
-                "heading": 0.0,
-                "start_time": 31_000,
-            }),
-            race,
+        // we don't keep heading across the state change, and the line is
+        // no longer shown
+        assert_view(
+            &race,
+            23.2,
+            Phase::Racing {
+                start_time: 31_000,
+                heading: 0.0,
+            },
         );
 
         assert_eq!(
@@ -104,33 +80,29 @@ mod tests {
             Outcome::CHANGED,
         );
 
-        assert_json_eq(
-            json!({
-                "state": "Racing",
-                "speed": 17.5,
-                "heading": 253.0,
-                "start_time": 31_000,
-            }),
-            race,
+        assert_view(
+            &race,
+            17.5,
+            Phase::Racing {
+                start_time: 31_000,
+                heading: 253.0,
+            },
         );
 
         //
         // State: Active
         //
         assert_eq!(
-            race.external_event(0, &ev(EventType::RaceFinish)),
+            race.external_event(0, &RaceEvent::RaceFinish),
             Outcome::CHANGED.cancel_timer(),
         );
 
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 17.5,
-                "line": "Both",
-                "line_cross": 0,
-                "line_timestamp": 0,
-            }),
-            race,
+        assert_view(
+            &race,
+            17.5,
+            Phase::Active {
+                line: LineView::Both { cross: 0, time: 0 },
+            },
         );
     }
 
@@ -144,7 +116,7 @@ mod tests {
         assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LineStbd)),
+            race.external_event(0, &RaceEvent::LineStbd),
             Outcome::CHANGED
         );
 
@@ -159,7 +131,7 @@ mod tests {
         assert_eq!(race.location_event(0, Some(loc2), None), Outcome::NONE);
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LineStbd)),
+            race.external_event(0, &RaceEvent::LineStbd),
             Outcome::NONE
         );
         if let Line::Stbd { stbd_location } = race.line {
@@ -172,7 +144,7 @@ mod tests {
         // set port and check that line is Both
         assert_eq!(race.location_event(0, Some(loc1), None), Outcome::NONE);
         assert_eq!(
-            race.external_event(0, &ev(EventType::LinePort)),
+            race.external_event(0, &RaceEvent::LinePort),
             Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Both { .. }));
@@ -189,7 +161,7 @@ mod tests {
         let loc3 = fix(42.3, -113.2);
         assert_eq!(race.location_event(0, Some(loc3), None), Outcome::NONE);
         assert_eq!(
-            race.external_event(0, &ev(EventType::LinePort)),
+            race.external_event(0, &RaceEvent::LinePort),
             Outcome::CHANGED
         );
 
@@ -219,6 +191,34 @@ mod tests {
             234_567,
             0,
             361_000 - (361_000 - 234_567) % 60_000,
+        );
+    }
+
+    /// `ago` back-dates the tap: a sync confirmed 1.5 s after the tap
+    /// rounds from the tap.
+    #[test]
+    fn test_bump_ago() {
+        let mut race = Race::default();
+        // tapped at 3500, arrived at 5000: the gun is 30 s from the tap
+        assert_eq!(
+            race.external_event(5000, &RaceEvent::BumpSeq { seconds: 30, ago: 1500 }),
+            Outcome::CHANGED.with_timer(33_500)
+        );
+        assert!(matches!(
+            race.state,
+            State::InSequence { start_time: 33_500 }
+        ));
+        // tapped at 3600 (29.9 s left), confirmed at 5100 (28.4 s left):
+        // the 29.9 s left round down to 0: the start moves to the tap
+        assert_eq!(
+            race.external_event(5100, &RaceEvent::BumpSeq { seconds: 0, ago: 1500 }),
+            Outcome::CHANGED.with_timer(3600)
+        );
+        // an `ago` from before the epoch clamps
+        let mut race = Race::default();
+        assert_eq!(
+            race.external_event(100, &RaceEvent::BumpSeq { seconds: 60, ago: 1000 }),
+            Outcome::CHANGED.with_timer(60_000)
         );
     }
 
@@ -260,7 +260,7 @@ mod tests {
         }
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::RaceFinish)),
+            race.external_event(0, &RaceEvent::RaceFinish),
             Outcome::CHANGED.cancel_timer()
         );
         assert!(
@@ -276,7 +276,7 @@ mod tests {
 
         // finishing during the sequence aborts it and drops the start timer
         assert_eq!(
-            race.external_event(5_000, &ev(EventType::RaceFinish)),
+            race.external_event(5_000, &RaceEvent::RaceFinish),
             Outcome::CHANGED.cancel_timer()
         );
         assert!(matches!(race.state, State::Active));
@@ -286,83 +286,110 @@ mod tests {
         assert!(matches!(race.state, State::Active));
     }
 
+    /// The view on the wire (postcard): field order, enum tags, varints,
+    /// little-endian f32.
     #[test]
-    fn test_compact_state() {
+    fn test_postcard_state() {
         let mut race = Race::default();
-        let mut buf = [0u8; 32];
-
-        // active, nothing set, 6.4 kn heading 90.0
-        let _ = race.location_event(
-            1000,
-            None,
-            Some(Velocity {
-                speed: 6.4,
-                heading: 90.0,
-            }),
-        );
-        assert_eq!(race.compact_state(1000, &mut buf), 15);
+        let _ = race.location_event(1000, None, Some(vel(6.4, 90.0)));
+        // speed 6.4f32 = 0x40CCCCCD, Active = 0, line None = 0
         assert_eq!(
-            &buf[..15],
-            &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x80, 0x02, 0x84, 0x03]
+            &state_bytes(&race)[..],
+            &[0xcd, 0xcc, 0xcc, 0x40, 0, 0]
         );
 
-        // in sequence, start in 31 s as seen 1 s after the bump; stbd set
+        // InSequence = 1, start_time 31 000 = varint 98 f2 01, Stbd = 1
         bump(&mut race, 1000, 30, 31_000);
-        let _ = race.external_event(0, &ev(EventType::LineStbd));
-        assert_eq!(race.compact_state(2000, &mut buf), 15);
-        assert_eq!(buf[0], 1);
-        assert_eq!(buf[1], 1);
-        assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), 29_000);
+        let _ = race.external_event(0, &RaceEvent::LineStbd);
+        assert_eq!(
+            &state_bytes(&race)[..],
+            &[0xcd, 0xcc, 0xcc, 0x40, 1, 0x98, 0xf2, 0x01, 1]
+        );
 
-        // a past start is negative
+        // Racing = 2, then the heading, 0.0
         assert_eq!(race.timer_event(31_000), Outcome::CHANGED);
-        assert_eq!(race.compact_state(40_000, &mut buf), 15);
-        assert_eq!(buf[0], 2);
-        assert_eq!(i32::from_le_bytes(buf[3..7].try_into().unwrap()), -9_000);
+        assert_eq!(
+            &state_bytes(&race)[..],
+            &[0xcd, 0xcc, 0xcc, 0x40, 2, 0x98, 0xf2, 0x01, 0, 0, 0, 0]
+        );
 
-        // too small a buffer writes nothing
-        assert_eq!(race.compact_state(0, &mut buf[..14]), 0);
+        let view: RaceView = postcard::from_bytes(&state_bytes(&race)).unwrap();
+        assert_eq!(view, race.view());
     }
 
     #[test]
-    fn test_compact_events() {
+    fn test_postcard_events() {
         let mut race = Race::default();
-        let _ = race.location_event(
-            0,
-            Some(Fix {
-                lat: 38.3,
-                lon: -134.2,
-            }),
-            None,
-        );
+        let _ = race.location_event(0, Some(fix(38.3, -134.2)), None);
 
-        assert_eq!(race.compact_event(0, &[0x10]), Ok(Outcome::CHANGED));
+        assert_eq!(postcard::to_stdvec(&RaceEvent::LineStbd).unwrap(), [0]);
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[0]), Ok(Outcome::CHANGED));
         assert!(matches!(race.line, Line::Stbd { .. }));
 
-        // bump +30 s, tapped 1500 ms before the event arrived at t = 5000
-        let seconds: i16 = 30;
-        let ago: u16 = 1500;
-        let mut e = [0x12u8, 0, 0, 0, 0];
-        e[1..3].copy_from_slice(&seconds.to_le_bytes());
-        e[3..5].copy_from_slice(&ago.to_le_bytes());
+        // bump +30 s (zigzag 60), tapped 1500 ms (dc 0b) before the event
+        // arrived at t = 5000
+        let bump = postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: 30, ago: 1500 }).unwrap();
+        assert_eq!(bump, [2, 60, 0xdc, 0x0b]);
         assert_eq!(
-            race.compact_event(5000, &e),
+            extreme_traits::RawEngine::external_event(&mut race, 5000, &bump),
             Ok(Outcome::CHANGED.with_timer(3500 + 30_000))
         );
         assert!(matches!(
             race.state,
             State::InSequence { start_time: 33_500 }
         ));
+        // -300 s: zigzag 599
+        assert_eq!(
+            postcard::to_stdvec(&RaceEvent::BumpSeq { seconds: -300, ago: 0 }).unwrap(),
+            [2, 0xd7, 0x04, 0]
+        );
 
         assert_eq!(
-            race.compact_event(0, &[0x13]),
+            extreme_traits::RawEngine::external_event(&mut race, 0, &[3]),
             Ok(Outcome::CHANGED.cancel_timer())
         );
         assert!(matches!(race.state, State::Active));
 
-        assert_eq!(race.compact_event(0, &[0x12, 1]), Err(()));
-        assert_eq!(race.compact_event(0, &[0x42]), Err(()));
-        assert_eq!(race.compact_event(0, &[]), Err(()));
+        // truncated, unknown, empty, trailing
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[2, 1]), Err(()));
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[4]), Err(()));
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[]), Err(()));
+        assert_eq!(extreme_traits::RawEngine::external_event(&mut race, 0, &[3, 0]), Err(()));
+    }
+
+    /// The serialized view of each phase at its largest: start and line
+    /// times at today's epoch milliseconds take 6 bytes as varints (up to
+    /// 2^42 ms, the year 2109), 10 at the most (u64::MAX).
+    #[test]
+    fn test_state_sizes() {
+        let now: u64 = 1_790_000_000_000;
+        let size = |phase| {
+            let view = RaceView { speed: 12.3, phase };
+            postcard::to_stdvec(&view).unwrap().len()
+        };
+        let both = |time| LineView::Both { cross: 100, time };
+        assert_eq!(size(Phase::Active { line: LineView::None }), 6);
+        assert_eq!(size(Phase::Active { line: both(now) }), 13);
+        assert_eq!(size(Phase::InSequence { start_time: now, line: LineView::Port }), 12);
+        assert_eq!(size(Phase::InSequence { start_time: now, line: both(now) }), 19);
+        assert_eq!(size(Phase::Racing { start_time: now, heading: 359.9 }), 15);
+        // the worst case, plus the engine tag, fits the state buffer
+        let worst = size(Phase::InSequence {
+            start_time: u64::MAX,
+            line: both(u64::MAX),
+        });
+        assert_eq!(worst, 27);
+        assert!(1 + worst <= MAX_STATE_SIZE);
+        let mut race = Race::default();
+        race.state = State::InSequence { start_time: u64::MAX };
+        race.line = Line::Both {
+            line_timestamp: u64::MAX,
+            line_cross: 100,
+            stbd: Default::default(),
+            port: Default::default(),
+            length: 0.0,
+        };
+        assert_eq!(state_bytes(&race).len(), worst);
     }
 
     #[test]
@@ -390,65 +417,53 @@ mod tests {
 
         // port end
         expect_cross(&mut race, boat_loc, vel(10.0, 290.0), 76, 13712);
+
+        // and the view shows it
+        assert_eq!(
+            race.view().phase,
+            Phase::Active {
+                line: LineView::Both {
+                    cross: 76,
+                    time: 13712
+                }
+            }
+        );
     }
 
     #[test]
-    fn test_json() {
+    fn test_view_line() {
         let mut race = Race::default();
 
         assert_eq!(
             race.location_event(0, Some(fix(42.3, -113.2)), Some(vel(12.5, 270.0))),
             Outcome::CHANGED,
         );
-
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 12.5,
-                "line": "None"
-            }),
-            race,
-        );
+        assert_view(&race, 12.5, Phase::Active { line: LineView::None });
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LineStbd)),
+            race.external_event(0, &RaceEvent::LineStbd),
             Outcome::CHANGED,
         );
-
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 12.5,
-                "line": "Stbd",
-            }),
-            race,
-        );
+        assert_view(&race, 12.5, Phase::Active { line: LineView::Stbd });
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LinePort)),
+            race.external_event(0, &RaceEvent::LinePort),
             Outcome::CHANGED,
         );
-
-        assert_json_eq(
-            json!({
-                "state": "Active",
-                "speed": 12.5,
-                "line": "Both",
-                "line_cross": 0,
-                "line_timestamp": 0,
-            }),
-            race,
+        assert_view(
+            &race,
+            12.5,
+            Phase::Active {
+                line: LineView::Both { cross: 0, time: 0 },
+            },
         );
     }
 
-    fn assert_json_eq<Actual: serde::Serialize>(expected: serde_json::Value, actual: Actual) {
-        let json_result = serde_json::to_string(&actual).unwrap();
-        let actual: serde_json::Value = serde_json::from_str(&json_result).expect("Invalid JSON");
-        assert_eq!(expected, actual);
-    }
-
-    fn ev(event: EventType) -> Event {
-        Event { event }
+    fn assert_view(race: &Race, speed: f32, phase: Phase) {
+        assert_eq!(race.view(), RaceView { speed, phase });
+        // and it survives the wire
+        let bytes = state_bytes(race);
+        assert_eq!(postcard::from_bytes::<RaceView>(&bytes).unwrap(), race.view());
     }
 
     fn fix(lat: f64, lon: f64) -> Fix {
@@ -470,7 +485,7 @@ mod tests {
         assert_eq!(race.location_event(0, Some(stbd), None), Outcome::NONE);
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LineStbd)),
+            race.external_event(0, &RaceEvent::LineStbd),
             Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Stbd { .. }));
@@ -481,7 +496,7 @@ mod tests {
         assert_eq!(race.location_event(0, Some(port), None), Outcome::NONE);
 
         assert_eq!(
-            race.external_event(0, &ev(EventType::LinePort)),
+            race.external_event(0, &RaceEvent::LinePort),
             Outcome::CHANGED
         );
         assert!(matches!(race.line, Line::Both { .. }));
@@ -512,9 +527,10 @@ mod tests {
         }
     }
 
+    /// A bump tapped at `timestamp` (arriving then, `ago` 0).
     fn bump(race: &mut Race, timestamp: u64, seconds: i32, expected_start: u64) {
         assert_eq!(
-            race.external_event(0, &ev(EventType::BumpSeq { timestamp, seconds })),
+            race.external_event(timestamp, &RaceEvent::BumpSeq { seconds, ago: 0 }),
             Outcome::CHANGED.with_timer(expected_start),
         );
 
@@ -523,5 +539,10 @@ mod tests {
         } else {
             panic!("State was not InSequence as expected");
         }
+    }
+
+    /// The engine's serialized state ([`extreme_traits::RawEngine`]).
+    fn state_bytes<E: Engine>(engine: &E) -> StateBytes {
+        extreme_traits::RawEngine::serialize_state(engine).unwrap()
     }
 }

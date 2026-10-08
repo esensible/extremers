@@ -1,34 +1,30 @@
 use crate::geo_math::{distance, seconds_to_line};
 use crate::types::Location;
-use serde::Serialize;
-
 const R: f64 = 6371e3; // radius of earth in meters
 
-#[derive(Copy, Clone, PartialEq, Default, Serialize)]
-#[serde(tag = "line")]
+/// The start line as set so far. Clients see it as a
+/// [`LineView`](crate::race::LineView).
+#[derive(Copy, Clone, PartialEq, Default)]
 pub enum Line {
     #[default]
     None,
 
     Stbd {
-        #[serde(skip)]
         stbd_location: Location,
     },
 
     Port {
-        #[serde(skip)]
         port_location: Location,
     },
 
     Both {
+        /// When the boat reaches the line on its current course, epoch ms.
         line_timestamp: u64,
+        /// Where along the line, 0-100 from the port end.
         line_cross: u8,
 
-        #[serde(skip)]
         stbd: Location,
-        #[serde(skip)]
         port: Location,
-        #[serde(skip)]
         length: f64,
     },
 }

@@ -1,0 +1,13 @@
+{
+  "name": "extremers-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Generated postcard bindings for the extremers wire protocol (tools/bindgen), shared by the Kindle and watch clients",
+  "type": "module",
+  "main": "protocol.js",
+  "types": "protocol.d.ts",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:qjs": "${QJS:-qjs} test/qjs.mjs"
+  }
+}

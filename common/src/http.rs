@@ -1,9 +1,10 @@
 //! HTTP and websocket transport for an [`EngineRuntime`].
 //!
 //! Serves the active engine's static files, and on `/socket` upgrades to a
-//! websocket that carries client events in and state updates out.
+//! websocket that carries client events in and state updates out, both as
+//! binary frames of postcard ([`crate::protocol`]).
 
-use core::fmt::{Debug, Display, Write as _};
+use core::fmt::{Debug, Display};
 
 use embassy_futures::select::{Either3, select3};
 use embassy_time::{Duration, Instant, Timer};
@@ -20,11 +21,13 @@ use edge_nal::{Readable, TcpSplit};
 use edge_ws::{Error as WsError, FrameHeader, FrameType};
 use embedded_io_async::{Read, Write};
 
-use extreme_traits::{MAX_MESSAGE_SIZE, RawEngine};
+use extreme_traits::RawEngine;
 
 use crate::{
-    config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS},
+    ble_settings::BleStatusView,
+    config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS, WS_MAX_INCOMING},
     fmt::{Dbg, Disp},
+    protocol::{MAX_WS_STATE_MESSAGE, WsEventKind, encode_ws_state, split_ws_event},
     runtime::{EngineRuntime, StateMessage},
 };
 
@@ -68,7 +71,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         let (mut rx, mut tx) = socket.split();
 
         if let Ok(state) = self.runtime.current_state().await {
-            send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
+            send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
         }
 
         // A client that vanishes without closing (a Kindle going to sleep)
@@ -80,7 +83,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         let mut last_heard = Instant::now();
         let mut next_heartbeat = last_heard + heartbeat;
 
-        let mut buf = [0_u8; MAX_MESSAGE_SIZE];
+        let mut buf = [0_u8; WS_MAX_INCOMING];
         loop {
             // wait for readability rather than for a frame header: a frame
             // read cancelled half way would desynchronise the stream
@@ -98,26 +101,10 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     last_heard = Instant::now();
 
                     match header.frame_type {
-                        FrameType::Text(_) | FrameType::Binary(_) => match self
-                            .runtime
-                            .ble_command(payload)
-                        {
-                            Some(Ok(command)) => {
-                                info!("websocket: BLE command {:?}", Dbg(&command));
-                            }
-                            Some(Err(())) => {
-                                warn!(
-                                    "websocket: BLE command refused (no BLE on this target, or busy): {}",
-                                    core::str::from_utf8(payload).unwrap_or("<not utf-8>")
-                                );
-                            }
-                            None => if self.runtime.external_event(payload).await.is_err() {
-                                warn!(
-                                    "websocket: undecodable event: {}",
-                                    core::str::from_utf8(payload).unwrap_or("<not utf-8>")
-                                );
-                            },
-                        },
+                        FrameType::Binary(_) => self.client_event(payload).await,
+                        FrameType::Text(_) => {
+                            warn!("websocket: ignoring a text frame (the protocol is binary)");
+                        }
                         FrameType::Ping => {
                             let pong = FrameHeader {
                                 mask_key: None,
@@ -138,7 +125,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     }
                 }
                 Either3::Second(state) => {
-                    send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
+                    send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
                 }
                 Either3::Third(()) => {
                     if last_heard.elapsed() >= Duration::from_millis(WS_CLIENT_TIMEOUT_MS) {
@@ -160,10 +147,40 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                         None => self.runtime.current_state().await,
                     };
                     if let Ok(state) = state {
-                        send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_json().as_deref()).await?;
+                        send_state(&mut tx, self.runtime.now(), &state, self.runtime.ble_status_view().as_ref()).await?;
                     }
                 }
             }
+        }
+    }
+}
+
+impl<E: RawEngine> HttpHandler<'_, E> {
+    /// A message from the client: a `WsEvent` (an engine event, or a BLE
+    /// command).
+    async fn client_event(&self, payload: &[u8]) {
+        match split_ws_event(payload) {
+            Some((WsEventKind::Engine, event)) => {
+                if self.runtime.external_event(event).await.is_err() {
+                    warn!(
+                        "websocket: engine event refused (undecodable, or not for the active engine): {:?}",
+                        Dbg(&event)
+                    );
+                }
+            }
+            Some((WsEventKind::Ble, command)) => {
+                match postcard::from_bytes(command) {
+                    Ok(command) => match self.runtime.ble_command(command) {
+                        Ok(()) => info!("websocket: BLE command {:?}", Dbg(&command)),
+                        Err(()) => warn!(
+                            "websocket: BLE command {:?} refused (no BLE on this target, or busy)",
+                            Dbg(&command)
+                        ),
+                    },
+                    Err(_) => warn!("websocket: undecodable BLE command: {:?}", Dbg(&command)),
+                }
+            }
+            None => warn!("websocket: undecodable message: {:?}", Dbg(&payload)),
         }
     }
 }
@@ -236,55 +253,32 @@ where
     socket.flush().await.map_err(WsError::Io)
 }
 
-/// Sends `{"timestamp":<timestamp>,"kind":"<kind>","engine":<state>}` as a
-/// single websocket text frame, with `,"ble":<ble>` before the closing brace
-/// on a target with BLE (BLE.md "Pairing a watch"; clients that do not know
-/// the field ignore it). The pieces are written straight to the socket, so
-/// there is no intermediate buffer to overflow.
+/// Sends a state message, a `WsState` stamped `timestamp` with the BLE
+/// status `ble`, as one binary websocket frame.
 async fn send_state<W>(
     socket: &mut W,
     timestamp: u64,
     state: &StateMessage,
-    ble: Option<&str>,
+    ble: Option<&BleStatusView>,
 ) -> Result<(), WsError<W::Error>>
 where
     W: Write,
 {
-    const PREFIX: &[u8] = b"{\"timestamp\":";
-    const KIND: &[u8] = b",\"kind\":\"";
-    const ENGINE: &[u8] = b"\",\"engine\":";
-    const BLE: &[u8] = b",\"ble\":";
-    const SUFFIX: &[u8] = b"}";
-
-    let mut digits: heapless::String<20> = heapless::String::new();
-    // a u64 has at most 20 digits, so this can't fail
-    let _ = write!(digits, "{}", timestamp);
-
-    // engine names are Rust identifiers, so need no JSON escaping
-    let pieces = [
-        PREFIX,
-        digits.as_bytes(),
-        KIND,
-        state.kind.as_bytes(),
-        ENGINE,
-        &state.json,
-        if ble.is_some() { BLE } else { &[] },
-        ble.map(str::as_bytes).unwrap_or(&[]),
-        SUFFIX,
-    ];
+    let mut frame = [0u8; MAX_WS_STATE_MESSAGE];
+    // sized for the largest engine state and BLE status, so this can't fail
+    let Ok(len) = encode_ws_state(timestamp, &state.engine, ble, &mut frame) else {
+        error!("websocket: {} state does not fit a frame", state.kind);
+        return Ok(());
+    };
 
     let header = FrameHeader {
         mask_key: None,
         // `false`: not fragmented, this frame is the whole message
-        frame_type: FrameType::Text(false),
-        payload_len: pieces.iter().map(|piece| piece.len() as u64).sum(),
+        frame_type: FrameType::Binary(false),
+        payload_len: len as u64,
     };
     header.send(&mut *socket).await?;
-
-    // server frames are not masked, so the payload can be written in pieces
-    for piece in pieces {
-        socket.write_all(piece).await.map_err(WsError::Io)?;
-    }
+    socket.write_all(&frame[..len]).await.map_err(WsError::Io)?;
     socket.flush().await.map_err(WsError::Io)
 }
 
@@ -293,65 +287,83 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use crate::{
+        ble_settings::{BleNote, BleStatus},
+        protocol::WsState,
+    };
     use embassy_futures::block_on;
-    use extreme_traits::StateJson;
+    use embassy_time::Instant;
+    use extreme_traits::{MAX_STATE_SIZE, StateBytes};
+
+    /// Stands in for an engine set's `EngineState`: a tag and some bytes.
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    enum Engine {
+        Selector(()),
+        Small(u8, u8),
+    }
+
+    fn sent(state: &StateMessage, timestamp: u64, ble: Option<&BleStatusView>) -> std::vec::Vec<u8> {
+        let mut out = [0u8; MAX_WS_STATE_MESSAGE + 16];
+        let capacity = out.len();
+        let written = {
+            let mut writer: &mut [u8] = &mut out;
+            block_on(send_state(&mut writer, timestamp, state, ble)).unwrap();
+            capacity - writer.len()
+        };
+        let mut reader: &[u8] = &out[..written];
+        let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
+        assert_eq!(header.frame_type, FrameType::Binary(false));
+        assert_eq!(header.payload_len as usize, reader.len());
+        reader.to_vec()
+    }
 
     #[test]
     fn send_state_handles_max_size_message() {
-        let mut json = StateJson::new();
-        json.resize(MAX_MESSAGE_SIZE, b'x').unwrap();
-        json[0] = b'"';
-        json[MAX_MESSAGE_SIZE - 1] = b'"';
-        let state = StateMessage {
-            kind: "TuneSpeed",
-            json,
-            compact: Default::default(),
+        let mut engine = StateBytes::new();
+        engine.push(1).unwrap();
+        engine.resize(MAX_STATE_SIZE, 0xab).unwrap();
+        let state = StateMessage { kind: "Big", engine };
+        let mut status = BleStatus {
+            pair_until: Some(Instant::MAX),
+            note: BleNote::PairedNotSaved([0xff; 6]),
+            ..Default::default()
         };
+        for _ in 0..crate::config::MAX_BLE_BONDS {
+            status.bonds.push([0xff; 6]).unwrap();
+        }
+        let ble = status.view(Instant::from_secs(0));
 
-        let mut out = [0u8; MAX_MESSAGE_SIZE + 128];
-        let capacity = out.len();
-        let written = {
-            let mut writer: &mut [u8] = &mut out;
-            block_on(send_state(&mut writer, u64::MAX, &state, None)).unwrap();
-            capacity - writer.len()
-        };
-
-        let mut reader: &[u8] = &out[..written];
-        let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
-        assert_eq!(header.frame_type, FrameType::Text(false));
-        assert_eq!(header.payload_len as usize, reader.len());
-
-        let expected = std::format!(
-            "{{\"timestamp\":{},\"kind\":\"TuneSpeed\",\"engine\":{}}}",
-            u64::MAX,
-            core::str::from_utf8(&state.json).unwrap()
-        );
-        assert_eq!(reader, expected.as_bytes());
+        let frame = sent(&state, u64::MAX, Some(&ble));
+        assert_eq!(frame.len(), MAX_WS_STATE_MESSAGE);
+        // the timestamp, the engine bytes as they were, the status
+        assert_eq!(&frame[..10], &postcard::to_stdvec(&u64::MAX).unwrap()[..]);
+        assert_eq!(&frame[10..10 + MAX_STATE_SIZE], &state.engine[..]);
+        let ble_bytes = postcard::to_stdvec(&Some(&ble)).unwrap();
+        assert_eq!(&frame[10 + MAX_STATE_SIZE..], &ble_bytes[..]);
     }
 
-    /// With BLE the status is one more field at the end.
+    /// A small engine state decodes as the typed `WsState`.
     #[test]
-    fn send_state_with_ble_status() {
-        let mut json = StateJson::new();
-        json.extend_from_slice(b"{\"engines\":[]}").unwrap();
+    fn send_state_is_a_ws_state() {
+        let state = StateMessage {
+            kind: "Small",
+            engine: StateBytes::from_slice(&[1, 0xab, 0xcd]).unwrap(),
+        };
+        let ble = BleStatus::default().view(Instant::from_secs(0));
+        let frame = sent(&state, 1_790_000_000_000, Some(&ble));
+        let decoded: WsState<Engine> = postcard::from_bytes(&frame).unwrap();
+        assert_eq!(decoded.timestamp, 1_790_000_000_000);
+        assert_eq!(decoded.engine, Engine::Small(0xab, 0xcd));
+        assert_eq!(decoded.ble, Some(ble));
+    }
+
+    /// Without BLE the status is `None`, one byte.
+    #[test]
+    fn send_state_without_ble() {
         let state = StateMessage {
             kind: "Selector",
-            json,
-            compact: Default::default(),
+            engine: StateBytes::from_slice(&[0]).unwrap(),
         };
-        let mut out = [0u8; 256];
-        let capacity = out.len();
-        let written = {
-            let mut writer: &mut [u8] = &mut out;
-            block_on(send_state(&mut writer, 7, &state, Some(r#"{"pair_ms":0}"#))).unwrap();
-            capacity - writer.len()
-        };
-        let mut reader: &[u8] = &out[..written];
-        let header = block_on(FrameHeader::recv(&mut reader)).unwrap();
-        assert_eq!(header.payload_len as usize, reader.len());
-        assert_eq!(
-            reader,
-            br#"{"timestamp":7,"kind":"Selector","engine":{"engines":[]},"ble":{"pair_ms":0}}"#
-        );
+        assert_eq!(sent(&state, 7, None), [7, 0, 0]);
     }
 }

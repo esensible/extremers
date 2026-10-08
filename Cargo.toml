@@ -9,6 +9,10 @@ members = [
     # apps
     "extreme-race",
     "extreme-tune",
+    "extreme-engines",
+
+    # tools
+    "tools/bindgen",
 
     # targets
     "tgt-std",
@@ -55,14 +59,16 @@ edge-captive = { version = "0.8", default-features = false, features = ["io"] }
 # Other stuff
 #
 log = { version = "0.4", default-features = false }
-# NOTE: serde-json-core 0.6 (latest) is still built on heapless 0.8, and the
-# engines hand serde-json-core's heapless::Vec through to the http layer.
 heapless = { version = "0.8", default-features = false }
 static_cell = { version = "2.1", default-features = false }
 portable-atomic = { version = "1.15", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde-json-core = { version = "0.6", default-features = false }
 serde_json = "1.0"
+# The wire format of engine state and client events, on the websocket and
+# over BLE (README "Wire protocols"). postcard-schema's `Schema` derive is
+# the source the JS bindings are generated from (tools/bindgen).
+postcard = { version = "1.1", default-features = false }
+postcard-schema = { version = "0.2.5", default-features = false, features = ["derive"] }
 libm = "0.2"
 paste = "1.0"
 

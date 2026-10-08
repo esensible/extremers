@@ -2,8 +2,6 @@
 
 use core::net::Ipv4Addr;
 
-use extreme_traits::MAX_MESSAGE_SIZE;
-
 /// Name of the WiFi access point the embedded targets create.
 pub const WIFI_SSID: &str = "nacra";
 /// WPA2 passphrase of the access point.
@@ -46,7 +44,10 @@ pub const GPS_BAUD: u32 = 9600;
 pub const MAX_WEB_SOCKETS: usize = 4;
 /// Size of each TCP socket buffer and of the HTTP server's per-connection
 /// buffer.
-pub const SOCKET_BUFFER_SIZE: usize = MAX_MESSAGE_SIZE * 4;
+pub const SOCKET_BUFFER_SIZE: usize = 2048;
+/// Largest websocket frame taken from a client. Client events are a few
+/// bytes (postcard); a longer frame fails the connection.
+pub const WS_MAX_INCOMING: usize = 512;
 
 /// How long an HTTP connection may sit idle between requests before it is
 /// closed to free its slot; browsers simply open a new one.

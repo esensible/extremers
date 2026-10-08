@@ -1,8 +1,8 @@
 //! BLE GATT transport for an [`EngineRuntime`] (BLE.md).
 //!
 //! One service with two characteristics: `state` (read, notify) carries the
-//! compact engine state, `event` (write, write-without-response) takes
-//! compact client events. Up to [`CONNECTIONS_MAX`] centrals at once, each
+//! engine state, `event` (write, write-without-response) takes client
+//! events, both postcard ([`crate::protocol`]). Up to [`CONNECTIONS_MAX`] centrals at once, each
 //! served by its own worker; a worker with no connection advertises, and
 //! only one advertises at a time, so the device is connectable exactly
 //! while a slot is free.
@@ -34,6 +34,7 @@ use crate::{
     ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord},
     config::{BLE_NAME, BLE_PAIRING_WINDOW_SECS, MAX_BLE_BONDS, MAX_BLE_CONNECTIONS},
     fmt::{Dbg, Disp},
+    protocol::{MAX_STATE_MESSAGE, encode_state},
     runtime::{EngineRuntime, StateMessage},
 };
 
@@ -58,10 +59,16 @@ const SERVICE_UUID: u128 = 0xe4a1c000_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const STATE_UUID: u128 = 0xe4a1c001_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const EVENT_UUID: u128 = 0xe4a1c002_6b2f_4f77_9a0d_3c5e7b9d1f20;
 
-/// Largest `state` value: one notification at the default ATT MTU.
-const STATE_MAX: usize = 20;
-/// Largest `event` value.
-const EVENT_MAX: usize = 8;
+/// Largest `state` value: a `State` (timestamp and engine state) at its
+/// largest. A notification carries at most ATT MTU - 3 bytes, so a central
+/// must exchange a larger ATT MTU than the default 23 (BLE.md "State");
+/// CoreBluetooth always does, and the host accepts up to its packet pool's
+/// MTU less 4, 247.
+const STATE_MAX: usize = MAX_STATE_MESSAGE;
+/// Largest `event` value: an `EngineEvent`; a write longer than this is
+/// refused. Today's largest is 12 bytes (a bump with both varints at their
+/// longest), within the default MTU's 20.
+const EVENT_MAX: usize = 20;
 
 /// Company identifier of the scan response's manufacturer data: 0xFFFF is
 /// the Bluetooth SIG's value for internal use and testing, i.e. no company.
@@ -524,12 +531,14 @@ async fn serve<C, E, S>(
     };
 
     if let Ok(message) = runtime.current_state().await
-        && let Some(value) = state_value(&message)
+        && let Some(value) = state_value(&message, runtime.now())
         && let Err(e) = conn.set(state, &value)
     {
         // a central that subscribes later reads it from the table
         warn!("ble: cannot set state: {:?}", Dbg(&e));
     }
+    // warned once per connection: a central that kept the default MTU
+    let mut warned_mtu = false;
 
     loop {
         let stale = async {
@@ -548,7 +557,19 @@ async fn serve<C, E, S>(
         {
             Either4::First(gatt) => gatt,
             Either4::Second(message) => {
-                if trusted && let Some(value) = state_value(&message) {
+                if trusted && let Some(value) = state_value(&message, runtime.now()) {
+                    // the host truncates a notification to the ATT MTU
+                    let room = conn.raw().att_mtu() as usize - 3;
+                    if value.len() > room && !warned_mtu {
+                        warned_mtu = true;
+                        warn!(
+                            "ble: connection {}: {} state is {} bytes but the ATT MTU allows {}: the central must exchange a larger MTU",
+                            me,
+                            message.kind,
+                            value.len(),
+                            room
+                        );
+                    }
                     // stored too, so reads stay current
                     if let Err(e) = state.notify(conn, &value, true).await {
                         debug!("ble: connection {}: notify failed: {:?}", me, Dbg(&e));
@@ -729,7 +750,7 @@ async fn serve<C, E, S>(
                                 }
                             });
                             let accepted = match &payload {
-                                Some(payload) => runtime.compact_event(payload).await.is_ok(),
+                                Some(payload) => runtime.external_event(payload).await.is_ok(),
                                 None => false,
                             };
                             if accepted {
@@ -755,16 +776,17 @@ async fn serve<C, E, S>(
                         }
                     }
                     // `accept` builds the reply from the table, so refresh
-                    // it first: its times are relative to when it was
-                    // captured, and the state may not have changed for a
-                    // while (no GPS)
+                    // it first: its timestamp is when it was captured, and
+                    // the state may not have changed for a while (no GPS).
+                    // A value longer than the MTU allows is read in parts
+                    // (Read Blob), which the host answers from the table.
                     GattEvent::Read(read) if read.handle() == state.handle => {
                         if !trusted {
                             warn!("ble: connection {}: state read refused: link not bonded", me);
                             read.reject(AttErrorCode::INSUFFICIENT_AUTHORISATION)
                         } else {
                             if let Ok(message) = runtime.current_state().await
-                                && let Some(value) = state_value(&message)
+                                && let Some(value) = state_value(&message, runtime.now())
                                 && let Err(e) = conn.set(state, &value)
                             {
                                 warn!("ble: cannot set state: {:?}", Dbg(&e));
@@ -904,18 +926,27 @@ async fn wait_disconnect(conn: &GattConnection<'_, '_, DefaultPacketPool>) {
     }
 }
 
-/// The `state` characteristic value of a state message.
-fn state_value(message: &StateMessage) -> Option<StateValue> {
-    let value = StateValue::from_slice(&message.compact).ok();
-    if value.is_none() {
-        error!(
-            "ble: {} compact state is {} bytes, more than {}",
-            message.kind,
-            message.compact.len(),
-            STATE_MAX
-        );
+/// The `state` characteristic value of a state message: a `State` stamped
+/// `now`.
+fn state_value(message: &StateMessage, now: u64) -> Option<StateValue> {
+    let mut value = StateValue::new();
+    // cannot fail: resizing to the capacity
+    let _ = value.resize(STATE_MAX, 0);
+    match encode_state(now, &message.engine, &mut value) {
+        Ok(len) => {
+            value.truncate(len);
+            Some(value)
+        }
+        Err(()) => {
+            error!(
+                "ble: {} state is {} bytes, too long for {}",
+                message.kind,
+                message.engine.len(),
+                STATE_MAX
+            );
+            None
+        }
     }
-    value
 }
 
 #[cfg(test)]

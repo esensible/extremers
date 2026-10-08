@@ -15,43 +15,39 @@ use embassy_sync::{
 use embassy_time::{Duration, Instant, with_timeout};
 use portable_atomic::AtomicU64;
 
-use extreme_traits::{CompactState, MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
+use extreme_traits::{MAX_STATE_SIZE, Outcome, RawEngine, StateBytes, Timer};
 
 use crate::{
-    ble_settings::{BleCommand, BleStatus, BleStatusJson},
+    ble_settings::{BleCommand, BleStatus, BleStatusView},
     config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS},
     fmt::Dbg,
     nmea::GpsUpdate,
 };
 
-/// A snapshot of the engine state, as sent to clients, in both encodings.
+/// A snapshot of the engine state, as sent to clients. Each transport
+/// puts the time of sending in front of it (see [`crate::protocol`]).
 #[derive(Clone, Debug)]
 pub struct StateMessage {
-    /// Name of the engine that produced `json`.
+    /// Name of the engine that produced `engine`, for logs.
     pub kind: &'static str,
-    /// The engine state, serialized (the websocket clients).
-    pub json: StateJson,
-    /// The same state in the compact binary form (BLE.md), with its times
-    /// relative to the moment it was captured.
-    pub compact: CompactState,
+    /// The engine state, serialized (postcard).
+    pub engine: StateBytes,
 }
 
 impl StateMessage {
-    /// Captures name and both encodings of the state together, so they
-    /// always describe the same engine at the same moment. Call with the
-    /// engine locked.
-    fn capture<E: RawEngine>(engine: &E, now: u64) -> Result<Self, ()> {
+    /// Captures the state with its engine's name. Call with the engine
+    /// locked.
+    fn capture<E: RawEngine>(engine: &E) -> Result<Self, ()> {
         match engine.serialize_state() {
-            Ok(json) => Ok(Self {
+            Ok(bytes) => Ok(Self {
                 kind: engine.kind(),
-                json,
-                compact: engine.compact_state(now),
+                engine: bytes,
             }),
             Err(()) => {
                 error!(
                     "{} state does not serialize into {} bytes",
                     engine.kind(),
-                    MAX_MESSAGE_SIZE
+                    MAX_STATE_SIZE
                 );
                 Err(())
             }
@@ -97,15 +93,13 @@ impl<E: RawEngine> EngineRuntime<E> {
         }
     }
 
-    /// A BLE command from a web client (BLE.md "Pairing a watch"). `None`
-    /// if `message` is not one, so it is an engine event; `Some(Err)` if
-    /// this target has no BLE transport or the command queue is full.
-    pub fn ble_command(&self, message: &[u8]) -> Option<Result<BleCommand, ()>> {
-        let command = BleCommand::parse(message)?;
+    /// A BLE command from a web client (BLE.md "Pairing a watch"). `Err`
+    /// if this target has no BLE transport or the command queue is full.
+    pub fn ble_command(&self, command: BleCommand) -> Result<(), ()> {
         if self.ble_status.lock(|s| s.borrow().is_none()) {
-            return Some(Err(()));
+            return Err(());
         }
-        Some(self.ble_commands.try_send(command).map(|()| command).map_err(|_| ()))
+        self.ble_commands.try_send(command).map_err(|_| ())
     }
 
     /// The next BLE command, for the BLE transport.
@@ -119,19 +113,19 @@ impl<E: RawEngine> EngineRuntime<E> {
     pub async fn set_ble_status(&self, status: BleStatus) {
         self.ble_status.lock(|s| *s.borrow_mut() = Some(status));
         let engine = self.engine.lock().await;
-        if let Ok(message) = StateMessage::capture(&*engine, self.now()) {
+        if let Ok(message) = StateMessage::capture(&*engine) {
             self.broadcast
                 .immediate_publisher()
                 .publish_immediate(message);
         }
     }
 
-    /// The `ble` field of the websocket state message, rendered now (the
+    /// The `ble` field of the websocket state message, as of now (the
     /// pairing window's time left is relative to the moment of sending);
     /// `None` without BLE.
-    pub fn ble_status_json(&self) -> Option<BleStatusJson> {
+    pub fn ble_status_view(&self) -> Option<BleStatusView> {
         self.ble_status
-            .lock(|s| s.borrow().as_ref().map(|s| s.json(Instant::now())))
+            .lock(|s| s.borrow().as_ref().map(|s| s.view(Instant::now())))
     }
 
     /// Current time in epoch milliseconds, the units of GPS timestamps.
@@ -166,8 +160,9 @@ impl<E: RawEngine> EngineRuntime<E> {
         self.apply(&engine, outcome);
     }
 
-    /// Feeds a client event (JSON) to the engine. `Err` if the engine could
-    /// not decode it.
+    /// Feeds a client event (the engine event's postcard) to the engine.
+    /// `Err` if the engine could not decode it, or it is for an engine that
+    /// is not active.
     pub async fn external_event(&self, payload: &[u8]) -> Result<(), ()> {
         let mut engine = self.engine.lock().await;
         let outcome = engine.external_event(self.now(), payload)?;
@@ -175,18 +170,9 @@ impl<E: RawEngine> EngineRuntime<E> {
         Ok(())
     }
 
-    /// Feeds a client event in the compact binary form (BLE.md) to the
-    /// engine. `Err` if it was not understood.
-    pub async fn compact_event(&self, payload: &[u8]) -> Result<(), ()> {
-        let mut engine = self.engine.lock().await;
-        let outcome = engine.compact_event(self.now(), payload)?;
-        self.apply(&engine, outcome);
-        Ok(())
-    }
-
     /// The current engine state.
     pub async fn current_state(&self) -> Result<StateMessage, ()> {
-        StateMessage::capture(&*self.engine.lock().await, self.now())
+        StateMessage::capture(&*self.engine.lock().await)
     }
 
     /// Subscribes to state changes. Subscribe before reading
@@ -257,7 +243,7 @@ impl<E: RawEngine> EngineRuntime<E> {
     /// [`run_timer`]: Self::run_timer
     fn apply(&self, engine: &E, outcome: Outcome) {
         if outcome.changed
-            && let Ok(message) = StateMessage::capture(engine, self.now())
+            && let Ok(message) = StateMessage::capture(engine)
         {
             self.broadcast
                 .immediate_publisher()
@@ -299,10 +285,10 @@ mod tests {
             "TimerEngine"
         }
 
-        fn serialize_state(&self) -> Result<StateJson, ()> {
-            let mut json = StateJson::new();
-            json.push(b'0' + self.fired as u8).map_err(|_| ())?;
-            Ok(json)
+        fn serialize_state(&self) -> Result<StateBytes, ()> {
+            let mut bytes = StateBytes::new();
+            bytes.push(self.fired as u8).map_err(|_| ())?;
+            Ok(bytes)
         }
 
         fn external_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
@@ -335,21 +321,6 @@ mod tests {
         fn get_static(&self, _: &str) -> Option<&'static [u8]> {
             None
         }
-
-        fn kind_code(&self) -> u8 {
-            1
-        }
-
-        fn compact_state(&self, _now: u64) -> CompactState {
-            CompactState::from_slice(&[1, self.fired as u8]).unwrap()
-        }
-
-        fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
-            match *event {
-                [0x20] => RawEngine::external_event(self, timestamp, b"at:30"),
-                _ => Err(()),
-            }
-        }
     }
 
     async fn sleep_ms(ms: u64) {
@@ -375,9 +346,7 @@ mod tests {
             runtime.external_event(b"at:20").await.unwrap();
             let state = updates.next_message_pure().await;
             assert_eq!(state.kind, "TimerEngine");
-            assert_eq!(&state.json[..], b"1");
-            assert_eq!(&state.compact[..], &[1, 1]);
-            assert!(runtime.compact_event(&[0x99]).await.is_err());
+            assert_eq!(&state.engine[..], &[1]);
             sleep_ms(600).await;
             assert_eq!(runtime.engine.lock().await.fired, 1);
             assert!(updates.try_next_message_pure().is_none());
@@ -387,23 +356,20 @@ mod tests {
     }
 
     /// BLE commands are refused until a BLE transport has published its
-    /// status; publishing it re-sends the state to the clients; engine
-    /// events are not BLE commands.
+    /// status; publishing it re-sends the state to the clients.
     #[test]
     fn ble_commands_and_status() {
         let runtime = EngineRuntime::new(TimerEngine { fired: 0 });
         let mut updates = runtime.subscribe().unwrap();
-        let pair = br#"{"Ble":"Pair"}"#;
 
-        assert_eq!(runtime.ble_command(pair), Some(Err(())));
-        assert!(runtime.ble_status_json().is_none());
-        assert_eq!(runtime.ble_command(b"at:30"), None);
+        assert_eq!(runtime.ble_command(BleCommand::Pair), Err(()));
+        assert!(runtime.ble_status_view().is_none());
 
         block_on(runtime.set_ble_status(BleStatus::default()));
         assert_eq!(updates.try_next_message_pure().map(|m| m.kind), Some("TimerEngine"));
-        assert!(runtime.ble_status_json().unwrap().starts_with(r#"{"addr":"#));
+        assert_eq!(runtime.ble_status_view().unwrap().pair_ms, 0);
 
-        assert_eq!(runtime.ble_command(pair), Some(Ok(BleCommand::Pair)));
+        assert_eq!(runtime.ble_command(BleCommand::Pair), Ok(()));
         assert_eq!(block_on(runtime.next_ble_command()), BleCommand::Pair);
     }
 }

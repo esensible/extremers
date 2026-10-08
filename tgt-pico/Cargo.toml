@@ -54,6 +54,4 @@ static_cell = { workspace = true }
 #
 # The magic
 #
-extreme-traits = { path = "../extreme-traits/" }
-extreme-race = { path = "../extreme-race/" }
-extreme-tune = { path = "../extreme-tune/" }
+extreme-engines = { path = "../extreme-engines/" }

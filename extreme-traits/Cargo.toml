@@ -7,12 +7,14 @@ edition.workspace = true
 crate-type = ["lib"]
 
 [dependencies]
-serde-json-core = { workspace = true, features = ["heapless"] }
 heapless = { workspace = true }
 serde = { workspace = true }
+postcard = { workspace = true }
+postcard-schema = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+postcard = { workspace = true, features = ["use-std"] }
+postcard-schema = { workspace = true, features = ["use-std"] }
 
 [build-dependencies]
 extreme-build = { path = "../extreme-build" }

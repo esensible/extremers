@@ -1,6 +1,6 @@
 use core::f64::consts::PI;
 
-use serde::ser::SerializeStruct;
+use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::line::Line;
@@ -8,13 +8,12 @@ use crate::types::Location;
 use extreme_traits::{Engine, Fix, Outcome, StaticFiles, Velocity};
 
 #[derive(Copy, Clone, PartialEq, Default)]
-// Serialize is implemented below because line serialization depends on Race state
 pub struct Race {
     pub state: State,
     pub line: Line,
     pub location: Location,
-    /// Latest speed and heading. Only `speed` is reported outside of
-    /// `Racing`; see `impl Serialize for Race`.
+    /// Latest speed and heading. The heading is only shown while
+    /// `Racing`; see [`RaceView`].
     pub velocity: Velocity,
 }
 
@@ -30,104 +29,109 @@ pub enum State {
     },
 }
 
-#[derive(Deserialize)]
-pub enum EventType {
+/// A client event for the race engine.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub enum RaceEvent {
+    /// Set the starboard end of the line at the current position.
     LineStbd,
+    /// Set the port end.
     LinePort,
-
-    BumpSeq { timestamp: u64, seconds: i32 },
-
+    /// Bump the start sequence. Not in a sequence: start one with the gun
+    /// `seconds` from the tap. In a sequence: `seconds` > 0 moves the start
+    /// earlier (less time on the countdown), < 0 later, and 0 syncs:
+    /// rounds the time remaining down to a whole minute.
+    ///
+    /// `ago` is how many milliseconds before the event arrived the tap
+    /// happened: a confirm step takes a second or two, and a sync must be
+    /// timed from the tap. The client measures it on its own clock, so it
+    /// needs no clock sync.
+    BumpSeq { seconds: i32, ago: u32 },
+    /// Finish the race, or abort a start sequence.
     RaceFinish,
 }
 
-// Note: we use a struct to deserialize because serde
-// can't use tag= (to flatten) with no_std
-#[derive(Deserialize)]
-pub struct Event {
-    pub event: EventType,
+/// What clients see of a race.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub struct RaceView {
+    /// Speed over ground, knots.
+    pub speed: f32,
+    pub phase: Phase,
 }
 
-/// Compact (BLE) protocol, see BLE.md "Race".
-mod compact {
-    /// State codes.
-    pub const ACTIVE: u8 = 0;
-    pub const IN_SEQUENCE: u8 = 1;
-    pub const RACING: u8 = 2;
-    /// Line codes.
-    pub const LINE_NONE: u8 = 0;
-    pub const LINE_STBD: u8 = 1;
-    pub const LINE_PORT: u8 = 2;
-    pub const LINE_BOTH: u8 = 3;
-    /// Event opcodes.
-    pub const OP_LINE_STBD: u8 = 0x10;
-    pub const OP_LINE_PORT: u8 = 0x11;
-    pub const OP_BUMP_SEQ: u8 = 0x12;
-    pub const OP_RACE_FINISH: u8 = 0x13;
-    /// Encoded state length.
-    pub const STATE_LEN: usize = 15;
+/// Where the race is, with what each phase shows. Times are epoch
+/// milliseconds on the device's clock.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub enum Phase {
+    /// No start sequence running; the line can be set.
+    Active { line: LineView },
+    /// Counting down to the start at `start_time`.
+    InSequence { start_time: u64, line: LineView },
+    /// Racing since `start_time`; the line is no longer shown.
+    Racing {
+        start_time: u64,
+        /// Course over ground, degrees true; 0 until the first GPS update
+        /// after the start.
+        heading: f32,
+    },
 }
 
-/// Milliseconds from `now` to `at`, clamped to an `i32`.
-fn millis_until(now: u64, at: u64) -> i32 {
-    (at as i64 - now as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+/// The start line, as far as it has been set.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub enum LineView {
+    None,
+    /// Only the starboard end is set.
+    Stbd,
+    /// Only the port end is set.
+    Port,
+    /// Both ends: on the current course the boat crosses the line `cross`
+    /// percent of the way along it (0 = port end, 100 = starboard end) at
+    /// `time` (which is in the past if the boat is sailing away from it).
+    Both { cross: u8, time: u64 },
+}
+
+impl Race {
+    fn line_view(&self) -> LineView {
+        match self.line {
+            Line::None => LineView::None,
+            Line::Stbd { .. } => LineView::Stbd,
+            Line::Port { .. } => LineView::Port,
+            Line::Both {
+                line_cross,
+                line_timestamp,
+                ..
+            } => LineView::Both {
+                cross: line_cross,
+                time: line_timestamp,
+            },
+        }
+    }
 }
 
 impl Engine for Race {
     const NAME: &'static str = "Race";
     const STATIC_FILES: StaticFiles = extreme_traits::static_files!();
 
-    type Event<'a> = Event;
+    type View = RaceView;
+    type Event = RaceEvent;
 
-    /// `[state][line][line_cross][start_in i32][line_in i32][speed u16][heading u16]`,
-    /// little-endian; times in ms relative to `now`, speed in knots x 100,
-    /// heading in degrees x 10.
-    fn compact_state(&self, now: u64, out: &mut [u8]) -> usize {
-        if out.len() < compact::STATE_LEN {
-            return 0;
-        }
-        let (state, start_time) = match self.state {
-            State::Active => (compact::ACTIVE, now),
-            State::InSequence { start_time } => (compact::IN_SEQUENCE, start_time),
-            State::Racing { start_time } => (compact::RACING, start_time),
-        };
-        let (line, line_cross, line_timestamp) = match self.line {
-            Line::None => (compact::LINE_NONE, 0, now),
-            Line::Stbd { .. } => (compact::LINE_STBD, 0, now),
-            Line::Port { .. } => (compact::LINE_PORT, 0, now),
-            Line::Both {
-                line_cross,
-                line_timestamp,
-                ..
-            } => (compact::LINE_BOTH, line_cross, line_timestamp),
-        };
-        let speed = (self.velocity.speed * 100.0).clamp(0.0, u16::MAX as f64) as u16;
-        let heading = (self.velocity.heading * 10.0).clamp(0.0, u16::MAX as f64) as u16;
-
-        out[0] = state;
-        out[1] = line;
-        out[2] = line_cross;
-        out[3..7].copy_from_slice(&millis_until(now, start_time).to_le_bytes());
-        out[7..11].copy_from_slice(&millis_until(now, line_timestamp).to_le_bytes());
-        out[11..13].copy_from_slice(&speed.to_le_bytes());
-        out[13..15].copy_from_slice(&heading.to_le_bytes());
-        compact::STATE_LEN
-    }
-
-    /// `[0x10]` line stbd, `[0x11]` line port, `[0x13]` finish,
-    /// `[0x12][seconds i16][ago u16]` bump the sequence: `seconds` as in
-    /// `BumpSeq`, `ago` how many ms before `timestamp` the tap happened.
-    fn compact_event(&mut self, timestamp: u64, event: &[u8]) -> Result<Outcome, ()> {
-        let event = match *event {
-            [compact::OP_LINE_STBD] => EventType::LineStbd,
-            [compact::OP_LINE_PORT] => EventType::LinePort,
-            [compact::OP_RACE_FINISH] => EventType::RaceFinish,
-            [compact::OP_BUMP_SEQ, s0, s1, a0, a1] => EventType::BumpSeq {
-                timestamp: timestamp.saturating_sub(u16::from_le_bytes([a0, a1]) as u64),
-                seconds: i16::from_le_bytes([s0, s1]) as i32,
+    fn view(&self) -> RaceView {
+        let phase = match self.state {
+            State::Active => Phase::Active {
+                line: self.line_view(),
             },
-            _ => return Err(()),
+            State::InSequence { start_time } => Phase::InSequence {
+                start_time,
+                line: self.line_view(),
+            },
+            State::Racing { start_time } => Phase::Racing {
+                start_time,
+                heading: self.velocity.heading as f32,
+            },
         };
-        Ok(Engine::external_event(self, timestamp, &Event { event }))
+        RaceView {
+            speed: self.velocity.speed as f32,
+            phase,
+        }
     }
 
     fn timer_event(&mut self, _timestamp: u64) -> Outcome {
@@ -145,11 +149,13 @@ impl Engine for Race {
         Outcome::CHANGED
     }
 
-    fn external_event(&mut self, _timestamp: u64, event: &Event) -> Outcome {
-        match event.event {
-            EventType::LineStbd => Outcome::changed(self.line.set_stbd(self.location)),
-            EventType::LinePort => Outcome::changed(self.line.set_port(self.location)),
-            EventType::BumpSeq { timestamp, seconds } => {
+    fn external_event(&mut self, timestamp: u64, event: &RaceEvent) -> Outcome {
+        match *event {
+            RaceEvent::LineStbd => Outcome::changed(self.line.set_stbd(self.location)),
+            RaceEvent::LinePort => Outcome::changed(self.line.set_port(self.location)),
+            RaceEvent::BumpSeq { seconds, ago } => {
+                // when the tap happened
+                let timestamp = timestamp.saturating_sub(ago as u64);
                 let offset = seconds.unsigned_abs() as u64 * 1000;
                 let start_time = match &mut self.state {
                     State::InSequence { start_time } => {
@@ -185,7 +191,7 @@ impl Engine for Race {
 
                 Outcome::CHANGED.with_timer(start_time)
             }
-            EventType::RaceFinish => {
+            RaceEvent::RaceFinish => {
                 if matches!(self.state, State::Active) {
                     Outcome::NONE
                 } else {
@@ -224,58 +230,5 @@ impl Engine for Race {
 
         // A line update only happens alongside a velocity, which is itself a change.
         Outcome::changed(velocity.is_some())
-    }
-}
-
-impl Serialize for Race {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("Race", 7)?;
-
-        match &self.state {
-            State::Active => {
-                s.serialize_field("state", "Active")?;
-                s.serialize_field("speed", &self.velocity.speed)?;
-            }
-            State::InSequence { start_time } => {
-                s.serialize_field("state", "InSequence")?;
-                s.serialize_field("start_time", start_time)?;
-                s.serialize_field("speed", &self.velocity.speed)?;
-            }
-            State::Racing { start_time } => {
-                s.serialize_field("state", "Racing")?;
-                s.serialize_field("start_time", start_time)?;
-                s.serialize_field("speed", &self.velocity.speed)?;
-                s.serialize_field("heading", &self.velocity.heading)?;
-            }
-        }
-
-        // The line is only reported before the start
-        if !matches!(self.state, State::Racing { .. }) {
-            match &self.line {
-                Line::None => {
-                    s.serialize_field("line", "None")?;
-                }
-                Line::Stbd { .. } => {
-                    s.serialize_field("line", "Stbd")?;
-                }
-                Line::Port { .. } => {
-                    s.serialize_field("line", "Port")?;
-                }
-                Line::Both {
-                    line_cross,
-                    line_timestamp,
-                    ..
-                } => {
-                    s.serialize_field("line", "Both")?;
-                    s.serialize_field("line_cross", line_cross)?;
-                    s.serialize_field("line_timestamp", line_timestamp)?;
-                }
-            }
-        }
-
-        s.end()
     }
 }

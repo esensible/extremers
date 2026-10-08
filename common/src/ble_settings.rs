@@ -6,9 +6,11 @@
 //! shows the bonds) and the target's flash storage (bond records). Nothing
 //! here needs trouble-host, so it builds and is tested on every target.
 
-use core::fmt::{self, Write as _};
+use core::fmt;
 
 use embassy_time::Instant;
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 
 use crate::config::MAX_BLE_BONDS;
 
@@ -123,8 +125,9 @@ impl BondRecord {
     }
 }
 
-/// What the Kindle's settings panel asks of the BLE transport.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// What the Kindle's settings panel asks of the BLE transport: the `Ble`
+/// variant of a websocket event ([`WsEvent`](crate::protocol::WsEvent)).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Schema)]
 pub enum BleCommand {
     /// Open the pairing window for
     /// [`BLE_PAIRING_WINDOW_SECS`](crate::config::BLE_PAIRING_WINDOW_SECS).
@@ -135,22 +138,9 @@ pub enum BleCommand {
     ForgetAll,
 }
 
-impl BleCommand {
-    /// The websocket message for a command, exactly as the selector client
-    /// sends it (`JSON.stringify({Ble: "Pair"})`); `None` for any other
-    /// message, which then goes to the engine as before.
-    pub fn parse(message: &[u8]) -> Option<Self> {
-        match message.trim_ascii() {
-            br#"{"Ble":"Pair"}"# => Some(Self::Pair),
-            br#"{"Ble":"Cancel"}"# => Some(Self::Cancel),
-            br#"{"Ble":"ForgetAll"}"# => Some(Self::ForgetAll),
-            _ => None,
-        }
-    }
-}
-
-/// The last thing that happened to pairing, for the settings panel.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// The last thing that happened to pairing, for the settings panel, which
+/// puts it in words. Addresses are in BLE byte order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Schema)]
 pub enum BleNote {
     #[default]
     None,
@@ -183,57 +173,44 @@ pub struct BleStatus {
     pub note: BleNote,
 }
 
-/// Longest [`BleStatus::json`]: up to `"bonds":[` with the address and a
-/// 20-digit `pair_ms` (under 96), 20 per bond, then the rest with the
-/// longest note (under 64). `status_json_worst_case_fits` checks it.
-pub const BLE_STATUS_JSON_MAX: usize = 96 + 20 * MAX_BLE_BONDS + 64;
+/// [`BleStatus`] as the websocket clients get it: the `ble` field of a
+/// [`WsState`](crate::protocol::WsState) (BLE.md "Pairing a watch").
+/// Addresses are in BLE byte order (least significant byte first): print
+/// them reversed, as [`AddrText`] does.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Schema)]
+pub struct BleStatusView {
+    /// This box's address.
+    pub addr: [u8; 6],
+    /// What is left of the pairing window when the message was sent, ms; 0
+    /// when it is closed.
+    pub pair_ms: u32,
+    /// The bonded devices' identity addresses, oldest first.
+    pub bonds: heapless::Vec<[u8; 6], MAX_BLE_BONDS>,
+    /// How many bonds the box keeps.
+    pub max_bonds: u8,
+    pub note: BleNote,
+}
 
-pub type BleStatusJson = heapless::String<BLE_STATUS_JSON_MAX>;
+/// Largest serialized `Option<BleStatusView>`: Some, the address, a 5-byte
+/// `pair_ms`, the bond count and every bond, `max_bonds`, the longest note.
+/// `status_view_worst_case_fits` checks it.
+pub const BLE_STATUS_VIEW_MAX: usize = 1 + 6 + 5 + 1 + 6 * MAX_BLE_BONDS + 1 + 1 + 6;
 
 impl BleStatus {
-    /// The `ble` field of the websocket state message (BLE.md "Pairing a
-    /// watch"):
-    ///
-    /// `{"addr":"D4:32:04:01:02:03","pair_ms":117000,"bonds":["..",".."],"max":4,"note":"..."}`
-    ///
-    /// `pair_ms` is what is left of the pairing window at `now`, 0 when it is
-    /// closed; `note` is the last pairing event as text, "" for none.
-    pub fn json(&self, now: Instant) -> BleStatusJson {
-        let mut out = BleStatusJson::new();
-        // sized for the worst case, so this cannot fail
-        let _ = self.write_json(&mut out, now);
-        out
-    }
-
-    fn write_json(&self, out: &mut BleStatusJson, now: Instant) -> fmt::Result {
+    /// The view of this status at `now` (the pairing window's time left is
+    /// relative to it).
+    pub fn view(&self, now: Instant) -> BleStatusView {
         let pair_ms = self
             .pair_until
             .map(|until| until.saturating_duration_since(now).as_millis())
             .unwrap_or(0);
-        write!(
-            out,
-            r#"{{"addr":"{}","pair_ms":{},"bonds":["#,
-            AddrText(self.addr),
-            pair_ms
-        )?;
-        for (i, bond) in self.bonds.iter().enumerate() {
-            let comma = if i == 0 { "" } else { "," };
-            write!(out, r#"{}"{}""#, comma, AddrText(*bond))?;
+        BleStatusView {
+            addr: self.addr,
+            pair_ms: pair_ms.min(u32::MAX as u64) as u32,
+            bonds: self.bonds.clone(),
+            max_bonds: MAX_BLE_BONDS as u8,
+            note: self.note,
         }
-        write!(out, r#"],"max":{},"note":""#, MAX_BLE_BONDS)?;
-        match self.note {
-            BleNote::None => Ok(()),
-            BleNote::Paired(a) => write!(out, "Paired {}", AddrText(a)),
-            BleNote::PairedNotSaved(a) => {
-                write!(out, "Paired {} but NOT saved: pair again", AddrText(a))
-            }
-            BleNote::Rejected => out.write_str("Pairing refused: tap Pair watch first"),
-            BleNote::Failed => out.write_str("Pairing failed: try again"),
-            BleNote::Expired => out.write_str("Nobody paired"),
-            BleNote::StaleBond => out.write_str("A watch has an old pairing: forget nacra on it"),
-            BleNote::Forgotten => out.write_str("All watches forgotten"),
-        }?;
-        out.write_str("\"}")
     }
 }
 
@@ -281,64 +258,54 @@ mod tests {
     }
 
     #[test]
-    fn commands() {
-        assert_eq!(BleCommand::parse(br#"{"Ble":"Pair"}"#), Some(BleCommand::Pair));
-        assert_eq!(BleCommand::parse(b" {\"Ble\":\"Cancel\"}\n"), Some(BleCommand::Cancel));
-        assert_eq!(
-            BleCommand::parse(br#"{"Ble":"ForgetAll"}"#),
-            Some(BleCommand::ForgetAll)
-        );
-        // engine events are not BLE commands
-        assert_eq!(BleCommand::parse(br#"{"Select":"Race"}"#), None);
-        assert_eq!(BleCommand::parse(br#"{"Ble":"pair"}"#), None);
+    fn commands_on_the_wire() {
+        assert_eq!(postcard::to_stdvec(&BleCommand::Pair).unwrap(), [0]);
+        assert_eq!(postcard::to_stdvec(&BleCommand::Cancel).unwrap(), [1]);
+        assert_eq!(postcard::to_stdvec(&BleCommand::ForgetAll).unwrap(), [2]);
+        assert_eq!(postcard::from_bytes::<BleCommand>(&[2]), Ok(BleCommand::ForgetAll));
+        assert!(postcard::from_bytes::<BleCommand>(&[3]).is_err());
     }
 
     #[test]
-    fn status_json() {
+    fn status_view() {
         let now = Instant::from_secs(1000);
         let mut status = BleStatus {
             addr: [3, 2, 1, 4, 0x32, 0xd4],
             ..Default::default()
         };
+        let view = status.view(now);
+        assert_eq!(view.pair_ms, 0);
+        assert_eq!(view.max_bonds, MAX_BLE_BONDS as u8);
         assert_eq!(
-            status.json(now).as_str(),
-            r#"{"addr":"D4:32:04:01:02:03","pair_ms":0,"bonds":[],"max":4,"note":""}"#
+            postcard::to_stdvec(&view).unwrap(),
+            [3, 2, 1, 4, 0x32, 0xd4, 0, 0, MAX_BLE_BONDS as u8, 0]
         );
         status.pair_until = Some(now + Duration::from_millis(117_500));
         status.bonds.push([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]).unwrap();
         status.bonds.push([1, 2, 3, 4, 5, 6]).unwrap();
         status.note = BleNote::Paired([1, 2, 3, 4, 5, 6]);
-        assert_eq!(
-            status.json(now).as_str(),
-            r#"{"addr":"D4:32:04:01:02:03","pair_ms":117500,"bonds":["FF:EE:DD:CC:BB:AA","06:05:04:03:02:01"],"max":4,"note":"Paired 06:05:04:03:02:01"}"#
-        );
+        let view = status.view(now);
+        assert_eq!(view.pair_ms, 117_500);
+        assert_eq!(&view.bonds[..], &[[0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff], [1, 2, 3, 4, 5, 6]]);
+        assert_eq!(view.note, BleNote::Paired([1, 2, 3, 4, 5, 6]));
+        let bytes = postcard::to_stdvec(&view).unwrap();
+        assert_eq!(postcard::from_bytes::<BleStatusView>(&bytes).unwrap(), view);
         // a window that has run out reads as closed
-        assert!(
-            status
-                .json(now + Duration::from_secs(200))
-                .contains(r#""pair_ms":0,"#)
-        );
+        assert_eq!(status.view(now + Duration::from_secs(200)).pair_ms, 0);
     }
 
     #[test]
-    fn status_json_worst_case_fits() {
+    fn status_view_worst_case_fits() {
         let mut status = BleStatus {
             addr: [0xff; 6],
             pair_until: Some(Instant::MAX),
+            note: BleNote::PairedNotSaved([0xff; 6]),
             ..Default::default()
         };
         for _ in 0..MAX_BLE_BONDS {
             status.bonds.push([0xff; 6]).unwrap();
         }
-        for note in [
-            BleNote::PairedNotSaved([0xff; 6]),
-            BleNote::StaleBond,
-            BleNote::Rejected,
-            BleNote::Forgotten,
-        ] {
-            status.note = note;
-            let mut out = BleStatusJson::new();
-            status.write_json(&mut out, Instant::from_secs(0)).unwrap();
-        }
+        let view = Some(status.view(Instant::from_secs(0)));
+        assert_eq!(postcard::to_stdvec(&view).unwrap().len(), BLE_STATUS_VIEW_MAX);
     }
 }
