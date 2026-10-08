@@ -81,6 +81,16 @@ struct ShellRouter {
     case missing
     /// Still missing: nothing to do.
     case none
+
+    /// One word for the log.
+    var summary: String {
+      switch self {
+      case .feed: return "feed"
+      case .load(let b): return "load \(b.name)"
+      case .missing: return "missing"
+      case .none: return "none"
+      }
+    }
   }
 
   private(set) var screen: ShellScreen = .none

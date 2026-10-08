@@ -127,3 +127,24 @@ enum WorkoutRestart: Equatable {
     return .now
   }
 }
+
+/// When to check that the box still answers. The box pushes `state` only
+/// when it changes. Choose, or a race with no GPS, can be quiet for
+/// minutes, so a link that died without a disconnect, or a notification
+/// the box did not send, would leave the watch showing a stale screen and
+/// sending into nothing. The Kindle reconnects after 15 s without a message
+/// (its server re-sends every 5 s). The watch reads `state` after `quiet`
+/// without a value: the answer is the current state, read in parts if it
+/// is longer than a notification may carry. No answer within the read's
+/// timeout means the link is dead: drop it and reconnect.
+struct StateSilence {
+  static let quiet: TimeInterval = 5
+
+  /// When the last state value (notification or read) arrived.
+  var lastValue: Date
+
+  /// How long until a read is due; 0 when it is due now.
+  func readDue(now: Date) -> TimeInterval {
+    max(0, Self.quiet - now.timeIntervalSince(lastValue))
+  }
+}

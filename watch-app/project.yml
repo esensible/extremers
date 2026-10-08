@@ -112,9 +112,15 @@ targets:
       - path: ExtremersTests
       - path: Extremers/Model/Protocol.swift
       - path: Extremers/Model/Bundles.swift
+      - path: Extremers/Model/Shell.swift
+      - path: Extremers/Model/ShellLog.swift
+      - path: ../watch-js/generated/ExtremersNodeProps.swift
       - path: Extremers/Model/LinkPolicy.swift
       - path: Extremers/Model/Security.swift
       - path: Extremers/Model/Box.swift
+    dependencies:
+      - package: SolidWatch
+        product: SolidWatch
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.esensible.extremers.watch.tests

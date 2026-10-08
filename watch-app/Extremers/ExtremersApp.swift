@@ -5,8 +5,14 @@ struct ExtremersApp: App {
   @StateObject private var computer: RaceComputer
   @StateObject private var shell: Shell
   @Environment(\.scenePhase) private var scenePhase
+  /// Logs main-thread stalls to shell.log.
+  private static let watchdog = MainThreadWatchdog()
 
   init() {
+    let info = Bundle.main.infoDictionary
+    ShellLog.shared("launch: Extremers \(info?["CFBundleShortVersionString"] ?? "?") (\(info?["CFBundleVersion"] ?? "?")), "
+      + "bundles \(CompiledBundles.main?.names ?? [])")
+    Self.watchdog.start()
     Shell.registerFont()
     let computer = RaceComputer()
     // The bundles' send(bytes) go to the box; the box's states go to the

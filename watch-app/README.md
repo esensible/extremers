@@ -109,6 +109,20 @@ from Xcode again each week. Paid accounts get a year.
   link, and **Quit**, which ends the workout and drops the link. Swiping
   the app away in the app switcher does the same.
 
+### The shell's log
+
+The app keeps a rolling log, `Documents/shell.log` (1 MB, then moved to
+`shell.log.1`). It records the link (Bluetooth state, connects with the
+ATT MTU, drops), every envelope (active package, ui_hash, size, how it was
+routed, the bundle's timer counts), bundle loads and failures, taps, every
+event sent with its bytes and whether the box answered the write, haptics,
+silence reads, and main-thread stalls. Copy it off the watch with:
+
+```sh
+xcrun devicectl device copy from --device <udid> --domain-type appDataContainer \
+  --domain-identifier au.esensible.extremers.watch --source Documents/shell.log --destination shell.log
+```
+
 ### No workout
 
 If HealthKit is refused (or the team cannot sign it), everything works
