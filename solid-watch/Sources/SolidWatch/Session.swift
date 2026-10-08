@@ -95,8 +95,13 @@ public final class SolidWatchSession: ObservableObject {
         attempt { try h.collectGarbage() }
     }
 
+    /// Every event dispatched to the bundle (a tap: `press`), before it
+    /// runs (diagnostics).
+    public var onDispatch: ((Int32, String) -> Void)?
+
     /// Sends an event to the bundle (`__app.dispatch`).
     public func dispatch(tag: Int32, name: String, payload: JSData = .null) {
+        onDispatch?(tag, name)
         guard error == nil, let h = host, h.rootTag != nil else { return }
         attempt { _ = try h.dispatch(tag: tag, name: name, payload: payload) }
     }
@@ -133,7 +138,27 @@ public final class SolidWatchSession: ObservableObject {
 
     // MARK: Timers (README: Timers)
 
+    /// How many timers the bundle has set, cleared and had fire since this
+    /// session was created (diagnostics: a stuck or runaway timer loop
+    /// shows in these).
+    public struct TimerCounts: Equatable, Sendable {
+        public var set = 0
+        public var cleared = 0
+        public var fired = 0
+        /// Armed now.
+        public var armed = 0
+    }
+
+    public var timerCounts: TimerCounts {
+        var c = counts
+        c.armed = timers.count
+        return c
+    }
+
+    private var counts = TimerCounts()
+
     private func setTimer(_ id: Int32, ms: Double) {
+        counts.set += 1
         timers[id]?.invalidate()
         let t = Timer(timeInterval: max(ms, 0) / 1000, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.fire(id) }
@@ -143,6 +168,7 @@ public final class SolidWatchSession: ObservableObject {
     }
 
     private func clearTimer(_ id: Int32) {
+        counts.cleared += 1
         timers.removeValue(forKey: id)?.invalidate()
     }
 
@@ -152,6 +178,7 @@ public final class SolidWatchSession: ObservableObject {
     }
 
     private func fire(_ id: Int32) {
+        counts.fired += 1
         timers.removeValue(forKey: id)
         guard error == nil, let h = host, h.rootTag != nil else { return }
         attempt { _ = try h.fireTimer(id) }
