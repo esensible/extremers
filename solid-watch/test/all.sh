@@ -14,4 +14,8 @@ if [ "${CHECK_CLEAN:-0}" = 1 ]; then
   git diff --exit-code -- fixtures
 fi
 node --test --test-reporter=spec test/*.test.mjs
+node codegen/codegen.mjs --fragment test/demo-fragment.json --ts test/types/demo-jsx.d.ts
+npx tsc -p test/types
+npx tsc -p test/types/tsconfig.fragment.json
+echo "types ok"
 node test/boundary.mjs

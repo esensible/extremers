@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "files": ["check-fragment.tsx", "demo-jsx.d.ts"]
+}

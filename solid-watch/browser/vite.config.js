@@ -1,7 +1,7 @@
 // Dev server for the harness: `npm run dev` (serves the package root; open
 // /browser/). Bundles: every fixtures/mutations/<name>/ (bundle.js +
 // script.json), plus each directory in SOLID_WATCH_BUNDLES (":"-separated,
-// same layout; the directory name is the bundle name), served under /__ext/.
+// same layout; "name=dir" names it, else the directory name), served under /__ext/.
 // SOLID_WATCH_FRAGMENTS (":"-separated JSON files) adds app schema fragments.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -9,7 +9,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const list = (v) => (v || "").split(":").filter(Boolean).map((p) => resolve(p));
-const extDirs = list(process.env.SOLID_WATCH_BUNDLES);
+// entries are "dir" or "name=dir"
+const extEntries = (process.env.SOLID_WATCH_BUNDLES || "").split(":").filter(Boolean).map((e) => {
+  const i = e.indexOf("=");
+  return i > 0 ? { name: e.slice(0, i), dir: resolve(e.slice(i + 1)) } : { name: basename(resolve(e)), dir: resolve(e) };
+});
+const extDirs = extEntries.map((e) => e.dir);
 const fragmentFiles = list(process.env.SOLID_WATCH_FRAGMENTS);
 
 function catalog() {
@@ -19,7 +24,7 @@ function catalog() {
     // bundles are served raw (/__raw/...), not through Vite's JS transform
     if (existsSync(join(fx, name, "script.json"))) out.push({ name, bundle: `/__raw/fixtures/mutations/${name}/bundle.js`, script: `/__raw/fixtures/mutations/${name}/script.json` });
   }
-  extDirs.forEach((d, i) => out.push({ name: basename(d), bundle: `/__ext/${i}/bundle.js`, script: `/__ext/${i}/script.json` }));
+  extEntries.forEach((e, i) => out.push({ name: e.name, bundle: `/__ext/${i}/bundle.js`, script: `/__ext/${i}/script.json` }));
   return out;
 }
 

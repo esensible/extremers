@@ -2,3 +2,4 @@ node_modules/
 dist/
 .build/
 .swiftpm/
+test/types/demo-jsx.d.ts

@@ -50,6 +50,10 @@ function App(props) {            // props = ctx: { width, height } in points
 createApp(App, { onState: (s) => setSpeed(s.speed) });
 ```
 
+For editor types set `"jsxImportSource": "solid-watch"` (the package has its
+own `JSX` namespace; Solid's DOM elements would clash with `<button>` and
+SVG `<text>`); `test/types/` type-checks it with `tsc`.
+
 Build with `solidWatchBundle()` from `solid-watch/rollup` (babel-preset-solid
 `generate: "universal"`, `moduleName: "solid-watch"`). The bundle uses no
 browser globals.

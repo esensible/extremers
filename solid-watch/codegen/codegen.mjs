@@ -442,7 +442,7 @@ const tsIface = (group) => {
   }
   return upper(camel(group)) + "Props";
 };
-const childrenType = { nodes: "JSX.Element", text: "JSX.Element", none: "never" };
+const childrenType = { nodes: "SolidJSX.Element", text: "SolidJSX.Element", none: "never" };
 
 function tsGroupIfaces(groups) {
   const out = [];
@@ -461,7 +461,8 @@ function genTsCore(merged) {
   const groups = groupsFor(merged, (group) => core.groups[group] || core.nodes[group], "");
   const out = [
     `// ${HEADER("schema/nodes.json")}`,
-    `import type { JSX } from "solid-js";`,
+    `// Use with "jsxImportSource": "solid-watch" (or import "solid-watch/jsx").`,
+    `import type { JSX as SolidJSX } from "solid-js";`,
     ``,
     `/** "#RRGGBB", "#RRGGBBAA" or a colour name from a schema's colors. */`,
     `export type Color = ${["`#${string}`", ...Object.keys(merged.colors).map(ts), "(string & {})"].join(" | ")};`,
@@ -480,9 +481,14 @@ function genTsCore(merged) {
     out.push(`  ref?: unknown;`);
     out.push(`}`, ``);
   }
-  out.push(`declare module "solid-js" {`, `  namespace JSX {`, `    interface IntrinsicElements {`);
-  for (const n of Object.values(merged.nodes)) out.push(`      ${n.type}: ${upper(n.type)}Element;`);
-  out.push(`    }`, `  }`, `}`, ``);
+  // Our own JSX namespace (jsxImportSource: "solid-watch"): Solid's DOM
+  // IntrinsicElements would clash (<button>, SVG <text>).
+  out.push(`export namespace JSX {`);
+  out.push(`  type Element = SolidJSX.Element;`);
+  out.push(`  interface ElementChildrenAttribute { children: {} }`);
+  out.push(`  interface IntrinsicElements {`);
+  for (const n of Object.values(merged.nodes)) out.push(`    ${n.type}: ${upper(n.type)}Element;`);
+  out.push(`  }`, `}`, ``);
   return out.join("\n");
 }
 
@@ -491,14 +497,16 @@ function genTsFragment(merged, frag, src) {
   const groups = groupsFor(merged, isOwned, "");
   const out = [
     `// ${HEADER(src)}`,
-    `import type { JSX } from "solid-js";`,
+    `import type { JSX as SolidJSX } from "solid-js";`,
     `import type { Color } from "solid-watch/jsx";`,
     ``,
     ...tsGroupIfaces(groups),
   ];
   const newNodes = Object.values(merged.nodes).filter((n) => n.from === frag.name);
+  const coreIfaces = [...new Set(newNodes.flatMap((n) => Object.values(n.props).filter((p) => !isOwned(p.group)).map((p) => tsIface(p.group))))];
+  if (coreIfaces.length) out.splice(3, 0, `import type { ${coreIfaces.join(", ")} } from "solid-watch/jsx";`);
   for (const n of newNodes) {
-    const ifaces = [...new Set(Object.values(n.props).map((p) => (isOwned(p.group) ? tsIface(p.group) : `import("solid-watch/jsx").${tsIface(p.group)}`)))];
+    const ifaces = [...new Set(Object.values(n.props).map((p) => tsIface(p.group)))];
     out.push(`/** ${n.doc} */`);
     out.push(`export interface ${upper(camel(n.type))}Element${ifaces.length ? " extends " + ifaces.join(", ") : ""} {`);
     out.push(`  children?: ${childrenType[n.children]};`, `  ref?: unknown;`, `}`, ``);
@@ -511,8 +519,7 @@ function genTsFragment(merged, frag, src) {
     const ifaces = groups.filter((g) => g.group === `${frag.name}:${type}`).map((g) => tsIface(g.group));
     if (ifaces.length) out.push(`  interface ${upper(type)}Element extends ${ifaces.join(", ")} {}`);
   }
-  out.push(`}`, ``);
-  out.push(`declare module "solid-js" {`, `  namespace JSX {`, `    interface IntrinsicElements {`);
+  out.push(`  namespace JSX {`, `    interface IntrinsicElements {`);
   for (const n of newNodes) out.push(`      ${ts(n.type)}: ${upper(camel(n.type))}Element;`);
   out.push(`    }`, `  }`, `}`, ``);
   return out.join("\n");
