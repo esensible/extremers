@@ -34,7 +34,16 @@ struct ExtremersApp: App {
       }
       .environmentObject(computer)
       .environmentObject(shell)
-      .onAppear { computer.start() }
+      .onAppear {
+        #if DEBUG
+        // no Bluetooth or workout: the simulator's box instead
+        if ProcessInfo.processInfo.arguments.contains("-SimulateBox") {
+          SimulatedBox.run(computer)
+          return
+        }
+        #endif
+        computer.start()
+      }
     }
     .onChange(of: scenePhase) { _, phase in
       computer.appActive(phase == .active)

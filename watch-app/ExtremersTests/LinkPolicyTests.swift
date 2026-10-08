@@ -103,17 +103,3 @@ final class LinkPolicyTests: XCTestCase {
     XCTAssertEqual(waiters.takeAll(), [])
   }
 }
-
-final class StateSilenceTests: XCTestCase {
-  func testReadDueAfterQuiet() {
-    let t0 = Date(timeIntervalSinceReferenceDate: 1000)
-    var s = StateSilence(lastValue: t0)
-    XCTAssertEqual(s.readDue(now: t0), 5)
-    XCTAssertEqual(s.readDue(now: t0.addingTimeInterval(3)), 2, accuracy: 1e-9)
-    XCTAssertEqual(s.readDue(now: t0.addingTimeInterval(5)), 0)
-    XCTAssertEqual(s.readDue(now: t0.addingTimeInterval(60)), 0)
-    // a value (notification or read) restarts it
-    s.lastValue = t0.addingTimeInterval(60)
-    XCTAssertEqual(s.readDue(now: t0.addingTimeInterval(61)), 4, accuracy: 1e-9)
-  }
-}

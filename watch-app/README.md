@@ -115,8 +115,8 @@ The app keeps a rolling log, `Documents/shell.log` (1 MB, then moved to
 `shell.log.1`). It records the link (Bluetooth state, connects with the
 ATT MTU, drops), every envelope (active package, ui_hash, size, how it was
 routed, the bundle's timer counts), bundle loads and failures, taps, every
-event sent with its bytes and whether the box answered the write, haptics,
-silence reads, and main-thread stalls. Copy it off the watch with:
+event sent with its bytes and whether the box answered the write, haptics
+and main-thread stalls. Copy it off the watch with:
 
 ```sh
 xcrun devicectl device copy from --device <udid> --domain-type appDataContainer \

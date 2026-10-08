@@ -269,7 +269,8 @@ final class RaceComputer: NSObject, ObservableObject {
         link = .connected
         problem = nil
         connectedAt = Date()
-        try await watch(p, gen)
+        // Only a failure (the drop, Bluetooth going off) ends this wait.
+        let _: Any = try await waitFor("disconnect", timeout: nil) {}
       } catch {
         if Task.isCancelled || !generation.isCurrent(gen) || error is CancellationError { return }
         let failure = (error as? BleFailure) ?? .other(error)
@@ -296,38 +297,6 @@ final class RaceComputer: NSObject, ObservableObject {
     }
   }
 
-  /// While the link is up: waits for its failure (the drop, Bluetooth going
-  /// off), and reads `state` whenever the box has sent nothing for a while
-  /// (`StateSilence`). A read that is not answered in time throws, which
-  /// takes the link down for the loop to reconnect.
-  private func watch(_ p: CBPeripheral, _ gen: UInt64) async throws {
-    silence = StateSilence(lastValue: Date())
-    while true {
-      let due = silence.readDue(now: Date())
-      if due > 0 {
-        do {
-          // Only a failure ends this wait, or the time running out.
-          let _: Any = try await waitFor("disconnect", timeout: due) {}
-        } catch BleFailure.timeout {}
-        try ensureCurrent(gen)
-        continue
-      }
-      guard let stateChar = stateCharacteristic else { throw BleFailure.disconnected(underlying: nil) }
-      log("no state for \(Int(StateSilence.quiet)) s: reading it")
-      do {
-        let _: Any = try await waitFor("read", timeout: Self.gattTimeout) {
-          p.readValue(for: stateChar)
-        }
-      } catch BleFailure.timeout {
-        log("state read not answered in \(Int(Self.gattTimeout)) s: the link is dead, reconnecting")
-        throw BleFailure.timeout
-      }
-      try ensureCurrent(gen)
-      // the value went through `receive`, which restarted `silence`
-    }
-  }
-
-  private var silence = StateSilence(lastValue: Date())
 
   /// Waits `seconds`, or until `retryNow()`. Returns early, never throws,
   /// when the loop is cancelled: the loop's own check ends it.
@@ -482,6 +451,13 @@ final class RaceComputer: NSObject, ObservableObject {
     link = envelope == nil ? .connecting : .reconnecting
   }
 
+  #if DEBUG
+  /// A state value as if the box had notified it (the simulator demo).
+  func inject(_ value: Data) {
+    receive(value)
+  }
+  #endif
+
   private func receive(_ value: Data) {
     // After Quit the link is being cancelled, but a notification already
     // on its way still lands here: it must not reach the screen.
@@ -490,7 +466,6 @@ final class RaceComputer: NSObject, ObservableObject {
       return
     }
     let bytes = [UInt8](value)
-    silence.lastValue = Date()
     switch Envelope.decode(bytes) {
     case .success(let decoded):
       mismatch = nil

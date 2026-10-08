@@ -1,4 +1,5 @@
 import SolidWatch
+import SwiftUI
 import XCTest
 
 /// The shell with the real package bundles (the committed builds), real
@@ -124,6 +125,40 @@ final class ShellFlowTests: XCTestCase {
       press(shell, at: CGPoint(x: 99, y: 121))
       XCTAssertEqual(sent.last, HostEvent.selectDefault, "round \(round): SelectDefault")
     }
+  }
+
+  /// What is drawn follows every bundle swap: one view graph kept across
+  /// the swaps (as the app's screen is) draws exactly what a fresh one
+  /// draws of the same session, and each package's screen differs from the
+  /// one before. (Field bug: the screen stayed on the first bundle drawn.)
+  func testDisplayedTreeFollowsBundleSwaps() throws {
+    let shell = Shell(source: try bundles()) { _ in }
+    let size = CGSize(width: 198, height: 242)
+    shell.session.setViewport(size)
+    let kept = ImageRenderer(content: MountView(session: shell.session).frame(width: size.width, height: size.height))
+    func fresh() -> String? {
+      pixels(ImageRenderer(content: MountView(session: shell.session).frame(width: size.width, height: size.height)).cgImage)
+    }
+    let choose = try states("extreme-traits")[1]
+    let race = try states("extreme-race")[0]
+    let tune = try states("extreme-tune")[0]
+    var previous: String?
+    for (name, state) in [("choose", choose), ("race", race), ("choose", choose), ("tune", tune), ("race", race)] {
+      receive(shell, state)
+      spin(0.2)
+      guard case .app(_, _, name) = shell.screen else { return XCTFail("\(name): \(shell.screen)") }
+      let shown = pixels(kept.cgImage)
+      XCTAssertNotNil(shown, name)
+      XCTAssertEqual(shown, fresh(), "\(name): the kept view draws the current bundle")
+      XCTAssertNotEqual(shown, previous, "\(name): the screen changed")
+      previous = shown
+    }
+  }
+
+  /// The image's pixels, as a digest (short failure messages).
+  func pixels(_ image: CGImage?) -> String? {
+    guard let image, let data = image.dataProvider?.data as Data? else { return nil }
+    return JSHost.sha256Hex(data)
   }
 
   func varint(_ v: UInt32) -> [UInt8] {
