@@ -4,7 +4,7 @@ import { Race } from './race.jsx';
 import { Sequence } from './sequence.jsx';
 import { Switch, Match, Show } from 'solid-js';
 import { confirm } from './confirm.jsx';
-import { selectEngine, connected } from './api.js';
+import { exit, connected } from './api.js';
 
 import './touch.js';
 import './style.css'
@@ -27,7 +27,7 @@ export const Main = () => (
 
 const app = () => (
   <div class="container">
-    <button class="exit-button" onClick={() => doConfirm(() => selectEngine("Selector"), 2)}></button>
+    <button class="exit-button" onClick={() => doConfirm(exit, 2)}></button>
     <Confirm />
     <Main />
     <Show when={!connected()}>

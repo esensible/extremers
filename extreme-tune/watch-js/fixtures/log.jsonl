@@ -615,7 +615,7 @@
 ["#handled",true]
 ["#dispatch",28,"press",null]
 ["clearTimer",3]
-["send",[0,0]]
+["send",[1]]
 ["setProp",28,"display","none"]
 ["commit"]
 ["#handled",true]

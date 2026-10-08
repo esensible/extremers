@@ -38,7 +38,7 @@ function segments() {
 }
 const names = (seg) => seg.ops.map((m) => m[0]);
 
-test("100 states; each update is setProps + one commit; another engine's state and bad bytes change nothing", () => {
+test("100 states; each update is setProps + one commit; another package's state and bad bytes change nothing", () => {
   const states = segments().filter((s) => s.marker[0] === "#state");
   assert.equal(states.length, 100);
   for (const s of states) {
@@ -50,7 +50,7 @@ test("100 states; each update is setProps + one commit; another engine's state a
   assert.deepEqual(names(states[51]), ["commit"]);
 });
 
-test("Exit is the Kindle's: doConfirm(selectEngine(Selector), 2), the confirm button centred; 5 s without a tap cancels", () => {
+test("Exit is the Kindle's: doConfirm(exit, 2), sending SelectDefault, the confirm button centred; 5 s without a tap cancels", () => {
   const segs = segments().filter((s) => s.marker[0] !== "#state" && s.marker[0] !== "#mount");
   const confirmTag = segs[4].marker[1];
   const display = (seg) => seg.ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag && m[2] === "display").map((m) => m[3]);
@@ -61,11 +61,11 @@ test("Exit is the Kindle's: doConfirm(selectEngine(Selector), 2), the confirm bu
   assert.equal(segs[1].marker[0], "#timer");
   assert.deepEqual(display(segs[1]), ["none"]);
   // nothing is sent but the confirmed Exit
-  assert.deepEqual(segments().flatMap((s) => s.ops).filter((m) => m[0] === "send"), [["send", [0, 0]]]);
-  // Exit again, then two taps on the confirm button: one send, Select(Selector)
+  assert.deepEqual(segments().flatMap((s) => s.ops).filter((m) => m[0] === "send"), [["send", [1]]]);
+  // Exit again, then two taps on the confirm button: one send, SelectDefault
   assert.deepEqual(display(segs[3]), ["flex"]);
   assert.deepEqual(names(segs[4]).filter((n) => n === "send"), []);
-  assert.deepEqual(segs[5].ops.filter((m) => m[0] === "send"), [["send", [0, 0]]]);
+  assert.deepEqual(segs[5].ops.filter((m) => m[0] === "send"), [["send", [1]]]);
   assert.deepEqual(display(segs[5]), ["none"]);
   // centred: absolute at 50% / 50%, pulled back by half its size
   const props = Object.fromEntries(segments()[0].ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag).map((m) => [m[2], m[3]]));

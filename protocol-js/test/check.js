@@ -1,8 +1,19 @@
 // The checks both test runners make (node: vectors.test.mjs, QuickJS:
 // qjs.mjs): each golden vector from the Rust encoder decodes to its value
-// and its value encodes to its bytes, plus what the decoder must refuse.
-// No node APIs here, so it runs under qjs as it is.
-import * as protocol from "../protocol.js";
+// and its value encodes to its bytes, plus what the decoders must refuse;
+// for the host protocol's bindings (../protocol.js) and each package's
+// (<package>/protocol-js/protocol.js). No node APIs here, so it runs under
+// qjs as it is.
+import * as host from "../protocol.js";
+import * as race from "../../extreme-race/protocol-js/protocol.js";
+import * as tune from "../../extreme-tune/protocol-js/protocol.js";
+
+// [name, bindings, path of its vectors.json from this directory]
+export const SUITES = [
+  ["host", host, "vectors.json"],
+  ["race", race, "../../extreme-race/protocol-js/vectors.json"],
+  ["tune", tune, "../../extreme-tune/protocol-js/vectors.json"],
+];
 
 export function hexBytes(hex) {
   const out = [];
@@ -38,10 +49,11 @@ function throws(f) {
   return false;
 }
 
-// [name, ok, detail] for every check.
-export function run(vectors) {
+// [name, ok, detail] for every vector of `vectors`, with `protocol`'s
+// decode<Type>/encode<Type>.
+export function runVectors(suite, protocol, vectors) {
   const results = [];
-  const check = (name, ok, detail) => results.push([name, !!ok, ok ? "" : detail]);
+  const check = (name, ok, detail) => results.push([`${suite}: ${name}`, !!ok, ok ? "" : detail]);
 
   for (const v of vectors.vectors) {
     const decode = protocol["decode" + v.type];
@@ -70,29 +82,43 @@ export function run(vectors) {
     check(`decode ${v.type} ${v.what}: refuses truncation`, truncated === 0, truncated + " prefixes decoded");
     check(`decode ${v.type} ${v.what}: refuses a trailing byte`, throws(() => decode(bytes.concat([0]))), "decoded");
   }
+  return results;
+}
 
-  // the decoder refuses what it cannot represent exactly or is not valid
-  const D = protocol.decodeState;
+// What the decoders and encoders must refuse.
+export function runRefusals() {
+  const results = [];
+  const check = (name, ok, detail) => results.push([name, !!ok, ok ? "" : detail]);
+  const D = host.decodeEnvelope;
+  const H = [1, 2, 3, 4, 5, 6, 7, 8];
+  // timestamp, Choose, hash, no state
+  check("a minimal envelope decodes", same(D([7, 0].concat(H, [0])), { timestamp: 7, active: 0, ui_hash: H, state: [] }), "");
   // u64::MAX timestamp: beyond 2^53, no BigInt
-  check("timestamp 2^64 - 1 refused", throws(() => D([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0])), "decoded");
+  check("timestamp 2^64 - 1 refused", throws(() => D([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0].concat(H, [0]))), "decoded");
   // 2^53: one past the largest
-  check("timestamp 2^53 refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x10, 0])), "decoded");
-  check("unknown engine tag refused", throws(() => D([0, 3])), "decoded");
-  check("varint too long refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0])), "decoded");
-  check("bad Option tag refused", throws(() => protocol.decodeWsState([0, 0, 2])), "decoded");
+  check("timestamp 2^53 refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x10, 0].concat(H, [0]))), "decoded");
+  check("package id past u32 refused", throws(() => D([0, 0x80, 0x80, 0x80, 0x80, 0x10].concat(H, [0]))), "decoded");
+  check("varint too long refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0].concat(H, [0]))), "decoded");
+  check("state longer than the bytes refused", throws(() => D([0, 0].concat(H, [2, 1]))), "decoded");
+  check("unknown host event refused", throws(() => host.decodeHostEvent([4])), "decoded");
+  check("bad Option tag refused", throws(() => host.decodeChooseView([0, 2])), "decoded");
   check("not bytes refused", throws(() => D(42)), "decoded");
-  // the encoder refuses values it cannot write exactly
-  const E = protocol.encodeEngineEvent;
-  const bump = (seconds, timestamp) => ({ tag: "Race", value: { tag: "BumpSeq", value: { seconds, timestamp } } });
+  // the encoders refuse values they cannot write exactly
+  const E = race.encodeRaceEvent;
+  const bump = (seconds, timestamp) => ({ tag: "BumpSeq", value: { seconds, timestamp } });
   check("i32 overflow refused", throws(() => E(bump(2147483648, 0))), "encoded");
   check("negative timestamp refused", throws(() => E(bump(0, -1))), "encoded");
   check("tap timestamp past 2^53 refused", throws(() => E(bump(0, 2 ** 53))), "encoded");
   check("fraction refused", throws(() => E(bump(0.5, 0))), "encoded");
-  check("missing field refused", throws(() => E({ tag: "Race", value: { tag: "BumpSeq", value: { seconds: 1 } } })), "encoded");
+  check("missing field refused", throws(() => E({ tag: "BumpSeq", value: { seconds: 1 } })), "encoded");
   check("unknown tag refused", throws(() => E({ tag: "Nope", value: null })), "encoded");
-  check("timestamp past 2^53 refused", throws(() => protocol.encodeState({ timestamp: 2 ** 53, engine: { tag: "Selector", value: null } })), "encoded");
+  check("package id past u32 refused (encoding)", throws(() => host.encodeHostEvent({ tag: "Select", value: 2 ** 32 })), "encoded");
+  check("byte past 255 refused", throws(() => host.encodeHostEvent({ tag: "Engine", value: { package: 1, bytes: [256] } })), "encoded");
+  check("timestamp past 2^53 refused", throws(() => host.encodeEnvelope({ timestamp: 2 ** 53, active: 0, ui_hash: H, state: [] })), "encoded");
+  check("short hash refused", throws(() => host.encodeEnvelope({ timestamp: 0, active: 0, ui_hash: [1], state: [] })), "encoded");
   // a unit variant needs no value
-  check("unit variant without value", toHex(E({ tag: "Select", value: { tag: "Race" } })) === "0001", "");
-  check("VARIANTS in wire order", protocol.VARIANTS.EngineKind.join() === "Selector,Race,TuneSpeed", protocol.VARIANTS.EngineKind.join());
+  check("unit variant without value", toHex(host.encodeHostEvent({ tag: "SelectDefault" })) === "01", "");
+  check("race events in wire order", race.VARIANTS.RaceEvent.join() === "LineStbd,LinePort,BumpSeq,RaceFinish", race.VARIANTS.RaceEvent.join());
+  check("host events in wire order", host.VARIANTS.HostEvent.join() === "Select,SelectDefault,Engine,Ble", host.VARIANTS.HostEvent.join());
   return results;
 }

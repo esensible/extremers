@@ -1,13 +1,24 @@
 import { createSignal, onCleanup, Show, For } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { decodeWsState, encodeWsEvent, VARIANTS } from "../../../protocol-js/protocol.js";
+import { decodeEnvelope, decodeChooseView, encodeHostEvent } from "../../../protocol-js/protocol.js";
+import { navigator, selectEvent, bleEvent } from "../../../client-common/host.js";
 
 import './touch.js';
 import './style.css'
 
-// The engines to choose from: every EngineKind but the chooser itself, in
-// the firmware's order (generated from the Rust types with this page).
-const engines = VARIANTS.EngineKind.filter((kind) => kind !== "Selector");
+// Choose: the host's installed packages, from its ChooseView (the
+// Envelope's `state` while Choose is active), in the host's order. Each
+// button asks the host to make that package active; the host's next
+// envelope then names it, and this page loads the package's own page.
+const [packages, setPackages] = createStore([]);
+
+// Where each envelope wants the browser (client-common/host.js).
+const navigate = navigator(window.location);
+
+// "race" -> "Race"
+function title(name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 // BLE pairing (BLE.md "Pairing a watch"): the state message's `ble` field,
 // null on a box without BLE. Everything but the time left, which changes
@@ -124,18 +135,27 @@ function fetchUpdates() {
             setConnected(true);
 
             let message;
+            let view;
             try {
-                message = decodeWsState(event.data);
+                message = decodeEnvelope(event.data);
             } catch (e) {
                 console.error('Undecodable state message:', e);
                 return;
             }
-            // an engine is active: the device serves its page
-            if (message.engine.tag !== "Selector") {
-                window.location.reload();
+            // a package is active (or Choose was updated): its page
+            const elsewhere = navigate(message);
+            if (elsewhere !== null) {
+                window.location.replace(elsewhere);
                 return;
             }
-            receiveBle(message.ble);
+            try {
+                view = decodeChooseView(message.state);
+            } catch (e) {
+                console.error('Undecodable ChooseView:', e);
+                return;
+            }
+            setPackages(reconcile(view.packages, { key: "id" }));
+            receiveBle(view.ble);
         };
 
         ws.onclose = () => {
@@ -158,23 +178,23 @@ function fetchUpdates() {
     });
 }
 
-// Sends a WsEvent (protocol.d.ts).
+// Sends a HostEvent (protocol-js/protocol.d.ts).
 function send(message) {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(new Uint8Array(encodeWsEvent(message)).buffer);
+        socket.send(new Uint8Array(encodeHostEvent(message)).buffer);
     } else {
         console.error('WebSocket is not connected');
     }
 }
 
-// Switch engine (an EngineKind name).
-function selectEngine(kind) {
-    send({ tag: "Engine", value: { tag: "Select", value: { tag: kind } } });
+// Make a package active (its PackageId).
+function selectPackage(id) {
+    send(selectEvent(id));
 }
 
-// BLE commands: Pair, Cancel, ForgetAll (common/src/ble_settings.rs).
+// BLE commands: Pair, Cancel, ForgetAll (BleCommand).
 function bleCommand(command) {
-    send({ tag: "Ble", value: { tag: command } });
+    send(bleEvent(command));
 }
 
 
@@ -262,14 +282,16 @@ const App = () => {
     return (
         <div class="container">
             <div class="engines">
-                {engines.map(engine => (
-                    <button
-                        class="engine-button"
-                        onClick={() => selectEngine(engine)}
-                    >
-                        {engine}
-                    </button>
-                ))}
+                <For each={packages}>
+                    {(pkg) => (
+                        <button
+                            class="engine-button"
+                            onClick={() => selectPackage(pkg.id)}
+                        >
+                            {title(pkg.name)}
+                        </button>
+                    )}
+                </For>
                 <Show when={ble.present}>
                     <button class="settings-open" onClick={() => setShowSettings(true)}>
                         Settings

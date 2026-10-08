@@ -1,14 +1,25 @@
-// The websocket to the device: binary frames of postcard, decoded and
-// encoded by the generated bindings (protocol-js/, from tools/bindgen).
+// The websocket to the host: binary frames of postcard. Each frame is a
+// host Envelope (protocol-js/, the host protocol's generated bindings)
+// whose `state`, while race is active, is a RaceView (../protocol-js/, this
+// package's own bindings); events go out as a HostEvent carrying a
+// RaceEvent. An envelope for another package, or another version of this
+// one, loads that page instead (client-common/host.js).
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { decodeWsState, encodeWsEvent } from '../../../protocol-js/protocol.js';
+import { decodeEnvelope, encodeHostEvent } from '../../../protocol-js/protocol.js';
+import { decodeRaceView, encodeRaceEvent } from '../../protocol-js/protocol.js';
+import { navigator, pageId, engineEvent, backEvent } from '../../../client-common/host.js';
 
 // Device clock minus ours, from the timestamp every state carries. The
 // initial value is large so nothing looks synced before the first message.
 var timestampOffset = 10000000;
 var timezoneOffset = 0;
 var socket = null;
+
+// This page's package, from its URL (/pkg/<id>/), and where each envelope
+// wants the browser.
+const PACKAGE = pageId(window.location.pathname);
+const navigate = navigator(window.location);
 
 // The race as the device last described it: its RaceView (protocol.d.ts),
 // applied with reconcile so only the fields that changed notify. Until the
@@ -72,8 +83,9 @@ function connectWebSocket() {
     setConnected(true);
 
     var message;
+    var view;
     try {
-      message = decodeWsState(event.data);
+      message = decodeEnvelope(event.data);
     } catch (e) {
       console.error('Undecodable state message:', e);
       return;
@@ -81,12 +93,20 @@ function connectWebSocket() {
     timestampOffset = message.timestamp - new Date().getTime();
     timezoneOffset = 37800; // 10.5 hours
 
-    // another engine is active: the device serves its page
-    if (message.engine.tag !== "Race") {
-      window.location.reload();
+    // another package is active, or another version of this one: the
+    // host serves its page
+    const elsewhere = navigate(message);
+    if (elsewhere !== null) {
+      window.location.replace(elsewhere);
       return;
     }
-    setRace(reconcile(message.engine.value));
+    try {
+      view = decodeRaceView(message.state);
+    } catch (e) {
+      console.error('Undecodable race view:', e);
+      return;
+    }
+    setRace(reconcile(view));
   };
 
   ws.onclose = () => {
@@ -99,26 +119,25 @@ function connectWebSocket() {
   };
 }
 
-// Sends an engine event (an EngineEvent, protocol.d.ts).
-function send(event) {
+// Sends a HostEvent (protocol-js/protocol.d.ts).
+function send(hostEvent) {
   if (socket && socket.readyState === WebSocket.OPEN) {
-    const bytes = encodeWsEvent({ tag: "Engine", value: event });
-    socket.send(new Uint8Array(bytes).buffer);
+    socket.send(new Uint8Array(encodeHostEvent(hostEvent)).buffer);
   } else {
     console.error('WebSocket is not connected');
   }
 }
 
-// A RaceEvent, e.g.
+// A RaceEvent (../protocol-js/protocol.d.ts), e.g.
 //   postEvent({ tag: "LineStbd" })
 //   postEvent({ tag: "BumpSeq", value: { seconds: 30, timestamp: timestamp() } })
 export function postEvent(event) {
-  send({ tag: "Race", value: event });
+  send(engineEvent(PACKAGE, encodeRaceEvent(event)));
 }
 
-// Switch engine: "Selector" returns to the chooser.
-export function selectEngine(kind) {
-  send({ tag: "Select", value: { tag: kind } });
+// Back to the chooser (or wherever the host's default is).
+export function exit() {
+  send(backEvent());
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -1,6 +1,8 @@
 import { createSignal, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { decodeWsState, encodeWsEvent } from "../../../protocol-js/protocol.js";
+import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
+import { decodeTuneView } from "../../protocol-js/protocol.js";
+import { navigator, backEvent } from "../../../client-common/host.js";
 import { confirm } from './confirm.jsx';
 
 import './touch.js';
@@ -23,6 +25,10 @@ const formatDeviation = (value, precision = 1) => {
 };
 
 let socket;
+
+// Where each envelope wants the browser: an envelope for another package,
+// or another version of this one, loads that page (client-common/host.js).
+const navigate = navigator(window.location);
 
 // The server re-sends the state at least every 5 s (WS_HEARTBEAT_MS in
 // common/src/config.rs), so this long without a message means the
@@ -71,19 +77,29 @@ function fetchUpdates() {
             restartSilenceTimer();
             setConnected(true);
 
+            // a host Envelope (protocol-js/) whose `state`, while tune is
+            // active, is a TuneView (../protocol-js/, this package's own
+            // bindings)
             let message;
+            let view;
             try {
-                message = decodeWsState(event.data);
+                message = decodeEnvelope(event.data);
             } catch (e) {
                 console.error('Undecodable state message:', e);
                 return;
             }
-            // another engine is active: the device serves its page
-            if (message.engine.tag !== "TuneSpeed") {
-                window.location.reload();
+            const elsewhere = navigate(message);
+            if (elsewhere !== null) {
+                window.location.replace(elsewhere);
                 return;
             }
-            setTune(reconcile(message.engine.value));
+            try {
+                view = decodeTuneView(message.state);
+            } catch (e) {
+                console.error('Undecodable tune view:', e);
+                return;
+            }
+            setTune(reconcile(view));
         };
 
         ws.onclose = () => {
@@ -106,11 +122,10 @@ function fetchUpdates() {
     });
 }
 
-// Switch engine: "Selector" returns to the chooser.
-function selectEngine(kind) {
+// Back to the chooser (or wherever the host's default is).
+function exit() {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        const bytes = encodeWsEvent({ tag: "Engine", value: { tag: "Select", value: { tag: kind } } });
-        socket.send(new Uint8Array(bytes).buffer);
+        socket.send(new Uint8Array(encodeHostEvent(backEvent())).buffer);
     } else {
         console.error('WebSocket is not connected');
     }
@@ -123,7 +138,7 @@ fetchUpdates();
 const App = () => {
     return (
         <div class="container">
-            <button class="exit-button" onClick={() => doConfirm(() => selectEngine("Selector"), 2)}></button>
+            <button class="exit-button" onClick={() => doConfirm(exit, 2)}></button>
             <Confirm />
             <div class="speed">{() => tune.speed.toFixed(1)}</div>
             <div class="deviation">{() => formatDeviation(tune.speed_dev)}<span class="small-deviation">k</span></div>

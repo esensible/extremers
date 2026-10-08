@@ -5,16 +5,16 @@ import terser from '@rollup/plugin-terser';
 import resolve from '@rollup/plugin-node-resolve';
 import image from '@rollup/plugin-image';
 
-function uuid(length) {
-  return Array.from({ length }, () => Math.random().toString(36)[2]).join('');
-}
-
 export default {
   input: 'src/index.jsx',
   output: {
     format: 'umd',
     name: 'main',
-    file: 'dist/bundle-' + uuid(8) + '.js',
+    // named after its contents, not at random: the package's content hash
+    // (tools/package) covers the bundle, so the same sources must make the
+    // same bytes; a new bundle still gets a new name (no stale cache)
+    dir: 'dist',
+    entryFileNames: 'bundle-[hash].js',
   },
   cache: false,
   plugins: [

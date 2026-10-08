@@ -1,20 +1,30 @@
-// The generated bindings against the Rust encoder's golden vectors, under
-// node. test/qjs.mjs runs the same checks under QuickJS.
+// The generated bindings (the host protocol's and each package's) against
+// the Rust encoder's golden vectors, under node. test/qjs.mjs runs the same
+// checks under QuickJS.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { run } from "./check.js";
+import { SUITES, runVectors, runRefusals } from "./check.js";
 
-const vectors = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url), "utf8"));
+const load = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
 
-test("vectors.json covers every message and engine", () => {
-  const types = new Set(vectors.vectors.map((v) => v.type));
-  assert.deepEqual([...types].sort(), ["EngineEvent", "State", "WsEvent", "WsState"]);
-  const tags = new Set(vectors.vectors.filter((v) => v.type === "State").map((v) => v.value.engine.tag));
-  assert.deepEqual([...tags].sort(), ["Race", "Selector", "TuneSpeed"]);
-  assert.ok(vectors.vectors.length > 80);
+test("the vectors cover every message", () => {
+  const types = (path) => [...new Set(load(path).vectors.map((v) => v.type))].sort();
+  assert.deepEqual(types(SUITES[0][2]), ["ChooseView", "Envelope", "HostEvent", "Manifest"]);
+  assert.deepEqual(types(SUITES[1][2]), ["RaceEvent", "RaceView"]);
+  assert.deepEqual(types(SUITES[2][2]), ["TuneView"]);
+  const host = load(SUITES[0][2]).vectors;
+  // envelopes of Choose and of both packages
+  assert.equal(new Set(host.filter((v) => v.type === "Envelope").map((v) => v.value.active)).size, 3);
+  assert.ok(host.length > 60);
 });
 
-for (const [name, ok, detail] of run(vectors)) {
+for (const [suite, protocol, path] of SUITES) {
+  for (const [name, ok, detail] of runVectors(suite, protocol, load(path))) {
+    test(name, () => assert.ok(ok, detail));
+  }
+}
+
+for (const [name, ok, detail] of runRefusals()) {
   test(name, () => assert.ok(ok, detail));
 }

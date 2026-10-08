@@ -2,7 +2,7 @@
 // 30 s average. Structured as the Kindle's tune page (client-js): the state
 // in a store (api.js), Exit behind the confirm widget (2 taps).
 import { createApp } from "solid-watch";
-import { tune, onState, selectEngine } from "./api.js";
+import { tune, onState, exit } from "./api.js";
 import { confirm } from "./confirm.jsx";
 import { knots, signed } from "./format.js";
 
@@ -34,7 +34,7 @@ function Tune() {
             <Deviation value={signed(tune.heading_dev)} unit={"°"} />
           </view>
           <text fontSize={11} color="caption">vs 30 s average</text>
-          <button onPress={() => doConfirm(() => selectEngine("Selector"), 2)} alignSelf="stretch" minHeight={32} background="button" borderRadius={10} alignItems="center" justifyContent="center">
+          <button onPress={() => doConfirm(exit, 2)} alignSelf="stretch" minHeight={32} background="button" borderRadius={10} alignItems="center" justifyContent="center">
             <text fontSize={15} fontWeight="600" numberOfLines={1} minScale={0.6}>Exit</text>
           </button>
         </view>
@@ -44,5 +44,5 @@ function Tune() {
   );
 }
 
-// `bytes`: the BLE state value, a postcard State (BLE.md "State").
+// `bytes`: the BLE state value, a host Envelope (BLE.md "State").
 createApp(Tune, { onState });
