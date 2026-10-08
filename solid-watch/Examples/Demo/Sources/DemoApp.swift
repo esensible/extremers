@@ -122,6 +122,14 @@ enum Integrity {
         #endif
         out("quickjs-ng \(JSHost.quickJSVersion)")
         Fixtures.registerFont(out)
+        if ProcessInfo.processInfo.environment["SW_PROBE"] != nil {
+            ColdStart.probe(out)
+        } else {
+            let t0 = ContinuousClock.now
+            let p = Fonts.waitForPrewarm()
+            out(String(format: "font prewarm (background) %.2f ms; main thread waited %.2f ms",
+                       Integrity.ms(p), Integrity.ms(ContinuousClock.now - t0)))
+        }
         let fp0 = Mem.footprint()
         out("mem start: footprint \(Mem.mb(fp0))")
         var allMatch = true
@@ -153,7 +161,9 @@ enum Integrity {
                            name, ms(runner.tree.commitTime), ms(runner.tree.yogaTime), ms(runner.host.jsTime)))
                 let u = runner.host.memoryUsage()
                 out("[\(name)] phys_footprint delta \(Mem.dmb(fpA, fpB)), js heap \(Mem.mb(UInt64(u.malloc_size))) objs \(u.obj_count)")
-                out("[\(name)] coretext cache \(measurer.cacheHits) hits / \(measurer.cacheMisses) misses")
+                out(String(format: "[%@] coretext cache %d hits / %d misses, typeset %.2f ms; fonts created so far %d in %.2f ms",
+                           name, measurer.cacheHits, measurer.cacheMisses, ms(measurer.typesetTime),
+                           Fonts.createCount, ms(Fonts.createTime)))
                 if let s = r.snapshots.last {
                     out("[\(name)] frames of the mounted tree (last commit #\(s.sequence)):")
                     for l in s.frameDump().split(separator: "\n") { out("[\(name)]   \(l)") }
@@ -253,6 +263,33 @@ enum Live {
             out("live: coretext cache \(m.cacheHits) hits / \(m.cacheMisses) misses")
         }
         out("live: mem end \(Mem.dmb(fp0, Mem.footprint()))")
+    }
+}
+
+/// Cold-start probe: times the first uses of Core Text with the bundled
+/// font, one step at a time, before any bundle runs.
+enum ColdStart {
+    static func probe(_ out: Out) {
+        if ProcessInfo.processInfo.environment["SW_NO_PROBE"] != nil { return }
+        let m = CoreTextMeasurer()
+        func t(_ label: String, _ f: () -> Void) {
+            let t0 = ContinuousClock.now
+            f()
+            out(String(format: "cold: %@ %.2f ms", label, Integrity.ms(ContinuousClock.now - t0)))
+        }
+        let st = TextStyle(fontSize: 20)
+        t("font 20 regular") { _ = Fonts.ctFont(st, size: 20) }
+        t("lineHeightRatio") { _ = m.lineHeightRatio }
+        t("typeset 'Count 0 items' 20") { _ = m.typeset([TextRun("Count 0 items", st)], scale: 1, maxWidth: .infinity) }
+        t("typeset 'Count 0 items' 20 again") { _ = m.typeset([TextRun("Count 0 items", st)], scale: 1, maxWidth: .infinity) }
+        t("typeset same at 19.5") { _ = m.typeset([TextRun("Count 0 items", st)], scale: 0.975, maxWidth: .infinity) }
+        var bold = st
+        bold.fontWeight = .bold
+        t("typeset bold 20 (new weight)") { _ = m.typeset([TextRun("Count 0 items", bold)], scale: 1, maxWidth: .infinity) }
+        t("typeset 'item 7' 18") { _ = m.typeset([TextRun("item 7", TextStyle(fontSize: 18))], scale: 1, maxWidth: .infinity) }
+        var tab = st
+        tab.tabular = true
+        t("typeset tabular 20 (new feature)") { _ = m.typeset([TextRun("12:34", tab)], scale: 1, maxWidth: .infinity) }
     }
 }
 
