@@ -50,6 +50,9 @@ jobs:
         working-directory: protocol-js
       - run: ${{ runner.temp }}/qjs test/qjs.mjs
         working-directory: protocol-js
+      # the confirm widget the Kindle pages and the watch bundles share
+      - run: npm test
+        working-directory: client-common
       # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
       - run: npm ci
         working-directory: extreme-tune/watch-js

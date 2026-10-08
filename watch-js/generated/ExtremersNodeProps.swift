@@ -2,35 +2,6 @@
 // swiftlint:disable all
 import SolidWatch
 
-/// Props of the `extremers:button` group.
-public struct ExtremersButtonProps: Equatable, Sendable {
-  /// Event bytes for press="send" (BLE.md Events).
-  public var event: [UInt8]? = nil
-  /// Append the tap's device time (epoch ms, postcard u64 varint) to `event` before writing it.
-  public var stampTime: Bool = false
-
-  public init() {}
-
-  /// Applies one prop. `.null` resets it to its default; an invalid value also
-  /// resets it and returns `.invalid`; a name this struct doesn't own returns `.unknown`.
-  public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
-    switch name {
-    case "event":
-      if value == .null { self.event = nil; return .ok }
-      guard let v = PropDecode.bytes(value) else { self.event = nil; return .invalid }
-      self.event = v
-      return .ok
-    case "stampTime":
-      if value == .null { self.stampTime = false; return .ok }
-      guard let v = PropDecode.bool(value) else { self.stampTime = false; return .invalid }
-      self.stampTime = v
-      return .ok
-    default:
-      return .unknown
-    }
-  }
-}
-
 /// Schema fragment `extremers`.
 public enum ExtremersSchema {
   public static let colors: [String: String] = [
@@ -39,18 +10,12 @@ public enum ExtremersSchema {
     "caption": "#999999",
   ]
 
-  /// Native press handlers the app registers (`button press=`).
-  public static let pressHandlers: [String] = ["send"]
-
   public static let nodes: [String: NodeSpec] = [
     :
   ]
 
   /// Props this fragment adds to existing node types.
   public static let extends: [String: [String: PropSpec]] = [
-    "button": [
-      "event": PropSpec(name: "event", kind: .behavior, type: .bytes, group: "extremers:button", inherits: false, values: []),
-      "stampTime": PropSpec(name: "stampTime", kind: .behavior, type: .boolean, group: "extremers:button", inherits: false, values: []),
-    ],
+    :
   ]
 }

@@ -178,8 +178,11 @@ chooser, then the engines in the order `extreme-engines` declares them:
 Times in the views are absolute device times. A central keeps
 `offset = timestamp − its own clock at arrival` from every value (the error
 is one connection interval, ~30 ms) and counts down against its own clock
-plus the offset, so a dropped link does not stop the countdown. The
-solid-watch host does this when a bundle calls `syncClock(timestamp)`.
+plus the offset, so a dropped link does not stop the countdown. A watch
+bundle does this exactly as the Kindle pages do (their `api.js`):
+`timestampOffset = state.timestamp − new Date().getTime()` on every state,
+`timestamp() = new Date().getTime() + timestampOffset`, and countdowns are
+`setTimeout` loops on `timestamp()`.
 
 The JS shape of each type is in `protocol-js/protocol.d.ts`; enums decode
 to `{ tag, value }`, and `null` is a unit variant's value and a `None`.
@@ -273,13 +276,11 @@ bytes): a write request gets ATT `0x13` Value Not Allowed.
   timed from the tap). The engine uses the stamp as is, whenever the event
   arrives.
 
-A watch bundle stamps through the native `send` press handler
-(`watch-js/extremers.schema.json`): with `stampTime` set, the button's
-`event` is the bump's postcard without its last field, `timestamp`
-(`encodeEngineEvent(bump with timestamp 0)` less its final `00` byte), and
-the handler appends the tap's device time as a postcard u64 varint:
-solid-watch's `PressEvent.tappedAtDeviceMs`, the local tap time plus the
-offset the bundle last set with `syncClock`.
+Kindle and watch alike, the button's handler stamps the tap with
+`timestamp()` before `doConfirm`, and the confirm callback encodes the whole
+event with the generated encoder and sends it (the websocket on the
+Kindle; solid-watch's `send(bytes)` on the watch, which the app writes to
+`event`).
 
 The sign convention is the engine's. The watch labels its buttons by their
 effect on the countdown (+5 / +1 / −1 / −5 minutes), so **"+5" sends

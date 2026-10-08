@@ -303,6 +303,33 @@
   },
   {
    "stateHex": "b8ddc7a28c3402ae47c140713d0abf0000b441"
+  },
+  {
+   "dispatch": {
+    "tag": 11,
+    "name": "press"
+   }
+  },
+  {
+   "wait": 6000
+  },
+  {
+   "dispatch": {
+    "tag": 11,
+    "name": "press"
+   }
+  },
+  {
+   "dispatch": {
+    "tag": 28,
+    "name": "press"
+   }
+  },
+  {
+   "dispatch": {
+    "tag": 28,
+    "name": "press"
+   }
   }
  ]
 }

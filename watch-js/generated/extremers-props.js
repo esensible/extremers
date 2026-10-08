@@ -2,33 +2,10 @@
 export const fragment = {
   "schemaVersion": 1,
   "name": "extremers",
-  "doc": "Extremers' solid-watch fragment: the palette and the native press handler that writes BLE events (BLE.md Events).",
+  "doc": "Extremers' solid-watch fragment: the palette. Events go to the device through solid-watch's send(bytes) (BLE.md Events).",
   "colors": {
     "accent": "#FF9F0A",
     "button": "#333333",
     "caption": "#999999"
-  },
-  "pressHandlers": {
-    "send": {
-      "doc": "Write the button's `event` bytes to the event characteristic. If `stampTime` is set, `event` is the event's postcard without its last field, a u64 device time, and the handler appends the tap's device time (PressEvent.tappedAtDeviceMs: the local tap time plus the syncClock offset) as a postcard u64 varint first (BLE.md Events: Bump `timestamp`)."
-    }
-  },
-  "extends": {
-    "button": {
-      "props": {
-        "event": {
-          "kind": "behavior",
-          "type": "bytes",
-          "default": null,
-          "doc": "Event bytes for press=\"send\" (BLE.md Events)."
-        },
-        "stampTime": {
-          "kind": "behavior",
-          "type": "boolean",
-          "default": false,
-          "doc": "Append the tap's device time (epoch ms, postcard u64 varint) to `event` before writing it."
-        }
-      }
-    }
   }
 };

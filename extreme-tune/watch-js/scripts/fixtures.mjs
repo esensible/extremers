@@ -51,6 +51,16 @@ steps[50] = {
 };
 // bytes that are not a State: nothing at all
 steps[51] = { stateHex: "02ffff" };
+// Exit behind the confirm widget (2 taps): once left to time out after 5 s,
+// then confirmed, which sends Select(Selector).
+const EXIT = 11, CONFIRM = 28; // button tags (from the mount in log.jsonl)
+steps.push(
+  { dispatch: { tag: EXIT, name: "press" } },
+  { wait: 6000 },
+  { dispatch: { tag: EXIT, name: "press" } },
+  { dispatch: { tag: CONFIRM, name: "press" } },
+  { dispatch: { tag: CONFIRM, name: "press" } },
+);
 
 const dir = HERE + "fixtures";
 mkdirSync(dir, { recursive: true });

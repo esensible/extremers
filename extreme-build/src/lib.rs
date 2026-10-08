@@ -38,10 +38,13 @@ pub fn embed_client_js() {
         );
     }
 
-    // The generated wire bindings the clients import (tools/bindgen).
-    let protocol = crate_dir.join("../protocol-js/protocol.js");
-    if protocol.is_file() {
-        println!("cargo:rerun-if-changed={}", protocol.display());
+    // Code the clients import from outside client-js/: the generated wire
+    // bindings (tools/bindgen) and the shared client modules.
+    for shared in ["../protocol-js/protocol.js", "../client-common/confirm.js"] {
+        let path = crate_dir.join(shared);
+        if path.is_file() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
     }
 
     match build_client(&client_dir) {
