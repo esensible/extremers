@@ -560,8 +560,9 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     guard isCurrent(peripheral) else { return }
     // A late disconnect from cancelling a stalled connect, arriving after
     // the loop already asked for a new connection to the same device: the
-    // new one is not down.
-    guard peripheral.state == .disconnected else { return }
+    // new one is not down. (Any other state counts as down, so a real drop
+    // is never missed.)
+    if peripheral.state == .connecting || peripheral.state == .connected { return }
     stateCharacteristic = nil
     eventCharacteristic = nil
     if link == .connected { link = .reconnecting }
