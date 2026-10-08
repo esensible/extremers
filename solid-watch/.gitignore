@@ -3,3 +3,5 @@ dist/
 .build/
 .swiftpm/
 test/types/demo-jsx.d.ts
+# build output of scripts/build-quickjs-xcframework.sh
+Frameworks/

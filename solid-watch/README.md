@@ -23,10 +23,27 @@ fonts/                   the one font both hosts use (Inter, OFL)
 test/                    node tests, qjs runner, fixture generators
 fixtures/                golden mutation logs, expected frames, layout-parity cases
 Sources/SolidWatch/      Swift package (Generated/NodeProps.swift is generated)
+quickjs-ng/              the vendored engine (VENDORED.txt), source of the framework below
+Frameworks/CQuickJS.xcframework   quickjs-ng prebuilt, optimised (scripts/build-quickjs-xcframework.sh)
 ```
 
 Licence: MIT (see `LICENSE`). Inter is under the SIL OFL 1.1
-(`fonts/LICENSE-Inter.txt`).
+(`fonts/LICENSE-Inter.txt`). quickjs-ng and Yoga are MIT (their `LICENSE`
+files).
+
+### Why QuickJS is prebuilt
+
+The interpreter must be optimised in every build of an app. At `-O0`
+QuickJS's interpreter frames are several times larger, so an ordinary UI's
+first render overflows the engine's stack limit in a Debug build. SwiftPM
+builds a source target with the app's configuration and has no per-target
+optimisation setting. `unsafeFlags(["-O2"])` would work, but SwiftPM refuses
+a package that uses it as a versioned dependency. So the package links
+quickjs-ng as a `binaryTarget`: an XCFramework of static libraries for
+watchOS, iOS and macOS (devices and simulators), built `-O2 -DNDEBUG` by
+`scripts/build-quickjs-xcframework.sh` from `quickjs-ng/`. The build is
+reproducible: rerun it after updating the vendored sources and commit the
+result. The glue (`CSolidHost`) and Yoga stay source targets.
 
 ## Writing a bundle
 
