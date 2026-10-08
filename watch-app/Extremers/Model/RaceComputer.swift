@@ -366,6 +366,9 @@ final class RaceComputer: NSObject, ObservableObject {
   }
 
   private func receive(_ value: Data) {
+    // After Quit the link is being cancelled, but a notification already
+    // on its way still lands here: it must not restart the haptics.
+    guard link != .stopped else { return }
     let decoded: DeviceState
     switch DeviceState.decode([UInt8](value)) {
     case .success(let state):
