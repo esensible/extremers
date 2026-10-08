@@ -1,0 +1,65 @@
+{
+ "name": "column-stretch",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"height\",30]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"height\",10]",
+  "[\"setProp\",5,\"width\",50]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    60
+   ],
+   "3": [
+    0,
+    0,
+    198,
+    20
+   ],
+   "4": [
+    0,
+    20,
+    198,
+    30
+   ],
+   "5": [
+    0,
+    50,
+    50,
+    10
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "name": "core",
+  "doc": "solid-watch core node types. Layout props use React Native / Yoga names and React Native defaults. A prop's `kind` tells the host what a change invalidates: layout (Yoga style), measure (text measurement: dirty the text's Yoga node), paint (redraw only), behavior (host behaviour, no layout), event (a JS handler: the host only learns whether one is set).",
+  "font": {
+    "doc": "The one font both hosts measure and draw with (fonts/, SIL OFL 1.1). Its hhea, typo and win metrics agree (ascent 2728, descent 680, gap 0, 2816 units/em), so the default line height is fontSize x 3408/2816 everywhere. fontWeight drives the wght axis (100-900).",
+    "family": "Inter",
+    "file": "fonts/Inter-roman.ttf",
+    "version": "3.19",
+    "unitsPerEm": 2816,
+    "ascent": 2728,
+    "descent": 680,
+    "lineHeightRatio": 1.2102272727272727
+  },
+  "colors": {
+    "white": "#FFFFFF",
+    "black": "#000000",
+    "transparent": "#00000000"
+  },
+  "groups": {
+    "layout": {
+      "doc": "Yoga style. Defaults are Yoga's own (non-web) defaults, which are React Native's.",
+      "props": {
+        "display": { "kind": "layout", "type": "enum", "values": ["flex", "none"], "default": "flex" },
+        "position": { "kind": "layout", "type": "enum", "values": ["relative", "absolute"], "default": "relative" },
+        "top": { "kind": "layout", "type": "dimension", "default": null },
+        "right": { "kind": "layout", "type": "dimension", "default": null },
+        "bottom": { "kind": "layout", "type": "dimension", "default": null },
+        "left": { "kind": "layout", "type": "dimension", "default": null },
+        "width": { "kind": "layout", "type": "dimension", "auto": true, "default": "auto" },
+        "height": { "kind": "layout", "type": "dimension", "auto": true, "default": "auto" },
+        "minWidth": { "kind": "layout", "type": "dimension", "default": null },
+        "minHeight": { "kind": "layout", "type": "dimension", "default": null },
+        "maxWidth": { "kind": "layout", "type": "dimension", "default": null },
+        "maxHeight": { "kind": "layout", "type": "dimension", "default": null },
+        "aspectRatio": { "kind": "layout", "type": "number", "default": null },
+        "flex": { "kind": "layout", "type": "number", "default": null, "doc": "Yoga's `flex` shorthand (React Native semantics)." },
+        "flexGrow": { "kind": "layout", "type": "number", "default": 0 },
+        "flexShrink": { "kind": "layout", "type": "number", "default": 0 },
+        "flexBasis": { "kind": "layout", "type": "dimension", "auto": true, "default": "auto" },
+        "flexDirection": { "kind": "layout", "type": "enum", "values": ["column", "row", "column-reverse", "row-reverse"], "default": "column" },
+        "flexWrap": { "kind": "layout", "type": "enum", "values": ["nowrap", "wrap", "wrap-reverse"], "default": "nowrap" },
+        "justifyContent": { "kind": "layout", "type": "enum", "values": ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"], "default": "flex-start" },
+        "alignItems": { "kind": "layout", "type": "enum", "values": ["flex-start", "center", "flex-end", "stretch", "baseline"], "default": "stretch" },
+        "alignSelf": { "kind": "layout", "type": "enum", "values": ["auto", "flex-start", "center", "flex-end", "stretch", "baseline"], "default": "auto" },
+        "alignContent": { "kind": "layout", "type": "enum", "values": ["flex-start", "center", "flex-end", "stretch", "space-between", "space-around", "space-evenly"], "default": "flex-start" },
+        "margin": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginHorizontal": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginVertical": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginTop": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginRight": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginBottom": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "marginLeft": { "kind": "layout", "type": "dimension", "auto": true, "default": null },
+        "padding": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingHorizontal": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingVertical": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingTop": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingRight": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingBottom": { "kind": "layout", "type": "dimension", "default": null },
+        "paddingLeft": { "kind": "layout", "type": "dimension", "default": null },
+        "borderWidth": { "kind": "layout", "type": "number", "default": 0 },
+        "gap": { "kind": "layout", "type": "number", "default": null },
+        "rowGap": { "kind": "layout", "type": "number", "default": null },
+        "columnGap": { "kind": "layout", "type": "number", "default": null },
+        "overflow": { "kind": "layout", "type": "enum", "values": ["visible", "hidden", "scroll"], "default": "visible", "doc": "hidden also clips children when drawing." },
+        "boxSizing": { "kind": "layout", "type": "enum", "values": ["border-box", "content-box"], "default": "border-box" }
+      }
+    },
+    "box": {
+      "doc": "Paint for any visible node.",
+      "props": {
+        "background": { "kind": "paint", "type": "color", "default": null },
+        "borderColor": { "kind": "paint", "type": "color", "default": null },
+        "borderRadius": { "kind": "paint", "type": "number", "default": 0 },
+        "opacity": { "kind": "paint", "type": "number", "default": 1 }
+      }
+    },
+    "textStyle": {
+      "doc": "Text style. Inherited: a nested <text> (a span) takes its parent's value unless it sets its own.",
+      "props": {
+        "color": { "kind": "paint", "type": "color", "default": "white", "inherit": true },
+        "fontSize": { "kind": "measure", "type": "number", "default": 16, "inherit": true },
+        "fontWeight": { "kind": "measure", "type": "enum", "values": ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"], "default": "normal", "inherit": true, "swiftNames": { "100": "w100", "200": "w200", "300": "w300", "400": "w400", "500": "w500", "600": "w600", "700": "w700", "800": "w800", "900": "w900" }, "doc": "normal = 400, bold = 700; drawn on the font's wght axis." },
+        "tabular": { "kind": "measure", "type": "boolean", "default": false, "inherit": true, "doc": "Tabular (fixed-width) figures: OpenType tnum." },
+        "lineHeight": { "kind": "measure", "type": "number", "default": null, "inherit": true, "doc": "Points; null = fontSize x the font's line-height ratio." },
+        "textAlign": { "kind": "paint", "type": "enum", "values": ["left", "center", "right"], "default": "left", "inherit": true }
+      }
+    },
+    "textLayout": {
+      "doc": "Measurement of a text leaf (outermost <text>, countdown, clock). Ignored on spans.",
+      "props": {
+        "numberOfLines": { "kind": "measure", "type": "number", "default": 0, "doc": "0 = no limit. Lines past the limit are cut with a tail ellipsis." },
+        "minScale": { "kind": "measure", "type": "number", "default": 1, "doc": "< 1 makes the text single-line and shrinks it to fit its width, down to fontSize x minScale (README: Shrink-to-fit)." }
+      }
+    }
+  },
+  "nodes": {
+    "view": {
+      "doc": "A box: flex container.",
+      "groups": ["layout", "box"],
+      "children": "nodes"
+    },
+    "text": {
+      "doc": "Text. Raw strings are only valid inside <text>. A <text> inside a <text> is a span: it styles a run of the outer text and has no layout of its own.",
+      "groups": ["layout", "box", "textStyle", "textLayout"],
+      "children": "text"
+    },
+    "scroll": {
+      "doc": "Vertical scroll container (Digital Crown on the watch). The host always gives its Yoga node overflow: scroll (its `overflow` prop is ignored), so children are not shrunk to its height. Content height = the largest child bottom edge (frame y + height + marginBottom) plus paddingBottom + borderWidth; it scrolls when that exceeds its own height. It clips.",
+      "groups": ["layout", "box"],
+      "children": "nodes"
+    },
+    "button": {
+      "doc": "Tappable box. On a tap the host stamps the tap time, shows the confirm sheet if `confirm` is set (and stops if it is cancelled), then runs the native `press` handler if set, then dispatches `press` to JS if `onPress` is set. The host dims a pressed button (opacity x 0.6) and a disabled one (x 0.35).",
+      "groups": ["layout", "box"],
+      "children": "nodes",
+      "props": {
+        "onPress": { "kind": "event", "type": "event", "default": null, "doc": "JS handler; payload { agoMs }: ms from the tap to the dispatch." },
+        "press": { "kind": "behavior", "type": "string", "default": null, "doc": "Name of a press handler the app registered natively; it receives the node's props and the tap time." },
+        "confirm": { "kind": "behavior", "type": "object", "default": null, "fields": { "title": "string", "detail": "string", "label": "string" }, "doc": "Ask first: a sheet with title, detail and a confirm button labelled `label`." },
+        "disabled": { "kind": "behavior", "type": "boolean", "default": false }
+      }
+    },
+    "countdown": {
+      "doc": "Text the host ticks locally towards (or from) a target device time (local clock + the offset from syncClock), so it keeps going without state updates; optional haptic cues at set remaining times.",
+      "groups": ["layout", "box", "textStyle", "textLayout"],
+      "children": "none",
+      "props": {
+        "at": { "kind": "measure", "type": "number", "default": null, "doc": "Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing." },
+        "format": { "kind": "measure", "type": "enum", "values": ["countdown", "elapsed", "remaining"], "default": "countdown", "doc": "README: Countdown formats." },
+        "cues": { "kind": "behavior", "type": "array", "default": null, "fields": { "atRemainingMs": "number", "pattern": "string" }, "doc": "Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues." }
+      }
+    },
+    "clock": {
+      "doc": "Wall clock text on the device timeline (local clock + the syncClock offset, read as UTC ms), shifted by tzOffsetMin, ticked by the host.",
+      "groups": ["layout", "box", "textStyle", "textLayout"],
+      "children": "none",
+      "props": {
+        "format": { "kind": "measure", "type": "enum", "values": ["HH:mm", "HH:mm:ss", "h:mm", "hh:mm"], "default": "HH:mm", "swiftNames": { "HH:mm": "hourMinute24", "HH:mm:ss": "hourMinuteSecond24", "h:mm": "hourMinute12", "hh:mm": "hourMinute12Padded" }, "doc": "README: Clock." },
+        "tzOffsetMin": { "kind": "measure", "type": "number", "default": 0, "doc": "Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it." }
+      }
+    },
+    "haptic": {
+      "doc": "Non-visual: plays `pattern` at each commit where `trigger` differs from its value at the previous commit. The value it is created with does not play; null never plays. No layout.",
+      "groups": [],
+      "children": "none",
+      "props": {
+        "pattern": { "kind": "behavior", "type": "enum", "values": ["notification", "directionUp", "directionDown", "success", "failure", "retry", "start", "stop", "click"], "default": "click", "doc": "watchOS WKHapticType names." },
+        "trigger": { "kind": "behavior", "type": "any", "default": null }
+      }
+    }
+  }
+}

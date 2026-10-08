@@ -1,0 +1,69 @@
+{
+ "name": "min-max",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"height\",40]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"flexGrow\",1]",
+  "[\"setProp\",3,\"maxWidth\",50]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"flexGrow\",1]",
+  "[\"setProp\",4,\"minWidth\",120]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"width\",10]",
+  "[\"setProp\",5,\"minHeight\",60]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    40
+   ],
+   "3": [
+    0,
+    0,
+    34,
+    40
+   ],
+   "4": [
+    34,
+    0,
+    154,
+    40
+   ],
+   "5": [
+    188,
+    0,
+    10,
+    60
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

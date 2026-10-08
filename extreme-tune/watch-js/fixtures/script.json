@@ -1,0 +1,308 @@
+{
+ "ctx": {
+  "width": 198,
+  "height": 242
+ },
+ "steps": [
+  {
+   "stateHex": "02000000000000"
+  },
+  {
+   "stateHex": "0280020400fcff"
+  },
+  {
+   "stateHex": "028002fbff0500"
+  },
+  {
+   "stateHex": "02ffffff7f0807"
+  },
+  {
+   "stateHex": "0239300080f8f8"
+  },
+  {
+   "stateHex": "02e70300000100"
+  },
+  {
+   "stateHex": "02e803ffffffff"
+  },
+  {
+   "stateHex": "02f4010000fa00"
+  },
+  {
+   "stateHex": "0219021a00f500"
+  },
+  {
+   "stateHex": "023e023100e600"
+  },
+  {
+   "stateHex": "0263024300ce00"
+  },
+  {
+   "stateHex": "0288024e00ae00"
+  },
+  {
+   "stateHex": "02ad0250008700"
+  },
+  {
+   "stateHex": "02d20249005b00"
+  },
+  {
+   "stateHex": "02f7023a002a00"
+  },
+  {
+   "stateHex": "021c032500f9ff"
+  },
+  {
+   "stateHex": "0215020b00c7ff"
+  },
+  {
+   "stateHex": "023a02f1ff98ff"
+  },
+  {
+   "stateHex": "025f02d8ff6dff"
+  },
+  {
+   "stateHex": "028402c3ff48ff"
+  },
+  {
+   "stateHex": "02a902b6ff2aff"
+  },
+  {
+   "stateHex": "02ce02b0ff14ff"
+  },
+  {
+   "stateHex": "02f302b3ff09ff"
+  },
+  {
+   "stateHex": "021803bfff06ff"
+  },
+  {
+   "stateHex": "021102d2ff0eff"
+  },
+  {
+   "stateHex": "023602eaff20ff"
+  },
+  {
+   "stateHex": "025b0204003aff"
+  },
+  {
+   "stateHex": "0280021e005dff"
+  },
+  {
+   "stateHex": "02a502350085ff"
+  },
+  {
+   "stateHex": "02ca024500b3ff"
+  },
+  {
+   "stateHex": "02ef024f00e4ff"
+  },
+  {
+   "stateHex": "0214034f001600"
+  },
+  {
+   "stateHex": "020d0247004700"
+  },
+  {
+   "stateHex": "02320237007500"
+  },
+  {
+   "stateHex": "02570221009f00"
+  },
+  {
+   "stateHex": "027c020700c200"
+  },
+  {
+   "stateHex": "02a102edffdd00"
+  },
+  {
+   "stateHex": "02c602d4fff000"
+  },
+  {
+   "stateHex": "02eb02c1fff900"
+  },
+  {
+   "stateHex": "021003b4fff800"
+  },
+  {
+   "stateHex": "020902b0ffee00"
+  },
+  {
+   "stateHex": "022e02b5ffd900"
+  },
+  {
+   "stateHex": "025302c1ffbc00"
+  },
+  {
+   "stateHex": "027802d5ff9800"
+  },
+  {
+   "stateHex": "029d02eeff6e00"
+  },
+  {
+   "stateHex": "02c20208003f00"
+  },
+  {
+   "stateHex": "02e70222000d00"
+  },
+  {
+   "stateHex": "020c033800dcff"
+  },
+  {
+   "stateHex": "0205024700abff"
+  },
+  {
+   "stateHex": "022a024f007eff"
+  },
+  {
+   "stateHex": "01000000000000000000000000000000"
+  },
+  {
+   "stateHex": "027402450035ff"
+  },
+  {
+   "stateHex": "02990234001cff"
+  },
+  {
+   "stateHex": "02be021d000cff"
+  },
+  {
+   "stateHex": "02e302030006ff"
+  },
+  {
+   "stateHex": "020803e9ff0aff"
+  },
+  {
+   "stateHex": "020102d1ff17ff"
+  },
+  {
+   "stateHex": "022602bfff2eff"
+  },
+  {
+   "stateHex": "024b02b3ff4dff"
+  },
+  {
+   "stateHex": "027002b0ff74ff"
+  },
+  {
+   "stateHex": "029502b6ffa0ff"
+  },
+  {
+   "stateHex": "02ba02c4ffcfff"
+  },
+  {
+   "stateHex": "02df02d9ff0100"
+  },
+  {
+   "stateHex": "020403f1ff3300"
+  },
+  {
+   "stateHex": "02fd010c006200"
+  },
+  {
+   "stateHex": "02220225008e00"
+  },
+  {
+   "stateHex": "0247023a00b400"
+  },
+  {
+   "stateHex": "026c024900d300"
+  },
+  {
+   "stateHex": "0291025000e900"
+  },
+  {
+   "stateHex": "02b6024e00f700"
+  },
+  {
+   "stateHex": "02db024300fa00"
+  },
+  {
+   "stateHex": "0200033100f300"
+  },
+  {
+   "stateHex": "02f9011a00e300"
+  },
+  {
+   "stateHex": "021e02ffffc900"
+  },
+  {
+   "stateHex": "024302e5ffa800"
+  },
+  {
+   "stateHex": "026802ceff8000"
+  },
+  {
+   "stateHex": "028d02bcff5300"
+  },
+  {
+   "stateHex": "02b202b2ff2200"
+  },
+  {
+   "stateHex": "02d702b0fff0ff"
+  },
+  {
+   "stateHex": "02fc02b8ffbfff"
+  },
+  {
+   "stateHex": "02f501c7ff90ff"
+  },
+  {
+   "stateHex": "021a02dcff66ff"
+  },
+  {
+   "stateHex": "023f02f5ff42ff"
+  },
+  {
+   "stateHex": "026402100026ff"
+  },
+  {
+   "stateHex": "028902290012ff"
+  },
+  {
+   "stateHex": "02ae023d0007ff"
+  },
+  {
+   "stateHex": "02d3024b0007ff"
+  },
+  {
+   "stateHex": "02f802500011ff"
+  },
+  {
+   "stateHex": "021d034d0024ff"
+  },
+  {
+   "stateHex": "021602410040ff"
+  },
+  {
+   "stateHex": "023b022e0063ff"
+  },
+  {
+   "stateHex": "02600216008dff"
+  },
+  {
+   "stateHex": "028502fbffbbff"
+  },
+  {
+   "stateHex": "02aa02e1ffecff"
+  },
+  {
+   "stateHex": "02cf02cbff1e00"
+  },
+  {
+   "stateHex": "02f402baff4f00"
+  },
+  {
+   "stateHex": "021903b1ff7c00"
+  },
+  {
+   "stateHex": "021202b1ffa500"
+  },
+  {
+   "stateHex": "023702b9ffc700"
+  },
+  {
+   "stateHex": "025c02caffe100"
+  }
+ ]
+}

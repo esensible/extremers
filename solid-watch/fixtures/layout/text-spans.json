@@ -1,0 +1,84 @@
+{
+ "name": "text-spans",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"alignItems\",\"center\"]",
+  "[\"createNode\",3,\"text\"]",
+  "[\"setProp\",3,\"fontSize\",20]",
+  "[\"createText\",4,\"Speed \"]",
+  "[\"insert\",3,4,0]",
+  "[\"createNode\",5,\"text\"]",
+  "[\"setProp\",5,\"fontSize\",12]",
+  "[\"createText\",6,\"kn\"]",
+  "[\"insert\",5,6,0]",
+  "[\"insert\",3,5,0]",
+  "[\"createText\",7,\" now\"]",
+  "[\"insert\",3,7,0]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",8,\"text\"]",
+  "[\"setProp\",8,\"fontSize\",14]",
+  "[\"createNode\",9,\"text\"]",
+  "[\"setProp\",9,\"fontWeight\",\"bold\"]",
+  "[\"createText\",10,\"a\"]",
+  "[\"insert\",9,10,0]",
+  "[\"insert\",8,9,0]",
+  "[\"createNode\",11,\"text\"]",
+  "[\"setProp\",11,\"lineHeight\",30]",
+  "[\"createText\",12,\"b\"]",
+  "[\"insert\",11,12,0]",
+  "[\"insert\",8,11,0]",
+  "[\"insert\",2,8,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    55
+   ],
+   "3": [
+    31.5,
+    0,
+    135,
+    25
+   ],
+   "8": [
+    90.5,
+    25,
+    17,
+    30
+   ]
+  },
+  "text": {
+   "3": {
+    "fontSize": 20,
+    "lines": 1
+   },
+   "8": {
+    "fontSize": 14,
+    "lines": 1
+   }
+  },
+  "content": {}
+ }
+}

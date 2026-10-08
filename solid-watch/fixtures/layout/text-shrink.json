@@ -1,0 +1,104 @@
+{
+ "name": "text-shrink",
+ "viewport": {
+  "width": 176,
+  "height": 215
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":176,\"height\":215}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"padding\",4]",
+  "[\"createNode\",3,\"text\"]",
+  "[\"setProp\",3,\"fontSize\",40]",
+  "[\"setProp\",3,\"minScale\",0.5]",
+  "[\"createText\",4,\"12345678\"]",
+  "[\"insert\",3,4,0]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",5,\"text\"]",
+  "[\"setProp\",5,\"fontSize\",40]",
+  "[\"setProp\",5,\"minScale\",0.5]",
+  "[\"createText\",6,\"1234567890123\"]",
+  "[\"insert\",5,6,0]",
+  "[\"insert\",2,5,0]",
+  "[\"createNode\",7,\"text\"]",
+  "[\"setProp\",7,\"fontSize\",40]",
+  "[\"setProp\",7,\"minScale\",0.5]",
+  "[\"createText\",8,\"12\"]",
+  "[\"insert\",7,8,0]",
+  "[\"insert\",2,7,0]",
+  "[\"createNode\",9,\"text\"]",
+  "[\"setProp\",9,\"fontSize\",30]",
+  "[\"setProp\",9,\"minScale\",0.8]",
+  "[\"setProp\",9,\"lineHeight\",30]",
+  "[\"createText\",10,\"123456789\"]",
+  "[\"insert\",9,10,0]",
+  "[\"insert\",2,9,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    176,
+    215
+   ],
+   "2": [
+    0,
+    0,
+    176,
+    158.5
+   ],
+   "3": [
+    4,
+    4,
+    168,
+    44
+   ],
+   "5": [
+    4,
+    47.5,
+    168,
+    27.5
+   ],
+   "7": [
+    4,
+    74.5,
+    168,
+    50
+   ],
+   "9": [
+    4,
+    124.5,
+    168,
+    30
+   ]
+  },
+  "text": {
+   "3": {
+    "fontSize": 35,
+    "lines": 1
+   },
+   "5": {
+    "fontSize": 21.5,
+    "lines": 1
+   },
+   "7": {
+    "fontSize": 40,
+    "lines": 1
+   },
+   "9": {
+    "fontSize": 30,
+    "lines": 1
+   }
+  },
+  "content": {}
+ }
+}

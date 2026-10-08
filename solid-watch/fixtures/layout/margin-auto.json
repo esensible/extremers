@@ -1,0 +1,60 @@
+{
+ "name": "margin-auto",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"height\",40]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"width\",40]",
+  "[\"setProp\",3,\"marginLeft\",\"auto\"]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"width\",20]",
+  "[\"setProp\",4,\"marginVertical\",\"auto\"]",
+  "[\"setProp\",4,\"height\",10]",
+  "[\"insert\",2,4,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    40
+   ],
+   "3": [
+    138,
+    0,
+    40,
+    40
+   ],
+   "4": [
+    178,
+    15,
+    20,
+    10
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

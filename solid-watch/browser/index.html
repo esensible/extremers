@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>solid-watch harness</title>
+    <style>
+      :root {
+        --bg: #f4f4f2;
+        --panel: #ffffff;
+        --ink: #1d1d1b;
+        --muted: #6b6b66;
+        --line: #deded8;
+        --accent: #c25e00;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161615;
+          --panel: #20201e;
+          --ink: #ecece8;
+          --muted: #9a9a93;
+          --line: #34342f;
+          --accent: #ff9f0a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+      header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+      header h1 { font-size: 15px; margin: 0 8px 0 0; }
+      label { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+      select, button, input { font: inherit; }
+      main { display: flex; flex-wrap: wrap; gap: 24px; padding: 16px; }
+      .watch-col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      .bezel { background: #000; border-radius: 22%/18%; padding: 14px; box-shadow: 0 0 0 6px #2a2a28, 0 10px 30px rgba(0, 0, 0, 0.35); }
+      .screen { background: #000; color: #fff; overflow: hidden; transform-origin: top left; }
+      .side { flex: 1; min-width: 280px; max-width: 720px; display: flex; flex-direction: column; gap: 12px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #scrub { flex: 1; min-width: 160px; }
+      pre { margin: 0; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+      #log { height: 260px; overflow: auto; }
+      #log div { font: 12px/1.5 ui-monospace, monospace; border-bottom: 1px dotted var(--line); overflow-wrap: anywhere; }
+      #log .err { color: #d33; }
+      #log .tap { color: var(--accent); }
+      .muted { color: var(--muted); }
+      .sw-confirm { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.92); color: #fff; display: flex; flex-direction: column; gap: 8px; padding: 12px; font: 14px system-ui, sans-serif; z-index: 10; }
+      .sw-confirm-title { font-weight: 600; font-size: 16px; }
+      .sw-confirm-detail { color: #aaa; flex: 1; }
+      .sw-confirm button { border: 0; border-radius: 10px; height: 36px; font-weight: 600; }
+      .sw-confirm-ok { background: #ff9f0a; color: #000; }
+      .sw-confirm-cancel { background: #333; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>solid-watch harness</h1>
+      <label>Bundle <select id="bundle"></select></label>
+      <label>Size
+        <select id="size">
+          <option value="176x215">41 mm (176×215)</option>
+          <option value="198x242" selected>45 mm (198×242)</option>
+          <option value="205x251">49 mm (205×251)</option>
+        </select>
+      </label>
+      <label>Zoom
+        <select id="zoom">
+          <option value="1">1×</option>
+          <option value="1.5" selected>1.5×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+    </header>
+    <main>
+      <div class="watch-col">
+        <div class="bezel"><div id="frame"><div class="screen" id="screen"></div></div></div>
+        <div class="muted" id="dims"></div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <div class="row">
+            <button id="prev" title="Previous step">◀</button>
+            <input id="scrub" type="range" min="0" max="0" value="0" />
+            <button id="next" title="Next step">▶</button>
+            <button id="play">Play</button>
+            <span id="pos" class="muted"></span>
+          </div>
+          <p class="muted" style="margin: 8px 0 4px">Position <i>k</i> = mounted, then steps 1…<i>k</i> of the bundle's script applied (re-run from a fresh mount on every move). Taps run live.</p>
+          <pre id="step"></pre>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content: space-between"><strong>Log</strong><button id="clear">Clear</button></div>
+          <div id="log"></div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./harness.js"></script>
+  </body>
+</html>

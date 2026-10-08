@@ -1,0 +1,110 @@
+{
+ "name": "scroll-content",
+ "viewport": {
+  "width": 176,
+  "height": 215
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":176,\"height\":215}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"height\",215]",
+  "[\"createNode\",3,\"scroll\"]",
+  "[\"setProp\",3,\"flexGrow\",1]",
+  "[\"setProp\",3,\"paddingBottom\",6]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"height\",50]",
+  "[\"setProp\",4,\"marginBottom\",4]",
+  "[\"insert\",3,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"height\",50]",
+  "[\"setProp\",5,\"marginBottom\",4]",
+  "[\"insert\",3,5,0]",
+  "[\"createNode\",6,\"view\"]",
+  "[\"setProp\",6,\"height\",50]",
+  "[\"setProp\",6,\"marginBottom\",4]",
+  "[\"insert\",3,6,0]",
+  "[\"createNode\",7,\"view\"]",
+  "[\"setProp\",7,\"height\",50]",
+  "[\"setProp\",7,\"marginBottom\",4]",
+  "[\"insert\",3,7,0]",
+  "[\"createNode\",8,\"view\"]",
+  "[\"setProp\",8,\"height\",50]",
+  "[\"setProp\",8,\"marginBottom\",4]",
+  "[\"insert\",3,8,0]",
+  "[\"createNode\",9,\"view\"]",
+  "[\"setProp\",9,\"height\",50]",
+  "[\"setProp\",9,\"marginBottom\",4]",
+  "[\"insert\",3,9,0]",
+  "[\"insert\",2,3,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    176,
+    215
+   ],
+   "2": [
+    0,
+    0,
+    176,
+    215
+   ],
+   "3": [
+    0,
+    0,
+    176,
+    330
+   ],
+   "4": [
+    0,
+    0,
+    176,
+    50
+   ],
+   "5": [
+    0,
+    54,
+    176,
+    50
+   ],
+   "6": [
+    0,
+    108,
+    176,
+    50
+   ],
+   "7": [
+    0,
+    162,
+    176,
+    50
+   ],
+   "8": [
+    0,
+    216,
+    176,
+    50
+   ],
+   "9": [
+    0,
+    270,
+    176,
+    50
+   ]
+  },
+  "text": {},
+  "content": {
+   "3": 330
+  }
+ }
+}

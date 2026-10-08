@@ -1,0 +1,61 @@
+{
+ "name": "row-space-evenly-center",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"flexDirection\",\"row\"]",
+  "[\"setProp\",2,\"justifyContent\",\"space-evenly\"]",
+  "[\"setProp\",2,\"alignItems\",\"center\"]",
+  "[\"setProp\",2,\"height\",60]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"width\",40]",
+  "[\"setProp\",3,\"height\",20]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"width\",30]",
+  "[\"setProp\",4,\"height\",50]",
+  "[\"insert\",2,4,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    60
+   ],
+   "3": [
+    42.5,
+    20,
+    40,
+    20
+   ],
+   "4": [
+    125.5,
+    5,
+    30,
+    50
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}

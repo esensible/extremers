@@ -1,0 +1,54 @@
+{
+ "name": "text-newlines",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"alignItems\",\"flex-start\"]",
+  "[\"createNode\",3,\"text\"]",
+  "[\"setProp\",3,\"fontSize\",12]",
+  "[\"createText\",4,\"one\\ntwo\\nthree\"]",
+  "[\"insert\",3,4,0]",
+  "[\"insert\",2,3,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    45
+   ],
+   "3": [
+    0,
+    0,
+    36,
+    45
+   ]
+  },
+  "text": {
+   "3": {
+    "fontSize": 12,
+    "lines": 3
+   }
+  },
+  "content": {}
+ }
+}

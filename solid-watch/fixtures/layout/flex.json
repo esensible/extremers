@@ -1,0 +1,65 @@
+{
+ "name": "flex",
+ "viewport": {
+  "width": 198,
+  "height": 242
+ },
+ "pointScaleFactor": 2,
+ "measure": "stub",
+ "clock": {
+  "localNow": 1000000,
+  "offset": 0
+ },
+ "log": [
+  "[\"#mount\",1,{\"width\":198,\"height\":242}]",
+  "[\"createNode\",2,\"view\"]",
+  "[\"setProp\",2,\"height\",200]",
+  "[\"createNode\",3,\"view\"]",
+  "[\"setProp\",3,\"flex\",1]",
+  "[\"insert\",2,3,0]",
+  "[\"createNode\",4,\"view\"]",
+  "[\"setProp\",4,\"flex\",3]",
+  "[\"insert\",2,4,0]",
+  "[\"createNode\",5,\"view\"]",
+  "[\"setProp\",5,\"height\",20]",
+  "[\"insert\",2,5,0]",
+  "[\"insert\",1,2,0]",
+  "[\"commit\"]"
+ ],
+ "expected": {
+  "frames": {
+   "1": [
+    0,
+    0,
+    198,
+    242
+   ],
+   "2": [
+    0,
+    0,
+    198,
+    200
+   ],
+   "3": [
+    0,
+    0,
+    198,
+    0
+   ],
+   "4": [
+    0,
+    0,
+    198,
+    0
+   ],
+   "5": [
+    0,
+    0,
+    198,
+    20
+   ]
+  },
+  "text": {},
+  "content": {}
+ }
+}
