@@ -1,6 +1,9 @@
 [target.'cfg(all(target_arch = "riscv32", target_os = "none"))']
-# Flashes and prints the defmt log over RTT.
-runner = "probe-rs run --chip esp32c6"
+# Flashes and prints the defmt log over RTT. The partition table is
+# partitions.csv (relative to where cargo runs, so run from tgt-xiaoc6/):
+# without it probe-rs writes its stock table and the firmware finds no
+# `settings` partition. Never add --chip-erase: it wipes settings too.
+runner = "probe-rs run --chip esp32c6 --idf-partition-table partitions.csv"
 rustflags = [
     "-C", "link-arg=-Tdefmt.x",
     "-C", "link-arg=-Tlinkall.x",
