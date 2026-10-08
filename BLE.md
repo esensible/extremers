@@ -32,12 +32,14 @@ phone or a debugging tool. The device advertises whenever a slot is free.
 | `event` | `…002` | write, write-without-response | 1–8 | a client event |
 
 `state` is pushed on every change of engine state (the same moments the
-websocket clients get a message) and can be read at any time; the value in
-the table is always the latest. A central subscribes first, then reads once,
-so it misses nothing. A write to `event` that the engine does not understand
-is refused with ATT `0x13` Value Not Allowed (a write command gets no reply
-and is dropped, logged on the device). An accepted event is acknowledged by
-the `state` notification it causes, if it changed anything.
+websocket clients get a message) and can be read at any time; a read
+captures the state afresh, so its relative times are relative to the read.
+A central subscribes first, then reads once, so it misses nothing. A write
+request to `event` that the engine does not understand is refused with ATT
+`0x13` Value Not Allowed; a write command (write without response) is never
+answered, understood or not, and a refused one is dropped and logged on the
+device. An accepted event is acknowledged by the `state` notification it
+causes, if it changed anything.
 
 ## State
 

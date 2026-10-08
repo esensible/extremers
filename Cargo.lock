@@ -356,6 +356,7 @@ dependencies = [
  "heapless 0.9.3",
  "log",
  "portable-atomic",
+ "static_cell",
  "trouble-host",
 ]
 

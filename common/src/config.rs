@@ -13,6 +13,8 @@ pub const WIFI_CHANNEL: u8 = 10;
 
 /// Name the device advertises over BLE (BLE.md).
 pub const BLE_NAME: &str = "nacra";
+/// Concurrent BLE centrals: the watch plus a phone or a debugging tool.
+pub const MAX_BLE_CONNECTIONS: usize = 2;
 
 /// The device's own address on the access point network. It is also the
 /// gateway and DNS server handed out by DHCP.

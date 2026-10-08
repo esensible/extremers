@@ -16,7 +16,11 @@ use portable_atomic::AtomicU64;
 
 use extreme_traits::{CompactState, MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
 
-use crate::{config::MAX_WEB_SOCKETS, fmt::Dbg, nmea::GpsUpdate};
+use crate::{
+    config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS},
+    fmt::Dbg,
+    nmea::GpsUpdate,
+};
 
 /// A snapshot of the engine state, as sent to clients, in both encodings.
 #[derive(Clone, Debug)]
@@ -61,9 +65,16 @@ pub struct EngineRuntime<E: RawEngine> {
     /// published with the engine locked, so they arrive in the order the
     /// engine issued them; only the latest one matters, hence capacity 1.
     timer_channel: PubSubChannel<CriticalSectionRawMutex, Timer, 1, 1, 1>,
-    /// State changes for the connected clients. Each message is a complete
-    /// state, so a slow client that misses one loses nothing.
-    broadcast: PubSubChannel<CriticalSectionRawMutex, StateMessage, 1, MAX_WEB_SOCKETS, 1>,
+    /// State changes for the connected clients, one subscriber per possible
+    /// client on every transport. Each message is a complete state, so a
+    /// slow client that misses one loses nothing.
+    broadcast: PubSubChannel<
+        CriticalSectionRawMutex,
+        StateMessage,
+        1,
+        { MAX_WEB_SOCKETS + MAX_BLE_CONNECTIONS },
+        1,
+    >,
 }
 
 impl<E: RawEngine> EngineRuntime<E> {
