@@ -1,13 +1,15 @@
 //! HTTP and websocket transport for a [`Host`].
 //!
-//! Serves the packages' web bundles: Choose's page at `/` (its files at
-//! `/<file>`), each installed package's at `/pkg/<id>/` (`<id>` in
-//! decimal, its files at `/pkg/<id>/<file>`, its watch bundle at
-//! `/pkg/<id>/watch.js`). On `/socket` it upgrades to a websocket that
+//! The Kindle has one entry path: `/` is always the *active* package's page
+//! (its index.html, not cached), so a page that sees another package
+//! become active reloads `/`. Each installed package's files are at
+//! `/pkg/<id>/<file>` (`<id>` in decimal; Choose is 0), where its
+//! index.html points, and its watch bundle at `/pkg/<id>/watch.js`. On
+//! `/socket` it upgrades to a websocket that
 //! carries host events in and envelopes out, both as binary frames of
 //! postcard (README "Host protocol").
 
-use core::fmt::{Debug, Display, Write as _};
+use core::fmt::{Debug, Display};
 
 use embassy_futures::select::{Either3, select3};
 use embassy_time::{Duration, Instant, Timer};
@@ -24,7 +26,7 @@ use edge_nal::{Readable, TcpSplit};
 use edge_ws::{Error as WsError, FrameHeader, FrameType};
 use embedded_io_async::{Read, Write};
 
-use extreme_protocol::{CHOOSE, ENVELOPE_MAX, PackageId};
+use extreme_protocol::{ENVELOPE_MAX, PackageId};
 
 use crate::{
     config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS, WS_MAX_INCOMING},
@@ -41,11 +43,10 @@ pub struct HttpHandler<'r> {
 /// What a GET asks for.
 #[derive(Debug, PartialEq, Eq)]
 enum Route<'a> {
+    /// `/`: the active package's page.
+    Entry,
     /// A file of a package's web bundle (or its watch bundle).
     File(PackageId, &'a str),
-    /// Somewhere else first: a package's page without its trailing slash,
-    /// or `/` on a host without Choose.
-    Redirect(PackageId),
     Socket,
     NotFound,
 }
@@ -53,36 +54,21 @@ enum Route<'a> {
 /// `path` (query string dropped) as a [`Route`].
 fn route(path: &str) -> Route<'_> {
     let path = path.split('?').next().unwrap_or("");
-    let path = path.trim_start_matches('/');
-    if path == "socket" {
-        return Route::Socket;
+    match path {
+        "/" | "/index.html" => return Route::Entry,
+        "/socket" => return Route::Socket,
+        _ => {}
     }
-    match path.strip_prefix("pkg/") {
-        None if !path.contains('/') => Route::File(CHOOSE, path),
-        None => Route::NotFound,
-        Some(rest) => {
-            let (id, file) = match rest.split_once('/') {
-                Some((id, file)) => (id, Some(file)),
-                None => (rest, None),
-            };
-            match (id.parse::<PackageId>(), file) {
-                (Ok(id), Some(file)) if !file.contains('/') => Route::File(id, file),
-                (Ok(id), None) => Route::Redirect(id),
-                _ => Route::NotFound,
-            }
-        }
+    let Some(rest) = path.strip_prefix("/pkg/") else {
+        return Route::NotFound;
+    };
+    match rest.split_once('/') {
+        Some((id, file)) if !file.is_empty() && !file.contains('/') => match id.parse::<PackageId>() {
+            Ok(id) => Route::File(id, file),
+            Err(_) => Route::NotFound,
+        },
+        _ => Route::NotFound,
     }
-}
-
-/// `/pkg/<id>/` (or `/` for Choose).
-fn page_url(id: PackageId) -> heapless::String<24> {
-    let mut url = heapless::String::new();
-    if id == CHOOSE {
-        let _ = url.push('/');
-    } else {
-        let _ = write!(url, "/pkg/{id}/");
-    }
-    url
 }
 
 impl<'r> HttpHandler<'r> {
@@ -90,23 +76,13 @@ impl<'r> HttpHandler<'r> {
         Self { host }
     }
 
-    /// The contents of `file` of package `id`, or where to go instead.
-    fn file(&self, id: PackageId, file: &str) -> Result<&'static [u8], Option<PackageId>> {
-        let Some(package) = self.host.package(id) else {
-            // no Choose: its page is the default app's
-            if id == CHOOSE && file.is_empty() {
-                let default = self.host.default_id();
-                return Err((default != CHOOSE).then_some(default));
-            }
-            return Err(None);
-        };
+    /// The contents of `file` of package `id`.
+    fn file(&self, id: PackageId, file: &str) -> Option<&'static [u8]> {
+        let package = self.host.package(id)?;
         if let Some(contents) = package.web_file(file) {
-            return Ok(contents);
+            return Some(contents);
         }
-        if file == "watch.js" && !package.watch.is_empty() {
-            return Ok(package.watch);
-        }
-        Err(None)
+        (file == "watch.js" && !package.watch.is_empty()).then_some(package.watch)
     }
 
     /// Relays between a websocket and the host until either side fails or
@@ -244,22 +220,32 @@ impl Handler for HttpHandler<'_> {
             return Ok(());
         }
         debug!("http: GET {}", headers.path);
-        let found = match route(headers.path) {
-            Route::Socket => None,
-            Route::File(id, file) => Some(self.file(id, file)),
-            Route::Redirect(id) => Some(Err(Some(id))),
-            Route::NotFound => Some(Err(None)),
+        // the entry page must never come from a cache: a reload has to get
+        // whichever package is active now
+        let (found, no_cache) = match route(headers.path) {
+            Route::Socket => (None, false),
+            Route::Entry => {
+                let id = self.host.current_state().await.active;
+                (Some(self.file(id, "index.html")), true)
+            }
+            Route::File(id, file) => (Some(self.file(id, file)), false),
+            Route::NotFound => (Some(None), false),
         };
         match found {
-            Some(Ok(file)) => {
+            Some(Some(file)) if no_cache => {
+                conn.initiate_response(
+                    200,
+                    Some("OK"),
+                    &[("Content-Type", "text/html"), ("Cache-Control", "no-cache, no-store, must-revalidate")],
+                )
+                .await?;
+                conn.write_all(file).await?;
+            }
+            Some(Some(file)) => {
                 conn.initiate_response(200, Some("OK"), &[]).await?;
                 conn.write_all(file).await?;
             }
-            Some(Err(Some(id))) => {
-                let url = page_url(id);
-                conn.initiate_response(302, Some("Found"), &[("Location", url.as_str())]).await?;
-            }
-            Some(Err(None)) => {
+            Some(None) => {
                 conn.initiate_response(404, Some("Not Found"), &[]).await?;
             }
             None if !conn.is_ws_upgrade_request()? => {
@@ -318,22 +304,23 @@ mod tests {
 
     use super::*;
     use embassy_futures::block_on;
+    use extreme_protocol::CHOOSE;
 
     #[test]
     fn routes() {
-        assert_eq!(route("/"), Route::File(CHOOSE, ""));
-        assert_eq!(route("/?h=0011"), Route::File(CHOOSE, ""));
-        assert_eq!(route("/bundle-ab.js"), Route::File(CHOOSE, "bundle-ab.js"));
+        assert_eq!(route("/"), Route::Entry);
+        assert_eq!(route("/?x=1"), Route::Entry);
+        assert_eq!(route("/index.html"), Route::Entry);
         assert_eq!(route("/socket"), Route::Socket);
-        assert_eq!(route("/pkg/123/"), Route::File(123, ""));
-        assert_eq!(route("/pkg/123/?h=ff"), Route::File(123, ""));
         assert_eq!(route("/pkg/123/index.html"), Route::File(123, "index.html"));
-        assert_eq!(route("/pkg/123"), Route::Redirect(123));
-        assert_eq!(route("/pkg/x/"), Route::NotFound);
+        assert_eq!(route("/pkg/0/bundle-ab.js"), Route::File(CHOOSE, "bundle-ab.js"));
+        assert_eq!(route("/pkg/123/watch.js"), Route::File(123, "watch.js"));
+        // no entry pages but `/`
+        assert_eq!(route("/pkg/123/"), Route::NotFound);
+        assert_eq!(route("/pkg/123"), Route::NotFound);
+        assert_eq!(route("/bundle-ab.js"), Route::NotFound);
+        assert_eq!(route("/pkg/x/a.js"), Route::NotFound);
         assert_eq!(route("/pkg/1/a/b"), Route::NotFound);
-        assert_eq!(route("/a/b"), Route::NotFound);
-        assert_eq!(page_url(0).as_str(), "/");
-        assert_eq!(page_url(4_294_967_295).as_str(), "/pkg/4294967295/");
     }
 
     #[test]

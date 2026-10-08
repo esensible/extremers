@@ -46,6 +46,10 @@ export default {
       minimize: true,
     }),
     html({
+      // The host serves this page at / while its package is active, and its
+      // other files at /pkg/<id>/ (tools/package sets the path): absolute,
+      // so they load from the package whatever the page's URL.
+      publicPath: process.env.EXTREMERS_PUBLIC_PATH || '',
       title: 'Extreme Selector',
       // The Kindle browser is an old mobile WebKit: it ignores CSS
       // touch-action but honours the viewport meta, so this is what stops

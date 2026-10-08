@@ -29,7 +29,7 @@ Choose picks between them.
 | `watch-app` | Standalone Apple Watch app over BLE (see `BLE.md`). |
 | `tools/bindgen` | Generates the bindings from the Rust types: `protocol-js/` and `protocol-swift/` (host protocol), each package's `protocol-js/` (its view and events), and golden vectors. |
 | `tools/package` | Builds packages (`cargo run -p extreme-pack` writes them to `target/packages/`). |
-| `client-common` | JS shared by the pages and bundles: the confirm widget, the host protocol's navigation and events (`host.js`). |
+| `client-common` | JS shared by the pages and bundles: the confirm widget, the host protocol's reload rule and events (`host.js`). |
 
 An *engine* is a pure state machine (`extreme_sdk::Engine`): fed GPS
 updates, its timer and client events, it says whether its view changed and
@@ -75,7 +75,7 @@ built by `tools/package`:
 |---|---|
 | `manifest.bin` | its `Manifest` (postcard): `id`, `name` (≤ 16 bytes), `version`, `abi` (1), `content_hash` |
 | `engine.wasm` | the engine: `wasm32-unknown-unknown`, `export_engine!`, profile `engine` (opt-level z, stripped), linked twice so its memory is exactly what it needs (stack 2 KiB, data, statics) in 1-byte pages. Race 17 KB / 3.1 KB memory, Tune 11 KB / 3.6 KB. None for Choose. |
-| `web/` | its Kindle page (`client-js/`), served at `/pkg/<id>/` (Choose's at `/`) |
+| `web/` | its Kindle page (`client-js/`): its index.html is served at `/` while the package is active, its files at `/pkg/<id>/` (index.html points there; Choose's id is 0) |
 | `watch.js` | its watch bundle (`watch-js/`), served at `/pkg/<id>/watch.js`; absent if it has none |
 | `schema.json` | its view's and events' postcard schemas (build output only, never on the device) |
 
@@ -139,10 +139,14 @@ timeline; clients keep `offset = timestamp − their clock` from every
 envelope, `timestamp()` = their clock + offset, and stamp user actions with
 `timestamp()` at the tap, before any confirm.
 
-**Pages.** Each page decodes the envelope, then (if it is its package and
-version) its view; otherwise it loads `/pkg/<active>/?h=<ui_hash>` (or
-`/?h=…` for Choose), `client-common/host.js`. So "Race" on Choose sends
-`Select(race)`, and the next envelope moves every Kindle to Race's page.
+**Pages.** The Kindles are displays kept in sync by the device, with one
+entry path: `/` is always the active package's page (served `no-cache`),
+which loads its script from `/pkg/<id>/`. A page knows its package from
+where its script came from and its version from the first envelope; when
+an envelope names another package or another `ui_hash` it reloads `/`
+(`client-common/host.js`), otherwise it decodes the view. So "Race" on
+Choose sends `Select(race)`, and the next envelope makes every Kindle
+reload into Race's page.
 
 ```js
 import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
@@ -169,5 +173,6 @@ decoder and encoder against them under node (`npm test`) and QuickJS
 the host vectors. `common`'s tests run the real packages under wasm3.
 `protocol-js/test/ws-smoke.mjs` drives a running tgt-std or device over
 the websocket and HTTP: Choose → Race (events, a stale event refused) →
-Tune → back. Firmware feature `selftest` drives the same from inside the
+Tune → back, checking after each switch that `/` serves the active
+package's page. Firmware feature `selftest` drives the same from inside the
 C6 and logs memory (`tgt-xiaoc6/src/selftest.rs`).

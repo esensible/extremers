@@ -1,15 +1,13 @@
 // The host protocol's page logic, shared by the Kindle pages (README "Host
-// protocol"): which page an envelope wants shown, and the host events a
-// page sends. The bytes themselves are the generated bindings'
-// (protocol-js/protocol.js); the websocket and the stores are each page's
-// api.js. Nothing newer than ES5 (the Kindle's old WebKit).
+// protocol"): when to reload, and the host events a page sends. The bytes
+// themselves are the generated bindings' (protocol-js/protocol.js); the
+// websocket and the stores are each page's api.js. Nothing newer than ES5
+// (the Kindle's old WebKit).
 //
-// Every package's page lives at /pkg/<id>/ (Choose's at /). A page is
-// loaded as <path>?h=<ui_hash>: the hash of the UIs the host had active
-// when it sent the page there. An envelope for another package, or with
-// another hash (the package was updated), loads the page it names instead.
-// A page loaded without a hash (typed in, or the captive portal's /) takes
-// the first envelope's.
+// The Kindle is a display kept in sync by the host: it has one entry path,
+// `/`, which the host serves as the active package's page. A page shows the
+// package (and version) it was served for; when an envelope names another
+// package or another ui_hash, it reloads `/` and gets the right one.
 
 // Choose's PackageId.
 export var CHOOSE = 0;
@@ -33,34 +31,38 @@ export function hashHex(bytes) {
   return s;
 }
 
-// The page of package `id`: "/" for Choose, "/pkg/<id>/" for an app.
-export function pagePath(id) {
-  return id === CHOOSE ? "/" : "/pkg/" + id + "/";
+// Which package this page is: its scripts load from the package's files at
+// /pkg/<id>/ (tools/package), whatever the page's own URL. `srcs`: the
+// pages's script URLs (default: the document's). null if none says.
+export function ownPackage(srcs) {
+  if (!srcs) {
+    srcs = [];
+    var scripts = document.getElementsByTagName("script");
+    for (var i = 0; i < scripts.length; i++) srcs.push(scripts[i].src || "");
+  }
+  for (var k = 0; k < srcs.length; k++) {
+    var m = /\/pkg\/(\d+)\//.exec(srcs[k]);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
 }
 
-// The PackageId of the page at `pathname` (a location's), or null.
-export function pageId(pathname) {
-  var path = pathname.replace(/index\.html$/, "");
-  if (path === "/") return CHOOSE;
-  var m = /^\/pkg\/(\d+)\/$/.exec(path);
-  return m ? parseInt(m[1], 10) : null;
-}
-
-// For a page at `loc` (window.location, or { pathname, search }): a
-// function taking each decoded Envelope and returning the URL to load
-// instead, or null when this page is the one to show.
-export function navigator(loc) {
-  var here = pageId(loc.pathname);
-  var m = /[?&]h=([0-9a-f]{16})/.exec(loc.search || "");
-  var shown = m ? m[1] : null;
+// For a page of package `id`: a function taking each decoded Envelope and
+// returning true when the page must reload `/` (another package is active,
+// or this one changed: its ui_hash differs from the first envelope's).
+export function staleness(id) {
+  var shown = null;
   return function (envelope) {
     var hash = hashHex(envelope.ui_hash);
-    if (here !== envelope.active || (shown !== null && shown !== hash)) {
-      return pagePath(envelope.active) + "?h=" + hash;
-    }
-    shown = hash;
-    return null;
+    if (envelope.active !== id) return true;
+    if (shown === null) shown = hash;
+    return hash !== shown;
   };
+}
+
+// Reload the entry page (the host serves the active package's).
+export function reloadEntry() {
+  window.location.replace("/");
 }
 
 // HostEvent values (protocol.d.ts) for encodeHostEvent.

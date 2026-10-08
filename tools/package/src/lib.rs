@@ -7,8 +7,9 @@
 //!   `export_engine!`), built for `wasm32-unknown-unknown` with 1-byte
 //!   memory pages and exactly the linear memory it needs; none for Choose,
 //!   whose view the host makes itself;
-//! - `web/`: its Kindle page (`client-js/`, built with npm), served by the
-//!   host at `/pkg/<id>/` (Choose's at `/`);
+//! - `web/`: its Kindle page (`client-js/`, built with npm): the host
+//!   serves its index.html at `/` while the package is active, and its
+//!   files at `/pkg/<id>/` (Choose's id is 0), where index.html points;
 //! - `watch.js`: its watch bundle (`watch-js/`), empty if it has none;
 //! - `schema.json`: its view's and events' postcard schemas, from
 //!   `tools/bindgen` (kept with the build output, not on the device).
@@ -139,7 +140,8 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
         }
         None => (Vec::new(), 0),
     };
-    let web_dist = npm_build(&dir.join("client-js"))?
+    let public_path = format!("/pkg/{}/", spec.id());
+    let web_dist = npm_build(&dir.join("client-js"), Some(&public_path))?
         .ok_or_else(|| format!("{}: no client-js/ (the Kindle page)", spec.name))?;
     let web = read_files(&web_dist)?;
     // a watch bundle builds with solid-watch's rollup config and plugins
@@ -147,7 +149,7 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
     if dir.join("watch-js/package.json").is_file() && !solid_watch.join("node_modules").is_dir() {
         npm(&solid_watch, &["ci", "--no-audit", "--no-fund"])?;
     }
-    let watch = match npm_build(&dir.join("watch-js"))? {
+    let watch = match npm_build(&dir.join("watch-js"), None)? {
         Some(dist) => fs::read(dist.join("watch.js")).map_err(|e| format!("{}: watch-js/dist/watch.js: {e}", spec.name))?,
         None => Vec::new(),
     };
@@ -251,22 +253,32 @@ fn link(root: &Path, krate: &str, phase: &str, link_args: &[String]) -> Result<P
 }
 
 /// Runs `npm ci` (first time) and `npm run build` in `dir`; its `dist/`, or
-/// `None` if there is no `dir`.
-fn npm_build(dir: &Path) -> Result<Option<PathBuf>, String> {
+/// `None` if there is no `dir`. A Kindle page gets `public_path`, where the
+/// host serves its files (`EXTREMERS_PUBLIC_PATH`, its rollup config).
+fn npm_build(dir: &Path, public_path: Option<&str>) -> Result<Option<PathBuf>, String> {
     if !dir.join("package.json").is_file() {
         return Ok(None);
     }
     if !dir.join("node_modules").is_dir() {
         npm(dir, &["ci", "--no-audit", "--no-fund"])?;
     }
-    npm(dir, &["run", "build"])?;
+    npm_env(dir, &["run", "build"], public_path)?;
     let dist = dir.join("dist");
     check_templates_declared(&dist)?;
     Ok(Some(dist))
 }
 
 fn npm(dir: &Path, args: &[&str]) -> Result<(), String> {
-    let status = Command::new("npm")
+    npm_env(dir, args, None)
+}
+
+fn npm_env(dir: &Path, args: &[&str], public_path: Option<&str>) -> Result<(), String> {
+    let mut cmd = Command::new("npm");
+    match public_path {
+        Some(path) => cmd.env("EXTREMERS_PUBLIC_PATH", path),
+        None => cmd.env_remove("EXTREMERS_PUBLIC_PATH"),
+    };
+    let status = cmd
         .args(args)
         .current_dir(dir)
         .status()

@@ -44,22 +44,31 @@ const get = (path) =>
     req.setTimeout(5000, () => req.destroy(new Error("GET " + path + " timed out")));
   });
 
-async function routes() {
-  let [status, , body] = await get("/");
-  check(status === 200 && body.toString().includes("<script"), `GET / (Choose's page): ${status}, ${body.length} B`);
-  [status, , body] = await get(`/pkg/${RACE}/`);
-  check(status === 200 && body.toString().includes("<script"), `GET /pkg/${RACE}/ (race's page): ${status}, ${body.length} B`);
+// GET / (the one entry path): the active package's page, never cached,
+// whose script loads from /pkg/<id>/. Checks the script too.
+async function entryIs(id, what) {
+  const [status, headers, body] = await get("/");
   const script = /src="([^"]+)"/.exec(body.toString());
-  if (script) {
-    const [s, , js] = await get(`/pkg/${RACE}/${script[1]}`);
-    check(s === 200 && js.length > 1000, `GET /pkg/${RACE}/${script[1]}: ${s}, ${js.length} B`);
+  const src = script ? script[1] : "";
+  check(
+    status === 200 && src.startsWith(`/pkg/${id}/`) && /no-cache/.test(headers["cache-control"] || ""),
+    `GET / after ${what}: ${status}, script ${src}, cache-control ${headers["cache-control"]}`,
+  );
+  if (src) {
+    const [s, , js] = await get(src);
+    check(s === 200 && js.length > 1000, `GET ${src}: ${s}, ${js.length} B`);
   }
-  [status, , body] = await get(`/pkg/${TUNE}/?h=0000000000000000`);
-  check(status === 200, `GET /pkg/${TUNE}/?h=… (tune's page): ${status}, ${body.length} B`);
-  const [s, headers] = await get(`/pkg/${RACE}`);
-  check(s === 302 && headers.location === `/pkg/${RACE}/`, `GET /pkg/${RACE}: ${s} to ${headers.location}`);
-  [status] = await get("/pkg/12345/");
-  check(status === 404, `GET /pkg/12345/ (not installed): ${status}`);
+}
+
+async function routes() {
+  let [status] = await get(`/pkg/${RACE}/`);
+  check(status === 404, `GET /pkg/${RACE}/ (no entry page but /): ${status}`);
+  [status] = await get(`/pkg/${RACE}/index.html`);
+  check(status === 200, `GET /pkg/${RACE}/index.html (a package file): ${status}`);
+  [status] = await get("/pkg/12345/index.html");
+  check(status === 404, `GET /pkg/12345/index.html (not installed): ${status}`);
+  [status] = await get(`/pkg/${TUNE}/watch.js`);
+  check(status === 200, `GET /pkg/${TUNE}/watch.js: ${status}`);
 }
 
 // the websocket: every envelope decoded, with its view
@@ -154,12 +163,14 @@ socket.on("connect", async () => {
     check(s.view.packages.some((p) => p.id === RACE) && s.view.packages.some((p) => p.id === TUNE), `Choose lists ${names.join(", ")}`);
     console.log(`     Choose ui_hash ${chooseHash}, BLE ${s.view.ble ? "present" : "none"}`);
 
+    await entryIs(CHOOSE, "back to Choose");
     await routes();
 
     send(selectEvent(RACE));
     s = await until((s) => s.envelope.active === RACE, "select race");
     const raceHash = hashHex(s.envelope.ui_hash);
     check(raceHash !== chooseHash && s.view.phase.tag === "Active", `select race: ui_hash ${raceHash}, ${JSON.stringify(s.view)}`);
+    await entryIs(RACE, "select race");
 
     race({ tag: "LineStbd" });
     s = await until((s) => s.envelope.active === RACE && s.view.phase.tag === "Active" && s.view.phase.value.line.tag !== "None", "line stbd");
@@ -189,6 +200,7 @@ socket.on("connect", async () => {
     send(selectEvent(TUNE));
     s = await until((s) => s.envelope.active === TUNE, "select tune");
     check(typeof s.view.speed === "number", `select tune: ui_hash ${hashHex(s.envelope.ui_hash)}, ${JSON.stringify(s.view)}`);
+    await entryIs(TUNE, "select tune");
     // race events while tune is active: refused
     race({ tag: "LineStbd" });
     await sleep(1000);
@@ -197,6 +209,7 @@ socket.on("connect", async () => {
     send(backEvent());
     s = await until((s) => s.envelope.active === CHOOSE, "back");
     check(hashHex(s.envelope.ui_hash) === chooseHash, "back to Choose");
+    await entryIs(CHOOSE, "back");
 
     // a fresh race after all that
     send(selectEvent(RACE));

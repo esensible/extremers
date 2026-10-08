@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { navigator, pageId, pagePath, hashHex, packageId, selectEvent, backEvent, engineEvent, bleEvent } from "../host.js";
+import { staleness, ownPackage, hashHex, packageId, selectEvent, backEvent, engineEvent, bleEvent } from "../host.js";
 import { encodeHostEvent, decodeHostEvent } from "../../protocol-js/protocol.js";
 
 const H1 = [1, 2, 3, 4, 5, 6, 7, 0xff];
@@ -20,33 +20,25 @@ test("package ids are FNV-1a of the name", () => {
   assert.equal(select.value.value, packageId("race"));
 });
 
-test("paths", () => {
-  assert.equal(pagePath(0), "/");
-  assert.equal(pagePath(4294967295), "/pkg/4294967295/");
-  assert.equal(pageId("/"), 0);
-  assert.equal(pageId("/index.html"), 0);
-  assert.equal(pageId("/pkg/12/"), 12);
-  assert.equal(pageId("/pkg/12/index.html"), 12);
-  assert.equal(pageId("/pkg/12"), null);
-  assert.equal(pageId("/other/"), null);
+test("hashes and the page's own package", () => {
   assert.equal(hashHex(H1), "01020304050607ff");
+  assert.equal(ownPackage(["http://nacra.race/pkg/2394669720/bundle-ab.js"]), 2394669720);
+  assert.equal(ownPackage(["/pkg/0/bundle-ab.js"]), 0);
+  assert.equal(ownPackage(["/bundle-ab.js", ""]), null);
 });
 
-test("a page without a hash takes the first envelope's, then follows changes", () => {
-  const nav = navigator({ pathname: "/", search: "" });
-  assert.equal(nav(env(0, H1)), null);
-  assert.equal(nav(env(0, H1)), null);
-  // Choose updated: reload with the new hash
-  assert.equal(nav(env(0, H2)), "/?h=0909090909090909");
+test("a page reloads when another package is active", () => {
+  const stale = staleness(77);
+  assert.equal(stale(env(77, H1)), false);
+  assert.equal(stale(env(77, H1)), false);
+  assert.equal(stale(env(0, H1)), true);
+  assert.equal(staleness(0)(env(77, H1)), true);
 });
 
-test("another package active: its page", () => {
-  const nav = navigator({ pathname: "/", search: "" });
-  assert.equal(nav(env(77, H1)), "/pkg/77/?h=01020304050607ff");
-  const race = navigator({ pathname: "/pkg/77/", search: "?h=01020304050607ff" });
-  assert.equal(race(env(77, H1)), null);
-  assert.equal(race(env(77, H2)), "/pkg/77/?h=0909090909090909");
-  assert.equal(race(env(0, H2)), "/?h=0909090909090909");
+test("a page reloads when its package changes (another ui_hash)", () => {
+  const stale = staleness(0);
+  assert.equal(stale(env(0, H1)), false);
+  assert.equal(stale(env(0, H2)), true);
 });
 
 test("host events", () => {

@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, Show, For } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { decodeEnvelope, decodeChooseView, encodeHostEvent } from "../../../protocol-js/protocol.js";
-import { navigator, selectEvent, bleEvent } from "../../../client-common/host.js";
+import { CHOOSE, staleness, reloadEntry, selectEvent, bleEvent } from "../../../client-common/host.js";
 
 import './touch.js';
 import './style.css'
@@ -9,11 +9,13 @@ import './style.css'
 // Choose: the host's installed packages, from its ChooseView (the
 // Envelope's `state` while Choose is active), in the host's order. Each
 // button asks the host to make that package active; the host's next
-// envelope then names it, and this page loads the package's own page.
+// envelope then names it, and this page reloads `/`, which the host now
+// serves as that package's page.
 const [packages, setPackages] = createStore([]);
 
-// Where each envelope wants the browser (client-common/host.js).
-const navigate = navigator(window.location);
+// Whether an envelope means this page is no longer the one to show
+// (client-common/host.js).
+const stale = staleness(CHOOSE);
 
 // "race" -> "Race"
 function title(name) {
@@ -142,10 +144,9 @@ function fetchUpdates() {
                 console.error('Undecodable state message:', e);
                 return;
             }
-            // a package is active (or Choose was updated): its page
-            const elsewhere = navigate(message);
-            if (elsewhere !== null) {
-                window.location.replace(elsewhere);
+            // a package is active (or Choose was updated): reload `/`
+            if (stale(message)) {
+                reloadEntry();
                 return;
             }
             try {

@@ -2,7 +2,7 @@ import { createSignal, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
 import { decodeTuneView } from "../../protocol-js/protocol.js";
-import { navigator, backEvent } from "../../../client-common/host.js";
+import { ownPackage, staleness, reloadEntry, backEvent } from "../../../client-common/host.js";
 import { confirm } from './confirm.jsx';
 
 import './touch.js';
@@ -26,9 +26,9 @@ const formatDeviation = (value, precision = 1) => {
 
 let socket;
 
-// Where each envelope wants the browser: an envelope for another package,
-// or another version of this one, loads that page (client-common/host.js).
-const navigate = navigator(window.location);
+// An envelope for another package, or another version of this one,
+// reloads `/`, the active package's page (client-common/host.js).
+const stale = staleness(ownPackage());
 
 // The server re-sends the state at least every 5 s (WS_HEARTBEAT_MS in
 // common/src/config.rs), so this long without a message means the
@@ -88,9 +88,8 @@ function fetchUpdates() {
                 console.error('Undecodable state message:', e);
                 return;
             }
-            const elsewhere = navigate(message);
-            if (elsewhere !== null) {
-                window.location.replace(elsewhere);
+            if (stale(message)) {
+                reloadEntry();
                 return;
             }
             try {

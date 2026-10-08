@@ -3,12 +3,13 @@
 // whose `state`, while race is active, is a RaceView (../protocol-js/, this
 // package's own bindings); events go out as a HostEvent carrying a
 // RaceEvent. An envelope for another package, or another version of this
-// one, loads that page instead (client-common/host.js).
+// one, reloads `/`, which the host serves as the active package's page
+// (client-common/host.js).
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { decodeEnvelope, encodeHostEvent } from '../../../protocol-js/protocol.js';
 import { decodeRaceView, encodeRaceEvent } from '../../protocol-js/protocol.js';
-import { navigator, pageId, engineEvent, backEvent } from '../../../client-common/host.js';
+import { ownPackage, staleness, reloadEntry, engineEvent, backEvent } from '../../../client-common/host.js';
 
 // Device clock minus ours, from the timestamp every state carries. The
 // initial value is large so nothing looks synced before the first message.
@@ -16,10 +17,10 @@ var timestampOffset = 10000000;
 var timezoneOffset = 0;
 var socket = null;
 
-// This page's package, from its URL (/pkg/<id>/), and where each envelope
-// wants the browser.
-const PACKAGE = pageId(window.location.pathname);
-const navigate = navigator(window.location);
+// This page's package (from where its script loaded, /pkg/<id>/), and
+// whether an envelope means the page is no longer the one to show.
+const PACKAGE = ownPackage();
+const stale = staleness(PACKAGE);
 
 // The race as the device last described it: its RaceView (protocol.d.ts),
 // applied with reconcile so only the fields that changed notify. Until the
@@ -95,9 +96,8 @@ function connectWebSocket() {
 
     // another package is active, or another version of this one: the
     // host serves its page
-    const elsewhere = navigate(message);
-    if (elsewhere !== null) {
-      window.location.replace(elsewhere);
+    if (stale(message)) {
+      reloadEntry();
       return;
     }
     try {
