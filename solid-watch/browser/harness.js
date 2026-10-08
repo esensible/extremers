@@ -119,6 +119,46 @@ async function main() {
     }, 400);
   };
   if (catalog.length) await loadBundle(els.bundle.value);
+  if (params.get("selftest") === "taps") await selfTestTaps(Number(params.get("n") || 20));
+}
+
+// ?selftest=taps: hit-test the centre of each JS-handled button like a finger
+// (elementFromPoint, then pointerdown, a hold spanning several host ticks and
+// repaints, pointerup, click on whatever is under the point) and count the
+// dispatches. Result in the log and in window.__selftest.
+async function selfTestTaps(n) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let presses = 0;
+  const onEvent = host.onEvent;
+  host.onEvent = (kind, d) => {
+    if (kind === "press" && d.js && d.handled) presses++;
+    onEvent(kind, d);
+  };
+  const buttons = [...els.screen.querySelectorAll('[data-type="button"]')].filter((b) => {
+    const node = host.tree.nodes.get(Number(b.dataset.tag));
+    return node && node.props.onPress && !node.props.confirm && !node.props.disabled;
+  });
+  let tries = 0;
+  for (let i = 0; i < n; i++) {
+    for (const b of buttons) {
+      const r = b.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, isPrimary: true };
+      const down = document.elementFromPoint(x, y);
+      down.dispatchEvent(new PointerEvent("pointerdown", opts));
+      await sleep(40 + (i % 5) * 30); // 40-160 ms: across 50 ms ticks and 1 s countdown repaints
+      const up = document.elementFromPoint(x, y);
+      up.dispatchEvent(new PointerEvent("pointerup", opts));
+      // the browser clicks the nearest common ancestor of the down and up targets
+      let common = down;
+      while (common && !common.contains(up)) common = common.parentElement;
+      (common || up).dispatchEvent(new MouseEvent("click", opts));
+      tries++;
+    }
+  }
+  host.onEvent = onEvent;
+  window.__selftest = { tries, presses };
+  log(`selftest taps: ${presses}/${tries} dispatched`, presses === tries ? "tap" : "err");
 }
 
 main().catch((e) => log(`harness failed: ${e.stack || e}`, "err"));

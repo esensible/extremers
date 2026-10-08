@@ -368,7 +368,15 @@ npm ci
 node codegen/codegen.mjs            # after editing the schema
 QJS=/path/to/qjs sh test/all.sh     # codegen check, build test bundles, fixtures (qjs vs node), tests, boundary
 npm run dev                         # harness on :5180, open /browser/
+                                    # /browser/?bundle=events&selftest=taps&n=30: tap self-test
 ```
+
+Taps in the DOM host: a press must never repaint the element under the
+pointer (the browser then drops or retargets the click), so pressing only
+changes the button's opacity and text is re-rendered only when its content
+changes. The tap self-test hit-tests each JS-handled button's centre and
+holds 40–160 ms across host ticks and countdown repaints; it reports
+`dispatched/tried` in the log and `window.__selftest`.
 
 `test/build-qjs.sh <quickjs-ng checkout at v0.17.0> <out>` builds `qjs`
 without cmake. `test/boundary.mjs` fails on any path that leaves this
