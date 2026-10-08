@@ -2014,6 +2014,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "extreme-watch-bindgen"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "extreme-race",
+ "extreme-tune",
+ "heapless 0.8.0",
+ "postcard",
+ "postcard-schema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

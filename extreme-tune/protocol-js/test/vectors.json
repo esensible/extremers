@@ -1,0 +1,45 @@
+{
+  "doc": "Written by tools/watch-bindgen from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to.",
+  "vectors": [
+    {
+      "hex": "000000000000000000000000",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 0.0,
+        "speed": 0.0,
+        "speed_dev": 0.0
+      },
+      "what": "0 0 0"
+    },
+    {
+      "hex": "cdcccc400000003fcdcc44c1",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": -12.300000190734863,
+        "speed": 6.400000095367432,
+        "speed_dev": 0.5
+      },
+      "what": "6.4 0.5 -12.3"
+    },
+    {
+      "hex": "66d62344c3d5a34300003443",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 180.0,
+        "speed": 655.3499755859375,
+        "speed_dev": 327.6700134277344
+      },
+      "what": "655.35 327.67 180"
+    },
+    {
+      "hex": "0000cc41a47045c166663642",
+      "type": "TuneView",
+      "value": {
+        "heading_dev": 45.599998474121094,
+        "speed": 25.5,
+        "speed_dev": -12.34000015258789
+      },
+      "what": "25.5 -12.34 45.6"
+    }
+  ]
+}

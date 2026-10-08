@@ -1,0 +1,20 @@
+[package]
+name = "extreme-watch-bindgen"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Interim: the host envelope and per-package view bindings the watch bundles and the watch shell use, until the package host's own bindgen lands"
+
+[[bin]]
+name = "extreme-watch-bindgen"
+path = "src/main.rs"
+
+[dependencies]
+extreme-race = { path = "../../extreme-race" }
+extreme-tune = { path = "../../extreme-tune" }
+common = { path = "../../common" }
+heapless = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true }
+postcard = { workspace = true, features = ["use-std"] }
+postcard-schema = { workspace = true, features = ["use-std"] }

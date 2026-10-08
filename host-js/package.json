@@ -1,0 +1,13 @@
+{
+  "name": "extremers-host-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Postcard bindings for the package host's envelope and events (tools/watch-bindgen, interim), used by every package's watch bundle",
+  "type": "module",
+  "main": "host.js",
+  "types": "host.d.ts",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:qjs": "${QJS:-qjs} test/qjs.mjs"
+  }
+}

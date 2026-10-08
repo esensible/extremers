@@ -1,0 +1,1077 @@
+{
+  "doc": "Written by tools/watch-bindgen from the Rust types: hex = postcard bytes from the Rust encoder, value = the JS value they decode to.",
+  "vectors": [
+    {
+      "hex": "fbd8c1a28c34000000000000000000020000",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose, nothing installed"
+    },
+    {
+      "hex": "fbd8c1a28c3400000000000000000018029885eff508047261636501938984c2060474756e650300",
+      "type": "Envelope",
+      "value": {
+        "active": 0,
+        "state": [
+          2,
+          152,
+          133,
+          239,
+          245,
+          8,
+          4,
+          114,
+          97,
+          99,
+          101,
+          1,
+          147,
+          137,
+          132,
+          194,
+          6,
+          4,
+          116,
+          117,
+          110,
+          101,
+          3,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "what": "choose, race and tune"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee06cdcccc400000",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, active, no line"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee0c9a99b94101db80d4a28c3400",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, in sequence, no line"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee06cdcccc400001",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          1
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, active, stbd set"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee0c9a99b94101db80d4a28c3401",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          1
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, in sequence, stbd set"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee06cdcccc400002",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          2
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, active, port set"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee0c9a99b94101db80d4a28c3402",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          2
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, in sequence, port set"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee0dcdcccc4000032fb4a1c3a28c34",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          3,
+          47,
+          180,
+          161,
+          195,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, active, line both"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee139a99b94101db80d4a28c34032fb4a1c3a28c34",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          154,
+          153,
+          185,
+          65,
+          1,
+          219,
+          128,
+          212,
+          162,
+          140,
+          52,
+          3,
+          47,
+          180,
+          161,
+          195,
+          162,
+          140,
+          52
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, in sequence, line both"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee0f00008c4102b3fcbda28c3400007d43",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          0,
+          0,
+          140,
+          65,
+          2,
+          179,
+          252,
+          189,
+          162,
+          140,
+          52,
+          0,
+          0,
+          125,
+          67
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, racing"
+    },
+    {
+      "hex": "fbd8c1a28c349885eff5088a01ff007f8010ee1766d6234401ffffffffffffff0f0364ffffffffffffff0f",
+      "type": "Envelope",
+      "value": {
+        "active": 2394669720,
+        "state": [
+          102,
+          214,
+          35,
+          68,
+          1,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          15,
+          3,
+          100,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          15
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "race, in sequence at the largest times"
+    },
+    {
+      "hex": "fbd8c1a28c34938984c206ffffffffffffffff0c000000000000000000000000",
+      "type": "Envelope",
+      "value": {
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "what": "tune, 0 0 0"
+    },
+    {
+      "hex": "fbd8c1a28c34938984c206ffffffffffffffff0ccdcccc400000003fcdcc44c1",
+      "type": "Envelope",
+      "value": {
+        "active": 1749091475,
+        "state": [
+          205,
+          204,
+          204,
+          64,
+          0,
+          0,
+          0,
+          63,
+          205,
+          204,
+          68,
+          193
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "what": "tune, 6.4 0.5 -12.3"
+    },
+    {
+      "hex": "fbd8c1a28c34938984c206ffffffffffffffff0c66d62344c3d5a34300003443",
+      "type": "Envelope",
+      "value": {
+        "active": 1749091475,
+        "state": [
+          102,
+          214,
+          35,
+          68,
+          195,
+          213,
+          163,
+          67,
+          0,
+          0,
+          52,
+          67
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "what": "tune, 655.35 327.67 180"
+    },
+    {
+      "hex": "fbd8c1a28c34938984c206ffffffffffffffff0c0000cc41a47045c166663642",
+      "type": "Envelope",
+      "value": {
+        "active": 1749091475,
+        "state": [
+          0,
+          0,
+          204,
+          65,
+          164,
+          112,
+          69,
+          193,
+          102,
+          102,
+          54,
+          66
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "what": "tune, 25.5 -12.34 45.6"
+    },
+    {
+      "hex": "00ffffffff0f010203040506070800",
+      "type": "Envelope",
+      "value": {
+        "active": 4294967295,
+        "state": [],
+        "timestamp": 0,
+        "ui_hash": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "what": "timestamp 0, unknown package, empty state"
+    },
+    {
+      "hex": "7fffffffff0f010203040506070800",
+      "type": "Envelope",
+      "value": {
+        "active": 4294967295,
+        "state": [],
+        "timestamp": 127,
+        "ui_hash": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "what": "timestamp 127, unknown package, empty state"
+    },
+    {
+      "hex": "8001ffffffff0f010203040506070800",
+      "type": "Envelope",
+      "value": {
+        "active": 4294967295,
+        "state": [],
+        "timestamp": 128,
+        "ui_hash": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "what": "timestamp 128, unknown package, empty state"
+    },
+    {
+      "hex": "ffffffffffffff0fffffffff0f010203040506070800",
+      "type": "Envelope",
+      "value": {
+        "active": 4294967295,
+        "state": [],
+        "timestamp": 9007199254740991,
+        "ui_hash": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "what": "timestamp 9007199254740991, unknown package, empty state"
+    },
+    {
+      "hex": "fbd8c1a28c34018a01ff007f8010eec801000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7",
+      "type": "Envelope",
+      "value": {
+        "active": 1,
+        "state": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          84,
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94,
+          95,
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          108,
+          109,
+          110,
+          111,
+          112,
+          113,
+          114,
+          115,
+          116,
+          117,
+          118,
+          119,
+          120,
+          121,
+          122,
+          123,
+          124,
+          125,
+          126,
+          127,
+          128,
+          129,
+          130,
+          131,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187,
+          188,
+          189,
+          190,
+          191,
+          192,
+          193,
+          194,
+          195,
+          196,
+          197,
+          198,
+          199
+        ],
+        "timestamp": 1790000000123,
+        "ui_hash": [
+          138,
+          1,
+          255,
+          0,
+          127,
+          128,
+          16,
+          238
+        ]
+      },
+      "what": "200-byte state"
+    },
+    {
+      "hex": "009885eff508",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Select",
+        "value": 2394669720
+      },
+      "what": "select race"
+    },
+    {
+      "hex": "0000",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Select",
+        "value": 0
+      },
+      "what": "select choose"
+    },
+    {
+      "hex": "01",
+      "type": "HostEvent",
+      "value": {
+        "tag": "SelectDefault",
+        "value": null
+      },
+      "what": "select default"
+    },
+    {
+      "hex": "0300",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Ble",
+        "value": {
+          "tag": "Pair",
+          "value": null
+        }
+      },
+      "what": "ble pair (websocket only)"
+    },
+    {
+      "hex": "029885eff5080100",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            0
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race line stbd"
+    },
+    {
+      "hex": "029885eff5080101",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            1
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race line port"
+    },
+    {
+      "hex": "029885eff5080902b009fbd8c1a28c34",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            2,
+            176,
+            9,
+            251,
+            216,
+            193,
+            162,
+            140,
+            52
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race bump +600 s, tapped at NOW"
+    },
+    {
+      "hex": "029885eff5080902d7049fcdc1a28c34",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            2,
+            215,
+            4,
+            159,
+            205,
+            193,
+            162,
+            140,
+            52
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race bump -300 s, tapped 1.5 s before NOW"
+    },
+    {
+      "hex": "029885eff508080200fbd8c1a28c34",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            2,
+            0,
+            251,
+            216,
+            193,
+            162,
+            140,
+            52
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race sync"
+    },
+    {
+      "hex": "029885eff5080103",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Engine",
+        "value": {
+          "bytes": [
+            3
+          ],
+          "package": 2394669720
+        }
+      },
+      "what": "race finish"
+    },
+    {
+      "hex": "0000",
+      "type": "ChooseView",
+      "value": {
+        "ble": null,
+        "packages": []
+      },
+      "what": "nothing installed"
+    },
+    {
+      "hex": "029885eff508047261636501938984c2060474756e650300",
+      "type": "ChooseView",
+      "value": {
+        "ble": null,
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          },
+          {
+            "id": 1749091475,
+            "name": "tune",
+            "version": 3
+          }
+        ]
+      },
+      "what": "race and tune"
+    },
+    {
+      "hex": "019885eff5080472616365010110968ea3bdd08892070110968ea3bdd0040110968ea3bdd0",
+      "type": "ChooseView",
+      "value": {
+        "ble": {
+          "addr": [
+            16,
+            150,
+            142,
+            163,
+            189,
+            208
+          ],
+          "bonds": [
+            [
+              16,
+              150,
+              142,
+              163,
+              189,
+              208
+            ]
+          ],
+          "max_bonds": 4,
+          "note": {
+            "tag": "Paired",
+            "value": [
+              16,
+              150,
+              142,
+              163,
+              189,
+              208
+            ]
+          },
+          "pair_ms": 117000
+        },
+        "packages": [
+          {
+            "id": 2394669720,
+            "name": "race",
+            "version": 1
+          }
+        ]
+      },
+      "what": "with BLE status (websocket only)"
+    },
+    {
+      "hex": "01db94c5ed0c0c57656c6c656ec3bc62756e67ffff0300",
+      "type": "ChooseView",
+      "value": {
+        "ble": null,
+        "packages": [
+          {
+            "id": 3450948187,
+            "name": "Wellenübung",
+            "version": 65535
+          }
+        ]
+      },
+      "what": "a long name, UTF-8"
+    }
+  ]
+}
