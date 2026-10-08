@@ -20,10 +20,17 @@ export default {
   plugins: [
     resolve(),
     image(),
+    // Two passes: Solid's JSX first, then preset-env on the result. In one
+    // pass, preset-env's transforms can make babel-preset-solid lose a
+    // template declaration (seen in the tune client: "ReferenceError: _tmpl$
+    // is not defined", a blank page).
+    babel({
+      babelHelpers: 'bundled',
+      presets: ['babel-preset-solid'],
+    }),
     babel({
       babelHelpers: 'bundled',
       presets: [
-        'babel-preset-solid',
         [
           "@babel/preset-env",
           {

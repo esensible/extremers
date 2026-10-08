@@ -54,7 +54,32 @@ pub fn embed_client_js() {
         Err(NpmError::Failed(what)) => panic!("`{what}` failed in {}", client_dir.display()),
     }
 
+    check_templates_declared(&dist_dir);
     write_static_files(&dist_dir);
+}
+
+/// Fails the build if a bundle calls a Solid template that was never
+/// declared. The minifier renames every declared `_tmpl$…` to a short name,
+/// so the literal `_tmpl$` surviving in a bundle means a call with no
+/// declaration: at runtime that is "ReferenceError: _tmpl$ is not defined"
+/// and a blank page (seen in the tune client when babel-preset-solid and
+/// preset-env ran in one pass).
+fn check_templates_declared(dist_dir: &Path) {
+    let Ok(entries) = fs::read_dir(dist_dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        if path.extension().is_some_and(|e| e == "js") {
+            let js = fs::read_to_string(&path).unwrap_or_default();
+            if js.contains("_tmpl$") {
+                panic!(
+                    "{} calls a Solid template (_tmpl$) that is never declared: the page would fail \
+                     to render. Check that babel-preset-solid runs in its own babel pass.",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 enum NpmError {
