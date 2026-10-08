@@ -20,6 +20,51 @@ struct LinkGeneration {
   }
 }
 
+/// How long to wait before the next attempt after a failure: doubles from
+/// `first` up to `max`. A link that came up and then dropped only counts
+/// as a success if it stayed up `stableAfter`, so a device that accepts
+/// the connection and drops it again at once (out of range at the edge,
+/// a rebooting firmware) is not retried at full speed forever.
+struct Backoff {
+  let first: TimeInterval
+  let max: TimeInterval
+  let stableAfter: TimeInterval
+  private var upcoming: TimeInterval
+
+  init(first: TimeInterval, max: TimeInterval, stableAfter: TimeInterval) {
+    self.first = first
+    self.max = max
+    self.stableAfter = stableAfter
+    upcoming = first
+  }
+
+  /// The delay before the next attempt; each call doubles the following one.
+  mutating func next() -> TimeInterval {
+    let delay = upcoming
+    upcoming = Swift.min(upcoming * 2, max)
+    return delay
+  }
+
+  /// A link was up for `uptime` before it dropped.
+  mutating func linkDropped(after uptime: TimeInterval) {
+    if uptime >= stableAfter { upcoming = first }
+  }
+}
+
+/// Which race computer to connect to directly, without a scan. Kept only
+/// for the life of the app now; remembering the paired unit across
+/// launches (bonding) is another implementation of this.
+@MainActor
+protocol PeripheralMemory: AnyObject {
+  var identifier: UUID? { get set }
+}
+
+/// The last race computer this app run connected to.
+@MainActor
+final class LastPeripheral: PeripheralMemory {
+  var identifier: UUID?
+}
+
 /// Steps waiting on a delegate callback, one per key (the step's name).
 /// Each registration gets a token, so a timer or cancel handler completes
 /// only the registration it was made for, never a later one on the same key.

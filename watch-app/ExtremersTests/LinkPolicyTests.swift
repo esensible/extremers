@@ -17,6 +17,26 @@ final class LinkPolicyTests: XCTestCase {
     XCTAssertFalse(generation.isCurrent(first))
   }
 
+  // MARK: - Backoff
+
+  func testBackoffDoublesUpToMax() {
+    var backoff = Backoff(first: 0.5, max: 8, stableAfter: 10)
+    XCTAssertEqual((0..<7).map { _ in backoff.next() }, [0.5, 1, 2, 4, 8, 8, 8])
+  }
+
+  func testBackoffResetsOnlyAfterAStableLink() {
+    var backoff = Backoff(first: 0.5, max: 8, stableAfter: 10)
+    _ = backoff.next()
+    _ = backoff.next()
+    // connected, then dropped at once: still backing off
+    backoff.linkDropped(after: 2)
+    XCTAssertEqual(backoff.next(), 2)
+    // a link that held: the next drop is retried quickly
+    backoff.linkDropped(after: 10)
+    XCTAssertEqual(backoff.next(), 0.5)
+    XCTAssertEqual(backoff.next(), 1)
+  }
+
   // MARK: - Waiters
 
   func testTakeReturnsEachRegistrationOnce() {

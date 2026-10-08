@@ -38,6 +38,14 @@ enum BleFailure: Error {
     return .other(error)
   }
 
+  /// Bluetooth itself is off, refused or missing: no other route helps.
+  var isBluetoothUnavailable: Bool {
+    switch self {
+    case .poweredOff, .unauthorized, .unsupported: return true
+    default: return false
+    }
+  }
+
   /// For the Connecting screen and the banner; nil when a retry is all it needs.
   var message: String? {
     switch self {
@@ -84,6 +92,8 @@ final class RaceComputer: NSObject, ObservableObject {
   private static let gattTimeout: TimeInterval = 5
   private static let firstRetry: TimeInterval = 0.5
   private static let maxRetry: TimeInterval = 8
+  /// A link up this long was a good one: the next drop is retried at once.
+  private static let stableLink: TimeInterval = 10
 
   @Published private(set) var link: LinkState = .connecting
   /// Why the link cannot come up (Bluetooth off, not allowed), if that is why.
@@ -100,7 +110,11 @@ final class RaceComputer: NSObject, ObservableObject {
   private let haptics = Haptics()
 
   private var manager: CBCentralManager?
-  /// Strong reference: CoreBluetooth does not keep the peripheral alive.
+  /// The race computer to try directly before scanning.
+  private let memory: PeripheralMemory
+  /// The peripheral being connected or connected. Strong reference:
+  /// CoreBluetooth does not keep a peripheral alive, and one released
+  /// mid-connect never calls back.
   private(set) var peripheral: CBPeripheral?
   private var stateCharacteristic: CBCharacteristic?
   private var eventCharacteristic: CBCharacteristic?
@@ -116,6 +130,12 @@ final class RaceComputer: NSObject, ObservableObject {
   /// A stopped loop that may still be unwinding; the next one waits for it.
   private var retiring: Task<Void, Never>?
   private var generation = LinkGeneration()
+
+  /// `memory` nil: remember the last device for this app run only.
+  init(memory: PeripheralMemory? = nil) {
+    self.memory = memory ?? LastPeripheral()
+    super.init()
+  }
 
   var isLive: Bool { link == .connected }
 
@@ -195,8 +215,9 @@ final class RaceComputer: NSObject, ObservableObject {
   }
 
   private func run(_ gen: UInt64) async {
-    var retry = Self.firstRetry
+    var backoff = Backoff(first: Self.firstRetry, max: Self.maxRetry, stableAfter: Self.stableLink)
     while generation.isCurrent(gen), !Task.isCancelled {
+      var connectedAt: Date?
       do {
         try await waitPoweredOn()
         try ensureCurrent(gen)
@@ -206,11 +227,12 @@ final class RaceComputer: NSObject, ObservableObject {
         try await open(p)
         try ensureCurrent(gen)
         guard p.state == .connected else { throw BleFailure.disconnected(underlying: nil) }
+        memory.identifier = p.identifier
         link = .connected
         problem = nil
         workout.start()
-        retry = Self.firstRetry
-        // Only a failure (the drop) ends this wait.
+        connectedAt = Date()
+        // Only a failure (the drop, Bluetooth going off) ends this wait.
         let _: Any = try await waitFor("disconnect", timeout: nil) {}
       } catch {
         if Task.isCancelled || !generation.isCurrent(gen) || error is CancellationError { return }
@@ -218,21 +240,27 @@ final class RaceComputer: NSObject, ObservableObject {
         bleLog.info("link down: \(String(describing: failure), privacy: .public)")
         closeLink()
         problem = failure.message
-        try? await Task.sleep(nanoseconds: UInt64(retry * 1_000_000_000))
-        retry = min(retry * 2, Self.maxRetry)
+        if let connectedAt { backoff.linkDropped(after: Date().timeIntervalSince(connectedAt)) }
+        try? await Task.sleep(nanoseconds: UInt64(backoff.next() * 1_000_000_000))
       }
     }
   }
 
-  /// The device, connected: the last peripheral directly when there is one
-  /// (no scan needed), else the first one advertising the service.
+  /// The device, connected: the remembered one directly when there is one
+  /// (no scan needed), else the first one advertising the service. The
+  /// remembered one is looked up by identifier on every attempt rather than
+  /// kept as an object, since CoreBluetooth invalidates its peripheral
+  /// objects when Bluetooth resets.
   private func reach() async throws -> CBPeripheral {
-    if let known = peripheral {
+    let m = ensureManager()
+    if let id = memory.identifier, let known = m.retrievePeripherals(withIdentifiers: [id]).first {
       do {
         try await connect(known)
         return known
-      } catch BleFailure.timeout {
-        // Stalled: it may have come back under another identity. Scan.
+      } catch let failure as BleFailure where !failure.isBluetoothUnavailable {
+        // Stalled or refused: it may be out of range, or back under
+        // another identity. Scan.
+        bleLog.info("direct connect failed: \(String(describing: failure), privacy: .public)")
       }
     }
     let found = try await scan()
@@ -357,21 +385,30 @@ final class RaceComputer: NSObject, ObservableObject {
     return m
   }
 
-  /// Waits for Bluetooth to settle and throws unless it is on.
+  /// Returns once Bluetooth is on, saying why not (off, not allowed) in
+  /// `problem` meanwhile. No polling and no timeout: the manager reports
+  /// its first state, and every change after, to centralManagerDidUpdateState.
   private func waitPoweredOn() async throws {
     let m = ensureManager()
-    if m.state == .unknown || m.state == .resetting {
-      do {
-        let _: Any = try await waitFor("power", timeout: 3) {}
-      } catch BleFailure.timeout {
-        // Still settling: the state below decides.
+    while true {
+      switch m.state {
+      case .poweredOn:
+        return
+      case .unauthorized:
+        problem = BleFailure.unauthorized.message
+      case .unsupported:
+        problem = BleFailure.unsupported.message
+      case .poweredOff:
+        problem = BleFailure.poweredOff.message
+      default:
+        // Unknown or resetting: settling, the next change says how.
+        break
       }
-    }
-    switch m.state {
-    case .poweredOn: return
-    case .unauthorized: throw BleFailure.unauthorized
-    case .unsupported: throw BleFailure.unsupported
-    default: throw BleFailure.poweredOff
+      let seen = m.state
+      let _: Any = try await waitFor("power", timeout: nil) {
+        // Registered now: a change since the check above must not be missed.
+        if m.state != seen { self.complete("power", .success(true)) }
+      }
     }
   }
 
@@ -437,18 +474,29 @@ final class RaceComputer: NSObject, ObservableObject {
 // MARK: - CBCentralManagerDelegate
 
 extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
+  /// Any change wakes the power wait, which decides what to do. Anything
+  /// but on, mid-session (Bluetooth turned off, access revoked, the stack
+  /// resetting): CoreBluetooth drops every link and invalidates its
+  /// peripheral objects without a didDisconnect, so fail every step here,
+  /// the loop's wait on the link included, and forget the objects; the
+  /// remembered identifier finds the device again once Bluetooth is back.
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
-    if central.state != .unknown && central.state != .resetting { complete("power", .success(true)) }
-    if central.state != .poweredOn {
-      let failure: BleFailure
-      switch central.state {
-      case .unauthorized: failure = .unauthorized
-      case .unsupported: failure = .unsupported
-      default: failure = .poweredOff
-      }
-      problem = failure.message
-      failAll(failure)
+    complete("power", .success(true))
+    guard central.state != .poweredOn else { return }
+    let failure: BleFailure
+    switch central.state {
+    case .unauthorized: failure = .unauthorized
+    case .unsupported: failure = .unsupported
+    default: failure = .poweredOff
     }
+    if central.state != .resetting && central.state != .unknown {
+      problem = failure.message
+    }
+    stateCharacteristic = nil
+    eventCharacteristic = nil
+    peripheral = nil
+    if link == .connected { link = .reconnecting }
+    failAll(failure)
   }
 
   func centralManager(
@@ -461,10 +509,17 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
   }
 
   func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+    guard isCurrent(peripheral) else {
+      // A connect given up on (timed out, then cancelled) that went
+      // through anyway: not ours to keep open.
+      central.cancelPeripheralConnection(peripheral)
+      return
+    }
     complete("connect", .success(true))
   }
 
   func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+    guard isCurrent(peripheral) else { return }
     let failure = BleFailure.from(error) ?? .disconnected(underlying: error)
     complete("connect", .failure(failure))
   }
@@ -474,12 +529,18 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     didDisconnectPeripheral peripheral: CBPeripheral,
     error: Error?
   ) {
-    guard peripheral.identifier == self.peripheral?.identifier else { return }
+    // Error nil: this app cancelled the link (Quit, or giving up on a
+    // step); otherwise the device or the radio dropped it.
+    bleLog.info("disconnected: \(String(describing: BleFailure.from(error)), privacy: .public)")
+    guard isCurrent(peripheral) else { return }
+    // A late disconnect from cancelling a stalled connect, arriving after
+    // the loop already asked for a new connection to the same device: the
+    // new one is not down.
+    guard peripheral.state == .disconnected else { return }
     stateCharacteristic = nil
     eventCharacteristic = nil
     if link == .connected { link = .reconnecting }
-    // A late disconnect (from cancelling a stalled connect) must not end
-    // the scan that replaced it.
+    // Nor does it end the scan that replaced a stalled connect.
     failAll(BleFailure.disconnected(underlying: error), keeping: ["find", "power"])
   }
 }
@@ -487,10 +548,12 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
 // MARK: - CBPeripheralDelegate
 
 extension RaceComputer: @preconcurrency CBPeripheralDelegate {
-  /// Callbacks from a peripheral this object no longer drives (a link
-  /// given up on, still delivering) must not complete the current one's steps.
+  /// Callbacks for a device this object no longer drives (a link given up
+  /// on, still delivering) must not complete the current one's steps.
+  /// Compared by identifier: CoreBluetooth may hand out another object for
+  /// the same device (after retrievePeripherals).
   private func isCurrent(_ p: CBPeripheral) -> Bool {
-    p === peripheral
+    p.identifier == peripheral?.identifier
   }
 
   func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
