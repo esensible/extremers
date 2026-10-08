@@ -13,7 +13,15 @@ public enum Fonts {
     /// The family used for all text; nil = the system font. Set it after
     /// registering the app's bundled font, before loading a bundle.
     public static var family: String? {
-        didSet { cache.removeAllObjects() }
+        didSet {
+            cache.removeAllObjects()
+            let f = family
+            prewarmQueue.async {
+                let t0 = ContinuousClock.now
+                prewarm(family: f)
+                prewarmTime = ContinuousClock.now - t0
+            }
+        }
     }
 
     /// Registers a font file for this process; returns the families in it.
@@ -30,6 +38,33 @@ public enum Fonts {
 
     private static let cache = NSCache<NSString, CTFont>()
 
+    /// Core Text's first layout with a font is slow (on the watch, tens of ms:
+    /// font tables and shaping caches load then), and it would land in the
+    /// first bundle's mount. Lays out a sample line per weight off the main
+    /// thread so that happens before a bundle needs it. `register` starts it.
+    /// Thread-safe (touches no shared state of this type).
+    public static func prewarm(family: String?, weights: [FontWeight] = [.normal, .bold]) {
+        let sample = "0123456789:.,−+° abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for w in weights {
+            for tabular in [false, true] {
+                let f = makeFont(family: family, weight: w.numeric, tabular: tabular, size: 16)
+                let s = NSAttributedString(string: sample, attributes: [.init(kCTFontAttributeName as String): f])
+                let line = CTLineCreateWithAttributedString(s)
+                _ = CTLineGetTypographicBounds(line, nil, nil, nil)
+            }
+        }
+    }
+
+    private static let prewarmQueue = DispatchQueue(label: "solid-watch.fonts.prewarm", qos: .userInitiated)
+    private static var prewarmTime: Duration = .zero
+
+    /// Waits for the background prewarm started by setting `family`; returns
+    /// how long the prewarm itself took.
+    @discardableResult
+    public static func waitForPrewarm() -> Duration {
+        prewarmQueue.sync { prewarmTime }
+    }
+
     static func weightTrait(_ w: Int) -> CGFloat {
         // CSS weight -> Core Text weight trait (UIFont.Weight values).
         let table: [(Int, CGFloat)] = [(100, -0.8), (200, -0.6), (300, -0.4), (400, 0), (500, 0.23),
@@ -43,11 +78,25 @@ public enum Fonts {
         return 0
     }
 
-    /// The font for `size` points in `style`'s weight and figure spacing.
+    /// Time spent creating fonts (cache misses), and how many, for profiling.
+    public private(set) static var createTime: Duration = .zero
+    public private(set) static var createCount = 0
+
+    /// The font for `size` points in `style`'s weight and figure spacing
+    /// (cached; main thread).
     public static func ctFont(_ style: TextStyle, size: Double) -> CTFont {
         let w = style.fontWeight.numeric
         let key = "\(family ?? "-")|\(size)|\(w)|\(style.tabular)" as NSString
         if let f = cache.object(forKey: key) { return f }
+        let t0 = ContinuousClock.now
+        let f = makeFont(family: family, weight: w, tabular: style.tabular, size: size)
+        createTime += ContinuousClock.now - t0
+        createCount += 1
+        cache.setObject(f, forKey: key)
+        return f
+    }
+
+    private static func makeFont(family: String?, weight w: Int, tabular: Bool, size: Double) -> CTFont {
         var attrs: [CFString: Any] = [:]
         var base: CTFont
         if let family {
@@ -64,7 +113,7 @@ public enum Fonts {
             base = NSFont.systemFont(ofSize: size, weight: NSFont.Weight(weightTrait(w))) as CTFont
             #endif
         }
-        if style.tabular {
+        if tabular {
             let feature: [CFString: Any] = [
                 kCTFontFeatureTypeIdentifierKey: kNumberSpacingType,
                 kCTFontFeatureSelectorIdentifierKey: kMonospacedNumbersSelector,
@@ -72,7 +121,6 @@ public enum Fonts {
             let d = CTFontDescriptorCreateWithAttributes([kCTFontFeatureSettingsAttribute: [feature]] as CFDictionary)
             base = CTFontCreateCopyWithAttributes(base, size, nil, d)
         }
-        cache.setObject(base, forKey: key)
         return base
     }
 }
@@ -88,6 +136,8 @@ public final class CoreTextMeasurer: TextMeasurer {
     public var cacheLimit = 512
     public private(set) var cacheHits = 0
     public private(set) var cacheMisses = 0
+    /// Time in Core Text on cache misses (incl. font creation), for profiling.
+    public private(set) var typesetTime: Duration = .zero
     private struct Key: Hashable {
         let runs: [TextRun]
         let scale: Double
@@ -115,7 +165,9 @@ public final class CoreTextMeasurer: TextMeasurer {
             return hit
         }
         cacheMisses += 1
+        let t0 = ContinuousClock.now
         let v = typeset(runs, scale: scale, maxWidth: maxWidth)
+        typesetTime += ContinuousClock.now - t0
         if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
         cache[k] = v
         return v
@@ -132,7 +184,8 @@ public final class CoreTextMeasurer: TextMeasurer {
         return s
     }
 
-    func typeset(_ runs: [TextRun], scale: Double, maxWidth: Double) -> TextLines {
+    /// Uncached `lines`.
+    public func typeset(_ runs: [TextRun], scale: Double, maxWidth: Double) -> TextLines {
         let s = CoreTextMeasurer.attributed(runs, scale: scale)
         let len = s.length
         let ts = CTTypesetterCreateWithAttributedString(s)

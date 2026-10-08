@@ -54,8 +54,6 @@ final class FixtureTests: XCTestCase {
             let script = try JSData(json: Fx.text("mutations/\(name)/script.json"))
             let golden = try Fx.lines("mutations/\(name)/log.jsonl")
             let runner = ScriptRunner(measurer: StubTextMeasurer())
-            runner.tree.now = { Fx.t0 }
-            runner.tree.wallClock = { Fx.localDate }
             let r = runner.run(bundle: bundle, expectedSHA256: sha, script: script)
             XCTAssertEqual(r.sha256, sha, name)
             XCTAssertEqual(r.log.count, golden.count, "\(name): line count")
@@ -68,6 +66,36 @@ final class FixtureTests: XCTestCase {
             } else {
                 XCTAssertNil(r.error, "\(name): \(String(describing: r.error))")
             }
+        }
+    }
+
+    /// After a GC, the renderer's FinalizationRegistry releases exactly the
+    /// nodes that are no longer attached, and the layout is unchanged.
+    func testReleaseFreesExactlyTheDetachedNodes() throws {
+        for name in ["list", "show"] {
+            let bundle = try Data(contentsOf: Fx.fixtures.appendingPathComponent("mutations/\(name)/bundle.js"))
+            let script = try JSData(json: Fx.text("mutations/\(name)/script.json"))
+            let runner = ScriptRunner(measurer: StubTextMeasurer())
+            let r = runner.run(bundle: bundle, script: script)
+            XCTAssertNil(r.error, name)
+            let tree = runner.tree
+            // Every node the bundle created that is not attached at the end
+            // (QuickJS may already have collected some during the run).
+            var created = Set<Int32>()
+            for l in r.log {
+                guard case .array(let a) = try JSData(json: l), let op = a.first?.string,
+                      op == "createNode" || op == "createText", let t = a[1].number else { continue }
+                created.insert(Int32(t))
+            }
+            let detached = created.subtracting(tree.attachedTags)
+            XCTAssertFalse(detached.isEmpty, "\(name): the script detaches nodes")
+            let before = try tree.relayout()
+            try runner.host.collectGarbage()
+            XCTAssertEqual(Set(runner.host.releasedTags), detached, name)
+            XCTAssertEqual(runner.host.releasedTags.count, detached.count, "\(name): each once")
+            XCTAssertEqual(tree.allTags, tree.attachedTags, name)
+            let after = try tree.relayout()
+            XCTAssertEqual(json(normalized(parityJSON(after))), json(normalized(parityJSON(before))), name)
         }
     }
 }

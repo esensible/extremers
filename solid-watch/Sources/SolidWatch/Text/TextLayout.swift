@@ -172,13 +172,17 @@ public enum TimeFormat {
         }
     }
 
-    /// Local wall-clock time.
-    public static func clock(_ format: ClockFormat, date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.hour, .minute, .second], from: date)
-        let h = c.hour ?? 0, m = c.minute ?? 0, s = c.second ?? 0
+    /// Wall-clock text for device time `deviceMs` (UTC epoch ms) in the zone
+    /// `tzOffsetMin` minutes east of UTC (README: Clock).
+    public static func clock(_ format: ClockFormat, deviceMs: Double, tzOffsetMin: Double) -> String {
+        let t = Int64(((deviceMs + tzOffsetMin * 60000) / 1000).rounded(.down))
+        let day = Int(((t % 86400) + 86400) % 86400)
+        let h = day / 3600, m = (day / 60) % 60, s = day % 60
+        let h12 = h % 12 == 0 ? 12 : h % 12
         switch format {
         case .hourMinuteSecond24: return "\(pad2(h)):\(pad2(m)):\(pad2(s))"
-        case .hourMinute12: return "\(h % 12 == 0 ? 12 : h % 12):\(pad2(m))"
+        case .hourMinute12: return "\(h12):\(pad2(m))"
+        case .hourMinute12Padded: return "\(pad2(h12)):\(pad2(m))"
         case .hourMinute24: return "\(pad2(h)):\(pad2(m))"
         }
     }

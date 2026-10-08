@@ -65,6 +65,20 @@ public final class SolidWatchSession: ObservableObject {
         guard error == nil, let h = host else { return }
         guard h.rootTag != nil else { pendingState = (state, receivedAt); return }
         attempt { try h.onState(state, receivedAt: receivedAt) }
+        statesSinceGC += 1
+        if statesSinceGC >= gcEveryStates { collectGarbage() }
+    }
+
+    /// States between garbage collections (each GC lets the renderer's
+    /// FinalizationRegistry release nodes JS no longer reaches).
+    public var gcEveryStates = 20
+    private var statesSinceGC = 0
+
+    /// Runs a JS GC now and the `release` calls it produces.
+    public func collectGarbage() {
+        statesSinceGC = 0
+        guard error == nil, let h = host else { return }
+        attempt { try h.collectGarbage() }
     }
 
     /// Sends an event to the bundle (`__app.dispatch`).
@@ -130,7 +144,9 @@ public final class SolidWatchSession: ObservableObject {
         let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.error == nil, let tree = self.host?.tree else { return }
-                if tree.tick() {
+                let changed = tree.tick()
+                for h in tree.tickHaptics { self.playHaptic(h.pattern) }
+                if changed {
                     self.attempt { try tree.relayout() }
                 } else {
                     self.scheduleTick()

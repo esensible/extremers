@@ -71,7 +71,7 @@ final class ShadowTreeTests: XCTestCase {
         XCTAssertEqual(children(s, root), [a])
         XCTAssertEqual(s[b]?.text?.runs.map(\.text), ["hi"])
         XCTAssertEqual(s[b]?.frame.width, 19.5)
-        try t.release(a)
+        t.release(a)
         s = try t.commit()
         XCTAssertEqual(t.nodeCount, 3)
         XCTAssertEqual(children(s, root), [])
@@ -148,23 +148,68 @@ final class ShadowTreeTests: XCTestCase {
         XCTAssertEqual(try t.commit().haptics, [])
     }
 
-    func testCountdownTicks() throws {
+    func testCountdownOnDeviceTimeline() throws {
         let t = Fx.stubTree()
-        var now = Fx.t0
+        var now = Fx.t0 // local 1_000_000 ms
         t.now = { now }
         let root = t.createRoot(width: 100, height: 100)
         let c = try t.createNode("countdown")
         try t.insert(parent: root, child: c, before: nil)
-        try t.setProp(c, "toMs", 2500)
+        // A state received at local T0 says the device clock reads 5_000_000.
+        t.receivedState(at: now)
+        now = Fx.t0.addingTimeInterval(0.010) // the bundle runs a little later
+        t.syncClock(deviceNowMs: 5_000_000)
+        XCTAssertEqual(t.offsetMs, 4_000_000)
+        try t.setProp(c, "at", 5_002_510) // 2.5 s after "now" on the device
         var s = try t.commit()
         XCTAssertEqual(s[c]?.text?.runs.map(\.text), ["00:03"])
-        XCTAssertEqual(t.nextTick(), Fx.t0.addingTimeInterval(0.501))
+        XCTAssertEqual(t.nextTick()!.timeIntervalSince1970, 1000.511, accuracy: 1e-6)
         now = Fx.t0.addingTimeInterval(0.4)
         XCTAssertFalse(t.tick())
         now = Fx.t0.addingTimeInterval(0.6)
         XCTAssertTrue(t.tick())
         s = try t.relayout()
         XCTAssertEqual(s[c]?.text?.runs.map(\.text), ["00:02"])
+        // A later sync moves the offset (last sample wins).
+        t.receivedState(at: now)
+        t.syncClock(deviceNowMs: 5_002_600)
+        s = try t.commit()
+        XCTAssertEqual(s[c]?.text?.runs.map(\.text), ["00:00"])
+    }
+
+    func testCountdownCues() throws {
+        let t = Fx.stubTree()
+        var now = Fx.t0
+        t.now = { now }
+        let root = t.createRoot(width: 100, height: 100)
+        let c = try t.createNode("countdown")
+        try t.insert(parent: root, child: c, before: nil)
+        try t.setProp(c, "at", 1_010_000) // offset 0: 10 s from local T0
+        try t.setProp(c, "cues", .array([
+            .object(["atRemainingMs": 9000, "pattern": "click"]),
+            .object(["atRemainingMs": 5000, "pattern": "click"]),
+            .object(["atRemainingMs": 4000, "pattern": "retry"]),
+            .object(["atRemainingMs": 0, "pattern": "success"]),
+            .object(["atRemainingMs": 20000, "pattern": "stop"]), // already passed: never plays
+        ]))
+        try t.commit()
+        func at(_ remaining: Double) -> [HapticPattern] {
+            now = Date(timeIntervalSince1970: (1_010_000 - remaining) / 1000)
+            _ = t.tick()
+            return t.tickHaptics.map(\.pattern)
+        }
+        XCTAssertEqual(at(9500), [])
+        XCTAssertEqual(at(9000), [.click])
+        XCTAssertEqual(at(8000), [])
+        XCTAssertEqual(at(3500), [.retry]) // 5000 and 4000 crossed together: the last plays
+        XCTAssertEqual(at(6000), []) // back above 5000/4000: re-armed
+        XCTAssertEqual(at(4999), [.click])
+        XCTAssertEqual(at(0), [.success])
+        XCTAssertEqual(at(-1000), [])
+        // Setting `at` again re-arms from the current time: passed marks stay silent.
+        try t.setProp(c, "at", 1_006_000) // now = local 1_011_000 -> remaining -5000
+        try t.commit()
+        XCTAssertEqual(at(-6000), [])
     }
 
     func testTimeFormats() {
@@ -175,8 +220,11 @@ final class ShadowTreeTests: XCTestCase {
         XCTAssertEqual(TimeFormat.countdown(.remaining, remainingMs: 3_725_000), "1:02:05")
         XCTAssertEqual(TimeFormat.countdown(.elapsed, remainingMs: -3_725_000), "1:02:05")
         XCTAssertEqual(TimeFormat.countdown(.elapsed, remainingMs: 500), "0:00")
-        XCTAssertEqual(TimeFormat.clock(.hourMinute12, date: Fx.localDate), "9:41")
-        XCTAssertEqual(TimeFormat.clock(.hourMinuteSecond24, date: Fx.localDate), "09:41:07")
+        // 1_000_000 ms = 00:16:40 UTC
+        XCTAssertEqual(TimeFormat.clock(.hourMinuteSecond24, deviceMs: 1_000_000, tzOffsetMin: 0), "00:16:40")
+        XCTAssertEqual(TimeFormat.clock(.hourMinute12, deviceMs: 1_000_000, tzOffsetMin: 0), "12:16")
+        XCTAssertEqual(TimeFormat.clock(.hourMinute12Padded, deviceMs: 1_000_000, tzOffsetMin: 570), "09:46")
+        XCTAssertEqual(TimeFormat.clock(.hourMinute24, deviceMs: 1_000_000, tzOffsetMin: -60), "23:16")
     }
 
     func testCustomNodeTypeFromFragment() throws {

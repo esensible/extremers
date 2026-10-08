@@ -411,7 +411,26 @@ static JSValue h_commit(JSContext *ctx, JSValueConst this_val, int argc, JSValue
     return JS_UNDEFINED;
 }
 
+static JSValue h_sync_clock(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    sw_engine *e = engine_of(ctx);
+    record_fixed(ctx, "syncClock", 1, argc, argv);
+    double d = 0;
+    if (argc < 1 || JS_ToFloat64(ctx, &d, argv[0])) return JS_ThrowTypeError(ctx, "syncClock(deviceNowMs)");
+    int rc = e->cb.sync_clock ? e->cb.sync_clock(e->cb.user, d) : 0;
+    if (rc) return host_fail(ctx, "syncClock");
+    return JS_UNDEFINED;
+}
+
+static JSValue h_release(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    sw_engine *e = engine_of(ctx);
+    int rc = e->cb.release ? e->cb.release(e->cb.user, arg_i32(ctx, argc, argv, 0, -1)) : 0;
+    if (rc) return host_fail(ctx, "release");
+    return JS_UNDEFINED;
+}
+
 static const JSCFunctionListEntry host_funcs[] = {
+    JS_CFUNC_DEF("syncClock", 1, h_sync_clock),
+    JS_CFUNC_DEF("release", 1, h_release),
     JS_CFUNC_DEF("log", 1, h_log),
     JS_CFUNC_DEF("createNode", 1, h_create_node),
     JS_CFUNC_DEF("createText", 1, h_create_text),
@@ -643,7 +662,16 @@ done:
     return rc;
 }
 
-void sw_engine_gc(sw_engine *e) { JS_RunGC(e->rt); }
+int sw_engine_gc(sw_engine *e, double timeout_ms, char *err, size_t errlen) {
+    if (!e) return SW_ERR_ENGINE;
+    begin(e, timeout_ms);
+    JS_RunGC(e->rt);
+    int rc = SW_OK;
+    if (run_jobs(e)) rc = fail(e, err, errlen);
+    else if (err && errlen) err[0] = 0;
+    end(e);
+    return rc;
+}
 
 void sw_engine_memory(sw_engine *e, sw_mem_usage *out) {
     JSMemoryUsage u;

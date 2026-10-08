@@ -22,19 +22,12 @@ enum Fx {
     }
 
     /// The fixtures' fixed clock: T0 = 1_000_000 ms; every state arrives at
-    /// T0 and layout happens at T0; `clock` shows 2026-01-01 09:41:07 local.
+    /// T0 at mount, offset 0 until a syncClock (README: Golden mutation logs).
     static let t0 = Date(timeIntervalSince1970: 1000)
-    static var localDate: Date {
-        var c = DateComponents()
-        c.year = 2026; c.month = 1; c.day = 1; c.hour = 9; c.minute = 41; c.second = 7
-        return Calendar.current.date(from: c)!
-    }
 
     static func stubTree(registry: NodeRegistry = NodeRegistry()) -> ShadowTree {
         let t = ShadowTree(registry: registry, measurer: StubTextMeasurer())
         t.now = { t0 }
-        t.wallClock = { localDate }
-        t.stateReceivedAt = t0
         return t
     }
 }
@@ -53,6 +46,9 @@ extension PropValue: ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral, Exp
 /// `replay()` does. Returns the snapshot of each commit.
 func replay(_ lines: [String], into tree: ShadowTree, file: StaticString = #filePath, line: UInt = #line) throws -> [LayoutSnapshot] {
     var out: [LayoutSnapshot] = []
+    // The fixtures' local clock: T0 at mount, then each #state's receipt time.
+    var localMs = 1_000_000.0
+    tree.now = { Date(timeIntervalSince1970: localMs / 1000) }
     for l in lines {
         guard case .array(let a) = try JSData(json: l), let op = a.first?.string else {
             XCTFail("bad log line \(l)", file: file, line: line)
@@ -74,6 +70,11 @@ func replay(_ lines: [String], into tree: ShadowTree, file: StaticString = #file
             try tree.insert(parent: i(1), child: i(2), before: i(3) == 0 ? nil : i(3))
         case "remove":
             try tree.remove(parent: i(1), child: i(2))
+        case "#state":
+            localMs = a[2].number ?? localMs
+            tree.receivedState(at: tree.now())
+        case "syncClock":
+            tree.syncClock(deviceNowMs: a[1].number ?? 0)
         case "commit":
             out.append(try tree.commit())
         default:

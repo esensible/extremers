@@ -25,10 +25,14 @@ public final class ScriptRunner {
 
     public let host: JSHost
     public var tree: ShadowTree { host.tree }
+    /// The driver's local clock (ms): T0 at mount, then each state's receipt.
+    public static let t0Ms = 1_000_000.0
+    public private(set) var localMs = ScriptRunner.t0Ms
 
     public init(registry: NodeRegistry = NodeRegistry(), measurer: TextMeasurer,
                 hostOptions: JSHost.Options = .init()) {
         host = JSHost(tree: ShadowTree(registry: registry, measurer: measurer), options: hostOptions)
+        tree.now = { [unowned self] in Date(timeIntervalSince1970: self.localMs / 1000) }
     }
 
     public func run(bundle: Data, expectedSHA256: String? = nil, script: JSData) -> Result {
@@ -65,12 +69,16 @@ public final class ScriptRunner {
             guard case .array(let steps)? = script["steps"] else { throw JSHostError.engine("script has no steps") }
             for (i, s) in steps.enumerated() {
                 let ts = clock.now
+                // The driver's host-local clock: step i arrives at T0 + 1000 (i + 1) unless it sets localMs.
+                let local = s["localMs"]?.number ?? (ScriptRunner.t0Ms + 1000 * Double(i + 1))
                 if let st = s["state"] {
-                    host.recordMarker(["#state", .number(Double(i))])
-                    try host.onState(st)
+                    host.recordMarker(["#state", .number(Double(i)), .number(local)])
+                    localMs = local
+                    try host.onState(st, receivedAt: tree.now())
                 } else if let hex = s["stateHex"]?.string {
-                    host.recordMarker(["#state", .number(Double(i))])
-                    try host.onState(.bytes(ScriptRunner.bytes(hex: hex)))
+                    host.recordMarker(["#state", .number(Double(i)), .number(local)])
+                    localMs = local
+                    try host.onState(.bytes(ScriptRunner.bytes(hex: hex)), receivedAt: tree.now())
                 } else if let d = s["dispatch"] {
                     let tag = Int32(d["tag"]?.number ?? 0)
                     let name = d["name"]?.string ?? ""

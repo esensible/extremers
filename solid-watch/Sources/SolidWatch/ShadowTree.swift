@@ -44,8 +44,10 @@ public final class ShadowTree {
         var countdown = CountdownProps()
         var clock = ClockProps()
         var haptic = HapticProps()
-        /// When `toMs` was set (state receipt time).
-        var anchor: Date?
+        /// Countdown cues: armed flags, re-armed at the commit after `at` or
+        /// `cues` changed.
+        var cueArmed: [Bool]?
+        var cuesDirty = false
         /// Trigger at the previous commit; nil before the first.
         var hapticPrev: PropValue??
         var measured: MeasuredText?
@@ -76,14 +78,16 @@ public final class ShadowTree {
     public var onCommit: ((LayoutSnapshot) -> Void)?
     /// Invalid prop values (reset to their default, as in the browser host).
     public var onWarning: ((String) -> Void)?
-    /// When the state being applied was received: `countdown`'s `toMs` is
-    /// relative to it. The host sets it before each `onState`.
-    public var stateReceivedAt = Date()
-    /// The clock countdowns and clocks read (injectable for tests).
+    /// Device time − local time, in ms (README: Time); 0 until the first
+    /// `syncClock`.
+    public private(set) var offsetMs: Double = 0
+    /// Local time the state being applied arrived (set before `onState`).
+    public private(set) var receiptLocal: Date?
+    /// Cue haptics that fired in the last `tick()`.
+    public private(set) var tickHaptics: [LayoutSnapshot.HapticFired] = []
+    /// The host's local clock (injectable for tests). Countdowns and clocks
+    /// show device time = local + `offsetMs`, read as UTC epoch ms.
     public var now: () -> Date = Date.init
-    /// The time `clock` shows (the same as `now` unless a test pins it).
-    public lazy var wallClock: () -> Date = { [unowned self] in self.now() }
-    public var calendar = Calendar.current
     /// Time spent in commit (style + Yoga + leaf text + snapshot), for profiling.
     public private(set) var commitTime: Duration = .zero
     /// The `YGNodeCalculateLayout` part of `commitTime` (incl. text measures).
@@ -104,6 +108,14 @@ public final class ShadowTree {
     }
 
     public var nodeCount: Int { nodes.count }
+
+    /// Tags of all live nodes, and of those reachable from the root.
+    var allTags: Set<Int32> { Set(nodes.keys) }
+    var attachedTags: Set<Int32> {
+        var out = Set<Int32>()
+        if let r = rootTag, let root = nodes[r] { walkAttached(root) { out.insert($0.tag) } }
+        return out
+    }
 
     // MARK: Root
 
@@ -169,7 +181,7 @@ public final class ShadowTree {
         }
         guard let spec = n.spec?.props[key] else { throw MutationError("<\(n.type)> has no prop \(key)") }
         if value == .null { n.props.removeValue(forKey: key) } else { n.props[key] = value }
-        if key == "toMs" { n.anchor = stateReceivedAt }
+        if n.type == "countdown", key == "at" || key == "cues" { n.cuesDirty = true }
         var r = PropSetResult.ok
         switch spec.group {
         case "layout": r = n.layout.set(key, value)
@@ -230,9 +242,9 @@ public final class ShadowTree {
 
     /// Frees a node the bundle will not use again (detaching it first if
     /// attached). Its children stay, detached, until released themselves.
-    public func release(_ tag: Int32) throws {
-        let n = try get(tag)
-        if tag == rootTag { throw MutationError("release: the root cannot be released") }
+    /// An unknown tag or the root is ignored (as in the browser host).
+    public func release(_ tag: Int32) {
+        guard let n = nodes[tag], tag != rootTag else { return }
         dirtyText(n)
         detach(n)
         for t in n.children {
@@ -263,6 +275,10 @@ public final class ShadowTree {
         // What each attached leaf draws, re-derived from its final content
         // width (Yoga may have measured it several times, and cached).
         var haptics: [LayoutSnapshot.HapticFired] = []
+        for n in nodes.values where n.cuesDirty {
+            n.cuesDirty = false
+            armCues(n)
+        }
         walkAttached(root) { n in
             if n.isLeaf, let y = n.yoga {
                 let w = YGNodeLayoutGetWidth(y) - YGNodeLayoutGetPadding(y, .left) - YGNodeLayoutGetPadding(y, .right)
@@ -290,8 +306,13 @@ public final class ShadowTree {
 
     /// Time passed: re-derives every countdown / clock text. Returns true if
     /// any changed; then `relayout()` to measure and redraw them.
+    /// Cue haptics that fire are in `tickHaptics`.
     public func tick() -> Bool {
         var changed = false
+        tickHaptics = []
+        if let r = rootTag, let root = nodes[r] {
+            walkAttached(root) { n in if n.type == "countdown" { checkCues(n) } }
+        }
         for n in nodes.values where (n.type == "countdown" || n.type == "clock") && n.measured != nil {
             if displayText(n) != n.shown {
                 if let y = n.yoga { YGNodeMarkDirty(y) }
@@ -308,15 +329,22 @@ public final class ShadowTree {
         func consider(_ d: Date) { if best == nil || d < best! { best = d } }
         for n in nodes.values where n.measured != nil {
             if n.type == "clock" {
-                let t = wallClock()
-                let unit: Calendar.Component = n.clock.format == .hourMinuteSecond24 ? .second : .minute
-                if let next = calendar.nextDate(after: t, matching: unit == .second ? DateComponents(nanosecond: 0)
-                                                 : DateComponents(second: 0), matchingPolicy: .nextTime) {
-                    consider(next)
-                }
-            } else if n.type == "countdown", let toMs = n.countdown.toMs, let anchor = n.anchor {
-                let target = anchor.addingTimeInterval(toMs / 1000)
+                // Next whole second / minute on the device timeline (zones are whole minutes or
+                // half hours, so a minute boundary in UTC is one in the zone for the formats shown).
+                let unit = n.clock.format == .hourMinuteSecond24 ? 1000.0 : 60000.0
+                let dev = deviceNowMs() + n.clock.tzOffsetMin * 60000
+                let next = ((dev / unit).rounded(.down) + 1) * unit
+                consider(t.addingTimeInterval((next - dev) / 1000 + 0.001))
+            } else if n.type == "countdown", let at = n.countdown.at {
+                // The target on the local clock.
+                let target = Date(timeIntervalSince1970: (at - offsetMs) / 1000)
                 let rem = target.timeIntervalSince(t) * 1000
+                // The next armed cue mark.
+                if let cues = n.countdown.cues, let armed = n.cueArmed {
+                    for (c, a) in zip(cues, armed) where a && rem > c.atRemainingMs {
+                        consider(target.addingTimeInterval(-c.atRemainingMs / 1000).addingTimeInterval(0.001))
+                    }
+                }
                 switch n.countdown.format {
                 case .countdown, .remaining:
                     // The shown second (rounded up) changes at each whole second before the target.
@@ -331,6 +359,58 @@ public final class ShadowTree {
             }
         }
         return best
+    }
+
+    // MARK: Time (README: Time)
+
+    /// A state arrived at local time `local` (call before `__app.onState`).
+    public func receivedState(at local: Date) {
+        receiptLocal = local
+    }
+
+    /// Host op: the state being applied was captured at device time
+    /// `deviceNowMs`. Last sample wins.
+    public func syncClock(deviceNowMs: Double) {
+        let local = (receiptLocal ?? now()).timeIntervalSince1970 * 1000
+        offsetMs = deviceNowMs - local
+        for n in nodes.values where n.type == "countdown" || n.type == "clock" {
+            if let y = n.yoga, YGNodeHasMeasureFunc(y) { YGNodeMarkDirty(y) }
+        }
+    }
+
+    /// Device time now, ms.
+    public func deviceNowMs() -> Double { now().timeIntervalSince1970 * 1000 + offsetMs }
+
+    private func remaining(_ n: Node) -> Int {
+        TimeFormat.jsRound((n.countdown.at ?? 0) - deviceNowMs())
+    }
+
+    private func armCues(_ n: Node) {
+        let cues = n.countdown.cues ?? []
+        let r = n.countdown.at != nil ? Double(remaining(n)) : -.infinity
+        n.cueArmed = cues.map { r > $0.atRemainingMs }
+    }
+
+    /// A cue fires once when the remaining time falls to (<=) its mark while
+    /// armed; it re-arms when the remaining time goes back above it. Several
+    /// at once: only the last (smallest mark) plays.
+    private func checkCues(_ n: Node) {
+        guard let cues = n.countdown.cues, !cues.isEmpty, n.countdown.at != nil, var armed = n.cueArmed,
+              armed.count == cues.count else { return }
+        let r = Double(remaining(n))
+        var fire: CountdownCuesItem?
+        for (i, c) in cues.enumerated() {
+            if r <= c.atRemainingMs {
+                if armed[i], fire == nil || c.atRemainingMs < fire!.atRemainingMs { fire = c }
+                armed[i] = false
+            } else {
+                armed[i] = true
+            }
+        }
+        n.cueArmed = armed
+        if let f = fire {
+            tickHaptics.append(.init(tag: n.tag, pattern: HapticPattern(rawValue: f.pattern) ?? .click))
+        }
     }
 
     // MARK: Internals
@@ -400,11 +480,10 @@ public final class ShadowTree {
 
     func displayText(_ n: Node) -> String {
         if n.type == "countdown" {
-            guard let toMs = n.countdown.toMs, let anchor = n.anchor else { return "" }
-            let remaining = TimeFormat.jsRound(toMs - now().timeIntervalSince(anchor) * 1000)
-            return TimeFormat.countdown(n.countdown.format, remainingMs: remaining)
+            guard n.countdown.at != nil else { return "" }
+            return TimeFormat.countdown(n.countdown.format, remainingMs: remaining(n))
         }
-        return TimeFormat.clock(n.clock.format, date: wallClock(), calendar: calendar)
+        return TimeFormat.clock(n.clock.format, deviceMs: deviceNowMs(), tzOffsetMin: n.clock.tzOffsetMin)
     }
 
     private func measureLeaf(_ n: Node, maxWidth: Double) -> MeasuredText {

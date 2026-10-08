@@ -63,11 +63,18 @@ typedef struct sw_host_callbacks {
     int (*insert)(void *user, int32_t parent, int32_t child, int32_t before);
     int (*remove)(void *user, int32_t parent, int32_t child);
     int (*commit)(void *user);
+    /// `syncClock(deviceNowMs)`: the state being applied was captured at
+    /// this device time (README: Time).
+    int (*sync_clock)(void *user, double device_now_ms);
+    /// `release(tag)`: JS can no longer reach `tag` (from the renderer's
+    /// FinalizationRegistry, as a pending job after a GC). Not recorded.
+    int (*release)(void *user, int32_t tag);
     /// While recording is on (sw_engine_set_recording), each `__host` call
     /// is reported as one `JSON.stringify([op, ...args])` line, made by the
     /// engine itself so it matches a JS recording host byte for byte:
     /// ["createNode",tag,type] ["createText",tag,text] ["setProp",tag,key,value]
-    /// ["insert",parent,child,before] ["remove",parent,child] ["commit"].
+    /// ["insert",parent,child,before] ["remove",parent,child] ["commit"]
+    /// ["syncClock",deviceNowMs].
     void (*record)(void *user, const char *line, size_t len);
 } sw_host_callbacks;
 
@@ -120,7 +127,9 @@ int sw_engine_call_app(sw_engine *e, const char *method, const uint8_t *args,
                        size_t *result_len, char *err, size_t errlen);
 
 void sw_free(void *p);
-void sw_engine_gc(sw_engine *e);
+/// Runs a garbage collection, then the pending jobs it queued (finalizers:
+/// `release` calls). Returns SW_OK or an error code like the calls above.
+int sw_engine_gc(sw_engine *e, double timeout_ms, char *err, size_t errlen);
 void sw_engine_memory(sw_engine *e, sw_mem_usage *out);
 const char *sw_quickjs_version(void);
 

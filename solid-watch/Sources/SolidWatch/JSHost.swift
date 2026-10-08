@@ -124,6 +124,15 @@ public final class JSHost {
         cb.commit = { user in
             Box.get(user).status { _ = try $0.tree.commit() }
         }
+        cb.sync_clock = { user, ms in
+            Box.get(user).status { $0.tree.syncClock(deviceNowMs: ms) }
+        }
+        cb.release = { user, tag in
+            Box.get(user).status { h in
+                h.tree.release(tag)
+                h.releasedTags.append(tag)
+            }
+        }
         cb.record = { user, line, len in
             Box.get(user).host?.log.append(str(line, len))
         }
@@ -178,7 +187,6 @@ public final class JSHost {
         guard rootTag == nil else { throw JSHostError.notReady("already mounted") }
         let root = tree.createRoot(width: width, height: height)
         rootTag = root
-        tree.stateReceivedAt = tree.now()
         try mount(root: root, ctx: ["width": .number(Double(width)), "height": .number(Double(height))])
     }
 
@@ -189,10 +197,11 @@ public final class JSHost {
     }
 
     /// Calls `__app.onState(state)`. `receivedAt` is when the app received
-    /// the state: `countdown` targets (`toMs`) are relative to it.
+    /// the state (local clock); the bundle's `syncClock(deviceNowMs)` sets the
+    /// device clock offset against it (README: Time).
     public func onState(_ state: JSData, receivedAt: Date? = nil) throws {
         guard rootTag != nil else { throw JSHostError.notReady("onState before mount") }
-        tree.stateReceivedAt = receivedAt ?? tree.now()
+        tree.receivedState(at: receivedAt ?? tree.now())
         try callApp("onState", [state])
     }
 
@@ -235,7 +244,17 @@ public final class JSHost {
         return String(cString: p)
     }
 
-    public func collectGarbage() { sw_engine_gc(engine) }
+    /// Tags `release` was called for, in order.
+    public private(set) var releasedTags: [Int32] = []
+
+    /// Runs a GC and then the jobs it queued, so the renderer's
+    /// FinalizationRegistry delivers `release(tag)` for unreachable nodes.
+    public func collectGarbage() throws {
+        let t0 = ContinuousClock.now
+        let rc = sw_engine_gc(engine, timeoutMs, &errBuf, errBuf.count)
+        jsTime += ContinuousClock.now - t0
+        _ = try finish(rc, nil, 0)
+    }
 
     public func memoryUsage() -> sw_mem_usage {
         var u = sw_mem_usage()
