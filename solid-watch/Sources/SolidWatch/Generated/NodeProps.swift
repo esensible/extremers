@@ -723,11 +723,11 @@ public struct CountdownCuesItem: Equatable, Sendable {
 
 /// `countdown`'s own props.
 public struct CountdownProps: Equatable, Sendable {
-  /// Target time in ms on the host clock (the clock of onState's receivedAtMs). null shows nothing.
+  /// Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing.
   public var at: Double? = nil
   /// README: Countdown formats.
   public var format: CountdownFormat = .countdown
-  /// Haptics the host plays natively as the remaining time (at - now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues.
+  /// Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues.
   public var cues: [CountdownCuesItem]? = nil
 
   public init() {}

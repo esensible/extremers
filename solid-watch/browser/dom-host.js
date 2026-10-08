@@ -105,6 +105,7 @@ export class DomHost {
       insert: (p, c, b) => (this.ops++, t.insert(p, c, b)),
       remove: (p, c) => (this.ops++, t.remove(p, c)),
       commit: () => this._commit(),
+      syncClock: (deviceNowMs) => (this.ops++, t.syncClock(deviceNowMs)),
       release: (tag) => {
         t.release(tag);
         const el = this.els.get(tag);
@@ -132,9 +133,10 @@ export class DomHost {
     this._guard(() => app.mount(1, ctx));
   }
 
-  /** Deliver a state, stamped with the host clock at receipt. */
-  state(value, receivedAtMs = this.clock.now()) {
-    this._guard(() => this.app.onState(value, receivedAtMs));
+  /** Deliver a state; its local receipt time anchors the bundle's syncClock. */
+  state(value) {
+    this.tree.receivedState(this.clock.now());
+    this._guard(() => this.app.onState(value));
   }
 
   _guard(fn) {

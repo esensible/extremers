@@ -1,8 +1,9 @@
 // Events and the native nodes: onPress set, replaced and removed; a native
-// press handler with confirm; haptic trigger; countdowns on the host clock
-// (at = receivedAtMs + a relative time from the state) with cues; clock.
+// press handler with confirm; haptic trigger; countdowns to a device time
+// from the state (the state also reports the device clock: syncClock) with
+// cues; clock.
 import { createSignal } from "solid-js";
-import { createApp } from "solid-watch";
+import { createApp, syncClock } from "solid-watch";
 
 const [count, setCount] = createSignal(0);
 const [armed, setArmed] = createSignal(true);
@@ -29,9 +30,9 @@ function App() {
 }
 
 createApp(App, {
-  onState(s, receivedAtMs) {
+  onState(s) {
+    syncClock(s.now); // device clock when the state was captured
     setArmed(s.armed);
-    // the state carries "start in" (ms, relative to its capture); anchor it once, here
-    setAt(s.startIn == null ? null : receivedAtMs + s.startIn);
+    setAt(s.start); // device time of the start, or null
   },
 });

@@ -5,11 +5,12 @@
 //
 // evalBundle(): evaluates the bundle (which sets globalThis.__app).
 // script: { ctx: {width, height}, steps: [step, ...] }, step one of
-//   { "state": <any JSON> }          __app.onState(value, receivedAtMs)
-//   { "stateHex": "0201ff" }         __app.onState(Uint8Array of those bytes, receivedAtMs)
+//   { "state": <any JSON> }          __app.onState(value)
+//   { "stateHex": "0201ff" }         __app.onState(Uint8Array of those bytes)
 //   { "dispatch": { "tag": n, "name": "press", "payload": {...} } }
-// A state step may set "receivedAtMs"; by default step i arrives at
-// T0 + 1000 * (i + 1), with mount at T0 = 1 000 000 (the fixture clock).
+// Host-local clock: mount at T0 = 1 000 000; state step i is received at
+// local T0 + 1000 * (i + 1) unless it sets "localMs". It is logged in the
+// #state line; the bundle's syncClock(deviceNowMs) is logged as an op.
 //
 // Each line is one JSON array (README: Golden mutation logs). release(tag)
 // calls are not logged (their timing is the engine's GC); they collect in
@@ -32,10 +33,11 @@
       insert(parent, child, before) { rec("insert", parent, child, before); },
       remove(parent, child) { rec("remove", parent, child); },
       commit() { rec("commit"); },
+      syncClock(deviceNowMs) { rec("syncClock", deviceNowMs); },
       release(tag) { g.__swReleased.push(tag); },
     };
     g.__swReleased = [];
-    const at = (s, i) => (s.receivedAtMs !== undefined ? s.receivedAtMs : T0 + 1000 * (i + 1));
+    const at = (s, i) => (s.localMs !== undefined ? s.localMs : T0 + 1000 * (i + 1));
     try {
       evalBundle();
       const app = g.__app;
@@ -45,10 +47,10 @@
         const s = script.steps[i];
         if ("state" in s) {
           rec("#state", i, at(s, i));
-          app.onState(s.state, at(s, i));
+          app.onState(s.state);
         } else if ("stateHex" in s) {
           rec("#state", i, at(s, i));
-          app.onState(hexBytes(s.stateHex), at(s, i));
+          app.onState(hexBytes(s.stateHex));
         } else if ("dispatch" in s) {
           const d = s.dispatch;
           const payload = d.payload === undefined ? null : d.payload;

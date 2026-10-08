@@ -774,11 +774,10 @@
    *
    * - mount(rootTag, ctx): renders <Root {...ctx} /> into the host's root, then
    *   one commit. ctx = { width, height } in points.
-   * - onState(state, receivedAtMs): runs `onState(state, receivedAtMs)` inside
-   *   batch(), then one commit. `state` is whatever the app delivers (bytes, an
-   *   object); the package doesn't look. receivedAtMs is the host clock (the
-   *   clock countdown `at` is on) when the state arrived: relative times in a
-   *   state become absolute as receivedAtMs + relative.
+   * - onState(state): runs `onState(state)` inside batch(), then one commit.
+   *   `state` is whatever the app delivers (bytes, an object); the package
+   *   doesn't look. If the state carries the device's clock, call
+   *   syncClock(deviceNowMs) from onState (README: Time).
    * - dispatch(tag, name, payload): runs the JS handler for event `name` on
    *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
    *   false (and doesn't commit) if there is no handler.
@@ -793,8 +792,8 @@
         dispose = render(() => createComponent(Root, ctx), wrapHostNode(rootTag));
         host().commit();
       },
-      onState(state, receivedAtMs) {
-        if (onState) batch(() => onState(state, receivedAtMs));
+      onState(state) {
+        if (onState) batch(() => onState(state));
         host().commit();
       },
       dispatch(tag, name, payload) {

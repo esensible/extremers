@@ -1,4 +1,4 @@
-// Countdowns on the host clock: `at` from receivedAtMs, ticking, cues.
+// Countdowns on device time (local clock + syncClock offset), ticking, cues.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,17 +7,43 @@ import { ROOT, runNode, replay, schema, fixtureClock, T0 } from "./lib.mjs";
 import { ShadowTree } from "../browser/shadow.js";
 import { stubMeasurer } from "../browser/text-layout.js";
 
-test("events bundle: at = receivedAtMs + startIn; the same startIn later is a new at", () => {
+test("events bundle: at is the device start time; syncClock reports the device clock", () => {
   const dir = ROOT + "fixtures/mutations/events/";
   const script = JSON.parse(readFileSync(dir + "script.json", "utf8"));
   const log = runNode(readFileSync(dir + "bundle.js", "utf8"), script).map((l) => JSON.parse(l));
   const cd = log.find((m) => m[0] === "createNode" && m[2] === "countdown")[1];
   const ats = log.filter((m) => m[0] === "setProp" && m[1] === cd && m[2] === "at").map((m) => m[3]);
-  assert.deepEqual(ats, [null, T0 + 1000 + 65000, T0 + 5000 + 64000, 1006000 + 64000, T0 + 8000 - 3000, null]);
-  // laid out at each state's receipt, so the countdown shows startIn
-  const frames = replay(log.map((m) => JSON.stringify(m)));
-  const shown = frames.map((f) => (f.text[cd] ? f.text[cd].lines : null));
-  assert.equal(shown[1], 1); // "01:05" laid out
+  // an unchanged start (step 5) is not re-sent: nothing to re-anchor
+  assert.deepEqual(ats, [null, 5066000, 5069000, 5005000, null]);
+  assert.deepEqual(log.filter((m) => m[0] === "syncClock").map((m) => m[1]), [5001000, 5005000, 5006000, 5008000, 5009000]);
+});
+
+test("countdown runs on local now + offset; the offset comes from the last syncClock", () => {
+  const dir = ROOT + "fixtures/mutations/events/";
+  const lines = readFileSync(dir + "log.jsonl", "utf8").split("\n").filter(Boolean);
+  // replay up to and including the state at step 5 (received 250 ms late)
+  const s5 = lines.findIndex((l) => l.startsWith('["#state",5,'));
+  const upTo = lines.findIndex((l, i) => i > s5 && l.startsWith('["#dispatch"'));
+  assert.ok(s5 > 0 && upTo > s5);
+  const clock = fixtureClock();
+  const tree = new ShadowTree(Yoga, { schema, measurer: stubMeasurer, clock });
+  for (const l of lines.slice(0, upTo)) {
+    const [op, ...a] = JSON.parse(l);
+    if (op === "#mount") tree.createRoot(a[0], a[1]);
+    else if (op === "#state") (clock.set(a[1]), tree.receivedState(a[1]));
+    else if (op === "syncClock") tree.syncClock(a[0]);
+    else if (op === "createNode") tree.createNode(a[1]);
+    else if (op === "createText") tree.createText(a[1]);
+    else if (op === "setProp") tree.setProp(a[0], a[1], a[2]);
+    else if (op === "insert") tree.insert(a[0], a[1], a[2]);
+    else if (op === "remove") tree.remove(a[0], a[1]);
+    else if (op === "commit") tree.commit();
+  }
+  const cd = [...tree.nodes.values()].find((n) => n.type === "countdown");
+  assert.equal(tree.offset, 5006000 - 1006250);
+  assert.equal(tree.displayText(cd), "01:03"); // 5069000 - (1006250 + 3999750)
+  clock.set(1006250 + 3000); // 3 s later, no new state: it keeps counting
+  assert.equal(tree.displayText(cd), "01:00");
 });
 
 function countdownTree(props) {

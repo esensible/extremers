@@ -65,19 +65,36 @@ The bundle, evaluated as a script, sets:
 ```js
 globalThis.__app = {
   mount(rootTag, ctx),          // ctx = { width, height } (points); renders, then one commit
-  onState(state, receivedAtMs), // runs the app's onState(state, receivedAtMs) inside batch(), then one commit
+  onState(state),               // runs the app's onState(state) inside batch(), then one commit
   dispatch(tag, name, payload), // runs the JS handler for event `name` on `tag` inside batch(),
                                 // then one commit; returns false (no commit) if there is none
 }
 ```
 
 `state` is whatever the app delivers (bytes as a `Uint8Array`, an object…);
-the package never looks at it. `receivedAtMs` is the **host clock** when the
-state arrived (any monotonic millisecond clock; it is the clock countdown
-`at` is on). A state that carries relative times ("starts in 65 s") becomes
-absolute once, in the bundle: `at = receivedAtMs + startIn`. So the same
-relative value in a later state is a different `at`, and nothing keeps a
-stale anchor. Exceptions propagate to the host (show an
+the package never looks at it.
+
+## Time
+
+One timeline: the **device clock** (the clock of the system that produces
+the states). Bundles only ever see device times; the host's local clock is
+hidden from them.
+
+- A state that carries the device's clock reports it from the bundle's
+  `onState`: `syncClock(deviceNowMs)` (exported by `solid-watch`; host op
+  `syncClock`). Decoding stays in the bundle, so the host doesn't need to
+  know where the timestamp is in the state.
+- The host notes its local clock when each state arrives (before calling
+  `onState`) and on `syncClock` sets
+  `offset = deviceNowMs − localReceiptMs` (the last sample wins, as a
+  browser client syncing to a server timestamp does). Before the first
+  `syncClock`, offset = 0.
+- Device now = local now + offset. A `countdown`'s `at` is a device time
+  (e.g. a start time from the state); the host ticks it locally, so it keeps
+  going between states and without the link. States only refresh the offset
+  and the values; an unchanged `at` is simply not re-sent, nothing to
+  re-anchor.
+- `clock` shows the host's local wall time. Exceptions propagate to the host (show an
 error screen; keep the app alive).
 
 ## Host interface
@@ -95,6 +112,7 @@ created nodes from `2`).
 | `insert(parent, child, before)` | insert `child` before `before` (`0` = append). Inserting an attached node moves it |
 | `remove(parent, child)` | detach `child`. The renderer may re-insert a removed node later, so keep it |
 | `commit()` | end of a batch: apply, lay out, draw |
+| `syncClock(deviceNowMs)` | the state being applied was captured at this device time: offset = deviceNowMs − local receipt time (see Time) |
 | `release(tag)` | JS can no longer reach `tag`: free it (props, Yoga node, view). Only now may a host free a node. Its parent, if any, is being released too; its children are released by their own calls, in any order |
 
 `release` comes from a `FinalizationRegistry` on the renderer's node
@@ -245,7 +263,7 @@ layout each host re-runs `measure` with the leaf's **final content width**
 
 ### Countdown formats
 
-`remaining` = round(`at` − now) in integer ms, both on the host clock.
+`remaining` = round(`at` − (local now + offset)) in integer ms (device time).
 Seconds rounded up for counting down, down for elapsed:
 
 | `format` | text |
@@ -297,21 +315,22 @@ Local time: `HH:mm` (default), `HH:mm:ss`, `h:mm` (12-hour, no AM/PM).
 |---|---|
 | `bundle.js` | the bundle |
 | `bundle.js.sha256` | `<sha256 hex>  bundle.js` (sha256sum format) |
-| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`) or `{ "dispatch": { tag, name, payload } }`. A state step may set `receivedAtMs`; by default step *i* arrives at T0 + 1000 × (*i* + 1), mount at T0 = 1 000 000 |
+| `script.json` | `{ ctx, steps }`; a step is `{ "state": any }`, `{ "stateHex": "0201ff" }` (delivered as a `Uint8Array`) or `{ "dispatch": { tag, name, payload } }`. Host-local clock: mount at T0 = 1 000 000; state step *i* is received at local T0 + 1000 × (*i* + 1) unless it sets `localMs`. Device time comes only from the bundle's `syncClock` |
 | `log.jsonl` | the mutation log, one JSON array per line, recorded under **qjs** (quickjs-ng v0.17.0); node must produce the identical log |
 | `frames.jsonl` | after each `commit`, one line: `{ commit, frames: { tag: [x, y, w, h] }, text: { tag: { fontSize, lines } }, content: { scrollTag: height }, haptics: [{ tag, pattern }] }` with the stub measurer and fixed clock |
 
 Log lines: `["createNode", tag, type]`, `["createText", tag, s]`,
 `["setProp", tag, key, value]`, `["insert", parent, child, before]`,
-`["remove", parent, child]`, `["commit"]`, and driver markers
-`["#mount", rootTag, ctx]`, `["#state", stepIndex, receivedAtMs]`,
-`["#dispatch", tag, name, payload]`, `["#handled", bool]`,
-`["#error", message]`. `release` calls are **not** in the logs (their
-timing is the engine's GC); compare logs without them.
+`["remove", parent, child]`, `["commit"]`, `["syncClock", deviceNowMs]`,
+and driver markers `["#mount", rootTag, ctx]`,
+`["#state", stepIndex, localReceiptMs]`, `["#dispatch", tag, name, payload]`,
+`["#handled", bool]`, `["#error", message]`. `release` calls are **not** in
+the logs (their timing is the engine's GC); compare logs without them.
 
-The frames' clock: now = T0 at mount and = the `#state` line's
-`receivedAtMs` from that line on (no time passes between a state's arrival
-and its layout).
+The frames' local clock: T0 at mount, then each `#state` line's
+`localReceiptMs` (the host's receipt time for the following `syncClock`; no
+time passes between a state's arrival and its layout). The events fixture
+uses a fixed offset of 4 000 000 ms, and 3 999 750 for one late state.
 
 A host test can (a) run `bundle.js` with a recording host through
 `script.json` and compare with `log.jsonl`, and (b) apply `log.jsonl` to its

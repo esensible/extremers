@@ -8,8 +8,11 @@
 //   tree.createRoot(1, { width, height })
 //   tree.createNode("view") -> tag ... tree.commit() -> layout result
 //
-// clock: { now(): ms on the host clock (the clock of onState's receivedAtMs
-// and countdown `at`), date(): Date (wall clock, for <clock>) }
+// clock: { now(): host-local monotonic ms, date(): Date (wall clock, for
+// <clock>) }. Countdowns run on device time = local now + offset, where
+// offset = deviceNowMs - local receipt time of the state that last called
+// syncClock (README: Time). The host calls receivedState(localMs) when a
+// state arrives, before handing it to the bundle.
 import { Align, BoxSizing, Direction, Display, Edge, FlexDirection, Gutter, Justify, MeasureMode, Overflow, PositionType, Wrap } from "yoga-layout";
 import { measureText, formatCountdown, formatClock } from "./text-layout.js";
 import { mergeSchema } from "../js/schema-merge.js";
@@ -47,6 +50,26 @@ export class ShadowTree {
     this.dirtyMeasure = new Set(); // text-ish tags whose content or measure props changed
     this.hapticsFired = []; // [{tag, pattern}] at the last commit
     this.root = null;
+    this.offset = 0; // device ms - local ms; 0 until the first syncClock
+    this.receiptLocal = null;
+  }
+
+  // ---- time (README: Time) -------------------------------------------------------
+  /** A state arrived at local time localMs (call before __app.onState). */
+  receivedState(localMs) {
+    this.receiptLocal = localMs;
+  }
+  /** Host op: the state being applied was captured at device time deviceNowMs. */
+  syncClock(deviceNowMs) {
+    const local = this.receiptLocal ?? this.clock.now();
+    this.offset = deviceNowMs - local;
+    // every countdown's text may have moved; cues are not re-armed (a mark
+    // crossed by the correction fires or re-arms on the next tick as usual)
+    for (const n of this.nodes.values()) if (n.type === "countdown") this.dirtyMeasure.add(n.tag);
+  }
+  /** Device time now. */
+  deviceNow() {
+    return this.clock.now() + this.offset;
   }
 
   // ---- host interface --------------------------------------------------------
@@ -264,7 +287,7 @@ export class ShadowTree {
 
   // ---- countdowns (README: Countdown formats, Countdown cues) -------------------
   _remaining(n) {
-    return Math.round(n.props.at - this.clock.now());
+    return Math.round(n.props.at - this.deviceNow());
   }
   _armCues(n) {
     const cues = Array.isArray(n.props.cues) ? n.props.cues : [];

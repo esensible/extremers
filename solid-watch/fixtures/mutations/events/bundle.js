@@ -787,17 +787,27 @@
   });
 
   /**
+   * The state being applied was captured when the device's clock read
+   * `deviceNowMs`. The host keeps offset = deviceNowMs - (its local clock when
+   * it received this state) and runs countdowns on localNow + offset, so `at`
+   * props are plain device times (e.g. a start time from the state). Call it
+   * from onState; bundles never see the host's local clock.
+   */
+  function syncClock(deviceNowMs) {
+    host().syncClock(deviceNowMs);
+  }
+
+  /**
    * Define the bundle's entry point: sets and returns `globalThis.__app`.
    *
    *   createApp(Root, { onState(state) { ...set signals... } })
    *
    * - mount(rootTag, ctx): renders <Root {...ctx} /> into the host's root, then
    *   one commit. ctx = { width, height } in points.
-   * - onState(state, receivedAtMs): runs `onState(state, receivedAtMs)` inside
-   *   batch(), then one commit. `state` is whatever the app delivers (bytes, an
-   *   object); the package doesn't look. receivedAtMs is the host clock (the
-   *   clock countdown `at` is on) when the state arrived: relative times in a
-   *   state become absolute as receivedAtMs + relative.
+   * - onState(state): runs `onState(state)` inside batch(), then one commit.
+   *   `state` is whatever the app delivers (bytes, an object); the package
+   *   doesn't look. If the state carries the device's clock, call
+   *   syncClock(deviceNowMs) from onState (README: Time).
    * - dispatch(tag, name, payload): runs the JS handler for event `name` on
    *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
    *   false (and doesn't commit) if there is no handler.
@@ -812,8 +822,8 @@
         dispose = render(() => createComponent(Root, ctx), wrapHostNode(rootTag));
         host().commit();
       },
-      onState(state, receivedAtMs) {
-        if (onState) batch(() => onState(state, receivedAtMs));
+      onState(state) {
+        if (onState) batch(() => onState(state));
         host().commit();
       },
       dispatch(tag, name, payload) {
@@ -908,10 +918,10 @@
     })();
   }
   createApp(App, {
-    onState(s, receivedAtMs) {
+    onState(s) {
+      syncClock(s.now); // device clock when the state was captured
       setArmed(s.armed);
-      // the state carries "start in" (ms, relative to its capture); anchor it once, here
-      setAt(s.startIn == null ? null : receivedAtMs + s.startIn);
+      setAt(s.start); // device time of the start, or null
     }
   });
 

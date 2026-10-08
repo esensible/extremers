@@ -37,9 +37,10 @@ export function runQjs(qjs, bundlePath, scriptPath, extra = []) {
   return r.stdout.split("\n").filter((l) => l !== "");
 }
 
-// The fixture clock: mount at T0; a state's commit is laid out at its
-// receivedAtMs (the #state line's third element), so no time passes between a
-// state's arrival and its layout. Wall clock fixed at 09:41:07.
+// The fixture's host-local clock: mount at T0; a state's commit is laid out
+// at its local receipt time (the #state line's third element), so no time
+// passes between a state's arrival and its layout. Device time comes from the
+// bundle's syncClock lines. Wall clock fixed at 09:41:07.
 export const T0 = 1_000_000;
 export function fixtureClock(start = T0) {
   let now = start;
@@ -62,7 +63,8 @@ export function replay(lines, { fragments = [] } = {}) {
     const [op, ...a] = JSON.parse(line);
     switch (op) {
       case "#mount": clock.set(T0); tree.createRoot(a[0], a[1]); break;
-      case "#state": clock.set(a[1]); break;
+      case "#state": clock.set(a[1]); tree.receivedState(a[1]); break;
+      case "syncClock": tree.syncClock(a[0]); break;
       case "createNode": { const t = tree.createNode(a[1]); if (t !== a[0]) throw new Error(`tag mismatch ${t} != ${a[0]}`); break; }
       case "createText": { const t = tree.createText(a[1]); if (t !== a[0]) throw new Error(`tag mismatch ${t} != ${a[0]}`); break; }
       case "setProp": tree.setProp(a[0], a[1], a[2]); break;
