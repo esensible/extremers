@@ -49,7 +49,10 @@ cd tgt-std && cargo run
 ```
 
 Wi-Fi name, password, channel and the device's address are in
-`common/src/config.rs`.
+`common/src/config.rs`. On the C6 the name and password there are only
+defaults: credentials stored in its flash take precedence (see
+`tgt-xiaoc6/README.md` for flashing with the partition table and
+provisioning them).
 
 ## Wire protocol
 

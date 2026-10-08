@@ -3,6 +3,9 @@ name = "xiaoc6"
 version = "0.1.0"
 edition.workspace = true
 license = "MIT OR Apache-2.0"
+# The app; src/bin/ holds the provision and dump tools (see README.md), so
+# a plain `cargo run` needs telling which binary to flash.
+default-run = "xiaoc6"
 
 [dependencies]
 # Common crate for shared code; it logs through defmt here
