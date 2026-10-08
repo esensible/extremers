@@ -798,6 +798,19 @@ public struct HapticProps: Equatable, Sendable {
 
 /// The core node types and their props.
 public enum CoreSchema {
+  /// The font both hosts measure and draw with (README: Font).
+  public static let fontFamily = "Inter"
+  public static let fontFile = "fonts/Inter-roman.ttf"
+  /// Default line height = fontSize x this (hhea ascent + descent + gap over units/em).
+  public static let fontLineHeightRatio: Double = 1.2102272727272727
+  public static let fontAscentRatio: Double = 0.96875
+  public static let fontDescentRatio: Double = 0.24147727272727273
+  /// Shrink-to-fit size grid and "fits" tolerance, points (README: Shrink-to-fit).
+  public static let fitStep: Double = 0.5
+  public static let fitEpsilon: Double = 0.001
+  /// Yoga config both hosts use.
+  public static let pointScaleFactor: Double = 2
+
   public static let colors: [String: String] = [
     "white": "#FFFFFF",
     "black": "#000000",

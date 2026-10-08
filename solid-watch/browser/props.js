@@ -3,6 +3,16 @@ export const schema = {
   "schemaVersion": 1,
   "name": "core",
   "doc": "solid-watch core node types. Layout props use React Native / Yoga names and React Native defaults. A prop's `kind` tells the host what a change invalidates: layout (Yoga style), measure (text measurement: dirty the text's Yoga node), paint (redraw only), behavior (host behaviour, no layout), event (a JS handler: the host only learns whether one is set).",
+  "font": {
+    "doc": "The one font both hosts measure and draw with (fonts/, SIL OFL 1.1). Its hhea, typo and win metrics agree (ascent 2728, descent 680, gap 0, 2816 units/em), so the default line height is fontSize x 3408/2816 everywhere. fontWeight drives the wght axis (100-900).",
+    "family": "Inter",
+    "file": "fonts/Inter-roman.ttf",
+    "version": "3.19",
+    "unitsPerEm": 2816,
+    "ascent": 2728,
+    "descent": 680,
+    "lineHeightRatio": 1.2102272727272727
+  },
   "colors": {
     "white": "#FFFFFF",
     "black": "#000000",
