@@ -1,4 +1,4 @@
-import { createSignal } from "./api.js" // maintains a map for RESTful updates
+import { createSignal } from "solid-js"
 
 const CONFIRM_TIMEOUT = 5000;
 const BORDER_SIZE = 15; // vw

@@ -1,13 +1,14 @@
-import { createSignal, onCleanup, createEffect, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { decodeWsState, encodeWsEvent } from "../../../protocol-js/protocol.js";
 import { confirm } from './confirm.jsx';
 
 import './touch.js';
 import './style.css'
 
-// Initialize state variables
-const [speed, setSpeed] = createSignal(0.0);
-const [speedDev, setSpeedDev] = createSignal(0.0);
-const [headingDev, setHeadingDev] = createSignal(0.0);
+// The device's TuneView (protocol.d.ts), applied with reconcile so only
+// the numbers that changed notify.
+const [tune, setTune] = createStore({ speed: 0, speed_dev: 0, heading_dev: 0 });
 const [Confirm, doConfirm] = confirm();
 
 // Function to format deviations with '+' or '-' prefix
@@ -38,6 +39,8 @@ function fetchUpdates() {
 
     function connectWebSocket() {
         const ws = new WebSocket(`ws://${window.location.host}/socket`);
+        // binary frames of postcard (protocol-js/)
+        ws.binaryType = "arraybuffer";
         socket = ws;
 
         // Abandons this socket and schedules the next one. A dead
@@ -68,22 +71,19 @@ function fetchUpdates() {
             restartSilenceTimer();
             setConnected(true);
 
-            const data = JSON.parse(event.data);
-            if (data.kind && data.kind !== "TuneSpeed") {
+            let message;
+            try {
+                message = decodeWsState(event.data);
+            } catch (e) {
+                console.error('Undecodable state message:', e);
+                return;
+            }
+            // another engine is active: the device serves its page
+            if (message.engine.tag !== "TuneSpeed") {
                 window.location.reload();
                 return;
             }
-            if (data.engine) {
-                if (data.engine.speed !== undefined) {
-                    setSpeed(data.engine.speed);
-                }
-                if (data.engine.speed_dev !== undefined) {
-                    setSpeedDev(data.engine.speed_dev);
-                }
-                if (data.engine.heading_dev !== undefined) {
-                    setHeadingDev(data.engine.heading_dev);
-                }
-            }
+            setTune(reconcile(message.engine.value));
         };
 
         ws.onclose = () => {
@@ -106,11 +106,11 @@ function fetchUpdates() {
     });
 }
 
-// Switch engine. Any name the server doesn't recognise returns to the
-// selector, so "Selector" is the clean way to exit.
-function selectEngine(name) {
+// Switch engine: "Selector" returns to the chooser.
+function selectEngine(kind) {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ Select: name }));
+        const bytes = encodeWsEvent({ tag: "Engine", value: { tag: "Select", value: { tag: kind } } });
+        socket.send(new Uint8Array(bytes).buffer);
     } else {
         console.error('WebSocket is not connected');
     }
@@ -121,18 +121,13 @@ fetchUpdates();
 
 // Main App Component
 const App = () => {
-    // Similar to the Race client app, we'll use an effect to handle any additional setup
-    createEffect(() => {
-        // Any Race app-specific setup can be added here
-    });
-
     return (
         <div class="container">
             <button class="exit-button" onClick={() => doConfirm(() => selectEngine("Selector"), 2)}></button>
             <Confirm />
-            <div class="speed">{() => speed().toFixed(1)}</div>
-            <div class="deviation">{() => formatDeviation(speedDev())}<span class="small-deviation">k</span></div>
-            <div class="deviation">{() => formatDeviation(headingDev(), 0)}<span class="small-deviation">°</span></div>
+            <div class="speed">{() => tune.speed.toFixed(1)}</div>
+            <div class="deviation">{() => formatDeviation(tune.speed_dev)}<span class="small-deviation">k</span></div>
+            <div class="deviation">{() => formatDeviation(tune.heading_dev, 0)}<span class="small-deviation">°</span></div>
             <Show when={!connected()}>
                 <div class="connection-lost">Connection lost, reconnecting</div>
             </Show>

@@ -1,13 +1,17 @@
 import { speed, time, LineButtons } from './common.jsx';
 import { confirm } from './confirm.jsx';
-import { postEvent, timestamp } from "./api.js"
+import { postEvent } from "./api.js"
 
 const [Confirm, doConfirm] = confirm();
 
 function seqClick(seconds) {
     return () => {
-        const clickTime = timestamp();
-        doConfirm(() => { postEvent({ "BumpSeq": { timestamp: clickTime, seconds: seconds } }) });
+        // `ago` is measured on this clock: no clock sync needed
+        const clickTime = Date.now();
+        doConfirm(() => {
+            const ago = Math.max(0, Date.now() - clickTime);
+            postEvent({ tag: "BumpSeq", value: { seconds: seconds, ago: ago } });
+        });
     }
 }
 

@@ -1,5 +1,4 @@
-import { createEffect, onCleanup } from 'solid-js';
-import { createSignal } from "./api.js" // maintains a map for RESTful updates
+import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { speed, startTime, LineButtons, state, STATE_SEQ } from './common.jsx';
 import { postEvent, timestamp } from "./api.js"
 import { confirm } from './confirm.jsx';
@@ -15,8 +14,12 @@ const [Confirm, doConfirm] = confirm();
 
 function bumpStart(seconds) {
     return () => {
-        const clickTime = timestamp();
-        doConfirm(() => { postEvent({ "BumpSeq": { timestamp: clickTime, seconds: seconds } }) });
+        // `ago` is measured on this clock: no clock sync needed
+        const clickTime = Date.now();
+        doConfirm(() => {
+            const ago = Math.max(0, Date.now() - clickTime);
+            postEvent({ tag: "BumpSeq", value: { seconds: seconds, ago: ago } });
+        });
     }
 }
 

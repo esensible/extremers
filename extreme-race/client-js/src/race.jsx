@@ -1,6 +1,5 @@
 import { startTime, speed, heading, state, STATE_RACE } from './common.jsx';
-import { createEffect, onCleanup } from 'solid-js';
-import { createSignal } from "./api.js" // maintains a map for RESTful updates
+import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { confirm } from './confirm.jsx';
 import { postEvent, timestamp } from "./api.js"
 
@@ -48,7 +47,7 @@ createEffect(() => {
 })
 
 export const finishClick = () => {
-    doConfirm(() => { postEvent("RaceFinish") }, 2);
+    doConfirm(() => { postEvent({ tag: "RaceFinish" }) }, 2);
 };
 
 

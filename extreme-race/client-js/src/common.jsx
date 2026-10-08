@@ -1,26 +1,38 @@
-import { createEffect, onCleanup } from "solid-js"
-import { createSignal } from "./api.js" // maintains a map for RESTful updates
-import { postEvent, timestamp, timezoneSecs } from "./api.js"
+import { createEffect, createSignal, onCleanup, Show } from "solid-js"
+import { race, postEvent, timestamp, timezoneSecs } from "./api.js"
 
 export const STATE_ACTIVE = "Active";
 export const STATE_SEQ = "InSequence";
 export const STATE_RACE = "Racing";
 
-export const [state, setState] = createSignal(null, "state");
-export const [speed, setSpeed] = createSignal(0.0, "speed");
-export const [time, setTime] = createSignal("00:00");
-export const [heading, setHeading] = createSignal(0.0, "heading");
 export const LINE_NONE = "None";
 export const LINE_PORT = "Port";
 export const LINE_STBD = "Stbd";
 export const LINE_BOTH = "Both";
-export const [line, setLine] = createSignal(LINE_NONE, "line");
 
-export const [startTime, setStartTime] = createSignal(null, "start_time");
+// Readers of the race store (api.js). Each phase's view reads only its own
+// variant's fields: the phase is matched first (index.jsx). Solid disposes
+// a view before its phase's fields go away, but a field that is absent
+// still reads as a neutral value rather than throwing.
+const phaseField = (name, absent) => {
+    const value = race.phase.value;
+    return value && value[name] !== undefined ? value[name] : absent;
+};
+const NO_LINE = { tag: "None", value: null };
 
-const [lineTimestamp, _setLineTimestamp] = createSignal(0, "line_timestamp");
-const [lineCross, _setLineCross] = createSignal(50, "line_cross");
+export const state = () => race.phase.tag;
+export const speed = () => race.speed;
+// Racing only
+export const heading = () => phaseField("heading", 0);
+// InSequence and Racing
+export const startTime = () => phaseField("start_time", null);
+// Active and InSequence: the line as far as it is set
+const line = () => phaseField("line", NO_LINE);
+export const lineTag = () => line().tag;
+// line Both only: when the boat reaches the line
+const lineTimestamp = () => (line().value ? line().value.time : 0);
 
+export const [time, setTime] = createSignal("00:00");
 
 createEffect(() => {
     const _state = state();
@@ -56,11 +68,11 @@ createEffect(() => {
 });
 
 function clickPort() {
-    postEvent("LinePort")
+    postEvent({ tag: "LinePort" })
 }
 
 function clickStbd() {
-    postEvent("LineStbd")
+    postEvent({ tag: "LineStbd" })
 }
 
 const crossTime = () => {
@@ -80,18 +92,34 @@ const crossTime = () => {
     return `${neg ? "-" : ""}${Math.floor(absSeconds / 60)}:${Math.floor(absSeconds) % 60}`;
 }
 
-const MARGIN = 5;
-
-
 const crossStyle = () => {
-    const value = lineCross();
     return 25;
+    // where along the line, 0 = port end, 100 = stbd end:
+    // const value = line().value.cross;
     // return value < 50 - MARGIN ? { left: value } : { right: 100 - value };
 }
 
+// The line buttons, and when both ends are set, the time to the line.
+// <Show> (rather than an early return) so setting the second end while
+// this is shown switches the layout.
 export const LineButtons = () => {
-    if (line() == LINE_BOTH) {
-        return <div class="row">
+    const portClass = () => (lineTag() == LINE_PORT) ? "refresh" : "";
+    const stbdClass = () => (lineTag() == LINE_STBD) ? "refresh" : "";
+
+    return <Show
+        when={lineTag() == LINE_BOTH}
+        fallback={
+            <div class="row">
+                <button class={`port ${portClass()}`} onClick={clickPort}>
+                    Port
+                </button>
+                <button class={`stbd ${stbdClass()}`} onClick={clickStbd}>
+                    Stbd
+                </button>
+            </div>
+        }
+    >
+        <div class="row">
             <div class="line-time">{crossTime()}</div>
             <div class="line-pos" style={crossStyle()}></div>
             <button class={`port refresh`} onClick={clickPort}>
@@ -101,17 +129,5 @@ export const LineButtons = () => {
                 <span class="corner-label">Stbd</span>
             </button>
         </div>
-    }
-
-    const portClass = () => (line() == LINE_PORT) ? "refresh" : "";
-    const stbdClass = () => (line() == LINE_STBD) ? "refresh" : "";
-
-    return <div class="row">
-        <button class={`port ${portClass()}`} onClick={clickPort}>
-            Port
-        </button>
-        <button class={`stbd ${stbdClass()}`} onClick={clickStbd}>
-            Stbd
-        </button>
-    </div>
+    </Show>
 };

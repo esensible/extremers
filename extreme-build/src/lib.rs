@@ -38,6 +38,12 @@ pub fn embed_client_js() {
         );
     }
 
+    // The generated wire bindings the clients import (tools/bindgen).
+    let protocol = crate_dir.join("../protocol-js/protocol.js");
+    if protocol.is_file() {
+        println!("cargo:rerun-if-changed={}", protocol.display());
+    }
+
     match build_client(&client_dir) {
         Ok(()) => {}
         Err(NpmError::NotFound) if has_files(&dist_dir) => {
