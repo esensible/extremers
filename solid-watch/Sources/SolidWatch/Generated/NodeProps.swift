@@ -51,7 +51,7 @@ public enum PropKind: String, Sendable {
 }
 
 public enum PropType: String, Sendable {
-  case number, string, boolean, enumeration = "enum", dimension, color, event, object, any, bytes
+  case number, string, boolean, enumeration = "enum", dimension, color, event, object, array, any, bytes
 }
 
 public enum ChildKind: String, Sendable {
@@ -108,6 +108,17 @@ public enum PropDecode {
   public static func bool(_ v: PropValue) -> Bool? {
     if case .bool(let b) = v { return b }
     return nil
+  }
+  /// An array whose every element `item` accepts; nil otherwise.
+  public static func items<T>(_ v: PropValue, _ item: (PropValue) -> T?) -> [T]? {
+    guard case .array(let a) = v else { return nil }
+    var out: [T] = []
+    out.reserveCapacity(a.count)
+    for e in a {
+      guard let x = item(e) else { return nil }
+      out.append(x)
+    }
+    return out
   }
   public static func bytes(_ v: PropValue) -> [UInt8]? {
     guard case .array(let a) = v else { return nil }
@@ -635,12 +646,12 @@ public struct TextLayoutProps: Equatable, Sendable {
   }
 }
 
-/// `confirm`: { title: string, detail: string, label: string }
+///  `confirm`: { title: string, detail: string, label: string }
 public struct ButtonConfirm: Equatable, Sendable {
   public var title: String
   public var detail: String
   public var label: String
-  /// nil unless `value` is an object; missing or non-string fields read as "".
+  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
   public init?(_ value: PropValue) {
     guard case .object(let o) = value else { return nil }
     title = PropDecode.string(o["title"] ?? .null) ?? ""
@@ -698,12 +709,26 @@ public enum CountdownFormat: String, CaseIterable, Sendable {
   case remaining = "remaining"
 }
 
+/// each item of `cues`: { atRemainingMs: number, pattern: string }
+public struct CountdownCuesItem: Equatable, Sendable {
+  public var atRemainingMs: Double
+  public var pattern: String
+  /// nil unless `value` is an object; a missing or mistyped field reads as "" / 0.
+  public init?(_ value: PropValue) {
+    guard case .object(let o) = value else { return nil }
+    atRemainingMs = PropDecode.number(o["atRemainingMs"] ?? .null) ?? 0
+    pattern = PropDecode.string(o["pattern"] ?? .null) ?? ""
+  }
+}
+
 /// `countdown`'s own props.
 public struct CountdownProps: Equatable, Sendable {
-  /// Target, ms after the receipt of the state being applied when this prop was set (negative = passed). null shows nothing.
-  public var toMs: Double? = nil
+  /// Target time in device ms (the clock syncClock reports, e.g. a start time from the state). null shows nothing.
+  public var at: Double? = nil
   /// README: Countdown formats.
   public var format: CountdownFormat = .countdown
+  /// Haptics the host plays natively as the remaining time (at - device now) falls to each atRemainingMs; pattern is a haptic pattern name. README: Countdown cues.
+  public var cues: [CountdownCuesItem]? = nil
 
   public init() {}
 
@@ -711,15 +736,20 @@ public struct CountdownProps: Equatable, Sendable {
   /// resets it and returns `.invalid`; a name this struct doesn't own returns `.unknown`.
   public mutating func set(_ name: String, _ value: PropValue) -> PropSetResult {
     switch name {
-    case "toMs":
-      if value == .null { self.toMs = nil; return .ok }
-      guard let v = PropDecode.number(value) else { self.toMs = nil; return .invalid }
-      self.toMs = v
+    case "at":
+      if value == .null { self.at = nil; return .ok }
+      guard let v = PropDecode.number(value) else { self.at = nil; return .invalid }
+      self.at = v
       return .ok
     case "format":
       if value == .null { self.format = .countdown; return .ok }
       guard let v = PropDecode.string(value).flatMap(CountdownFormat.init(rawValue:)) else { self.format = .countdown; return .invalid }
       self.format = v
+      return .ok
+    case "cues":
+      if value == .null { self.cues = nil; return .ok }
+      guard let v = PropDecode.items(value, CountdownCuesItem.init) else { self.cues = nil; return .invalid }
+      self.cues = v
       return .ok
     default:
       return .unknown
@@ -727,16 +757,20 @@ public struct CountdownProps: Equatable, Sendable {
   }
 }
 
-/// `format`: HH:mm | HH:mm:ss | h:mm
+/// `format`: HH:mm | HH:mm:ss | h:mm | hh:mm
 public enum ClockFormat: String, CaseIterable, Sendable {
   case hourMinute24 = "HH:mm"
   case hourMinuteSecond24 = "HH:mm:ss"
   case hourMinute12 = "h:mm"
+  case hourMinute12Padded = "hh:mm"
 }
 
 /// `clock`'s own props.
 public struct ClockProps: Equatable, Sendable {
+  /// README: Clock.
   public var format: ClockFormat = .hourMinute24
+  /// Minutes east of UTC for the shown time; the device decides the zone, the bundle passes it.
+  public var tzOffsetMin: Double = 0
 
   public init() {}
 
@@ -748,6 +782,11 @@ public struct ClockProps: Equatable, Sendable {
       if value == .null { self.format = .hourMinute24; return .ok }
       guard let v = PropDecode.string(value).flatMap(ClockFormat.init(rawValue:)) else { self.format = .hourMinute24; return .invalid }
       self.format = v
+      return .ok
+    case "tzOffsetMin":
+      if value == .null { self.tzOffsetMin = 0; return .ok }
+      guard let v = PropDecode.number(value) else { self.tzOffsetMin = 0; return .invalid }
+      self.tzOffsetMin = v
       return .ok
     default:
       return .unknown
@@ -1085,8 +1124,9 @@ public enum CoreSchema {
       "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
       "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
       "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "toMs": PropSpec(name: "toMs", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
+      "at": PropSpec(name: "at", kind: .measure, type: .number, group: "countdown", inherits: false, values: []),
       "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "countdown", inherits: false, values: ["countdown", "elapsed", "remaining"]),
+      "cues": PropSpec(name: "cues", kind: .behavior, type: .array, group: "countdown", inherits: false, values: []),
     ]),
     "clock": NodeSpec(type: "clock", children: .none, native: false, layout: true, props: [
       "display": PropSpec(name: "display", kind: .layout, type: .enumeration, group: "layout", inherits: false, values: ["flex", "none"]),
@@ -1144,7 +1184,8 @@ public enum CoreSchema {
       "textAlign": PropSpec(name: "textAlign", kind: .paint, type: .enumeration, group: "textStyle", inherits: true, values: ["left", "center", "right"]),
       "numberOfLines": PropSpec(name: "numberOfLines", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
       "minScale": PropSpec(name: "minScale", kind: .measure, type: .number, group: "textLayout", inherits: false, values: []),
-      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "clock", inherits: false, values: ["HH:mm", "HH:mm:ss", "h:mm"]),
+      "format": PropSpec(name: "format", kind: .measure, type: .enumeration, group: "clock", inherits: false, values: ["HH:mm", "HH:mm:ss", "h:mm", "hh:mm"]),
+      "tzOffsetMin": PropSpec(name: "tzOffsetMin", kind: .measure, type: .number, group: "clock", inherits: false, values: []),
     ]),
     "haptic": NodeSpec(type: "haptic", children: .none, native: false, layout: false, props: [
       "pattern": PropSpec(name: "pattern", kind: .behavior, type: .enumeration, group: "haptic", inherits: false, values: ["notification", "directionUp", "directionDown", "success", "failure", "retry", "start", "stop", "click"]),

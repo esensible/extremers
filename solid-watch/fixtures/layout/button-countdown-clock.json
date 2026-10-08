@@ -7,9 +7,8 @@
  "pointScaleFactor": 2,
  "measure": "stub",
  "clock": {
-  "now": 1000000,
-  "receipt": 1000000,
-  "local": "2026-01-01T09:41:07"
+  "localNow": 1000000,
+  "offset": 0
  },
  "log": [
   "[\"#mount\",1,{\"width\":198,\"height\":242}]",
@@ -26,26 +25,31 @@
   "[\"insert\",3,4,0]",
   "[\"insert\",2,3,0]",
   "[\"createNode\",6,\"countdown\"]",
-  "[\"setProp\",6,\"toMs\",65000]",
+  "[\"setProp\",6,\"at\",1065000]",
   "[\"setProp\",6,\"fontSize\",54]",
   "[\"setProp\",6,\"minScale\",0.5]",
   "[\"setProp\",6,\"tabular\",true]",
+  "[\"setProp\",6,\"cues\",[{\"atRemainingMs\":60000,\"pattern\":\"notification\"}]]",
   "[\"insert\",2,6,0]",
   "[\"createNode\",7,\"countdown\"]",
-  "[\"setProp\",7,\"toMs\",-3725000]",
+  "[\"setProp\",7,\"at\",-2725000]",
   "[\"setProp\",7,\"format\",\"elapsed\"]",
   "[\"insert\",2,7,0]",
   "[\"createNode\",8,\"countdown\"]",
-  "[\"setProp\",8,\"toMs\",61500]",
+  "[\"setProp\",8,\"at\",1061500]",
   "[\"setProp\",8,\"format\",\"remaining\"]",
   "[\"insert\",2,8,0]",
   "[\"createNode\",9,\"clock\"]",
   "[\"setProp\",9,\"format\",\"h:mm\"]",
   "[\"insert\",2,9,0]",
-  "[\"createNode\",10,\"haptic\"]",
-  "[\"setProp\",10,\"pattern\",\"click\"]",
-  "[\"setProp\",10,\"trigger\",1]",
+  "[\"createNode\",10,\"clock\"]",
+  "[\"setProp\",10,\"format\",\"HH:mm:ss\"]",
+  "[\"setProp\",10,\"tzOffsetMin\",630]",
   "[\"insert\",2,10,0]",
+  "[\"createNode\",11,\"haptic\"]",
+  "[\"setProp\",11,\"pattern\",\"click\"]",
+  "[\"setProp\",11,\"trigger\",1]",
+  "[\"insert\",2,11,0]",
   "[\"insert\",1,2,0]",
   "[\"commit\"]"
  ],
@@ -61,7 +65,7 @@
     0,
     0,
     198,
-    175.5
+    199.5
    ],
    "3": [
     0,
@@ -98,6 +102,12 @@
     155.5,
     198,
     20
+   ],
+   "10": [
+    0,
+    179.5,
+    198,
+    20
    ]
   },
   "text": {
@@ -118,6 +128,10 @@
     "lines": 1
    },
    "9": {
+    "fontSize": 16,
+    "lines": 1
+   },
+   "10": {
     "fontSize": 16,
     "lines": 1
    }

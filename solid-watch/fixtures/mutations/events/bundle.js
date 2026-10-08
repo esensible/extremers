@@ -663,6 +663,20 @@
 
   /** JS event handlers: tag -> { eventName: fn }. */
   const handlers = new Map();
+
+  // Host nodes live as long as their JS Node object: once the engine collects
+  // it (nothing in JS can reach it, so Solid can never re-insert it), the host
+  // is told to free the tag. Callbacks run as engine jobs after a GC, outside
+  // any batch; they are not part of the golden logs (timing is the engine's).
+  const released = typeof FinalizationRegistry === "function" ? new FinalizationRegistry(tag => {
+    handlers.delete(tag);
+    const h = host();
+    if (h && h.release) h.release(tag);
+  }) : null;
+  const track = node => {
+    if (released) released.register(node, node.tag);
+    return node;
+  };
   class Node {
     constructor(tag, type, text) {
       this.tag = tag;
@@ -707,11 +721,11 @@
     insert,
     setProp} = createRenderer({
     createElement(type) {
-      return new Node(host().createNode(type), type);
+      return track(new Node(host().createNode(type), type));
     },
     createTextNode(value) {
       const s = String(value);
-      return new Node(host().createText(s), "#text", s);
+      return track(new Node(host().createText(s), "#text", s));
     },
     replaceText(node, value) {
       node.text = String(value);
@@ -773,14 +787,27 @@
   });
 
   /**
+   * The state being applied was captured when the device's clock read
+   * `deviceNowMs`. The host keeps offset = deviceNowMs - (its local clock when
+   * it received this state) and runs countdowns on localNow + offset, so `at`
+   * props are plain device times (e.g. a start time from the state). Call it
+   * from onState; bundles never see the host's local clock.
+   */
+  function syncClock(deviceNowMs) {
+    host().syncClock(deviceNowMs);
+  }
+
+  /**
    * Define the bundle's entry point: sets and returns `globalThis.__app`.
    *
    *   createApp(Root, { onState(state) { ...set signals... } })
    *
    * - mount(rootTag, ctx): renders <Root {...ctx} /> into the host's root, then
    *   one commit. ctx = { width, height } in points.
-   * - onState(state): runs `onState` inside batch(), then one commit. `state` is
-   *   whatever the app delivers (bytes, an object); the package doesn't look.
+   * - onState(state): runs `onState(state)` inside batch(), then one commit.
+   *   `state` is whatever the app delivers (bytes, an object); the package
+   *   doesn't look. If the state carries the device's clock, call
+   *   syncClock(deviceNowMs) from onState (README: Time).
    * - dispatch(tag, name, payload): runs the JS handler for event `name` on
    *   `tag` (e.g. "press" for onPress) inside batch(), then one commit. Returns
    *   false (and doesn't commit) if there is no handler.
@@ -814,7 +841,15 @@
 
   const [count, setCount] = createSignal(0);
   const [armed, setArmed] = createSignal(true);
-  const [toMs, setToMs] = createSignal(null);
+  const [at, setAt] = createSignal(null);
+  const [tz, setTz] = createSignal(0);
+  const CUES = [60000, 30000, 10000, 5000, 4000, 3000, 2000, 1000].map(ms => ({
+    atRemainingMs: ms,
+    pattern: "click"
+  })).concat([{
+    atRemainingMs: 0,
+    pattern: "success"
+  }]);
   function App() {
     return (() => {
       var _el$ = createElement("view"),
@@ -858,34 +893,41 @@
       setProp(_el$0, "fontSize", 40);
       setProp(_el$0, "tabular", true);
       setProp(_el$0, "minScale", 0.5);
+      setProp(_el$0, "cues", CUES);
       setProp(_el$1, "format", "elapsed");
-      setProp(_el$10, "format", "HH:mm");
+      setProp(_el$10, "format", "hh:mm");
       effect(_p$ => {
         var _v$ = armed() ? p => setCount(count() + (p && p.agoMs > 1000 ? 10 : 1)) : undefined,
           _v$2 = !armed(),
           _v$3 = count(),
-          _v$4 = toMs(),
-          _v$5 = toMs();
+          _v$4 = at(),
+          _v$5 = at(),
+          _v$6 = tz();
         _v$ !== _p$.e && (_p$.e = setProp(_el$2, "onPress", _v$, _p$.e));
         _v$2 !== _p$.t && (_p$.t = setProp(_el$5, "disabled", _v$2, _p$.t));
         _v$3 !== _p$.a && (_p$.a = setProp(_el$9, "trigger", _v$3, _p$.a));
-        _v$4 !== _p$.o && (_p$.o = setProp(_el$0, "toMs", _v$4, _p$.o));
-        _v$5 !== _p$.i && (_p$.i = setProp(_el$1, "toMs", _v$5, _p$.i));
+        _v$4 !== _p$.o && (_p$.o = setProp(_el$0, "at", _v$4, _p$.o));
+        _v$5 !== _p$.i && (_p$.i = setProp(_el$1, "at", _v$5, _p$.i));
+        _v$6 !== _p$.n && (_p$.n = setProp(_el$10, "tzOffsetMin", _v$6, _p$.n));
         return _p$;
       }, {
         e: undefined,
         t: undefined,
         a: undefined,
         o: undefined,
-        i: undefined
+        i: undefined,
+        n: undefined
       });
       return _el$;
     })();
   }
   createApp(App, {
     onState(s) {
+      var _s$tz;
+      syncClock(s.now); // device clock when the state was captured
       setArmed(s.armed);
-      setToMs(s.toMs);
+      setAt(s.start); // device time of the start, or null
+      setTz((_s$tz = s.tz) !== null && _s$tz !== void 0 ? _s$tz : 0); // the device's zone, minutes east of UTC
     }
   });
 
