@@ -17,6 +17,9 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # the packages' engines (extreme-packages/build.rs)
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --exclude xiaoc6 --exclude tgt-pico --exclude tgt-std
       - run: cargo build -p tgt-std --target x86_64-unknown-linux-gnu
@@ -53,6 +56,14 @@ jobs:
       # the confirm widget the Kindle pages and the watch bundles share
       - run: npm test
         working-directory: client-common
+
+  swift:
+    name: Host protocol in Swift (protocol-swift)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+        working-directory: protocol-swift
       # TuneSpeed bundle: rebuild, regenerate its fixtures under qjs, no diff, tests
       - run: npm ci
         working-directory: extreme-tune/watch-js
@@ -86,8 +97,10 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.target }}, wasm32-unknown-unknown
           components: rust-src
+      # wasm3 is C, built with clang; newlib's headers on bare metal
+      - run: sudo apt-get install -y clang llvm libnewlib-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
         working-directory: ${{ matrix.dir }}

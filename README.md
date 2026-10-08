@@ -5,41 +5,49 @@ receiver runs a Wi-Fi access point and serves a phone-sized web UI over a
 websocket: start-line timing and distance-to-line while racing, or a
 speed/heading tuning display while practising.
 
-Everything is `no_std` Rust on [embassy](https://embassy.dev) with no heap
-in the application code; the web UIs are SolidJS apps embedded in the
-firmware.
+Everything is `no_std` Rust on [embassy](https://embassy.dev). The modes
+are *packages* (see "Packages"): each an engine compiled to WebAssembly,
+run by the firmware's wasm3 interpreter (on the heap), with its own SolidJS
+Kindle page and watch bundle. Race and Tune come preinstalled; the built-in
+Choose picks between them.
 
 ## Layout
 
-| Crate | What |
+| Crate / directory | What |
 |---|---|
-| `extreme-traits` | The `Engine` API every mode implements, and the `define_engines!` macro that combines modes into one switchable engine. Also the engine chooser UI. |
-| `extreme-race` | Race mode: start sequence, line setting, time and distance to the line. |
-| `extreme-tune` | Tuning mode: speed and heading deviation over a rolling window. |
-| `extreme-engines` | The engines the firmware runs, in their wire order: every target's `EngineType`. |
-| `common` | Platform-independent runtime: GPS (NMEA) parsing, the engine runtime (clock, timers, broadcast), HTTP/websocket transport, shared tasks and configuration. |
-| `extreme-build` | `build.rs` helper that builds a crate's `client-js/` UI and embeds it. |
+| `extreme-protocol` | The host protocol: `Envelope`, `HostEvent`, `ChooseView`, `Manifest`, package ids (see "Host protocol"). |
+| `extreme-sdk` | Writing an engine package: the `Engine` trait, `Location`/`Fix`/`Velocity`, and `export_engine!`, which makes an engine a WebAssembly module speaking ABI v1 (`extreme_sdk::abi`). |
+| `extreme-race` | The `race` package: start sequence, line setting, time and distance to the line. Engine (Rust), Kindle page (`client-js/`), generated bindings (`protocol-js/`). |
+| `extreme-tune` | The `tune` package: speed and heading deviation over a rolling window. Engine, Kindle page, watch bundle (`watch-js/`), bindings. |
+| `choose/` | The built-in Choose package's Kindle page (no engine: the host makes its view). |
+| `extreme-packages` | What the firmware ships with: Race and Tune preinstalled, and Choose; `build.rs` builds them with `tools/package` and embeds them. |
+| `extreme-wasm3` | The vendored [wasm3](https://github.com/wasm3/wasm3) interpreter (v0.9.0, C, built with clang) and a thin Rust API. |
+| `common` | Platform-independent runtime: the package host (`host.rs`: registry, selection, clock, engine timer, broadcast), engines under wasm3 (`engine.rs`), HTTP/websocket and BLE transports, GPS (NMEA) parsing, configuration. |
 | `tgt-xiaoc6` | Firmware for the Seeed XIAO ESP32-C6 (the board in use). |
-| `tgt-pico` | Firmware for the Raspberry Pi Pico W (secondary). |
-| `tgt-std` | Host build for development: serves the UI on `http://localhost:8080` without any hardware. |
-| `watch-app` | Standalone Apple Watch app: the same buttons and state as the Kindle, over BLE (see `BLE.md`). |
-| `tools/bindgen` | Generates `protocol-js/` (the clients' JS decoders/encoders, TypeScript types, golden vectors) from the Rust wire types. |
-| `protocol-js` | The generated wire bindings, imported by the Kindle pages and the watch bundles. |
+| `tgt-pico` | Firmware for the Raspberry Pi Pico W (secondary; builds, not run since the packages). |
+| `tgt-std` | Host build for development: the same host and packages, wasm3 built for the machine, the UIs on `http://localhost:8080`. |
+| `watch-app` | Standalone Apple Watch app over BLE (see `BLE.md`). |
+| `tools/bindgen` | Generates the bindings from the Rust types: `protocol-js/` and `protocol-swift/` (host protocol), each package's `protocol-js/` (its view and events), and golden vectors. |
+| `tools/package` | Builds packages (`cargo run -p extreme-pack` writes them to `target/packages/`). |
+| `client-common` | JS shared by the pages and bundles: the confirm widget, the host protocol's navigation and events (`host.js`). |
 
-An *engine* is a pure state machine (`extreme_traits::Engine`): it is fed GPS
-updates, timer expiries and client events, and reports whether its state
-changed and whether it wants a timer. It does no I/O, so it is unit tested on
-the host. The runtime in `common` drives it on the device.
+An *engine* is a pure state machine (`extreme_sdk::Engine`): fed GPS
+updates, its timer and client events, it says whether its view changed and
+when it next wants its timer. It does no I/O, so it is unit tested natively
+on the host. On the device it runs as WebAssembly under wasm3, driven by
+the host in `common`.
 
 ## Building
 
-Requirements: stable Rust (`rustup` picks up the targets from each
-`rust-toolchain.toml`), Node.js/npm (the web UIs are built by `build.rs`;
-`node_modules` are installed automatically on first build), and
-[`espflash`](https://github.com/esp-rs/espflash) to flash the C6.
+Requirements: stable Rust with the `wasm32-unknown-unknown` target (the
+engines) besides each firmware's (`rust-toolchain.toml`), clang (wasm3;
+plus `llvm-ar-18` and newlib's headers, Ubuntu `libnewlib-dev`, for the
+firmware), Node.js/npm (the pages and bundles are built by
+`extreme-packages/build.rs`; `node_modules` are installed on first build),
+and probe-rs to flash the C6.
 
 ```sh
-# tests (engines, parser, protocol) on the host
+# tests (engines, host with the real packages under wasm3, parser, protocol)
 cargo test
 
 # ESP32-C6 firmware; `cargo run --release` flashes and opens the monitor
@@ -58,70 +66,108 @@ defaults: credentials stored in its flash take precedence (see
 `tgt-xiaoc6/README.md` for flashing with the partition table and
 provisioning them).
 
-## Wire protocols
+## Packages
 
-Two transports carry the same engine state and the same events; the device
-is the only source of truth and every client is a view of it. Both speak
-[postcard](https://postcard.jamesmunns.com/wire-format), a compact binary
-serde format: the websocket (the Kindle pages) in binary frames, BLE (the
-watch) in GATT values, see [`BLE.md`](BLE.md).
+A package is one app: an engine, its Kindle page and its watch bundle,
+built by `tools/package`:
 
-The Rust types are the definition. Each engine has a typed **view**
-(`Engine::View`: `RaceView`, `TuneView`) and **events** (`Engine::Event`);
-`define_engines!` (in `extreme-engines`) combines them into `EngineState`
-and `EngineEvent`, enums whose tag is the engine (0 the chooser, then the
-engines in order); `common::protocol` wraps them in the messages below.
-They all derive postcard-schema's `Schema`, and `tools/bindgen` generates
-`protocol-js/protocol.js` (+ `.d.ts`) from those schemas:
+| file | |
+|---|---|
+| `manifest.bin` | its `Manifest` (postcard): `id`, `name` (≤ 16 bytes), `version`, `abi` (1), `content_hash` |
+| `engine.wasm` | the engine: `wasm32-unknown-unknown`, `export_engine!`, profile `engine` (opt-level z, stripped), linked twice so its memory is exactly what it needs (stack 2 KiB, data, statics) in 1-byte pages. Race 17 KB / 3.1 KB memory, Tune 11 KB / 3.6 KB. None for Choose. |
+| `web/` | its Kindle page (`client-js/`), served at `/pkg/<id>/` (Choose's at `/`) |
+| `watch.js` | its watch bundle (`watch-js/`), served at `/pkg/<id>/watch.js`; absent if it has none |
+| `schema.json` | its view's and events' postcard schemas (build output only, never on the device) |
+
+`id` = FNV-1a 32-bit of the name: `race` = 2394669720 (`0x8ebbc298`),
+`tune` = 1749091475 (`0x68410493`); Choose is 0. `content_hash` = the first
+8 bytes of SHA-256 over engine.wasm, then the web bundle (its files in name
+order, each as name, NUL, length u32 LE, contents), then watch.js. Bundle
+file names are content hashes too, so the same sources make the same hash.
+
+The firmware embeds Race and Tune (preinstalled) and Choose
+(`extreme-packages`); the host keeps a registry of them (`common::host::Registry`;
+`Host::install`/`remove` work at run time, nothing calls them yet).
+
+### Engine ABI v1
+
+`extreme_sdk::abi` has the details. Exports: `init() -> i64` (makes the
+engine, returns its I/O buffer as `ptr << 32 | cap`),
+`on_location(ptr, len) -> i32` (a postcard `extreme_sdk::Location`),
+`on_timer(now: i64) -> i32` (the time the timer was due),
+`on_event(ptr, len) -> i32` (the engine's own `Event`, postcard),
+`view(out_ptr, cap) -> i32` (writes its `View`, postcard; the length),
+`next_timer() -> i64` (device time; -1 for none). `on_*` return 1 changed,
+0 unchanged, -1 refused (not exactly one value). Imports (`env`):
+`now() -> i64` (the device clock), `log(ptr, len)`. The host asks
+`next_timer` after every call and runs the timer; a trap stops the engine
+and the host goes back to the default package.
+
+## Host protocol
+
+The device is the only source of truth: it owns the selection (the
+*active* package) and every client renders what it broadcasts. Both
+transports carry the same messages, [postcard](https://postcard.jamesmunns.com/wire-format):
+the websocket (the Kindle pages) as binary frames, BLE (the watch) as GATT
+values, see [`BLE.md`](BLE.md). The Rust types (`extreme-protocol`) are
+the definition; `tools/bindgen` generates the JS (`protocol-js/`) and Swift
+(`protocol-swift/`) from their schemas:
 
 ```sh
 cargo run -p extreme-bindgen     # after changing a wire type; cargo test fails until you do
 ```
 
-### Websocket
+**Host → client**, on every change and on the websocket at least every
+5 s: `Envelope { timestamp: u64, active: u32, ui_hash: [u8; 8], state: bytes }`.
+`timestamp` is the device clock when sent (epoch ms from GPS time, uptime
+before); `active` the active package; `ui_hash` its `content_hash`;
+`state` its view, opaque to the host: an engine's `View` as postcard,
+decoded with the package's own bindings (`<package>/protocol-js/`), or for
+Choose a `ChooseView { packages: [PackageInfo { id, name, version }], ble: Option<BleStatusView> }`
+(the BLE pairing status only on the websocket, `None` over BLE).
 
-The device pushes a `WsState` on every change, and at least every 5 s as a
-heartbeat:
+**Client → host**: `HostEvent = Select(u32) | SelectDefault | Engine { package: u32, bytes } | Ble(BleCommand)`.
+`Select` of a package not installed is refused; of the active one changes
+nothing (the engine keeps its state). `SelectDefault` is "back": Choose, or
+the only app without Choose. `Engine` is refused unless `package` is the
+active one and its engine takes the bytes (a client still showing another
+package cannot touch this one). `Ble` only on the websocket. With one app
+installed, or no Choose, the host starts in that app.
 
-| field | type | |
-|---|---|---|
-| `timestamp` | u64 | the device's clock when sent, epoch ms (from GPS time); clients keep their clock offset from it |
-| `engine` | `EngineState` | the active engine and its view; a page reloads when it is not its own, so the device serves the matching page |
-| `ble` | `Option<BleStatusView>` | pairing status for the chooser's settings panel; `None` without BLE |
+**Timestamps** are the Kindle model, unchanged: the device clock is the one
+timeline; clients keep `offset = timestamp − their clock` from every
+envelope, `timestamp()` = their clock + offset, and stamp user actions with
+`timestamp()` at the tap, before any confirm.
 
-Clients send a `WsEvent`: `Engine(EngineEvent)` (`Select(EngineKind)`, or
-an event for the active engine; one for another engine is refused) or
-`Ble(BleCommand)`.
-
-In JS (`protocol-js/protocol.d.ts`) a struct is an object with every field,
-an enum is `{ tag, value }` (`value` is `null` for a unit variant), `None`
-is `null`, and u64 is a plain number (the decoder refuses values past 2^53
-rather than use BigInt, which the Kindle's browser may lack):
+**Pages.** Each page decodes the envelope, then (if it is its package and
+version) its view; otherwise it loads `/pkg/<active>/?h=<ui_hash>` (or
+`/?h=…` for Choose), `client-common/host.js`. So "Race" on Choose sends
+`Select(race)`, and the next envelope moves every Kindle to Race's page.
 
 ```js
-import { decodeWsState, encodeWsEvent } from "../../../protocol-js/protocol.js";
-ws.binaryType = "arraybuffer";
-ws.onmessage = (e) => {
-  const { timestamp, engine } = decodeWsState(e.data);
-  // engine = { tag: "Race", value: { speed: 6.4, phase: { tag: "InSequence",
-  //            value: { start_time: 1790000300123, line: { tag: "Stbd", value: null } } } } }
-  setRace(reconcile(engine.value));
-};
-ws.send(new Uint8Array(encodeWsEvent({ tag: "Engine", value: { tag: "Select", value: { tag: "TuneSpeed" } } })).buffer);
+import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
+import { decodeRaceView, encodeRaceEvent } from "../../protocol-js/protocol.js";
+const e = decodeEnvelope(frame);            // { timestamp, active, ui_hash, state }
+const race = decodeRaceView(e.state);       // { speed, phase: { tag, value } }
+ws.send(new Uint8Array(encodeHostEvent({ tag: "Engine",
+  value: { package: e.active, bytes: encodeRaceEvent({ tag: "LineStbd" }) } })).buffer);
 ```
 
-The pages apply a view with Solid's `createStore` + `reconcile`, so only
-the fields that changed notify, and switch on enum tags with
-`<Switch>`/`<Match>` so each phase's UI reads only its own variant. The
-decoder always produces every field, so the store's paths are stable.
-Lists in a view (only the BLE bonds today) are reconciled by position;
-a list whose items move about would need a stable `id` field per item for
-`reconcile` to match them.
+In JS a struct is an object with every field, an enum `{ tag, value }`
+(`value` `null` for a unit variant), `None` is `null`, bytes and arrays are
+arrays of numbers, u64 a plain number (the decoder refuses values past
+2^53 rather than use BigInt). The pages apply views with Solid's
+`createStore` + `reconcile` and switch on tags with `<Switch>`/`<Match>`.
 
 ### Tests
 
-`protocol-js/test/vectors.json` holds postcard bytes from the Rust encoder
-with the JS value each must decode to; `protocol-js/test` checks the
-generated decoder and encoder against them under node (`npm test`) and
-QuickJS (`qjs test/qjs.mjs`). `protocol-js/test/ws-smoke.mjs` drives a
-running tgt-std (or device) over the websocket.
+`protocol-js/test/vectors.json` (host protocol) and each package's
+`protocol-js/vectors.json` hold postcard bytes from the Rust encoder with
+the JS value each must decode to; `protocol-js/test` checks every generated
+decoder and encoder against them under node (`npm test`) and QuickJS
+(`qjs test/qjs.mjs`), and `protocol-swift` (`swift test`) the Swift against
+the host vectors. `common`'s tests run the real packages under wasm3.
+`protocol-js/test/ws-smoke.mjs` drives a running tgt-std or device over
+the websocket and HTTP: Choose → Race (events, a stale event refused) →
+Tune → back. Firmware feature `selftest` drives the same from inside the
+C6 and logs memory (`tgt-xiaoc6/src/selftest.rs`).
