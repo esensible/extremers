@@ -248,19 +248,22 @@ final class RaceComputer: NSObject, ObservableObject {
     workout.start()
   }
 
+  /// Always discovers, on every connection: CoreBluetooth invalidates a
+  /// peripheral's CBService and CBCharacteristic objects when the link
+  /// drops, yet `p.services` can still hold them after a reconnect. Using
+  /// one (setNotifyValue on a stale characteristic) never calls back, so
+  /// the subscribe timed out and the retry found the same stale objects.
+  /// A fresh discovery replaces them (and is cheap: CoreBluetooth answers
+  /// from its GATT cache when the device's database has not changed).
   private func discover(_ p: CBPeripheral) async throws -> [CBUUID: CBCharacteristic] {
-    if p.services?.first(where: { $0.uuid == Self.service }) == nil {
-      let _: Any = try await waitFor("services", timeout: Self.gattTimeout) {
-        p.discoverServices([Self.service])
-      }
+    let _: Any = try await waitFor("services", timeout: Self.gattTimeout) {
+      p.discoverServices([Self.service])
     }
     guard let service = p.services?.first(where: { $0.uuid == Self.service }) else {
       throw BleFailure.missingService
     }
-    if service.characteristics == nil || service.characteristics?.isEmpty == true {
-      let _: Any = try await waitFor("characteristics", timeout: Self.gattTimeout) {
-        p.discoverCharacteristics([Self.stateUUID, Self.eventUUID], for: service)
-      }
+    let _: Any = try await waitFor("characteristics", timeout: Self.gattTimeout) {
+      p.discoverCharacteristics([Self.stateUUID, Self.eventUUID], for: service)
     }
     var out: [CBUUID: CBCharacteristic] = [:]
     for c in service.characteristics ?? [] { out[c.uuid] = c }
@@ -437,7 +440,14 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
 // MARK: - CBPeripheralDelegate
 
 extension RaceComputer: @preconcurrency CBPeripheralDelegate {
+  /// Callbacks from a peripheral this object no longer drives (a link
+  /// given up on, still delivering) must not complete the current one's steps.
+  private func isCurrent(_ p: CBPeripheral) -> Bool {
+    p === peripheral
+  }
+
   func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+    guard isCurrent(peripheral) else { return }
     if let failure = BleFailure.from(error) {
       complete("services", .failure(failure))
     } else {
@@ -446,6 +456,7 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
   }
 
   func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+    guard isCurrent(peripheral), service.uuid == Self.service else { return }
     if let failure = BleFailure.from(error) {
       complete("characteristics", .failure(failure))
     } else {
@@ -455,7 +466,7 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
 
   /// Both the read and every notification land here; each is the latest state.
   func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-    guard characteristic.uuid == Self.stateUUID else { return }
+    guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else { return }
     if let failure = BleFailure.from(error) {
       complete("read", .failure(failure))
       return
@@ -478,6 +489,7 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
     didUpdateNotificationStateFor characteristic: CBCharacteristic,
     error: Error?
   ) {
+    guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else { return }
     if let failure = BleFailure.from(error) {
       complete("notify", .failure(failure))
     } else {
