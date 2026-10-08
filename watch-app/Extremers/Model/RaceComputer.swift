@@ -92,6 +92,9 @@ final class RaceComputer: NSObject, ObservableObject {
   @Published private(set) var state: DeviceState?
   /// When `state` arrived: its relative times count from here.
   @Published private(set) var anchor: Date?
+  /// Set while the latest value could not be decoded: the device speaks
+  /// another version of BLE.md. `state` is then out of date and is not shown.
+  @Published private(set) var mismatch: StateMismatch?
 
   private let workout = WorkoutKeeper()
   private let haptics = Haptics()
@@ -138,6 +141,7 @@ final class RaceComputer: NSObject, ObservableObject {
     if let p = peripheral { manager?.cancelPeripheralConnection(p) }
     stateCharacteristic = nil
     eventCharacteristic = nil
+    mismatch = nil
     workout.stop()
     haptics.follow(start: nil)
   }
@@ -275,8 +279,17 @@ final class RaceComputer: NSObject, ObservableObject {
   }
 
   private func receive(_ value: Data) {
-    guard let decoded = DeviceState(data: value) else {
+    let decoded: DeviceState
+    switch DeviceState.decode([UInt8](value)) {
+    case .success(let state):
+      decoded = state
+      mismatch = nil
+    case .failure(let failure):
       bleLog.error("undecodable state: \([UInt8](value).description, privacy: .public)")
+      // The countdown in the last good state may no longer be the
+      // device's: no cues from it.
+      mismatch = failure
+      haptics.follow(start: nil)
       return
     }
     var wasInSequence = false

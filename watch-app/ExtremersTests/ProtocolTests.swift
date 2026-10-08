@@ -81,6 +81,23 @@ final class ProtocolTests: XCTestCase {
     XCTAssertEqual(DeviceState(bytes: [0x00, 0xaa]), .selector)
   }
 
+  func testMismatchReasons() {
+    func failure(_ bytes: [UInt8]) -> StateMismatch? {
+      if case .failure(let f) = DeviceState.decode(bytes) { return f }
+      return nil
+    }
+    XCTAssertEqual(failure([]), .empty)
+    XCTAssertEqual(failure([0x01, 0x00] + [UInt8](repeating: 0, count: 12)),
+                   .tooShort(kind: 1, length: 14, needed: 16))
+    XCTAssertEqual(failure([0x02, 0x00, 0x00]), .tooShort(kind: 2, length: 3, needed: 7))
+    XCTAssertEqual(failure([0x01, 0x07] + [UInt8](repeating: 0, count: 14)), .unknownPhase(7))
+    // an unknown engine is not a mismatch: it has its own screen
+    XCTAssertNil(failure([0x09]))
+    XCTAssertNil(failure([0x00]))
+    XCTAssertEqual(StateMismatch.tooShort(kind: 1, length: 14, needed: 16).detail,
+                   "Mode 1 state is 14 bytes, the watch expects 16.")
+  }
+
   // MARK: - BLE.md test vectors: events
 
   func testEvents() {

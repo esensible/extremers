@@ -105,13 +105,20 @@ enum DeviceState: Equatable {
   /// Nil when the value is empty or too short for its engine. Extra bytes
   /// are ignored, so firmware can append fields.
   init?(bytes b: [UInt8]) {
-    guard let kind = b.first else { return nil }
+    guard case .success(let state) = Self.decode(b) else { return nil }
+    self = state
+  }
+
+  /// The state, or why these bytes are not one this app understands.
+  static func decode(_ b: [UInt8]) -> Result<DeviceState, StateMismatch> {
+    guard let kind = b.first else { return .failure(.empty) }
     switch EngineKind(rawValue: kind) {
     case .selector?:
-      self = .selector
+      return .success(.selector)
     case .race?:
-      guard b.count >= 16, let phase = RacePhase(rawValue: b[1]) else { return nil }
-      self = .race(RaceState(
+      guard b.count >= 16 else { return .failure(.tooShort(kind: kind, length: b.count, needed: 16)) }
+      guard let phase = RacePhase(rawValue: b[1]) else { return .failure(.unknownPhase(b[1])) }
+      return .success(.race(RaceState(
         phase: phase,
         line: LineEnds(rawValue: b[2]),
         lineCross: b[3],
@@ -119,16 +126,40 @@ enum DeviceState: Equatable {
         lineInMs: LittleEndian.i32(b, 8),
         speedCentiknots: LittleEndian.u16(b, 12),
         headingDecidegrees: LittleEndian.u16(b, 14)
-      ))
+      )))
     case .tune?:
-      guard b.count >= 7 else { return nil }
-      self = .tune(TuneState(
+      guard b.count >= 7 else { return .failure(.tooShort(kind: kind, length: b.count, needed: 7)) }
+      return .success(.tune(TuneState(
         speedCentiknots: LittleEndian.u16(b, 1),
         speedDevCentiknots: LittleEndian.i16(b, 3),
         headingDevDecidegrees: LittleEndian.i16(b, 5)
-      ))
+      )))
     case nil:
-      self = .other(kind: kind)
+      return .success(.other(kind: kind))
+    }
+  }
+}
+
+/// A `state` value this app cannot read: the device runs firmware that
+/// speaks another version of BLE.md. An unknown engine `kind` is not one
+/// (that is `DeviceState.other`, which has a way out); a known engine with
+/// the wrong layout is.
+enum StateMismatch: Error, Equatable {
+  case empty
+  /// Shorter than this app's layout for the engine.
+  case tooShort(kind: UInt8, length: Int, needed: Int)
+  /// A race `state` byte this app does not know.
+  case unknownPhase(UInt8)
+
+  /// One line for the mismatch screen.
+  var detail: String {
+    switch self {
+    case .empty:
+      return "Empty state."
+    case .tooShort(let kind, let length, let needed):
+      return "Mode \(kind) state is \(length) bytes, the watch expects \(needed)."
+    case .unknownPhase(let phase):
+      return "Unknown race phase \(phase)."
     }
   }
 }

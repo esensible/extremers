@@ -31,7 +31,11 @@ struct ContentView: View {
   /// The buttons inside each screen dim through `liveOnly()`, not the whole
   /// screen, so a dropped link still lets the screen scroll.
   @ViewBuilder private var screen: some View {
-    if computer.link == .stopped || computer.state == nil {
+    if computer.link == .stopped {
+      ConnectingView()
+    } else if let mismatch = computer.mismatch {
+      FirmwareMismatchView(mismatch: mismatch)
+    } else if computer.state == nil {
       ConnectingView()
     } else {
       deviceScreen
@@ -99,6 +103,37 @@ struct UnknownModeView: View {
         .multilineTextAlignment(.center)
       Button("Exit") { computer.send(.select(.selector)) }
         .buttonStyle(PadButtonStyle())
+    }
+  }
+}
+
+/// The device sent a state this app cannot read (a known mode with another
+/// layout): the watch and the race computer run different versions of
+/// BLE.md. Nothing from the last good state is shown, since it may be
+/// wrong. Clears by itself when a readable state arrives.
+struct FirmwareMismatchView: View {
+  @EnvironmentObject private var computer: RaceComputer
+  let mismatch: StateMismatch
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 8) {
+        Text("Firmware mismatch")
+          .font(.headline)
+          .foregroundStyle(Color.orange)
+        Text(verbatim: "\(mismatch.detail) Update the watch app or the race computer so they match.")
+          .font(.footnote)
+          .foregroundStyle(Palette.caption)
+          .multilineTextAlignment(.center)
+        // Choose mode is readable in every version: the way back to a
+        // screen that works.
+        Button("Exit") { computer.send(.select(.selector)) }
+          .buttonStyle(PadButtonStyle())
+          .liveOnly()
+        Button("Quit") { computer.stop() }
+          .buttonStyle(PadButtonStyle(fill: .clear, foreground: Palette.caption, height: 30, fontSize: 14))
+      }
+      .padding(.horizontal, 4)
     }
   }
 }
