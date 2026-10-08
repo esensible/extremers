@@ -242,10 +242,11 @@ the Swift tests check the same bytes.
   wrist dropping), and restarts it if another app's workout ends it
   (watchOS allows one workout session at a time).
 
-### What the watch app must do for security (to do)
+### What the watch app does for security
 
-The firmware side above is done; the app (`watch-app/`) still assumes an
-open link. It needs:
+What a central needs, and what the app (`watch-app/`) does: the decisions
+are `PairingPolicy` and `RememberedBox` (`Model/Security.swift`,
+`Model/Box.swift`, unit-tested), the steps `RaceComputer.secure()`.
 
 1. **Let the first access trigger pairing, then carry on.** The subscribe
    (`setNotifyValue(true, for: state)`) or first read on an unencrypted link
@@ -255,7 +256,9 @@ open link. It needs:
    `didUpdateNotificationStateFor`/`didUpdateValueFor` errors
    `CBATTError.insufficientAuthentication` / `.insufficientEncryption`,
    wait for the pairing to finish and retry (subscribe, then read), with a
-   bound (e.g. 3 attempts over ~30 s).
+   bound (the app: 3 attempts, 5 s then 10 s apart). The subscribe must be
+   allowed longer than the prompt can stay up (the app waits 35 s), or the
+   app drops the link under a user about to tap Pair.
 2. **Write events with response.** Send every `event` as
    `.withResponse`. A write without response gets no answer on an
    unencrypted or unbonded link, so it is silently dropped and never
@@ -272,7 +275,10 @@ open link. It needs:
    drops right after connecting, or CoreBluetooth reports
    `CBError.peerRemovedPairingInformation` (14). Show: "This box forgot the
    watch: forget 'nacra' in the watch's Bluetooth settings, then pair again
-   from the Kindle." The app cannot delete the bond itself.
+   from the Kindle." The app cannot delete the bond itself. (The app also
+   reads `0x08` from the box it remembers pairing with this way, and calls
+   the bond lost after two links in a row to it drop while being secured:
+   one drop may be the radio.)
 5. **Remember which box.** After the first successful (encrypted) session,
    store `peripheral.identifier`, and the unit address from the scan
    response's manufacturer data (`FF FF` + 6 bytes, see Identity). Reconnect
@@ -280,7 +286,10 @@ open link. It needs:
    (or only accept) that box: another boat's `nacra` is a different unit
    that this watch is not bonded to. Show the unit address (e.g. its last 3
    bytes) on the connecting screen so the user can match it to the Kindle's
-   "This box".
+   "This box". The app keeps it in UserDefaults, shows "Paired box
+   8E:96:10", ignores (and names) any other box it hears, and has
+   **Forget this box**, which clears only the app's memory: the bond stays
+   until it is forgotten in the watch's Settings → Bluetooth.
 6. **Expect the pairing prompt only once.** After bonding, reconnects
    re-encrypt silently; a prompt on a reconnect means the bond was lost on
    one side (see 4).

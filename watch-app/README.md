@@ -29,7 +29,7 @@ editing `project.yml`. It rewrites the project, so any change made in
 Xcode's project editor (signing team included) is lost: put lasting
 settings in `project.yml`.
 
-Unit tests (protocol, formatting, haptic cues, link bookkeeping) run on a watch simulator:
+Unit tests (protocol, formatting, haptic cues, link bookkeeping, pairing decisions, the paired box) run on a watch simulator:
 pick a watchOS simulator and press Cmd-U. They need no device.
 
 ## Signing
@@ -70,6 +70,18 @@ from Xcode again each week. Paid accounts get a year.
 - It shows "Looking for nacra" until the race computer is powered and in
   range, then the screen for whatever the device is doing (choose mode,
   race, tune).
+- The race computer only talks to a watch paired with it (BLE.md,
+  "Pairing a watch"). The first time: on the Kindle, Settings → **Pair
+  watch**, then open the app; the watch asks to pair with `nacra`: tap
+  **Pair**. Until then the app says "Not paired" and what to do, and tries
+  again by itself every 10 s. After that it reconnects without asking.
+- The app remembers that box ("Paired box 8E:96:10", the end of the
+  Kindle's "This box") and ignores other boats' boxes. To use another box:
+  Quit, **Forget this box**, Connect. That clears only the app's memory;
+  the pairing itself is removed in the watch's Settings → Bluetooth.
+- "Pairing lost" means the box no longer has this watch's pairing (Forget
+  all watches, or the box was re-provisioned): forget `nacra` in the
+  watch's Settings → Bluetooth, then pair again from the Kindle.
 - On first launch it asks for Health permission to save workouts: allow
   it. The app then runs a sailing workout (green running-figure icon at
   the top of the watch face) from the moment it starts looking for the
@@ -99,10 +111,14 @@ Extremers/
   Model/Commands.swift       buttons -> events, confirm requests (pure Swift)
   Model/Formatting.swift     mm:ss, knots, signed values, haptic cue times (pure Swift)
   Model/LinkPolicy.swift     backoff, loop generations, waiter table, workout restart rule (pure Swift)
-  Model/RaceComputer.swift   CoreBluetooth central: scan, connect, subscribe, reconnect
+  Model/Security.swift       CoreBluetooth errors -> retry / pairing problem / notice (no CB objects)
+  Model/Box.swift            the paired box: scan-response address, matching, UserDefaults (pure Swift)
+  Model/RaceComputer.swift   CoreBluetooth central: scan, connect, secure (pair), reconnect
   Model/WorkoutKeeper.swift  HKWorkoutSession that keeps the app alive
   Model/Haptics.swift        countdown haptics from the anchored start
   Views/                     one file per screen, plus shared pieces
 ExtremersTests/ProtocolTests.swift
 ExtremersTests/LinkPolicyTests.swift
+ExtremersTests/SecurityTests.swift
+ExtremersTests/BoxTests.swift
 ```
