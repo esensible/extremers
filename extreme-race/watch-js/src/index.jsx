@@ -39,7 +39,7 @@ export const Main = () => (
 const App = (props) => (
   <view flexGrow={1}>
     <Main />
-    <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} onPress={() => doConfirm(() => selectDefault(), 2)} />
+    <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} background="#FF9F0A4D" borderWidth={1} borderColor="accent" onPress={() => doConfirm(() => selectDefault(), 2)} />
     <Confirm />
     <Haptic />
   </view>

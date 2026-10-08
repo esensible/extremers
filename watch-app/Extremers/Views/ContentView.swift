@@ -48,6 +48,19 @@ struct ContentView: View {
       MountView(session: shell.session)
         .disabled(!computer.isLive)
         .opacity(computer.isLive ? 1 : 0.6)
+        // TEST: every tap's location (the bundle's points) in shell.log,
+        // next to the press it dispatched, if any: taps that miss show
+        // as a location with no press after it.
+        // TEST: the size the bundles are laid out in (their ctx).
+        .background(GeometryReader { g in
+          Color.clear
+            .onAppear { ShellLog.shared("bundle area \(g.size) at \(g.frame(in: .global).origin) (appear)") }
+            .onChange(of: g.size) { _, s in ShellLog.shared("bundle area \(s) at \(g.frame(in: .global).origin) (changed)") }
+        })
+        .simultaneousGesture(SpatialTapGesture().onEnded { tap in
+          ShellLog.shared(String(format: "tap at (%.1f, %.1f)%@", tap.location.x, tap.location.y,
+                                 computer.isLive ? "" : " (link down: buttons disabled)"))
+        })
     case .missing(let id):
       MissingAppView(id: id)
     case .none:

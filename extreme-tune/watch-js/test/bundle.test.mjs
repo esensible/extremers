@@ -64,7 +64,7 @@ test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the 
   assert.deepEqual(segs[0].marker.slice(0, 2), ["#dispatch", exitTag]);
   // the Kindle's exit button: top left, no fill, no label
   const exit = Object.fromEntries(segments()[0].ops.filter((m) => m[0] === "setProp" && m[1] === exitTag).map((m) => [m[2], m[3]]));
-  assert.deepEqual([exit.position, exit.left, exit.top, exit.background], ["absolute", 0, 0, undefined]);
+  assert.deepEqual([exit.position, exit.left, exit.top, exit.background], ["absolute", 0, 0, "#FF9F0A4D"]); // TEST: drawn to show the tap area
   assert.deepEqual(display(segs[0]), ["flex"]);
   assert.deepEqual(segs[0].ops.find((m) => m[0] === "setTimer").slice(2), [5000]);
   assert.equal(segs[1].marker[0], "#timer");
