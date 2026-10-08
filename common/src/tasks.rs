@@ -15,6 +15,7 @@ use crate::{
     config::{
         HTTP_KEEPALIVE_TIMEOUT_MS, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE, SOCKET_IO_TIMEOUT_MS,
     },
+    fmt::Dbg,
     http::HttpHandler,
     nmea::{self, RingBuffer},
     runtime::EngineRuntime,
@@ -32,7 +33,7 @@ where
     loop {
         match bind.bind(address).await {
             Ok(acceptor) => {
-                log::info!("http: listening on port {}", port);
+                info!("http: listening on port {}", port);
                 // There are only MAX_WEB_SOCKETS connection slots, and a
                 // client that disappears without closing its connection
                 // must not hold one forever: idle keep-alives are closed,
@@ -46,10 +47,10 @@ where
                     .run(Some(HTTP_KEEPALIVE_TIMEOUT_MS), acceptor, handler)
                     .await
                 {
-                    log::error!("http: server error: {:?}", e);
+                    error!("http: server error: {:?}", Dbg(&e));
                 }
             }
-            Err(e) => log::error!("http: cannot bind port {}: {:?}", port, e),
+            Err(e) => error!("http: cannot bind port {}: {:?}", port, Dbg(&e)),
         }
         Timer::after(Duration::from_secs(1)).await;
     }
@@ -64,7 +65,7 @@ where
     let mut ring_buffer = RingBuffer::<R, 32>::new(reader);
     loop {
         let update = nmea::next_update(&mut ring_buffer).await;
-        log::debug!("gps: {:?}", update);
+        debug!("gps: {:?}", Dbg(&update));
         runtime.gps_update(update).await;
     }
 }

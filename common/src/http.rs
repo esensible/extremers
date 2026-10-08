@@ -24,6 +24,7 @@ use extreme_traits::{MAX_MESSAGE_SIZE, RawEngine};
 
 use crate::{
     config::{WS_CLIENT_TIMEOUT_MS, WS_HEARTBEAT_MS},
+    fmt::{Dbg, Disp},
     runtime::{EngineRuntime, StateMessage},
 };
 
@@ -56,7 +57,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
         let mut updates = match self.runtime.subscribe() {
             Ok(updates) => updates,
             Err(e) => {
-                log::error!("websocket: cannot subscribe to state updates: {:?}", e);
+                error!("websocket: cannot subscribe to state updates: {:?}", Dbg(&e));
                 return Ok(());
             }
         };
@@ -96,7 +97,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                     match header.frame_type {
                         FrameType::Text(_) | FrameType::Binary(_) => {
                             if self.runtime.external_event(payload).await.is_err() {
-                                log::warn!(
+                                warn!(
                                     "websocket: undecodable event: {}",
                                     core::str::from_utf8(payload).unwrap_or("<not utf-8>")
                                 );
@@ -112,12 +113,12 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                             pong.send_payload(&mut tx, payload).await?;
                         }
                         FrameType::Close => {
-                            log::info!("websocket: closed by client");
+                            info!("websocket: closed by client");
                             return Ok(());
                         }
                         // a pong has done its job by arriving
                         FrameType::Pong | FrameType::Continue(_) => {
-                            log::debug!("websocket: ignoring {}", header);
+                            debug!("websocket: ignoring {}", Disp(&header));
                         }
                     }
                 }
@@ -126,7 +127,7 @@ impl<'r, E: RawEngine> HttpHandler<'r, E> {
                 }
                 Either3::Third(()) => {
                     if last_heard.elapsed() >= Duration::from_millis(WS_CLIENT_TIMEOUT_MS) {
-                        log::info!(
+                        info!(
                             "websocket: client silent for {} ms, disconnecting",
                             last_heard.elapsed().as_millis()
                         );
@@ -177,7 +178,7 @@ impl<E: RawEngine> Handler for HttpHandler<'_, E> {
                 path => path,
             };
 
-            log::debug!("http: GET {}", path);
+            debug!("http: GET {}", path);
             // the lock is released before the (slow) write
             if let Some(file) = self.runtime.static_file(path).await {
                 conn.initiate_response(200, Some("OK"), &[]).await?;
@@ -194,11 +195,11 @@ impl<E: RawEngine> Handler for HttpHandler<'_, E> {
             let mut buf = [0_u8; MAX_BASE64_KEY_RESPONSE_LEN];
             conn.initiate_ws_upgrade_response(&mut buf).await?;
             conn.complete().await?;
-            log::info!("websocket: connected");
+            info!("websocket: connected");
 
             let socket = conn.unbind()?;
             if let Err(e) = self.run_websocket(socket).await {
-                log::info!("websocket: disconnected: {:?}", e);
+                info!("websocket: disconnected: {:?}", Dbg(&e));
             }
         }
 

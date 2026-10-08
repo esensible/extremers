@@ -298,7 +298,7 @@ where
             Ok(t) => t,
             Err(TokenError::Read) => return Err(TokenError::Read),
             Err(e) => {
-                log::debug!("NMEA resync: {:?}", e);
+                debug!("NMEA resync: {:?}", crate::fmt::Dbg(&e));
                 message = None;
                 continue;
             }
@@ -334,7 +334,7 @@ where
                     return Ok(NMEAMessage::GNRMC(gnrmc));
                 }
             } else {
-                log::debug!("NMEA checksum mismatch");
+                debug!("NMEA checksum mismatch");
             }
             continue;
         }

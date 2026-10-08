@@ -17,7 +17,9 @@ embedded-io-async = { workspace = true }
 
 # Other external crates
 heapless = { workspace = true }
+# Logging: `log` on the host, defmt on the firmware targets (src/fmt.rs).
 log = { workspace = true }
+defmt = { version = "1.0", optional = true }
 # AtomicU64 on targets without 64-bit atomics (fallback is a no-op where they exist)
 portable-atomic = { workspace = true, features = ["fallback"] }
 
@@ -27,6 +29,8 @@ extreme-traits = { path = "../extreme-traits" }
 [features]
 default = []
 std = ["edge-http/std", "edge-ws/std"]
+# Log through defmt instead of `log` (the firmware targets).
+defmt = ["dep:defmt"]
 
 [dev-dependencies]
 # generic-queue: the tests run timers without an embassy executor

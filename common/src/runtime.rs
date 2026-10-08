@@ -16,7 +16,7 @@ use portable_atomic::AtomicU64;
 
 use extreme_traits::{MAX_MESSAGE_SIZE, Outcome, RawEngine, StateJson, Timer};
 
-use crate::{config::MAX_WEB_SOCKETS, nmea::GpsUpdate};
+use crate::{config::MAX_WEB_SOCKETS, fmt::Dbg, nmea::GpsUpdate};
 
 /// A snapshot of the engine state, as sent to clients.
 #[derive(Clone, Debug)]
@@ -37,7 +37,7 @@ impl StateMessage {
                 json,
             }),
             Err(()) => {
-                log::error!(
+                error!(
                     "{} state does not serialize into {} bytes",
                     engine.kind(),
                     MAX_MESSAGE_SIZE
@@ -91,7 +91,7 @@ impl<E: RawEngine> EngineRuntime<E> {
                     let uptime = Instant::now().as_millis();
                     self.tick_offset
                         .store(timestamp.saturating_sub(uptime), Ordering::Relaxed);
-                    log::info!("clock set from GPS: {} ms since epoch", timestamp);
+                    info!("clock set from GPS: {} ms since epoch", timestamp);
                 }
                 timestamp
             }
@@ -135,7 +135,7 @@ impl<E: RawEngine> EngineRuntime<E> {
             match self.timer_channel.dyn_subscriber() {
                 Ok(subscriber) => break subscriber,
                 Err(e) => {
-                    log::error!("timer: cannot subscribe ({:?}), retrying", e);
+                    error!("timer: cannot subscribe ({:?}), retrying", Dbg(&e));
                     embassy_time::Timer::after(Duration::from_secs(10)).await;
                 }
             }
@@ -151,7 +151,7 @@ impl<E: RawEngine> EngineRuntime<E> {
             };
 
             let delay = at.saturating_sub(self.now());
-            log::debug!("timer: due in {} ms", delay);
+            debug!("timer: due in {} ms", delay);
             match with_timeout(
                 Duration::from_millis(delay),
                 instructions.next_message_pure(),
@@ -168,7 +168,7 @@ impl<E: RawEngine> EngineRuntime<E> {
                         pending = next_pending(pending, instruction);
                         continue;
                     }
-                    log::debug!("timer: firing for {}", at);
+                    debug!("timer: firing for {}", at);
                     pending = None;
                     let outcome = engine.timer_event(at);
                     self.apply(&engine, outcome);
@@ -193,7 +193,7 @@ impl<E: RawEngine> EngineRuntime<E> {
         }
 
         if outcome.timer != Timer::Keep {
-            log::debug!("timer: {:?}", outcome.timer);
+            debug!("timer: {:?}", Dbg(&outcome.timer));
             self.timer_channel
                 .immediate_publisher()
                 .publish_immediate(outcome.timer);
