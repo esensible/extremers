@@ -26,6 +26,21 @@ esp-alloc = { version = "0.11" }
 esp-bootloader-esp-idf = { version = "0.6" }
 
 #
+# Persistent settings (src/storage.rs): esp-storage is the internal SPI
+# flash as NorFlash, embassy-embedded-hal adapts it to the async traits
+# sequential-storage's map wants, and the data lives in the `settings`
+# partition of partitions.csv, found at boot from the partition table.
+# esp-storage 0.10 is the one esp-bootloader-esp-idf 0.6 reads the table
+# with, so they share one FlashStorage type.
+#
+esp-storage = { version = "0.10", features = ["embedded-storage"] }
+embassy-embedded-hal = "0.6"
+sequential-storage = { version = "8.0", features = ["defmt"] }
+embedded-storage = "0.3.2"
+embedded-storage-async = "0.4"
+embassy-sync = { workspace = true }
+
+#
 # Embassy
 #
 embassy-executor = { workspace = true }
@@ -64,4 +79,5 @@ esp32c6 = [
     "esp-backtrace/esp32c6",
     "esp-alloc/esp32c6",
     "esp-bootloader-esp-idf/esp32c6",
+    "esp-storage/esp32c6",
 ]

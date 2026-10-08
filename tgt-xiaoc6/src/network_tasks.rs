@@ -9,18 +9,63 @@ use esp_radio::wifi::{
 };
 
 use common::config::{AP_IP, CAPTIVE_URL, WIFI_CHANNEL, WIFI_PASSWORD, WIFI_SSID};
+use embassy_sync::once_lock::OnceLock;
+
+use crate::storage::{self, WifiCreds};
 
 /// The access point's configuration: applied by `WifiController::new`, and
-/// again by [`wifi_task`] if the access point stops.
+/// again by [`wifi_task`] if the access point stops. The credentials are
+/// the ones [`choose_access_point_credentials`] picked at boot.
 pub fn access_point_config() -> WifiConfig {
+    let creds = AP_CREDS
+        .try_get()
+        .expect("choose_access_point_credentials runs before the access point is configured");
     WifiConfig::AccessPoint(
         AccessPointConfig::default()
-            .with_ssid(WIFI_SSID.try_into().unwrap())
+            .with_ssid(creds.ssid().try_into().unwrap())
             .with_authentication(AuthenticationMethodConfig::Wpa2Personal(
-                WIFI_PASSWORD.try_into().unwrap(),
+                creds.psk().try_into().unwrap(),
             ))
             .with_channel(WIFI_CHANNEL),
     )
+}
+
+/// The access point's credentials, set once at boot.
+static AP_CREDS: OnceLock<WifiCreds> = OnceLock::new();
+
+// The compiled-in fallback must itself be valid WPA2 credentials.
+const _: () = assert!(
+    !WIFI_SSID.is_empty()
+        && WIFI_SSID.len() <= 32
+        && WIFI_PASSWORD.len() >= 8
+        && WIFI_PASSWORD.len() <= 63
+);
+
+/// Picks the access point's credentials: those in the settings partition
+/// (written by the `provision` binary) when present and valid, else the
+/// compiled-in `WIFI_SSID`/`WIFI_PASSWORD`. Logs which, never the password.
+/// Call once, after `storage::init` and before [`access_point_config`].
+pub async fn choose_access_point_credentials() {
+    let creds = match storage::wifi_creds().await {
+        Some(c) => {
+            info!(
+                "Wifi: stored credentials, ssid {=[u8]:a}, password {=usize} bytes",
+                c.ssid(),
+                c.psk().len()
+            );
+            c
+        }
+        None => {
+            info!(
+                "Wifi: no valid stored credentials, compiled-in default ssid {=str}",
+                WIFI_SSID
+            );
+            WifiCreds::new(WIFI_SSID.as_bytes(), WIFI_PASSWORD.as_bytes()).unwrap()
+        }
+    };
+    if AP_CREDS.init(creds).is_err() {
+        warn!("Wifi: access point credentials already chosen; keeping the first");
+    }
 }
 
 #[embassy_executor::task]

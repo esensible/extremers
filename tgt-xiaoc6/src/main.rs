@@ -26,8 +26,13 @@ use esp_radio::wifi::{
 esp_bootloader_esp_idf::esp_app_desc!();
 
 mod network_tasks;
+#[allow(dead_code)] // shared with src/bin/{provision,dump}.rs; each uses a subset
+mod storage;
 
-use crate::network_tasks::{access_point_config, dhcp_task, dns_task, net_task, wifi_task};
+use crate::network_tasks::{
+    access_point_config, choose_access_point_credentials, dhcp_task, dns_task, net_task,
+    wifi_task,
+};
 use common::{
     config::{AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_WEB_SOCKETS, SOCKET_BUFFER_SIZE},
     nmea::AsyncReader,
@@ -80,6 +85,11 @@ async fn main(spawner: Spawner) -> ! {
     Timer::after(Duration::from_millis(100)).await;
     let _rf_antenna_select = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
     defmt::info!("rf switch: powered (GPIO3 low), onboard antenna (GPIO14 low)");
+
+    // Settings partition (read only here; see storage.rs), then the access
+    // point's credentials from it, or the compiled-in defaults.
+    storage::init(peripherals.FLASH).await;
+    choose_access_point_credentials().await;
 
     // initialize wifi controller as an access point
     let controller_config = ControllerConfig::default()
