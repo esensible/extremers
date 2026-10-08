@@ -29,7 +29,7 @@ editing `project.yml`. It rewrites the project, so any change made in
 Xcode's project editor (signing team included) is lost: put lasting
 settings in `project.yml`.
 
-Unit tests (protocol, formatting, haptic cues) run on a watch simulator:
+Unit tests (protocol, formatting, haptic cues, link bookkeeping) run on a watch simulator:
 pick a watchOS simulator and press Cmd-U. They need no device.
 
 ## Signing
@@ -70,11 +70,15 @@ from Xcode again each week. Paid accounts get a year.
 - It shows "Looking for nacra" until the race computer is powered and in
   range, then the screen for whatever the device is doing (choose mode,
   race, tune).
-- On the first connection it asks for Health permission to save workouts:
-  allow it. The app then runs a sailing workout (green running-figure
-  icon at the top of the watch face) for as long as it is connected,
-  because watchOS suspends an app, and its Bluetooth link, when the wrist
-  drops, unless a workout is running. Nothing is saved to Health.
+- On first launch it asks for Health permission to save workouts: allow
+  it. The app then runs a sailing workout (green running-figure icon at
+  the top of the watch face) from the moment it starts looking for the
+  race computer until Quit, because watchOS suspends an app, and its
+  Bluetooth link (or its search for one), when the wrist drops, unless a
+  workout is running. Nothing is saved to Health.
+- watchOS runs one workout at a time: starting a workout in another app
+  ends this one. Extremers starts it again (at once if it is in front,
+  else when you come back to it) and says "Workout restarted".
 - "Quit" on the choose-mode screen ends the workout and drops the link.
   Swiping the app away in the app switcher does the same.
 
@@ -94,9 +98,11 @@ Extremers/
   Model/Protocol.swift       UUIDs, DeviceState decode, DeviceEvent encode (pure Swift)
   Model/Commands.swift       buttons -> events, confirm requests (pure Swift)
   Model/Formatting.swift     mm:ss, knots, signed values, haptic cue times (pure Swift)
+  Model/LinkPolicy.swift     backoff, loop generations, waiter table, workout restart rule (pure Swift)
   Model/RaceComputer.swift   CoreBluetooth central: scan, connect, subscribe, reconnect
   Model/WorkoutKeeper.swift  HKWorkoutSession that keeps the app alive
   Model/Haptics.swift        countdown haptics from the anchored start
   Views/                     one file per screen, plus shared pieces
 ExtremersTests/ProtocolTests.swift
+ExtremersTests/LinkPolicyTests.swift
 ```

@@ -105,6 +105,8 @@ final class RaceComputer: NSObject, ObservableObject {
   /// Set while the latest value could not be decoded: the device speaks
   /// another version of BLE.md. `state` is then out of date and is not shown.
   @Published private(set) var mismatch: StateMismatch?
+  /// A short line shown for a few seconds (the workout was ended and restarted).
+  @Published private(set) var notice: String?
 
   private let workout = WorkoutKeeper()
   private let haptics = Haptics()
@@ -130,11 +132,29 @@ final class RaceComputer: NSObject, ObservableObject {
   /// A stopped loop that may still be unwinding; the next one waits for it.
   private var retiring: Task<Void, Never>?
   private var generation = LinkGeneration()
+  private var noticeTimer: Task<Void, Never>?
 
   /// `memory` nil: remember the last device for this app run only.
   init(memory: PeripheralMemory? = nil) {
     self.memory = memory ?? LastPeripheral()
     super.init()
+    workout.onNotice = { [weak self] text in self?.show(notice: text) }
+  }
+
+  /// The app came to the front (or left it): an ended workout restarts
+  /// when the sailor is back.
+  func appActive(_ active: Bool) {
+    workout.appActive(active)
+  }
+
+  private func show(notice text: String) {
+    notice = text
+    noticeTimer?.cancel()
+    noticeTimer = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 4_000_000_000)
+      guard !Task.isCancelled else { return }
+      self?.notice = nil
+    }
   }
 
   var isLive: Bool { link == .connected }
@@ -162,6 +182,9 @@ final class RaceComputer: NSObject, ObservableObject {
     guard loop == nil else { return }
     let gen = generation.advance()
     link = state == nil ? .connecting : .reconnecting
+    // Now, not on the first connection: without a running workout watchOS
+    // suspends the app (and its scan) as soon as the wrist drops.
+    workout.start()
     let previous = retiring
     retiring = nil
     loop = Task { [weak self] in
@@ -208,7 +231,7 @@ final class RaceComputer: NSObject, ObservableObject {
 
   /// Throws once this loop has been cancelled or replaced: after every
   /// await, before it touches anything (a stopped loop must not scan,
-  /// connect, publish `.connected` or start the workout).
+  /// connect or publish `.connected`).
   private func ensureCurrent(_ gen: UInt64) throws {
     try Task.checkCancellation()
     guard generation.isCurrent(gen) else { throw CancellationError() }
@@ -230,7 +253,6 @@ final class RaceComputer: NSObject, ObservableObject {
         memory.identifier = p.identifier
         link = .connected
         problem = nil
-        workout.start()
         connectedAt = Date()
         // Only a failure (the drop, Bluetooth going off) ends this wait.
         let _: Any = try await waitFor("disconnect", timeout: nil) {}

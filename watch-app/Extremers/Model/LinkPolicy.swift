@@ -1,7 +1,8 @@
 import Foundation
 
-// The bookkeeping of RaceComputer's link loop that does not need
-// CoreBluetooth, so the tests can check it.
+// The bookkeeping of RaceComputer's link loop, and of the workout that
+// keeps it up, that needs neither CoreBluetooth nor HealthKit, so the
+// tests can check it.
 
 /// Which run of the link loop is current. `start()` and `stop()` each
 /// advance it; a loop, timer or callback holding an older value belongs to
@@ -106,5 +107,37 @@ struct Waiters<Key: Hashable, Value> {
     let taken = entries.filter { !kept.contains($0.key) }
     for key in taken.keys { entries[key] = nil }
     return taken.values.map(\.value)
+  }
+}
+
+/// What to do when the workout session that keeps the app awake ends
+/// without this app ending it. watchOS runs one workout session at a time:
+/// starting a workout in another app ends this one.
+enum WorkoutRestart: Equatable {
+  /// The user quit: it was meant to end.
+  case none
+  case now
+  /// The next time the app is in front.
+  case whenActive
+
+  /// A session that ended again this soon after a restart is being ended
+  /// by something that will keep doing it.
+  static let minInterval: TimeInterval = 30
+
+  /// - wanted: the app is connecting or connected (between start and stop).
+  /// - ran: the session had reached running (not refused at start).
+  /// - appActive: the app is in front.
+  /// - sinceLastRestart: time since this keeper last restarted a session.
+  static func after(wanted: Bool, ran: Bool, appActive: Bool, sinceLastRestart: TimeInterval?) -> WorkoutRestart {
+    guard wanted else { return .none }
+    // Refused at start (no permission, another workout holds the session):
+    // trying again at once would be refused again, in a loop.
+    guard ran else { return .whenActive }
+    // Another app's workout took over while this app is in the
+    // background: take the session back only when the sailor comes back,
+    // never from behind the other app's back.
+    guard appActive else { return .whenActive }
+    if let since = sinceLastRestart, since < minInterval { return .whenActive }
+    return .now
   }
 }

@@ -37,6 +37,22 @@ final class LinkPolicyTests: XCTestCase {
     XCTAssertEqual(backoff.next(), 1)
   }
 
+  // MARK: - Workout restart
+
+  func testWorkoutRestart() {
+    // quit: never restarted
+    XCTAssertEqual(WorkoutRestart.after(wanted: false, ran: true, appActive: true, sinceLastRestart: nil), .none)
+    // ended while in front: back at once
+    XCTAssertEqual(WorkoutRestart.after(wanted: true, ran: true, appActive: true, sinceLastRestart: nil), .now)
+    XCTAssertEqual(WorkoutRestart.after(wanted: true, ran: true, appActive: true, sinceLastRestart: 31), .now)
+    // another workout app took over in the background: when back in front
+    XCTAssertEqual(WorkoutRestart.after(wanted: true, ran: true, appActive: false, sinceLastRestart: nil), .whenActive)
+    // refused at start: no retry loop
+    XCTAssertEqual(WorkoutRestart.after(wanted: true, ran: false, appActive: true, sinceLastRestart: nil), .whenActive)
+    // ended again right after a restart: do not fight it
+    XCTAssertEqual(WorkoutRestart.after(wanted: true, ran: true, appActive: true, sinceLastRestart: 5), .whenActive)
+  }
+
   // MARK: - Waiters
 
   func testTakeReturnsEachRegistrationOnce() {

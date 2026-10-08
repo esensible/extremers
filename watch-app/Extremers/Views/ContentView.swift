@@ -15,6 +15,11 @@ struct ContentView: View {
         ReconnectingBanner(text: computer.problem ?? "Reconnecting\u{2026}")
       }
     }
+    .overlay(alignment: .bottom) {
+      if let notice = computer.notice {
+        NoticeBanner(text: notice)
+      }
+    }
     .sheet(item: $confirm) { request in
       ConfirmSheet(
         request: request,
@@ -89,6 +94,25 @@ struct ReconnectingBanner: View {
     .padding(.horizontal, 10)
     .padding(.vertical, 5)
     .background(Color.yellow, in: Capsule())
+  }
+}
+
+/// A few seconds over any screen: something the sailor should know
+/// happened (the workout was ended elsewhere, and restarted).
+struct NoticeBanner: View {
+  let text: String
+
+  var body: some View {
+    Text(text)
+      .font(.system(size: 13, weight: .semibold))
+      .foregroundStyle(Color.white)
+      .multilineTextAlignment(.center)
+      .lineLimit(3)
+      .minimumScaleFactor(0.7)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 5)
+      .background(Color.gray.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
+      .allowsHitTesting(false)
   }
 }
 
