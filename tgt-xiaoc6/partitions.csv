@@ -8,18 +8,19 @@
 # offsets are repeated in code.
 #
 # Two app slots, no factory. The bootloader boots the slot `otadata`
-# selects; with `otadata` blank (all 0xFF, as now: nothing writes it yet)
-# and no factory partition it boots ota_0 ("No factory image, trying OTA 0"
-# in the ESP-IDF v5.5.1 bootloader probe-rs flashes). The slot not running
-# is where GPS tracks go until an update needs it (src/storage.rs,
-# `TrackSlot`), so there is no separate tracks partition.
+# selects; with `otadata` blank (all 0xFF) and no factory partition it
+# boots ota_0 ("No factory image, trying OTA 0" in the ESP-IDF v5.5.1
+# bootloader probe-rs flashes) and records that as ota_seq 1 in otadata.
+# The `provision` binary blanks `otadata` (a board flashed with the old
+# layout had an app image header where its second sector now is). The slot
+# not running is where GPS tracks go until an update needs it
+# (src/storage.rs, `TrackSlot`), so there is no separate tracks partition.
 #
 # A flash writes only the bootloader, this table and the app image into
 # ota_0, and erases only around them: the region around the bootloader and
-# table (on hilux/wireless-can it wiped the stock `nvs` at 0x9000, so the
-# first `otadata` sector at 0xF000 is probably erased too) and the image's
-# sectors inside ota_0. probe-rs refuses an image bigger than the slot, so
-# ota_1 and `settings` are never erased by a flash.
+# table (on hilux/wireless-can it wiped the stock `nvs` at 0x9000) and the
+# image's sectors inside ota_0. probe-rs refuses an image bigger than the
+# slot, so ota_1 and `settings` are never erased by a flash.
 #
 # settings  key/value map (sequential-storage): WiFi credentials.
 #           Written by the `provision` binary, read by the app.

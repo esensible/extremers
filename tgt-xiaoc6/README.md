@@ -22,14 +22,18 @@ With the probe on a `probe-rs serve` host, set `PROBE_RS_REMOTE_HOST` and
 | Name | Type | Offset | Size | Holds |
 |---|---|---|---|---|
 | `nvs` | data/nvs | 0x9000 | 24 KiB | ESP-IDF standard; unused |
-| `otadata` | data/ota | 0xF000 | 8 KiB | which app slot to boot; blank (never written yet) |
+| `otadata` | data/ota | 0xF000 | 8 KiB | which app slot to boot (ota_0 for now) |
 | `phy_init` | data/phy | 0x11000 | 4 KiB | ESP-IDF standard; unused |
 | `ota_0` | app | 0x20000 | 1.875 MiB | the app (about 0.9 MiB today) |
 | `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: GPS tracks, later an update |
 | `settings` | data/nvs | 0x3E0000 | 128 KiB | key/value settings: WiFi SSID + password |
 
 With `otadata` blank and no factory partition the bootloader boots `ota_0`,
-which is where probe-rs flashes. The slot that is not running holds GPS
+which is where probe-rs flashes, and writes `ota_seq` 1 (= `ota_0`) into
+`otadata`; the app logs `storage: otadata selects "Ota0" (ota_seq 0x1 /
+0xffffffff)`. `provision` blanks `otadata` first: on a board flashed with
+the earlier layout, its second sector held the old app image's header,
+which esp-bootloader-esp-idf rejects (`storage: cannot read otadata`). The slot that is not running holds GPS
 tracks (not implemented yet): written while sailing, downloaded over BLE,
 and erased before an OTA update writes new firmware into it. An update
 therefore needs the tracks downloaded first, and there is no rollback to
@@ -38,8 +42,9 @@ boot which slot it runs from and the inactive slot's size
 (`storage::track_slot`).
 
 Once OTA exists, mind that probe-rs always flashes `ota_0`: if `otadata`
-then selects `ota_1`, the bootloader keeps booting `ota_1` (unless the
-flash's erase around the bootloader also blanks `otadata`; not checked).
+then selects `ota_1`, the bootloader keeps booting `ota_1`. (`ota_seq` 1
+survived three app flashes here, so a flash does not seem to clear
+`otadata`.)
 
 A normal flash never erases `settings` or `ota_1`: probe-rs erases only
 around what it writes -- the region of the bootloader and table (on
@@ -63,8 +68,9 @@ tool, then the app again:
     EXTREMERS_SSID=nacra EXTREMERS_PSK='a passphrase' cargo run --release --bin provision
     cargo run --release
 
-`provision` erases the settings partition, writes the credentials, reads
-them back and logs the result. The values come only from those environment
+`provision` erases the settings partition (and blanks `otadata`, when
+running from `ota_0`), writes the credentials, reads them back and logs the
+result. The values come only from those environment
 variables at build time: they are never in the source. Give them to the
 same `cargo run` that flashes (cargo rebuilds when they change, so a bare
 `cargo run --bin provision` would rebuild without them). Both or neither:

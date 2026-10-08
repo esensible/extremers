@@ -1,4 +1,5 @@
-//! Persistent settings in the `settings` flash partition.
+//! Persistent settings in the `settings` flash partition, and where GPS
+//! tracks will go (the inactive app slot, see [`TrackSlot`]).
 //!
 //! Layers, bottom up:
 //!   `esp-storage`        the C6's internal SPI flash as a `NorFlash` (4-byte
@@ -11,9 +12,9 @@
 //!                        only when the map runs out of room and migrates
 //!   this file            one-byte keys and the byte encoding of each record
 //!
-//! Both partitions are declared in `partitions.csv` and found by label in the
-//! partition table at boot -- no offsets in code. Neither is touched by
-//! flashing the app (see partitions.csv for why).
+//! `settings` is declared in `partitions.csv` and found by label in the
+//! partition table at boot -- no offsets in code. Flashing the app does not
+//! touch it (see partitions.csv for why).
 //!
 //! The app only reads: it never writes or erases at boot. Erasing the
 //! partition and writing the WiFi credentials is the `provision` binary's
@@ -22,11 +23,6 @@
 //!
 //! Records:
 //!   `KEY_WIFI`  [ssid_len][ssid..][psk_len][psk..]   (`WifiCreds`)
-//!
-//! The `tracks` partition (2 MiB) is reserved for GPS traces and not used
-//! yet. The intent: a `sequential_storage::queue` of fixed-size track
-//! points appended while sailing, downloaded over BLE, then erased. Nothing
-//! here opens it until that exists.
 
 use core::ops::Range;
 
@@ -123,6 +119,8 @@ struct Store {
     buf: &'static mut [u8; SCRATCH_LEN],
     /// The partition, kept so `format` can rebuild the map after erasing it.
     range: Range<u32>,
+    /// The `otadata` partition, for `blank_otadata`.
+    otadata: Option<Range<u32>>,
 }
 
 static STORE: Mutex<CriticalSectionRawMutex, Option<Store>> = Mutex::new(None);
@@ -199,7 +197,7 @@ pub async fn init(flash: FLASH<'static>) -> bool {
     let mut flash = FlashStorage::new(flash);
 
     let mut table_buf = [0u8; partitions::PARTITION_TABLE_MAX_LEN];
-    let range = {
+    let (range, otadata) = {
         let table = match partitions::read_partition_table(&mut flash, &mut table_buf) {
             Ok(t) => t,
             Err(e) => {
@@ -208,6 +206,7 @@ pub async fn init(flash: FLASH<'static>) -> bool {
             }
         };
         let mut found = None;
+        let mut otadata = None;
         for p in table.iter() {
             // Raw type/subtype on purpose: `partition_type()` panics on a
             // type esp-bootloader-esp-idf has no name for.
@@ -222,9 +221,13 @@ pub async fn init(flash: FLASH<'static>) -> bool {
             if p.label_as_str() == PARTITION_LABEL {
                 found = Some(p.offset()..p.offset() + p.len());
             }
+            if p.raw_type() == 1 && p.raw_subtype() == OTADATA_SUBTYPE {
+                otadata = Some(p.offset()..p.offset() + p.len());
+            }
         }
+        locate_track_slot(&table, &mut flash);
         match found {
-            Some(r) => r,
+            Some(r) => (r, otadata),
             None => {
                 warn!(
                     "storage: no '{=str}' partition -- flash with --idf-partition-table partitions.csv",
@@ -242,8 +245,168 @@ pub async fn init(flash: FLASH<'static>) -> bool {
     );
     static SCRATCH: static_cell::StaticCell<[u8; SCRATCH_LEN]> = static_cell::StaticCell::new();
     let buf = SCRATCH.init([0; SCRATCH_LEN]);
-    *STORE.lock().await = Some(Store { map, buf, range });
+    *STORE.lock().await = Some(Store { map, buf, range, otadata });
     true
+}
+
+/// Where GPS tracks are to be kept: the app slot the running firmware was
+/// NOT booted from.
+///
+/// The flash has two app slots, `ota_0` and `ota_1` (partitions.csv), and
+/// no separate tracks partition. One slot holds the running firmware; the
+/// other is free space until the next update. The scheme (none of it is
+/// implemented yet):
+///
+/// - while sailing, track points are appended to the inactive slot;
+/// - they are downloaded over BLE, after which the slot may be erased;
+/// - an OTA update erases the inactive slot and writes the new firmware
+///   into it, then selects it in `otadata`.
+///
+/// So an update requires the tracks to have been downloaded first, and once
+/// tracks have been written over the previous firmware image there is no
+/// rollback to it: the inactive slot never holds a bootable fallback.
+///
+/// Nothing in this crate writes or erases the slot yet; this only reports
+/// where it is.
+#[derive(Clone, Copy)]
+pub struct TrackSlot {
+    /// The running slot's subtype: 0x10 + n for `ota_n`.
+    pub booted_subtype: u8,
+    /// The inactive slot's subtype.
+    pub subtype: u8,
+    /// Flash offset of the inactive slot.
+    pub offset: u32,
+    /// Its size in bytes.
+    pub len: u32,
+}
+
+static TRACK_SLOT: embassy_sync::once_lock::OnceLock<TrackSlot> =
+    embassy_sync::once_lock::OnceLock::new();
+
+/// The inactive app slot, as found by [`init`]; `None` if it could not be
+/// determined (logged at boot).
+pub fn track_slot() -> Option<TrackSlot> {
+    TRACK_SLOT.try_get().copied()
+}
+
+/// App partition subtypes `ota_0`..`ota_15` are 0x10..=0x1F; 0x00 is
+/// factory, 0x20 test.
+const OTA_SUBTYPES: core::ops::RangeInclusive<u8> = 0x10..=0x1F;
+/// Data partition subtype of `otadata`.
+const OTADATA_SUBTYPE: u8 = 0x00;
+
+/// Finds the running slot and the other OTA app slot, logs both, and keeps
+/// the inactive one for [`track_slot`]. Reads only.
+///
+/// The running slot comes from `booted_partition()`, which reads the MMU
+/// entry that maps the start of the app's flash address space: that is
+/// the slot actually executing, whatever `otadata` says. `otadata`'s
+/// selection is logged next to it as a cross-check (all-0xFF `otadata`
+/// selects nothing, and the bootloader then boots `ota_0`).
+fn locate_track_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashStorage<'static>) {
+    let booted = match table.booted_partition() {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            warn!("storage: running app slot not found in the partition table");
+            return;
+        }
+        Err(e) => {
+            warn!("storage: cannot determine the running app slot: {:?}", defmt::Debug2Format(&e));
+            return;
+        }
+    };
+    // Raw type/subtype: see `init`.
+    let is_ota_app = |p: &partitions::PartitionEntry| p.raw_type() == 0 && OTA_SUBTYPES.contains(&p.raw_subtype());
+    if !is_ota_app(&booted) {
+        warn!(
+            "storage: running from {=str} (subtype {=u8:#04x}), not an OTA slot; no track slot",
+            booted.label_as_str(),
+            booted.raw_subtype()
+        );
+        return;
+    }
+
+    let mut ota_slots = 0usize;
+    let mut otadata = None;
+    let mut inactive = None;
+    for p in table.iter() {
+        if is_ota_app(&p) {
+            ota_slots += 1;
+            if p.offset() != booted.offset() {
+                inactive = Some(p);
+            }
+        } else if p.raw_type() == 1 && p.raw_subtype() == OTADATA_SUBTYPE {
+            otadata = Some(p);
+        }
+    }
+
+    match otadata {
+        Some(p) => log_otadata(p, ota_slots, flash),
+        None => warn!("storage: no otadata partition"),
+    }
+
+    let Some(slot) = inactive.filter(|_| ota_slots == 2) else {
+        warn!("storage: {=usize} OTA app slots, expected 2; no track slot", ota_slots);
+        return;
+    };
+    info!(
+        "storage: running app slot {=str}; inactive slot {=str} at {=u32:#08x}, {=u32} bytes (reserved for tracks, untouched)",
+        booted.label_as_str(),
+        slot.label_as_str(),
+        slot.offset(),
+        slot.len()
+    );
+    let _ = TRACK_SLOT.init(TrackSlot {
+        booted_subtype: booted.raw_subtype(),
+        subtype: slot.raw_subtype(),
+        offset: slot.offset(),
+        len: slot.len(),
+    });
+}
+
+/// Logs which slot `otadata` selects, with each sector's `ota_seq`. Reads
+/// only.
+///
+/// Each of the two 4 KiB sectors starts with a 32-byte select entry; the
+/// higher valid `ota_seq` wins (seq n selects slot (n - 1) mod 2). Both
+/// all-0xFF selects nothing: the bootloader then boots `ota_0`, and records
+/// that by writing `ota_seq` 1 into the first sector ("Set actual ota_seq=1
+/// in otadata[0]"; seen on this board after `provision` blanked otadata).
+/// An entry that is neither all-0xFF nor CRC-valid makes esp-bootloader-
+/// esp-idf reject the whole of otadata, so the raw entries are dumped.
+fn log_otadata(p: partitions::PartitionEntry, ota_slots: usize, flash: &mut FlashStorage<'static>) {
+    let mut entries = [[0u8; 32]; 2];
+    for (sector, entry) in entries.iter_mut().enumerate() {
+        let at = p.offset() + sector as u32 * SECTOR;
+        if let Err(e) = embedded_storage::nor_flash::ReadNorFlash::read(flash, at, entry) {
+            warn!("storage: cannot read otadata at {=u32:#08x}: {:?}", at, defmt::Debug2Format(&e));
+            return;
+        }
+    }
+    let seq = |e: &[u8; 32]| u32::from_le_bytes([e[0], e[1], e[2], e[3]]);
+    let selected = esp_bootloader_esp_idf::ota::Ota::new(p.as_flash_region(flash), ota_slots)
+        .and_then(|mut ota| ota.current_app_partition());
+    match selected {
+        // `current_app_partition` reports blank otadata as Factory.
+        Ok(partitions::AppPartitionSubType::Factory) => {
+            info!("storage: otadata blank, selects no slot (the bootloader boots ota_0)")
+        }
+        Ok(s) => info!(
+            "storage: otadata selects {:?} (ota_seq {=u32:#x} / {=u32:#x})",
+            defmt::Debug2Format(&s),
+            seq(&entries[0]),
+            seq(&entries[1])
+        ),
+        Err(e) => {
+            warn!(
+                "storage: cannot read otadata: {:?} (the `provision` binary blanks it)",
+                defmt::Debug2Format(&e)
+            );
+            for (sector, entry) in entries.iter().enumerate() {
+                warn!("storage: otadata sector {=usize} entry: {=[u8]:02x}", sector, &entry[..]);
+            }
+        }
+    }
 }
 
 /// Erases the whole settings partition, one 4 KiB sector at a time. Only the
@@ -254,27 +417,48 @@ pub async fn init(flash: FLASH<'static>) -> bool {
 /// one of two XIAO C6 boards in hilux/wireless-can. The map itself only
 /// ever erases sectors, so this keeps provisioning on the same path.
 pub async fn format() -> bool {
+    erase_sectors(|s| Some(s.range.clone())).await
+}
+
+/// Erases `otadata` to all 0xFF, so that the bootloader boots `ota_0` (the
+/// slot probe-rs flashes). Only the `provision` binary calls this.
+///
+/// Needed on a board flashed before this layout: its old app image started
+/// at 0x10000, which is now `otadata`'s second sector, so that sector began
+/// with an image header (0xE9 ...) rather than a select entry. The
+/// bootloader rejects such an entry and falls back to `ota_0` anyway, but
+/// the selection should not rest on leftover bytes failing a CRC.
+pub async fn blank_otadata() -> bool {
+    erase_sectors(|s| s.otadata.clone()).await
+}
+
+/// Erases the sectors of the range `which` picks, one 4 KiB sector at a
+/// time (see `format`), with the map taken apart meanwhile.
+async fn erase_sectors(which: impl FnOnce(&Store) -> Option<Range<u32>>) -> bool {
     let mut guard = STORE.lock().await;
     let Some(store) = guard.take() else {
         return false;
     };
-    let range = store.range.clone();
-    let buf = store.buf;
-    let (mut flash, cache) = store.map.destroy();
-    let mut ok = true;
-    let mut a = range.start;
-    while a < range.end {
-        if let Err(e) = flash.erase(a, a + SECTOR).await {
-            warn!("storage: erase sector at {=u32:#x} failed: {:?}", a, defmt::Debug2Format(&e));
-            ok = false;
-            break;
+    let target = which(&store);
+    let Store { map, buf, range, otadata } = store;
+    let (mut flash, cache) = map.destroy();
+    let mut ok = target.is_some();
+    if let Some(target) = target {
+        let mut a = target.start;
+        while a < target.end {
+            if let Err(e) = flash.erase(a, a + SECTOR).await {
+                warn!("storage: erase sector at {=u32:#x} failed: {:?}", a, defmt::Debug2Format(&e));
+                ok = false;
+                break;
+            }
+            a += SECTOR;
         }
-        a += SECTOR;
     }
     *guard = Some(Store {
         map: MapStorage::new(flash, MapConfig::new(range.clone()), cache),
         buf,
         range,
+        otadata,
     });
     ok
 }

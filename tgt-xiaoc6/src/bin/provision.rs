@@ -1,4 +1,6 @@
 //! provision -- erase the `settings` partition and write the WiFi credentials.
+//! Also blanks `otadata`, so the bootloader boots `ota_0` (storage.rs,
+//! `blank_otadata`).
 //!
 //! The app (`xiaoc6`) only reads settings. Erasing the partition and storing
 //! the access point's SSID and password happen here, in a binary flashed on
@@ -54,7 +56,7 @@ const _: () = match (SSID, PSK) {
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) -> ! {
     rtt_target::rtt_init_defmt!();
-    info!("=== provision: erase settings, write WiFi credentials ===");
+    info!("=== provision: erase settings and otadata, write WiFi credentials ===");
 
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -69,6 +71,20 @@ async fn main(_spawner: Spawner) -> ! {
         park().await
     }
     info!("provision: settings partition erased");
+
+    // Blank otadata so the bootloader's choice is ota_0 by rule, not by
+    // leftover bytes (storage::blank_otadata). Only when running from
+    // ota_0: anywhere else, blanking it would switch the next boot.
+    match storage::track_slot() {
+        Some(t) if t.booted_subtype == 0x10 => {
+            if storage::blank_otadata().await {
+                info!("provision: otadata blanked (bootloader boots ota_0)");
+            } else {
+                warn!("provision: blanking otadata failed");
+            }
+        }
+        _ => warn!("provision: not running from ota_0; otadata left as it is"),
+    }
 
     match (SSID, PSK) {
         (Some(ssid), Some(psk)) => {
