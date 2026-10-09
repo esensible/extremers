@@ -7,8 +7,8 @@
 //!
 //! The host owns the selection: the *active* package. It sends every client
 //! an [`Envelope`] on every change (and as a heartbeat on the websocket):
-//! the device's clock, which package is active, the hash of that package's
-//! UIs, and the package's view as opaque bytes, which the client decodes
+//! the device's clock, which package is active, the hashes of that
+//! package's UIs, and the package's view as opaque bytes, which the client decodes
 //! with that package's own generated bindings. Clients send a
 //! [`HostEvent`]: select a package, go back, or an event for the active
 //! package's engine (again opaque bytes, encoded with the package's
@@ -46,9 +46,9 @@ pub const MAX_BLE_BONDS: usize = 4;
 /// (`extreme_sdk::abi::IO_CAP`) or a [`ChooseView`].
 pub const STATE_MAX: usize = 256;
 
-/// Largest [`Envelope`]: a 10-byte timestamp, a 5-byte id, the hash, a
-/// 2-byte length and the state.
-pub const ENVELOPE_MAX: usize = 10 + 5 + 8 + 2 + STATE_MAX;
+/// Largest [`Envelope`]: a 10-byte timestamp, a 5-byte id, the two UI
+/// hashes, a 2-byte length and the state.
+pub const ENVELOPE_MAX: usize = 10 + 5 + 8 + 8 + 2 + STATE_MAX;
 
 /// Largest engine event in a [`HostEvent::Engine`], bytes.
 pub const EVENT_MAX: usize = 256;
@@ -82,8 +82,27 @@ pub struct Manifest {
     pub abi: u16,
     /// The first 8 bytes of the SHA-256 of engine.wasm, the web bundle and
     /// the watch bundle, in that order (README "Packages"): changes
-    /// whenever any of them does. The envelope's `ui_hash`.
+    /// whenever any of them does.
     pub content_hash: [u8; 8],
+    /// Each client's UI on its own: the envelope's `ui`.
+    pub ui: UiHashes,
+    /// The watch bundle's length, bytes (0 without one): what a `GetAsset`
+    /// for it streams (BLE.md "Watch bundles").
+    pub watch_len: u32,
+}
+
+/// Each client's UI of a package, by content: the first 8 bytes of the
+/// SHA-256 of what that client loads (README "Packages"). A client reloads
+/// only when its own one changes, so a change to the watch bundle does not
+/// reload the Kindles and the other way round.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Schema)]
+pub struct UiHashes {
+    /// The Kindle page: its web files, in name order, each as name, NUL,
+    /// length (u32 LE) and contents.
+    pub web: [u8; 8],
+    /// The watch bundle (`watch.js`), as is; the hash of no bytes for a
+    /// package without one.
+    pub watch: [u8; 8],
 }
 
 /// Host to client, on every change of the active package or its view: the
@@ -97,13 +116,48 @@ pub struct Envelope<'a> {
     pub timestamp: u64,
     /// The active package.
     pub active: PackageId,
-    /// The active package's `content_hash`: a client showing another UI
-    /// than this one's (another package, or an older version) loads it.
-    pub ui_hash: [u8; 8],
+    /// The active package's UIs: a client showing another UI than its own
+    /// one here (another package, or another build of it) loads it. The
+    /// Kindle pages watch `web`, the watch `watch`.
+    pub ui: UiHashes,
     /// The active package's view, postcard: decoded with the package's own
     /// bindings ([`ChooseView`] for Choose).
     pub state: &'a [u8],
 }
+
+/// BLE bulk channel (BLE.md "Watch bundles"), client to host: one request
+/// per asset, on an L2CAP channel. `hash` is the asset's hash as the client
+/// last saw it in an envelope (`ui.watch`); the host answers with an
+/// [`AssetHeader`] and the asset's bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
+pub struct GetAsset {
+    pub package: PackageId,
+    pub hash: [u8; 8],
+}
+
+/// Largest [`GetAsset`]: a 5-byte id and the hash.
+pub const GET_ASSET_MAX: usize = 5 + 8;
+
+/// BLE bulk channel, host to client: the answer to a [`GetAsset`], followed
+/// by exactly `len` bytes of the asset (none unless `status` is
+/// [`ASSET_OK`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
+pub struct AssetHeader {
+    /// [`ASSET_OK`], [`ASSET_UNKNOWN_PACKAGE`] or [`ASSET_HASH_NOT_CURRENT`].
+    pub status: u8,
+    pub len: u32,
+}
+
+/// Largest [`AssetHeader`]: the status and a 5-byte length.
+pub const ASSET_HEADER_MAX: usize = 1 + 5;
+
+/// [`AssetHeader::status`]: here it comes.
+pub const ASSET_OK: u8 = 0;
+/// [`AssetHeader::status`]: no such package is installed.
+pub const ASSET_UNKNOWN_PACKAGE: u8 = 1;
+/// [`AssetHeader::status`]: the package's watch bundle is not (any more)
+/// the one with that hash.
+pub const ASSET_HASH_NOT_CURRENT: u8 = 2;
 
 /// Choose's view: the installed packages to choose from (Choose itself not
 /// among them), and the BLE pairing status on the websocket (`None` over
@@ -216,16 +270,22 @@ mod tests {
         let e = Envelope {
             timestamp: 7,
             active: 300,
-            ui_hash: [1, 2, 3, 4, 5, 6, 7, 8],
+            ui: UiHashes {
+                web: [1, 2, 3, 4, 5, 6, 7, 8],
+                watch: [11, 12, 13, 14, 15, 16, 17, 18],
+            },
             state: &[9, 10],
         };
         let bytes = postcard::to_stdvec(&e).unwrap();
-        assert_eq!(bytes, [7, 0xac, 0x02, 1, 2, 3, 4, 5, 6, 7, 8, 2, 9, 10]);
+        assert_eq!(
+            bytes,
+            [7, 0xac, 0x02, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18, 2, 9, 10]
+        );
         assert_eq!(postcard::from_bytes::<Envelope>(&bytes).unwrap(), e);
         let worst = Envelope {
             timestamp: u64::MAX,
             active: u32::MAX,
-            ui_hash: [0xff; 8],
+            ui: UiHashes { web: [0xff; 8], watch: [0xff; 8] },
             state: &[0xff; STATE_MAX],
         };
         assert_eq!(postcard::to_stdvec(&worst).unwrap().len(), ENVELOPE_MAX);
@@ -284,9 +344,32 @@ mod tests {
             version: 1,
             abi: 1,
             content_hash: [0xaa; 8],
+            ui: UiHashes { web: [0xbb; 8], watch: [0xcc; 8] },
+            watch_len: 300,
         };
         let bytes: Vec<u8> = postcard::to_stdvec(&m).unwrap();
         assert_eq!(postcard::from_bytes::<Manifest>(&bytes).unwrap(), m);
-        assert_eq!(&bytes[bytes.len() - 8..], &[0xaa; 8]);
+        let tail = [[0xaa; 8], [0xbb; 8], [0xcc; 8]].concat();
+        assert_eq!(&bytes[bytes.len() - 26..bytes.len() - 2], &tail[..]);
+        assert_eq!(&bytes[bytes.len() - 2..], &[0xac, 0x02]);
+    }
+
+    #[test]
+    fn asset_messages_on_the_wire() {
+        let get = GetAsset { package: 300, hash: [1, 2, 3, 4, 5, 6, 7, 8] };
+        let bytes = postcard::to_stdvec(&get).unwrap();
+        assert_eq!(bytes, [0xac, 0x02, 1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(postcard::from_bytes::<GetAsset>(&bytes).unwrap(), get);
+        let worst = GetAsset { package: u32::MAX, hash: [0xff; 8] };
+        assert_eq!(postcard::to_stdvec(&worst).unwrap().len(), GET_ASSET_MAX);
+
+        let header = AssetHeader { status: ASSET_OK, len: 20_000 };
+        let bytes = postcard::to_stdvec(&header).unwrap();
+        assert_eq!(bytes, [0, 0xa0, 0x9c, 0x01]);
+        assert_eq!(postcard::from_bytes::<AssetHeader>(&bytes).unwrap(), header);
+        let refused = AssetHeader { status: ASSET_HASH_NOT_CURRENT, len: 0 };
+        assert_eq!(postcard::to_stdvec(&refused).unwrap(), [2, 0]);
+        let worst = AssetHeader { status: 0xff, len: u32::MAX };
+        assert_eq!(postcard::to_stdvec(&worst).unwrap().len(), ASSET_HEADER_MAX);
     }
 }

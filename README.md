@@ -79,7 +79,7 @@ built by `tools/package`:
 
 | file | |
 |---|---|
-| `manifest.bin` | its `Manifest` (postcard): `id`, `name` (≤ 16 bytes), `version`, `abi` (1), `content_hash` |
+| `manifest.bin` | its `Manifest` (postcard): `id`, `name` (≤ 16 bytes), `version`, `abi` (1), `content_hash`, `ui` (`UiHashes { web, watch }`), `watch_len` (bytes) |
 | `engine.wasm` | the engine: `wasm32-unknown-unknown`, `export_engine!`, profile `engine` (opt-level z, stripped), linked twice so its memory is exactly what it needs (stack 2 KiB, data, statics) in 1-byte pages. Race 17 KB / 3.1 KB memory, Tune 11 KB / 3.6 KB. None for Choose. |
 | `web/` | its Kindle page (`client-js/`): its index.html is served at `/` while the package is active, its files at `/pkg/<id>/` (index.html points there; Choose's id is 0) |
 | `watch.js` | its watch bundle (`watch-js/`), served at `/pkg/<id>/watch.js`; absent if it has none |
@@ -88,8 +88,12 @@ built by `tools/package`:
 `id` = FNV-1a 32-bit of the name: `race` = 2394669720 (`0x8ebbc298`),
 `tune` = 1749091475 (`0x68410493`); Choose is 0. `content_hash` = the first
 8 bytes of SHA-256 over engine.wasm, then the web bundle (its files in name
-order, each as name, NUL, length u32 LE, contents), then watch.js. Bundle
-file names are content hashes too, so the same sources make the same hash.
+order, each as name, NUL, length u32 LE, contents), then watch.js. Each
+client's UI also has its own hash, the same 8-byte prefix of the SHA-256
+of its files alone: `ui.web` over the web bundle (as above), `ui.watch`
+over watch.js (plain SHA-256 of its bytes, so a watch can check a
+download against it). Bundle file names are content hashes too, so the
+same sources make the same hashes.
 
 The firmware embeds Race and Tune (preinstalled) and Choose
 (`extreme-packages`); the host keeps a registry of them (`common::host::Registry`;
@@ -124,9 +128,10 @@ cargo run -p extreme-bindgen     # after changing a wire type; cargo test fails 
 ```
 
 **Host → client**, on every change and on the websocket at least every
-5 s: `Envelope { timestamp: u64, active: u32, ui_hash: [u8; 8], state: bytes }`.
+5 s: `Envelope { timestamp: u64, active: u32, ui: UiHashes { web: [u8; 8], watch: [u8; 8] }, state: bytes }`.
 `timestamp` is the device clock when sent (epoch ms from GPS time, uptime
-before); `active` the active package; `ui_hash` its `content_hash`;
+before); `active` the active package; `ui` its UIs' hashes (the Kindle
+page's and the watch bundle's, "Packages");
 `state` its view, opaque to the host: an engine's `View` as postcard,
 decoded with the package's own bindings (`<package>/protocol-js/`), or for
 Choose a `ChooseView { packages: [PackageInfo { id, name, version }], ble: Option<BleStatusView> }`
@@ -149,15 +154,16 @@ envelope, `timestamp()` = their clock + offset, and stamp user actions with
 entry path: `/` is always the active package's page (served `no-cache`),
 which loads its script from `/pkg/<id>/`. A page knows its package from
 where its script came from and its version from the first envelope; when
-an envelope names another package or another `ui_hash` it reloads `/`
-(`client-common/host.js`), otherwise it decodes the view. So "Race" on
+an envelope names another package or another `ui.web` it reloads `/`
+(`client-common/host.js`), otherwise it decodes the view; a new watch
+bundle alone (`ui.watch`) does not reload the Kindles. So "Race" on
 Choose sends `Select(race)`, and the next envelope makes every Kindle
 reload into Race's page.
 
 ```js
 import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
 import { decodeRaceView, encodeRaceEvent } from "../../protocol-js/protocol.js";
-const e = decodeEnvelope(frame);            // { timestamp, active, ui_hash, state }
+const e = decodeEnvelope(frame);            // { timestamp, active, ui: { web, watch }, state }
 const race = decodeRaceView(e.state);       // { speed, phase: { tag, value } }
 ws.send(new Uint8Array(encodeHostEvent({ tag: "Engine",
   value: { package: e.active, bytes: encodeRaceEvent({ tag: "LineStbd" }) } })).buffer);

@@ -20,8 +20,9 @@ use embassy_time::{Duration, Instant, with_timeout};
 use portable_atomic::AtomicU64;
 
 use extreme_protocol::{
-    CHOOSE, ChooseView, Envelope, HostEvent, Package, PackageId, PackageInfo, REGISTRY_MAX,
-    STATE_MAX, package_id,
+    ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, CHOOSE, ChooseView,
+    Envelope, GetAsset, HostEvent, Package, PackageId, PackageInfo, REGISTRY_MAX, STATE_MAX,
+    UiHashes, package_id,
 };
 use extreme_sdk::Location;
 
@@ -134,7 +135,7 @@ pub struct StateMessage {
     pub active: PackageId,
     /// The active package's name, for logs.
     pub name: &'static str,
-    pub ui_hash: [u8; 8],
+    pub ui: UiHashes,
     /// The engine's view, postcard; empty for Choose, whose view each
     /// transport makes for itself (the BLE status only goes on the
     /// websocket).
@@ -257,6 +258,27 @@ impl Host {
         self.registry
             .lock(|r| r.borrow().default_package())
             .map_or(CHOOSE, |p| p.id)
+    }
+
+    /// The answer to a BLE client's [`GetAsset`] (BLE.md "Watch bundles"):
+    /// the header, and the bytes to stream after it (in flash, `'static`;
+    /// empty unless the status is [`ASSET_OK`]). Only the package's
+    /// current watch bundle is served: a request for another hash (an
+    /// envelope the client saw before an update) gets
+    /// [`ASSET_HASH_NOT_CURRENT`].
+    pub fn asset(&self, request: &GetAsset) -> (AssetHeader, &'static [u8]) {
+        let refused = |status| (AssetHeader { status, len: 0 }, &[][..]);
+        match self.package(request.package) {
+            None => refused(ASSET_UNKNOWN_PACKAGE),
+            Some(package) if package.ui.watch != request.hash => refused(ASSET_HASH_NOT_CURRENT),
+            Some(package) => (
+                AssetHeader {
+                    status: ASSET_OK,
+                    len: package.watch.len() as u32,
+                },
+                package.watch,
+            ),
+        }
     }
 
     /// Installs (or updates) `package` at run time; the clients' Choose
@@ -412,7 +434,7 @@ impl Host {
         let envelope = Envelope {
             timestamp,
             active: message.active,
-            ui_hash: message.ui_hash,
+            ui: message.ui,
             state,
         };
         Ok(postcard::to_slice(&envelope, out).map_err(|_| ())?.len())
@@ -602,7 +624,7 @@ impl Host {
         StateMessage {
             active: active.package.id,
             name: active.package.name,
-            ui_hash: active.package.content_hash,
+            ui: active.package.ui,
             view,
         }
     }
@@ -629,6 +651,7 @@ static NOTHING: Package = Package {
     version: 0,
     abi: 0,
     content_hash: [0; 8],
+    ui: UiHashes { web: [0; 8], watch: [0; 8] },
     memory: 0,
     engine: &[],
     web: &[],

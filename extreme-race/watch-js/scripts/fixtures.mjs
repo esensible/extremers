@@ -22,7 +22,7 @@ const SOLID_WATCH = fileURLToPath(new URL("../../../solid-watch/", import.meta.u
 const FRAGMENT = fileURLToPath(new URL("../../../watch-js/extremers.schema.json", import.meta.url));
 
 const RACE = packageId("race");
-const HASH = [1, 2, 3, 4, 5, 6, 7, 8];
+const HASH = { web: [1, 2, 3, 4, 5, 6, 7, 8], watch: [9, 10, 11, 12, 13, 14, 15, 16] };
 // The driver's clock (solid-watch test/driver.js) and the device's: the
 // device reads D0 when the watch reads T0.
 const T0 = 1_000_000;
@@ -44,7 +44,7 @@ function stateStep(envelope) {
 }
 function envelope(view, active = RACE) {
   const at = device(nextAt());
-  stateStep({ timestamp: at, active, ui_hash: HASH, state: encodeRaceView(view) });
+  stateStep({ timestamp: at, active, ui: HASH, state: encodeRaceView(view) });
   return at;
 }
 const active = (line, speed = 6.4) => ({ speed, phase: { tag: "Active", value: { line } } });
@@ -74,7 +74,7 @@ tap("Stbd");
 // the wall clock rolls over a minute
 wait(60_000);
 // another package's envelope (the clock syncs, nothing else), bad bytes
-stateStep({ timestamp: device(nextAt()), active: packageId("tune"), ui_hash: HASH, state: [0] });
+stateStep({ timestamp: device(nextAt()), active: packageId("tune"), ui: HASH, state: [0] });
 clock = nextAt();
 steps.push({ localMs: clock, stateHex: "02ffff" });
 // start a 5-minute sequence: the tap is stamped, the confirm sends it

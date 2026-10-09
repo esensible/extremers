@@ -3,8 +3,9 @@
 //! file for the host protocol, one per package.
 
 use extreme_protocol::{
-    BleCommand, BleNote, BleStatusView, CHOOSE, ChooseView, Envelope, HostEvent, Manifest, Name,
-    PackageInfo, package_id,
+    ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, BleCommand, BleNote,
+    BleStatusView, CHOOSE, ChooseView, Envelope, GetAsset, HostEvent, Manifest, Name, PackageInfo,
+    UiHashes, package_id,
 };
 use extreme_race::{LineView, Phase, RaceEvent, RaceView};
 use extreme_tune::TuneView;
@@ -22,6 +23,11 @@ pub const RACE: u32 = package_id("race");
 pub const TUNE: u32 = package_id("tune");
 /// Content hashes for the vectors (the real ones change with every build).
 pub const HASH: [u8; 8] = [0x5e, 0x1f, 0x00, 0xff, 0x01, 0x80, 0x7f, 0x42];
+/// The UI hashes for the vectors.
+pub const UI: UiHashes = UiHashes {
+    web: [0x3c, 0x00, 0xff, 0x80, 0x01, 0x7f, 0xa5, 0x5a],
+    watch: [0x9a, 0x01, 0xfe, 0x00, 0x7f, 0x80, 0x12, 0xc3],
+};
 
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -170,11 +176,11 @@ pub fn envelopes() -> Vec<(String, u32, Vec<u8>)> {
 pub fn host_vectors() -> Value {
     let mut all = Vec::new();
     for (what, active, state) in envelopes() {
-        let e = Envelope { timestamp: NOW, active, ui_hash: HASH, state: &state };
+        let e = Envelope { timestamp: NOW, active, ui: UI, state: &state };
         all.push(vector("Envelope", &what, &e));
     }
     for timestamp in [0, 7, 127, 128, 16_384, MAX_SAFE] {
-        let e = Envelope { timestamp, active: CHOOSE, ui_hash: [0; 8], state: &[0, 0] };
+        let e = Envelope { timestamp, active: CHOOSE, ui: UiHashes::default(), state: &[0, 0] };
         all.push(vector("Envelope", &format!("choose at {timestamp}"), &e));
     }
     for (what, ble) in ble_statuses() {
@@ -197,10 +203,27 @@ pub fn host_vectors() -> Value {
         all.push(vector("HostEvent", what, &event));
     }
     for (what, m) in [
-        ("race", Manifest { id: RACE, name: Name::try_from("race").unwrap(), version: 1, abi: 1, content_hash: HASH }),
-        ("longest name", Manifest { id: package_id("sixteen-chars-xx"), name: Name::try_from("sixteen-chars-xx").unwrap(), version: u16::MAX, abi: 1, content_hash: [0xff; 8] }),
+        ("race", Manifest { id: RACE, name: Name::try_from("race").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UI, watch_len: 21_345 }),
+        ("longest name", Manifest { id: package_id("sixteen-chars-xx"), name: Name::try_from("sixteen-chars-xx").unwrap(), version: u16::MAX, abi: 1, content_hash: [0xff; 8], ui: UiHashes { web: [0xff; 8], watch: [0; 8] }, watch_len: u32::MAX }),
+        ("no watch bundle", Manifest { id: TUNE, name: Name::try_from("tune").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UI, watch_len: 0 }),
     ] {
         all.push(vector("Manifest", what, &m));
+    }
+    for (what, get) in [
+        ("race's watch bundle", GetAsset { package: RACE, hash: UI.watch }),
+        ("choose's watch bundle", GetAsset { package: CHOOSE, hash: [0; 8] }),
+        ("largest id", GetAsset { package: u32::MAX, hash: [0xff; 8] }),
+    ] {
+        all.push(vector("GetAsset", what, &get));
+    }
+    for (what, header) in [
+        ("ok, 21345 bytes follow", AssetHeader { status: ASSET_OK, len: 21_345 }),
+        ("ok, empty", AssetHeader { status: ASSET_OK, len: 0 }),
+        ("ok, largest", AssetHeader { status: ASSET_OK, len: u32::MAX }),
+        ("unknown package", AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 }),
+        ("hash not current", AssetHeader { status: ASSET_HASH_NOT_CURRENT, len: 0 }),
+    ] {
+        all.push(vector("AssetHeader", what, &header));
     }
     file("The host protocol.", all)
 }

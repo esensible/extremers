@@ -158,18 +158,18 @@ socket.on("connect", async () => {
     // back: Choose (a device may be anywhere when we start)
     send(backEvent());
     s = await until((s) => s.envelope.active === CHOOSE, "back to Choose");
-    const chooseHash = hashHex(s.envelope.ui_hash);
+    const chooseHash = hashHex(s.envelope.ui.web);
     const names = s.view.packages.map((p) => `${p.name} ${p.id} v${p.version}`);
     check(s.view.packages.some((p) => p.id === RACE) && s.view.packages.some((p) => p.id === TUNE), `Choose lists ${names.join(", ")}`);
-    console.log(`     Choose ui_hash ${chooseHash}, BLE ${s.view.ble ? "present" : "none"}`);
+    console.log(`     Choose ui.web ${chooseHash} ui.watch ${hashHex(s.envelope.ui.watch)}, BLE ${s.view.ble ? "present" : "none"}`);
 
     await entryIs(CHOOSE, "back to Choose");
     await routes();
 
     send(selectEvent(RACE));
     s = await until((s) => s.envelope.active === RACE, "select race");
-    const raceHash = hashHex(s.envelope.ui_hash);
-    check(raceHash !== chooseHash && s.view.phase.tag === "Active", `select race: ui_hash ${raceHash}, ${JSON.stringify(s.view)}`);
+    const raceHash = hashHex(s.envelope.ui.web);
+    check(raceHash !== chooseHash && s.view.phase.tag === "Active", `select race: ui.web ${raceHash}, ${JSON.stringify(s.view)}`);
     await entryIs(RACE, "select race");
 
     race({ tag: "LineStbd" });
@@ -199,7 +199,7 @@ socket.on("connect", async () => {
 
     send(selectEvent(TUNE));
     s = await until((s) => s.envelope.active === TUNE, "select tune");
-    check(typeof s.view.speed === "number", `select tune: ui_hash ${hashHex(s.envelope.ui_hash)}, ${JSON.stringify(s.view)}`);
+    check(typeof s.view.speed === "number", `select tune: ui.web ${hashHex(s.envelope.ui.web)}, ${JSON.stringify(s.view)}`);
     await entryIs(TUNE, "select tune");
     // race events while tune is active: refused
     race({ tag: "LineStbd" });
@@ -208,7 +208,7 @@ socket.on("connect", async () => {
 
     send(backEvent());
     s = await until((s) => s.envelope.active === CHOOSE, "back");
-    check(hashHex(s.envelope.ui_hash) === chooseHash, "back to Choose");
+    check(hashHex(s.envelope.ui.web) === chooseHash, "back to Choose");
     await entryIs(CHOOSE, "back");
 
     // a fresh race after all that

@@ -17,7 +17,10 @@
 //! The content hash is the first 8 bytes of the SHA-256 of engine.wasm,
 //! the web bundle and the watch bundle, in that order, where the web bundle
 //! is its files in name order, each as its name, a NUL, its length (u32
-//! little-endian) and its contents ([`content_hash`]).
+//! little-endian) and its contents ([`content_hash`]). Each client's UI has
+//! its own hash too, the same prefix of the SHA-256 of the web bundle alone
+//! ([`web_hash`]) and of the watch bundle alone ([`watch_hash`]): the
+//! envelope's `ui`, so a client reloads only for a change to its own UI.
 //!
 //! `extreme-packages/build.rs` builds the preinstalled packages into the
 //! firmware with this; `cargo run -p extreme-pack` writes them out
@@ -29,7 +32,7 @@ use std::{
     process::Command,
 };
 
-use extreme_protocol::{Manifest, Name, PackageId, package_id};
+use extreme_protocol::{Manifest, Name, PackageId, UiHashes, package_id};
 use sha2::{Digest, Sha256};
 
 /// The engine ABI the packages are built for (`extreme_sdk::abi::VERSION`).
@@ -116,13 +119,37 @@ pub fn root() -> PathBuf {
 pub fn content_hash(engine: &[u8], web: &[(String, Vec<u8>)], watch: &[u8]) -> [u8; 8] {
     let mut h = Sha256::new();
     h.update(engine);
+    hash_web(&mut h, web);
+    h.update(watch);
+    prefix(h)
+}
+
+/// The Kindle page's own hash ([`UiHashes::web`]): its files as the content
+/// hash takes them, nothing else.
+pub fn web_hash(web: &[(String, Vec<u8>)]) -> [u8; 8] {
+    let mut h = Sha256::new();
+    hash_web(&mut h, web);
+    prefix(h)
+}
+
+/// The watch bundle's own hash ([`UiHashes::watch`]): its bytes, so a watch
+/// can check what it fetched against it.
+pub fn watch_hash(watch: &[u8]) -> [u8; 8] {
+    let mut h = Sha256::new();
+    h.update(watch);
+    prefix(h)
+}
+
+fn hash_web(h: &mut Sha256, web: &[(String, Vec<u8>)]) {
     for (name, contents) in web {
         h.update(name.as_bytes());
         h.update([0]);
         h.update((contents.len() as u32).to_le_bytes());
         h.update(contents);
     }
-    h.update(watch);
+}
+
+fn prefix(h: Sha256) -> [u8; 8] {
     let digest = h.finalize();
     let mut out = [0u8; 8];
     out.copy_from_slice(&digest[..8]);
@@ -159,6 +186,11 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
         version: spec.version,
         abi: ABI,
         content_hash: content_hash(&engine, &web, &watch),
+        ui: UiHashes {
+            web: web_hash(&web),
+            watch: watch_hash(&watch),
+        },
+        watch_len: u32::try_from(watch.len()).map_err(|_| format!("{}: watch.js over 4 GiB", spec.name))?,
     };
     Ok(Built {
         spec: *spec,
@@ -458,6 +490,22 @@ mod tests {
         assert_eq!(h, content_hash(b"wasm", &web, b"watch"));
         // nothing at all is still a hash
         assert_eq!(content_hash(&[], &[], &[])[..4], [0xe3, 0xb0, 0xc4, 0x42]);
+    }
+
+    /// Each UI hash covers its own client's files and nothing else.
+    #[test]
+    fn ui_hashes_cover_their_own_client() {
+        let web = vec![("a.js".to_string(), b"x".to_vec())];
+        let edited = vec![("a.js".to_string(), b"y".to_vec())];
+        assert_ne!(web_hash(&web), web_hash(&edited));
+        assert_ne!(watch_hash(b"watch"), watch_hash(b"watch!"));
+        // the engine is in neither; the web bundle is hashed as the
+        // content hash takes it, the watch bundle as plain SHA-256 (what a
+        // watch checks its download against)
+        assert_eq!(web_hash(&web), content_hash(&[], &web, &[]));
+        assert_eq!(watch_hash(b"watch"), content_hash(&[], &[], b"watch"));
+        // SHA-256("abc") = ba7816bf 8f01cfea ...
+        assert_eq!(watch_hash(b"abc"), [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea]);
     }
 
     #[test]

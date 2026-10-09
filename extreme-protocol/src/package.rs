@@ -2,7 +2,7 @@
 //! and its files, `'static` (the firmware embeds its preinstalled packages
 //! in flash, `extreme-packages`).
 
-use crate::{Manifest, Name, PackageId};
+use crate::{Manifest, Name, PackageId, UiHashes};
 
 /// A package's manifest and files.
 #[derive(Debug)]
@@ -13,6 +13,8 @@ pub struct Package {
     /// The engine ABI its engine.wasm speaks.
     pub abi: u16,
     pub content_hash: [u8; 8],
+    /// Its Kindle page's and watch bundle's own hashes.
+    pub ui: UiHashes,
     /// The linear memory engine.wasm declares, bytes (0 without an engine).
     pub memory: u32,
     /// engine.wasm; empty for Choose, whose view the host makes.
@@ -32,6 +34,8 @@ impl Package {
             version: self.version,
             abi: self.abi,
             content_hash: self.content_hash,
+            ui: self.ui,
+            watch_len: self.watch.len() as u32,
         }
     }
 

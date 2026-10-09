@@ -226,14 +226,23 @@ function wobj(v, what) {
 // ---- types ----
 
 function r_Envelope(r) {
-  return { timestamp: ru64(r), active: ru32(r), ui_hash: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], state: rseq(r, ru8) };
+  return { timestamp: ru64(r), active: ru32(r), ui: r_UiHashes(r), state: rseq(r, ru8) };
 }
 function w_Envelope(w, v) {
   wobj(v, "Envelope");
   wu64(w, v.timestamp);
   wu32(w, v.active);
-  wlen(v.ui_hash, 8, "[T; N]"); wu8(w, v.ui_hash[0]); wu8(w, v.ui_hash[1]); wu8(w, v.ui_hash[2]); wu8(w, v.ui_hash[3]); wu8(w, v.ui_hash[4]); wu8(w, v.ui_hash[5]); wu8(w, v.ui_hash[6]); wu8(w, v.ui_hash[7]);
+  w_UiHashes(w, v.ui);
   wseq(w, v.state, wu8);
+}
+
+function r_UiHashes(r) {
+  return { web: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], watch: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] };
+}
+function w_UiHashes(w, v) {
+  wobj(v, "UiHashes");
+  wlen(v.web, 8, "[T; N]"); wu8(w, v.web[0]); wu8(w, v.web[1]); wu8(w, v.web[2]); wu8(w, v.web[3]); wu8(w, v.web[4]); wu8(w, v.web[5]); wu8(w, v.web[6]); wu8(w, v.web[7]);
+  wlen(v.watch, 8, "[T; N]"); wu8(w, v.watch[0]); wu8(w, v.watch[1]); wu8(w, v.watch[2]); wu8(w, v.watch[3]); wu8(w, v.watch[4]); wu8(w, v.watch[5]); wu8(w, v.watch[6]); wu8(w, v.watch[7]);
 }
 
 function r_HostEvent(r) {
@@ -337,7 +346,7 @@ function w_BleNote(w, v) {
 }
 
 function r_Manifest(r) {
-  return { id: ru32(r), name: rstr(r), version: ru16(r), abi: ru16(r), content_hash: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] };
+  return { id: ru32(r), name: rstr(r), version: ru16(r), abi: ru16(r), content_hash: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], ui: r_UiHashes(r), watch_len: ru32(r) };
 }
 function w_Manifest(w, v) {
   wobj(v, "Manifest");
@@ -346,6 +355,26 @@ function w_Manifest(w, v) {
   wu16(w, v.version);
   wu16(w, v.abi);
   wlen(v.content_hash, 8, "[T; N]"); wu8(w, v.content_hash[0]); wu8(w, v.content_hash[1]); wu8(w, v.content_hash[2]); wu8(w, v.content_hash[3]); wu8(w, v.content_hash[4]); wu8(w, v.content_hash[5]); wu8(w, v.content_hash[6]); wu8(w, v.content_hash[7]);
+  w_UiHashes(w, v.ui);
+  wu32(w, v.watch_len);
+}
+
+function r_GetAsset(r) {
+  return { package: ru32(r), hash: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] };
+}
+function w_GetAsset(w, v) {
+  wobj(v, "GetAsset");
+  wu32(w, v.package);
+  wlen(v.hash, 8, "[T; N]"); wu8(w, v.hash[0]); wu8(w, v.hash[1]); wu8(w, v.hash[2]); wu8(w, v.hash[3]); wu8(w, v.hash[4]); wu8(w, v.hash[5]); wu8(w, v.hash[6]); wu8(w, v.hash[7]);
+}
+
+function r_AssetHeader(r) {
+  return { status: ru8(r), len: ru32(r) };
+}
+function w_AssetHeader(w, v) {
+  wobj(v, "AssetHeader");
+  wu8(w, v.status);
+  wu32(w, v.len);
 }
 
 // ---- messages ----
@@ -403,6 +432,34 @@ export function decodeManifest(bytes) {
 export function encodeManifest(value) {
   var w = writer();
   w_Manifest(w, value);
+  return w.b;
+}
+
+/** BLE bulk channel, client to host: ask for a package's watch bundle by its hash. Throws on bytes that are not exactly one GetAsset. */
+export function decodeGetAsset(bytes) {
+  var r = reader(bytes);
+  var v = r_GetAsset(r);
+  done(r, "GetAsset");
+  return v;
+}
+/** BLE bulk channel, client to host: ask for a package's watch bundle by its hash. As an array of byte values. */
+export function encodeGetAsset(value) {
+  var w = writer();
+  w_GetAsset(w, value);
+  return w.b;
+}
+
+/** BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. Throws on bytes that are not exactly one AssetHeader. */
+export function decodeAssetHeader(bytes) {
+  var r = reader(bytes);
+  var v = r_AssetHeader(r);
+  done(r, "AssetHeader");
+  return v;
+}
+/** BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. As an array of byte values. */
+export function encodeAssetHeader(value) {
+  var w = writer();
+  w_AssetHeader(w, value);
   return w.b;
 }
 

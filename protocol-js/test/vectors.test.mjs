@@ -10,7 +10,7 @@ const load = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), "
 
 test("the vectors cover every message", () => {
   const types = (path) => [...new Set(load(path).vectors.map((v) => v.type))].sort();
-  assert.deepEqual(types(SUITES[0][2]), ["ChooseView", "Envelope", "HostEvent", "Manifest"]);
+  assert.deepEqual(types(SUITES[0][2]), ["AssetHeader", "ChooseView", "Envelope", "GetAsset", "HostEvent", "Manifest"]);
   assert.deepEqual(types(SUITES[1][2]), ["RaceEvent", "RaceView"]);
   assert.deepEqual(types(SUITES[2][2]), ["TuneView"]);
   const host = load(SUITES[0][2]).vectors;

@@ -90,9 +90,11 @@ export function runRefusals() {
   const results = [];
   const check = (name, ok, detail) => results.push([name, !!ok, ok ? "" : detail]);
   const D = host.decodeEnvelope;
-  const H = [1, 2, 3, 4, 5, 6, 7, 8];
-  // timestamp, Choose, hash, no state
-  check("a minimal envelope decodes", same(D([7, 0].concat(H, [0])), { timestamp: 7, active: 0, ui_hash: H, state: [] }), "");
+  // the two UI hashes, web then watch
+  const UI = { web: [1, 2, 3, 4, 5, 6, 7, 8], watch: [9, 10, 11, 12, 13, 14, 15, 16] };
+  const H = UI.web.concat(UI.watch);
+  // timestamp, Choose, hashes, no state
+  check("a minimal envelope decodes", same(D([7, 0].concat(H, [0])), { timestamp: 7, active: 0, ui: UI, state: [] }), "");
   // u64::MAX timestamp: beyond 2^53, no BigInt
   check("timestamp 2^64 - 1 refused", throws(() => D([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0].concat(H, [0]))), "decoded");
   // 2^53: one past the largest
@@ -114,8 +116,11 @@ export function runRefusals() {
   check("unknown tag refused", throws(() => E({ tag: "Nope", value: null })), "encoded");
   check("package id past u32 refused (encoding)", throws(() => host.encodeHostEvent({ tag: "Select", value: 2 ** 32 })), "encoded");
   check("byte past 255 refused", throws(() => host.encodeHostEvent({ tag: "Engine", value: { package: 1, bytes: [256] } })), "encoded");
-  check("timestamp past 2^53 refused", throws(() => host.encodeEnvelope({ timestamp: 2 ** 53, active: 0, ui_hash: H, state: [] })), "encoded");
-  check("short hash refused", throws(() => host.encodeEnvelope({ timestamp: 0, active: 0, ui_hash: [1], state: [] })), "encoded");
+  check("timestamp past 2^53 refused", throws(() => host.encodeEnvelope({ timestamp: 2 ** 53, active: 0, ui: UI, state: [] })), "encoded");
+  check("short hash refused", throws(() => host.encodeEnvelope({ timestamp: 0, active: 0, ui: { web: [1], watch: UI.watch }, state: [] })), "encoded");
+  check("missing UI hash refused", throws(() => host.encodeEnvelope({ timestamp: 0, active: 0, ui: { web: UI.web }, state: [] })), "encoded");
+  check("asset status past u8 refused", throws(() => host.encodeAssetHeader({ status: 256, len: 0 })), "encoded");
+  check("asset length past u32 refused", throws(() => host.encodeAssetHeader({ status: 0, len: 2 ** 32 })), "encoded");
   // a unit variant needs no value
   check("unit variant without value", toHex(host.encodeHostEvent({ tag: "SelectDefault" })) === "01", "");
   check("race events in wire order", race.VARIANTS.RaceEvent.join() === "LineStbd,LinePort,BumpSeq,RaceFinish", race.VARIANTS.RaceEvent.join());

@@ -22,10 +22,10 @@ const T0 = 1_790_000_000_000;
 // A BLE state value (a host Envelope carrying a TuneView), from the
 // generated encoders (tested against the Rust encoder in protocol-js/ and
 // ../protocol-js/).
-const HASH = [0, 1, 2, 3, 4, 5, 6, 7];
+const HASH = { web: [0, 1, 2, 3, 4, 5, 6, 7], watch: [8, 9, 10, 11, 12, 13, 14, 15] };
 const hex = (envelope) => Buffer.from(encodeEnvelope(envelope)).toString("hex");
 function tune(i, speed, speed_dev, heading_dev) {
-  return { stateHex: hex({ timestamp: T0 + 1000 * i, active: packageId("tune"), ui_hash: HASH, state: encodeTuneView({ speed, speed_dev, heading_dev }) }) };
+  return { stateHex: hex({ timestamp: T0 + 1000 * i, active: packageId("tune"), ui: HASH, state: encodeTuneView({ speed, speed_dev, heading_dev }) }) };
 }
 
 // Mostly a boat sailing around 5-8 kn, plus the edges: zero, sign changes,
@@ -53,7 +53,7 @@ steps[50] = {
   stateHex: hex({
     timestamp: T0 + 50_000,
     active: packageId("race"),
-    ui_hash: HASH,
+    ui: HASH,
     state: encodeRaceView({ speed: 6.4, phase: { tag: "Active", value: { line: { tag: "None", value: null } } } }),
   }),
 };

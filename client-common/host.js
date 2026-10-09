@@ -6,8 +6,10 @@
 //
 // The Kindle is a display kept in sync by the host: it has one entry path,
 // `/`, which the host serves as the active package's page. A page shows the
-// package (and version) it was served for; when an envelope names another
-// package or another ui_hash, it reloads `/` and gets the right one.
+// package (and page build) it was served for; when an envelope names another
+// package or another `ui.web` (the page's own hash), it reloads `/` and
+// gets the right one. `ui.watch` is the watch's business: a new watch
+// bundle alone does not reload the Kindles.
 
 // Choose's PackageId.
 export var CHOOSE = 0;
@@ -49,11 +51,12 @@ export function ownPackage(srcs) {
 
 // For a page of package `id`: a function taking each decoded Envelope and
 // returning true when the page must reload `/` (another package is active,
-// or this one changed: its ui_hash differs from the first envelope's).
+// or this one's page changed: its ui.web differs from the first
+// envelope's).
 export function staleness(id) {
   var shown = null;
   return function (envelope) {
-    var hash = hashHex(envelope.ui_hash);
+    var hash = hashHex(envelope.ui.web);
     if (envelope.active !== id) return true;
     if (shown === null) shown = hash;
     return hash !== shown;

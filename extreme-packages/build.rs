@@ -46,12 +46,14 @@ fn package(out_dir: &std::path::Path, built: &Built) -> String {
         write!(web, "({name:?}, {}), ", file(&format!("web/{name}"), contents)).unwrap();
     }
     format!(
-        "Package {{ id: {}, name: {:?}, version: {}, abi: {}, content_hash: {:?}, memory: {}, engine: {}, web: &[{web}], watch: {} }}",
+        "Package {{ id: {}, name: {:?}, version: {}, abi: {}, content_hash: {:?}, ui: UiHashes {{ web: {:?}, watch: {:?} }}, memory: {}, engine: {}, web: &[{web}], watch: {} }}",
         m.id,
         built.spec.name,
         m.version,
         m.abi,
         m.content_hash,
+        m.ui.web,
+        m.ui.watch,
         built.memory,
         file("engine.wasm", &built.engine),
         file("watch.js", &built.watch),

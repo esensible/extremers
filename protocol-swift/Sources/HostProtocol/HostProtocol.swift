@@ -190,28 +190,48 @@ public struct PostcardWriter {
 public struct Envelope: Equatable, PostcardCodable {
     public var timestamp: UInt64
     public var active: UInt32
-    public var ui_hash: [UInt8]
+    public var ui: UiHashes
     public var state: [UInt8]
 
-    public init(timestamp: UInt64, active: UInt32, ui_hash: [UInt8], state: [UInt8]) {
+    public init(timestamp: UInt64, active: UInt32, ui: UiHashes, state: [UInt8]) {
         self.timestamp = timestamp
         self.active = active
-        self.ui_hash = ui_hash
+        self.ui = ui
         self.state = state
     }
 
     public init(from r: inout PostcardReader) throws {
         self.timestamp = try r.u64()
         self.active = try r.u32()
-        self.ui_hash = try r.array(8) { r in try r.u8() }
+        self.ui = try UiHashes(from: &r)
         self.state = try r.seq { r in try r.u8() }
     }
 
     public func encode(to w: inout PostcardWriter) {
         w.u64(self.timestamp)
         w.u32(self.active)
-        w.array(self.ui_hash, 8) { w, v in w.u8(v) }
+        self.ui.encode(to: &w)
         w.seq(self.state) { w, v in w.u8(v) }
+    }
+}
+
+public struct UiHashes: Equatable, PostcardCodable {
+    public var web: [UInt8]
+    public var watch: [UInt8]
+
+    public init(web: [UInt8], watch: [UInt8]) {
+        self.web = web
+        self.watch = watch
+    }
+
+    public init(from r: inout PostcardReader) throws {
+        self.web = try r.array(8) { r in try r.u8() }
+        self.watch = try r.array(8) { r in try r.u8() }
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        w.array(self.web, 8) { w, v in w.u8(v) }
+        w.array(self.watch, 8) { w, v in w.u8(v) }
     }
 }
 
@@ -387,13 +407,17 @@ public struct Manifest: Equatable, PostcardCodable {
     public var version: UInt16
     public var abi: UInt16
     public var content_hash: [UInt8]
+    public var ui: UiHashes
+    public var watch_len: UInt32
 
-    public init(id: UInt32, name: String, version: UInt16, abi: UInt16, content_hash: [UInt8]) {
+    public init(id: UInt32, name: String, version: UInt16, abi: UInt16, content_hash: [UInt8], ui: UiHashes, watch_len: UInt32) {
         self.id = id
         self.name = name
         self.version = version
         self.abi = abi
         self.content_hash = content_hash
+        self.ui = ui
+        self.watch_len = watch_len
     }
 
     public init(from r: inout PostcardReader) throws {
@@ -402,6 +426,8 @@ public struct Manifest: Equatable, PostcardCodable {
         self.version = try r.u16()
         self.abi = try r.u16()
         self.content_hash = try r.array(8) { r in try r.u8() }
+        self.ui = try UiHashes(from: &r)
+        self.watch_len = try r.u32()
     }
 
     public func encode(to w: inout PostcardWriter) {
@@ -410,6 +436,48 @@ public struct Manifest: Equatable, PostcardCodable {
         w.u16(self.version)
         w.u16(self.abi)
         w.array(self.content_hash, 8) { w, v in w.u8(v) }
+        self.ui.encode(to: &w)
+        w.u32(self.watch_len)
+    }
+}
+
+public struct GetAsset: Equatable, PostcardCodable {
+    public var package: UInt32
+    public var hash: [UInt8]
+
+    public init(package: UInt32, hash: [UInt8]) {
+        self.package = package
+        self.hash = hash
+    }
+
+    public init(from r: inout PostcardReader) throws {
+        self.package = try r.u32()
+        self.hash = try r.array(8) { r in try r.u8() }
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        w.u32(self.package)
+        w.array(self.hash, 8) { w, v in w.u8(v) }
+    }
+}
+
+public struct AssetHeader: Equatable, PostcardCodable {
+    public var status: UInt8
+    public var len: UInt32
+
+    public init(status: UInt8, len: UInt32) {
+        self.status = status
+        self.len = len
+    }
+
+    public init(from r: inout PostcardReader) throws {
+        self.status = try r.u8()
+        self.len = try r.u32()
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        w.u8(self.status)
+        w.u32(self.len)
     }
 }
 
@@ -470,6 +538,36 @@ public func decodeManifest(_ bytes: [UInt8]) throws -> Manifest {
 
 /// A package's manifest.bin.
 public func encodeManifest(_ value: Manifest) -> [UInt8] {
+    var w = PostcardWriter()
+    value.encode(to: &w)
+    return w.bytes
+}
+
+/// BLE bulk channel, client to host: ask for a package's watch bundle by its hash. Throws unless `bytes` is exactly one GetAsset.
+public func decodeGetAsset(_ bytes: [UInt8]) throws -> GetAsset {
+    var r = PostcardReader(bytes)
+    let v = try GetAsset(from: &r)
+    try r.done()
+    return v
+}
+
+/// BLE bulk channel, client to host: ask for a package's watch bundle by its hash.
+public func encodeGetAsset(_ value: GetAsset) -> [UInt8] {
+    var w = PostcardWriter()
+    value.encode(to: &w)
+    return w.bytes
+}
+
+/// BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. Throws unless `bytes` is exactly one AssetHeader.
+public func decodeAssetHeader(_ bytes: [UInt8]) throws -> AssetHeader {
+    var r = PostcardReader(bytes)
+    let v = try AssetHeader(from: &r)
+    try r.done()
+    return v
+}
+
+/// BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset.
+public func encodeAssetHeader(_ value: AssetHeader) -> [UInt8] {
     var w = PostcardWriter()
     value.encode(to: &w)
     return w.bytes

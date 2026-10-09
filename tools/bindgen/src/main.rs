@@ -21,7 +21,7 @@ mod vectors;
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use extreme_protocol::{ChooseView, Envelope, HostEvent, Manifest};
+use extreme_protocol::{AssetHeader, ChooseView, Envelope, GetAsset, HostEvent, Manifest};
 use extreme_race::{RaceEvent, RaceView};
 use extreme_tune::TuneView;
 use postcard_schema::{Schema, schema::owned::OwnedNamedType};
@@ -59,6 +59,16 @@ fn host_exports() -> Vec<Export> {
             schema: Manifest::SCHEMA,
             doc: "A package's manifest.bin.",
         },
+        Export {
+            name: "GetAsset",
+            schema: GetAsset::SCHEMA,
+            doc: "BLE bulk channel, client to host: ask for a package's watch bundle by its hash.",
+        },
+        Export {
+            name: "AssetHeader",
+            schema: AssetHeader::SCHEMA,
+            doc: "BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset.",
+        },
     ]
 }
 
@@ -85,6 +95,8 @@ fn files() -> Vec<(String, String)> {
             "HostEvent": schema_json(HostEvent::SCHEMA),
             "ChooseView": schema_json(ChooseView::SCHEMA),
             "Manifest": schema_json(Manifest::SCHEMA),
+            "GetAsset": schema_json(GetAsset::SCHEMA),
+            "AssetHeader": schema_json(AssetHeader::SCHEMA),
         })),
     ));
     out.push((
@@ -157,7 +169,7 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
     use extreme_protocol::{CHOOSE, ENVELOPE_MAX};
-    use vectors::{HASH, NOW, envelopes};
+    use vectors::{NOW, UI, envelopes};
 
     #[test]
     fn generated_files_are_current() {
@@ -170,7 +182,7 @@ mod tests {
     fn ble_state_sizes() {
         let mut largest = 0;
         for (what, active, state) in envelopes() {
-            let e = Envelope { timestamp: NOW, active, ui_hash: HASH, state: &state };
+            let e = Envelope { timestamp: NOW, active, ui: UI, state: &state };
             let n = postcard::to_stdvec(&e).unwrap().len();
             if active != CHOOSE || what.ends_with("no BLE") {
                 eprintln!("BLE state, {what}: {n} bytes");

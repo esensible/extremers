@@ -2,7 +2,9 @@
 // Rust types' postcard schemas: do not edit. The host protocol (extreme-protocol). The wire format and
 // the JS values are described in tools/bindgen/src/js.rs and README.md.
 
-export type Envelope = { timestamp: number; active: number; ui_hash: [number, number, number, number, number, number, number, number]; state: Array<number> };
+export type Envelope = { timestamp: number; active: number; ui: UiHashes; state: Array<number> };
+
+export type UiHashes = { web: [number, number, number, number, number, number, number, number]; watch: [number, number, number, number, number, number, number, number] };
 
 export type HostEvent =
   | { tag: "Select"; value: number }
@@ -31,7 +33,11 @@ export type BleNote =
   | { tag: "StaleBond"; value: null }
   | { tag: "Forgotten"; value: null };
 
-export type Manifest = { id: number; name: string; version: number; abi: number; content_hash: [number, number, number, number, number, number, number, number] };
+export type Manifest = { id: number; name: string; version: number; abi: number; content_hash: [number, number, number, number, number, number, number, number]; ui: UiHashes; watch_len: number };
+
+export type GetAsset = { package: number; hash: [number, number, number, number, number, number, number, number] };
+
+export type AssetHeader = { status: number; len: number };
 
 /** Bytes as received: a Uint8Array, an ArrayBuffer or an array of numbers. */
 export type Bytes = Uint8Array | ArrayBuffer | ArrayLike<number>;
@@ -55,6 +61,16 @@ export function encodeChooseView(value: ChooseView): number[];
 export function decodeManifest(bytes: Bytes): Manifest;
 /** A package's manifest.bin. */
 export function encodeManifest(value: Manifest): number[];
+
+/** BLE bulk channel, client to host: ask for a package's watch bundle by its hash. */
+export function decodeGetAsset(bytes: Bytes): GetAsset;
+/** BLE bulk channel, client to host: ask for a package's watch bundle by its hash. */
+export function encodeGetAsset(value: GetAsset): number[];
+
+/** BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. */
+export function decodeAssetHeader(bytes: Bytes): AssetHeader;
+/** BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. */
+export function encodeAssetHeader(value: AssetHeader): number[];
 
 /** Every enum's variant names, in wire order. */
 export const VARIANTS: {

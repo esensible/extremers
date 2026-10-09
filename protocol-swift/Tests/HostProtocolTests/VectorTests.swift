@@ -41,6 +41,8 @@ func roundTrip(_ type: String, _ b: [UInt8]) throws -> [UInt8] {
     case "HostEvent": return encodeHostEvent(try decodeHostEvent(b))
     case "ChooseView": return encodeChooseView(try decodeChooseView(b))
     case "Manifest": return encodeManifest(try decodeManifest(b))
+    case "GetAsset": return encodeGetAsset(try decodeGetAsset(b))
+    case "AssetHeader": return encodeAssetHeader(try decodeAssetHeader(b))
     default: throw PostcardError.unknownVariant(type, 0)
     }
 }
@@ -49,7 +51,8 @@ final class VectorTests: XCTestCase {
     func testEveryVectorRoundTrips() throws {
         let all = try vectors()
         XCTAssertGreaterThan(all.count, 40)
-        XCTAssertEqual(Set(all.map(\.type)), ["Envelope", "HostEvent", "ChooseView", "Manifest"])
+        XCTAssertEqual(
+            Set(all.map(\.type)), ["Envelope", "HostEvent", "ChooseView", "Manifest", "GetAsset", "AssetHeader"])
         for v in all {
             let b = bytes(v.hex)
             XCTAssertEqual(try roundTrip(v.type, b), b, "\(v.type) \(v.what)")
@@ -70,6 +73,18 @@ final class VectorTests: XCTestCase {
         let view = try decodeChooseView(e.state)
         XCTAssertEqual(view.packages.map(\.name), ["race", "tune"])
         XCTAssertNil(view.ble)
+        // each client's UI hash
+        XCTAssertEqual(e.ui.web, [0x3c, 0x00, 0xff, 0x80, 0x01, 0x7f, 0xa5, 0x5a])
+        XCTAssertEqual(e.ui.watch, [0x9a, 0x01, 0xfe, 0x00, 0x7f, 0x80, 0x12, 0xc3])
+
+        // the bulk channel: what the watch asks, what the box answers
+        let get = GetAsset(package: fnv1a("race"), hash: e.ui.watch)
+        let getVector = all.first { $0.type == "GetAsset" && $0.what == "race's watch bundle" }!
+        XCTAssertEqual(encodeGetAsset(get), bytes(getVector.hex))
+        let ok = all.first { $0.type == "AssetHeader" && $0.what == "ok, 21345 bytes follow" }!
+        let header = try decodeAssetHeader(bytes(ok.hex))
+        XCTAssertEqual(header.status, 0)
+        XCTAssertEqual(header.len, 21_345)
 
         // events the watch sends
         let race = fnv1a("race")

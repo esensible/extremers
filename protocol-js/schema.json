@@ -1,4 +1,25 @@
 {
+  "AssetHeader": {
+    "name": "AssetHeader",
+    "ty": {
+      "Struct": [
+        {
+          "name": "status",
+          "ty": {
+            "name": "u8",
+            "ty": "U8"
+          }
+        },
+        {
+          "name": "len",
+          "ty": {
+            "name": "u32",
+            "ty": "U32"
+          }
+        }
+      ]
+    }
+  },
   "ChooseView": {
     "name": "ChooseView",
     "ty": {
@@ -269,7 +290,127 @@
           }
         },
         {
-          "name": "ui_hash",
+          "name": "ui",
+          "ty": {
+            "name": "UiHashes",
+            "ty": {
+              "Struct": [
+                {
+                  "name": "web",
+                  "ty": {
+                    "name": "[T; N]",
+                    "ty": {
+                      "Tuple": [
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "watch",
+                  "ty": {
+                    "name": "[T; N]",
+                    "ty": {
+                      "Tuple": [
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "state",
+          "ty": {
+            "name": "[T]",
+            "ty": {
+              "Seq": {
+                "name": "u8",
+                "ty": "U8"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "GetAsset": {
+    "name": "GetAsset",
+    "ty": {
+      "Struct": [
+        {
+          "name": "package",
+          "ty": {
+            "name": "u32",
+            "ty": "U32"
+          }
+        },
+        {
+          "name": "hash",
           "ty": {
             "name": "[T; N]",
             "ty": {
@@ -307,18 +448,6 @@
                   "ty": "U8"
                 }
               ]
-            }
-          }
-        },
-        {
-          "name": "state",
-          "ty": {
-            "name": "[T]",
-            "ty": {
-              "Seq": {
-                "name": "u8",
-                "ty": "U8"
-              }
             }
           }
         }
@@ -467,6 +596,107 @@
                 }
               ]
             }
+          }
+        },
+        {
+          "name": "ui",
+          "ty": {
+            "name": "UiHashes",
+            "ty": {
+              "Struct": [
+                {
+                  "name": "web",
+                  "ty": {
+                    "name": "[T; N]",
+                    "ty": {
+                      "Tuple": [
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "watch",
+                  "ty": {
+                    "name": "[T; N]",
+                    "ty": {
+                      "Tuple": [
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        },
+                        {
+                          "name": "u8",
+                          "ty": "U8"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "watch_len",
+          "ty": {
+            "name": "u32",
+            "ty": "U32"
           }
         }
       ]

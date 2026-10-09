@@ -26,7 +26,7 @@ const info = (name, version = 1) => ({ id: packageId(name), name, version });
 function envelope(packages, active = CHOOSE) {
   clock += 1000;
   const state = encodeChooseView({ packages, ble: null });
-  steps.push({ localMs: clock, stateHex: hex(encodeEnvelope({ timestamp: clock - T0 + D0, active, ui_hash: [0, 0, 0, 0, 0, 0, 0, 0], state })) });
+  steps.push({ localMs: clock, stateHex: hex(encodeEnvelope({ timestamp: clock - T0 + D0, active, ui: { web: [0, 0, 0, 0, 0, 0, 0, 0], watch: [0, 0, 0, 0, 0, 0, 0, 0] }, state })) });
 }
 function tap(label) {
   const tag = tagOf(bundle, { ctx, steps }, label);
@@ -43,7 +43,7 @@ envelope([info("race"), info("tune")]);
 tap("race");
 // another package's envelope and bad bytes: nothing changes
 clock += 1000;
-steps.push({ localMs: clock, stateHex: hex(encodeEnvelope({ timestamp: clock - T0 + D0, active: packageId("race"), ui_hash: [1, 1, 1, 1, 1, 1, 1, 1], state: [0, 0, 0, 0, 0, 0] })) });
+steps.push({ localMs: clock, stateHex: hex(encodeEnvelope({ timestamp: clock - T0 + D0, active: packageId("race"), ui: { web: [1, 1, 1, 1, 1, 1, 1, 1], watch: [2, 2, 2, 2, 2, 2, 2, 2] }, state: [0, 0, 0, 0, 0, 0] })) });
 clock += 1000;
 steps.push({ localMs: clock, stateHex: "02ffff" });
 // a package installed, one updated, then one removed

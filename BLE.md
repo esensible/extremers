@@ -17,7 +17,7 @@ view).
 
 Everything is [postcard](https://postcard.jamesmunns.com/wire-format): the
 same `Envelope` and `HostEvent` as the websocket. A `state` value is up to
-43 bytes today (a Race envelope in a start sequence with the line set at
+51 bytes today (a Race envelope in a start sequence with the line set at
 the largest times), more than one notification at the default ATT MTU (23
 bytes, 20 of payload) carries: a central must exchange a larger ATT MTU
 (see "Sizes and the ATT MTU").
@@ -151,7 +151,7 @@ heartbeat.
 
 | characteristic | UUID (`e4a1c00X-…`) | props | size | meaning |
 |---|---|---|---|---|
-| `state` | `…001` | read, notify (bonded link only) | 14–281 | the host's `Envelope`, sent on every change |
+| `state` | `…001` | read, notify (bonded link only) | 22–289 | the host's `Envelope`, sent on every change |
 | `event` | `…002` | write, write-without-response (bonded link only) | 1–64 | a `HostEvent` |
 
 `state` is pushed on every change (the same moments the websocket clients
@@ -169,7 +169,7 @@ notification it causes, if it changed anything.
 |---|---|---|
 | `timestamp` | u64 (varint) | the device's clock when the value was sent, epoch ms (uptime until the GPS has given it the time) |
 | `active` | u32 (varint) | the active package: 0 Choose, else FNV-1a of its name: `race` 2394669720, `tune` 1749091475 |
-| `ui_hash` | 8 bytes, no length | the active package's content hash (README "Packages"): a change means another package or version, so another watch bundle |
+| `ui` | `UiHashes`: `web` then `watch`, 8 bytes each, no lengths | the active package's UIs (README "Packages"): the watch loads another bundle only when `active` or `ui.watch` changes (fetched over the bulk channel, "Watch bundles"); the Kindle pages reload only for `active` or `ui.web` |
 | `state` | bytes (varint length, then the bytes) | the active package's view, postcard: a `ChooseView` (with `ble: None`) for Choose, else the package's own `View` |
 
 Times in the views are absolute device times. A central keeps
@@ -218,20 +218,20 @@ With a 2026 timestamp (`tools/bindgen` test `ble_state_sizes`):
 
 | state | bytes |
 |---|---|
-| Choose (race and tune installed) | 40 |
-| Race Active, no line / line both | 26 / 33 |
-| Race InSequence, no line / line both | 32 / 39 |
-| Race Racing | 35 |
-| Race, largest possible times | 43 |
-| Tune | 32 |
+| Choose (race and tune installed) | 48 |
+| Race Active, no line / line both | 34 / 41 |
+| Race InSequence, no line / line both | 40 / 47 |
+| Race Racing | 43 |
+| Race, largest possible times | 51 |
+| Tune | 40 |
 
-The characteristic holds up to 281 bytes (`ENVELOPE_MAX`: a 256-byte view).
+The characteristic holds up to 289 bytes (`ENVELOPE_MAX`: a 256-byte view).
 A notification carries at most ATT MTU − 3 bytes. The device never sends a
 cut-short notification: a value that does not fit the link's MTU is not
 notified (it is stored, so a read gets it, in parts via Read Blob, which
 centrals do by themselves) and the device logs `… not notified; the central
 must exchange a larger MTU` once per connection. So a central must exchange
-an ATT MTU of at least 46 for today's states (Race: 43 + 3); the device
+an ATT MTU of at least 54 for today's states (Race: 51 + 3); the device
 accepts up to 247 (its packet pool), and CoreBluetooth exchanges 185 or
 more by itself on connecting. An `event` longer than the default MTU's 20
 bytes (a Race bump is 16–24) needs the larger MTU too.
@@ -282,13 +282,13 @@ effect on the countdown (+5 / +1 / −1 / −5 minutes), so **"+5" sends
 and `extreme-tune/protocol-js/vectors.json`, written by `tools/bindgen`
 from the Rust encoder with the JS value each decodes to; checked under node
 and QuickJS (JS) and by `protocol-swift`'s tests (Swift). A few, with a
-2026 timestamp (`fbd8c1a28c34` = 1 790 000 000 123) and a vector content
-hash `5e1f00ff01807f42`:
+2026 timestamp (`fbd8c1a28c34` = 1 790 000 000 123) and vector UI hashes
+`web` = `3c00ff80017fa55a`, `watch` = `9a01fe007f8012c3`:
 
 | | bytes | meaning |
 |---|---|---|
-| state | `fbd8c1a28c34 00 5e1f00ff01807f42 18 02 9885eff508 0472616365 01 938984c206 0474756e65 01 00` | Choose, race and tune installed (`ChooseView`, `ble` None) |
-| state | `fbd8c1a28c34 9885eff508 5e1f00ff01807f42 06 cdcccc40 00 00` | Race, 6.4 kn, Active, no line |
+| state | `fbd8c1a28c34 00 3c00ff80017fa55a 9a01fe007f8012c3 18 02 9885eff508 0472616365 01 938984c206 0474756e65 01 00` | Choose, race and tune installed (`ChooseView`, `ble` None) |
+| state | `fbd8c1a28c34 9885eff508 3c00ff80017fa55a 9a01fe007f8012c3 06 cdcccc40 00 00` | Race, 6.4 kn, Active, no line |
 | event | `00 9885eff508` | select race |
 | event | `01` | back |
 | event | `02 9885eff508 01 00` | race: line stbd |

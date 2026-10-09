@@ -6,6 +6,7 @@
 #![no_std]
 
 pub use extreme_protocol::Package;
+use extreme_protocol::UiHashes;
 
 /// What the firmware ships with.
 pub struct Packages {

@@ -55,11 +55,11 @@ fn gps(host: &Host, timestamp: u64, speed: f64) {
 }
 
 /// Envelope as the websocket sends it, decoded.
-fn envelope(host: &Host, ble: Option<BleStatusView>) -> (u64, PackageId, [u8; 8], Vec<u8>) {
+fn envelope(host: &Host, ble: Option<BleStatusView>) -> (u64, PackageId, UiHashes, Vec<u8>) {
     let mut out = [0u8; extreme_protocol::ENVELOPE_MAX];
     let n = host.encode_envelope(&state(host), 1_790_000_000_123, ble, &mut out).unwrap();
     let e: Envelope = postcard::from_bytes(&out[..n]).unwrap();
-    (e.timestamp, e.active, e.ui_hash, e.state.to_vec())
+    (e.timestamp, e.active, e.ui, e.state.to_vec())
 }
 
 #[test]
@@ -76,6 +76,38 @@ fn packages_are_built() {
     assert!(PACKAGES.choose.engine.is_empty());
     assert!(PACKAGES.choose.web_file("").is_some());
     assert_ne!(PACKAGES.choose.content_hash, race_package().content_hash);
+    // each UI's hash is that UI's own, and the manifest says how long the
+    // watch bundle is
+    for p in PACKAGES.preinstalled.iter().chain([&PACKAGES.choose]) {
+        assert_ne!(p.ui.web, p.ui.watch, "{}", p.name);
+        assert!(!p.watch.is_empty(), "{} has no watch bundle", p.name);
+        assert_eq!(p.manifest().watch_len as usize, p.watch.len());
+        assert_eq!(p.manifest().ui, p.ui);
+    }
+    assert_ne!(PACKAGES.choose.ui.watch, race_package().ui.watch);
+}
+
+/// What the BLE bulk channel serves: a package's current watch bundle, by
+/// its hash, and nothing else.
+#[test]
+fn watch_bundles_by_hash() {
+    let host = full();
+    let race = race_package();
+    let (header, bytes) = host.asset(&GetAsset { package: RACE, hash: race.ui.watch });
+    assert_eq!(header, AssetHeader { status: ASSET_OK, len: race.watch.len() as u32 });
+    assert_eq!(bytes, race.watch);
+    // Choose's too (id 0)
+    let (header, bytes) = host.asset(&GetAsset { package: CHOOSE, hash: PACKAGES.choose.ui.watch });
+    assert_eq!(header.status, ASSET_OK);
+    assert_eq!(bytes, PACKAGES.choose.watch);
+    // another build's hash: refused, no bytes
+    let (header, bytes) = host.asset(&GetAsset { package: RACE, hash: PACKAGES.choose.ui.watch });
+    assert_eq!(header, AssetHeader { status: ASSET_HASH_NOT_CURRENT, len: 0 });
+    assert!(bytes.is_empty());
+    // not installed
+    let (header, bytes) = host.asset(&GetAsset { package: 12345, hash: race.ui.watch });
+    assert_eq!(header, AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 });
+    assert!(bytes.is_empty());
 }
 
 #[test]
@@ -98,7 +130,7 @@ fn boots_to_choose_or_the_only_app() {
 fn choose_lists_the_apps() {
     let host = full();
     let (ts, active, hash, view) = envelope(&host, None);
-    assert_eq!((ts, active, hash), (1_790_000_000_123, CHOOSE, PACKAGES.choose.content_hash));
+    assert_eq!((ts, active, hash), (1_790_000_000_123, CHOOSE, PACKAGES.choose.ui));
     let view: ChooseView = postcard::from_bytes(&view).unwrap();
     let names: Vec<_> = view.packages.iter().map(|p| (p.id, p.name.as_str(), p.version)).collect();
     assert_eq!(names, [(RACE, "race", 1), (TUNE, "tune", 1)]);
@@ -117,7 +149,7 @@ fn select_race_then_tune_then_back() {
 
     pick(&host, RACE).unwrap();
     let m = updates.try_next_message_pure().unwrap();
-    assert_eq!((m.active, m.ui_hash), (RACE, race_package().content_hash));
+    assert_eq!((m.active, m.ui), (RACE, race_package().ui));
     assert_eq!(race_view(&host), RaceView { speed: 0.0, phase: Phase::Active { line: LineView::None } });
 
     pick(&host, TUNE).unwrap();
@@ -234,6 +266,7 @@ fn install_and_remove() {
         version: 2,
         abi: 1,
         content_hash: [0; 8],
+        ui: UiHashes { web: [0; 8], watch: [0; 8] },
         memory: 0,
         engine: b"\0asm",
         web: &[],

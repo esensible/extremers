@@ -62,7 +62,7 @@ fn main() -> ExitCode {
         }
         let web: usize = built.web.iter().map(|(_, c)| c.len()).sum();
         println!(
-            "{:8} id {:08x} v{} hash {}  engine.wasm {} B (memory {} B), web {} B in {} files, watch.js {} B",
+            "{:8} id {:08x} v{} hash {}  engine.wasm {} B (memory {} B), web {} B in {} files (ui.web {}), watch.js {} B (ui.watch {})",
             built.spec.name,
             built.manifest.id,
             built.manifest.version,
@@ -71,7 +71,9 @@ fn main() -> ExitCode {
             built.memory,
             web,
             built.web.len(),
-            built.watch.len()
+            hex(&built.manifest.ui.web),
+            built.watch.len(),
+            hex(&built.manifest.ui.watch)
         );
     }
     println!("wrote {}", out.display());

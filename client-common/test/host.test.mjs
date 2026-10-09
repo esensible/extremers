@@ -8,7 +8,8 @@ import { encodeHostEvent, decodeHostEvent } from "../../protocol-js/protocol.js"
 
 const H1 = [1, 2, 3, 4, 5, 6, 7, 0xff];
 const H2 = [9, 9, 9, 9, 9, 9, 9, 9];
-const env = (active, ui_hash) => ({ timestamp: 0, active, ui_hash, state: [] });
+// an envelope whose web UI is `web` (and watch UI `watch`, default H1)
+const env = (active, web, watch = H1) => ({ timestamp: 0, active, ui: { web, watch }, state: [] });
 
 test("package ids are FNV-1a of the name", () => {
   assert.equal(packageId(""), 0x811c9dc5);
@@ -35,10 +36,17 @@ test("a page reloads when another package is active", () => {
   assert.equal(staleness(0)(env(77, H1)), true);
 });
 
-test("a page reloads when its package changes (another ui_hash)", () => {
+test("a page reloads when its page changes (another ui.web)", () => {
   const stale = staleness(0);
   assert.equal(stale(env(0, H1)), false);
   assert.equal(stale(env(0, H2)), true);
+});
+
+test("a page does not reload for a new watch bundle (ui.watch)", () => {
+  const stale = staleness(0);
+  assert.equal(stale(env(0, H1, H1)), false);
+  assert.equal(stale(env(0, H1, H2)), false);
+  assert.equal(stale(env(0, H1, H1)), false);
 });
 
 test("host events", () => {
