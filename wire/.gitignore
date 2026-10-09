@@ -1,0 +1,3 @@
+# SwiftPM (Package.swift lives at this root)
+.build/
+.swiftpm/

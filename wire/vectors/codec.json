@@ -1,0 +1,2696 @@
+{
+  "about": "Golden vectors for the codec, written by js/scripts/gen-vectors.js. See SPEC.md \"Test vectors\" for how to consume them.",
+  "format": 1,
+  "schemas": [
+    {
+      "name": "boolean",
+      "about": "A boolean is one bit in a bit byte; a lone boolean is one byte. Unused bits must be zero; nothing may follow the message.",
+      "schema": {
+        "type": "boolean"
+      },
+      "canonical": "{\"type\":\"boolean\"}",
+      "hash": "7cb541e84f226754",
+      "descriptor": "017cb541e84f2267540101",
+      "cases": [
+        {
+          "name": "false",
+          "value": false,
+          "wire": "00"
+        },
+        {
+          "name": "true",
+          "value": true,
+          "wire": "01"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "empty message",
+          "wire": "",
+          "error": "truncated"
+        },
+        {
+          "name": "unused bit set",
+          "wire": "03",
+          "error": "invalid"
+        },
+        {
+          "name": "high unused bit set",
+          "wire": "81",
+          "error": "invalid"
+        },
+        {
+          "name": "byte after the message",
+          "wire": "0100",
+          "error": "trailing"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "number",
+          "value": 1,
+          "error": "shape"
+        },
+        {
+          "name": "null",
+          "value": null,
+          "error": "shape"
+        },
+        {
+          "name": "string",
+          "value": "true",
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "bit-byte layout",
+      "about": "Bit fields share one stream-wide bit byte, LSB first; a field that does not fit in the remaining bits opens a new bit byte at the next byte position. Byte-aligned values never move.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "boolean"
+          },
+          "x": {
+            "type": "integer",
+            "format": "uint8"
+          },
+          "e3": {
+            "enum": [
+              "v0",
+              "v1",
+              "v2",
+              "v3",
+              "v4",
+              "v5",
+              "v6",
+              "v7"
+            ]
+          },
+          "e5": {
+            "enum": [
+              "v0",
+              "v1",
+              "v2",
+              "v3",
+              "v4",
+              "v5",
+              "v6",
+              "v7",
+              "v8",
+              "v9",
+              "v10",
+              "v11",
+              "v12",
+              "v13",
+              "v14",
+              "v15",
+              "v16",
+              "v17",
+              "v18",
+              "v19",
+              "v20",
+              "v21",
+              "v22",
+              "v23",
+              "v24",
+              "v25",
+              "v26",
+              "v27",
+              "v28",
+              "v29",
+              "v30",
+              "v31"
+            ]
+          },
+          "y": {
+            "type": "integer",
+            "format": "uint8"
+          },
+          "b": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "a",
+          "x",
+          "e3",
+          "e5",
+          "y",
+          "b"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"boolean\"},\"x\":{\"type\":\"integer\",\"format\":\"uint8\"},\"e3\":{\"enum\":[\"v0\",\"v1\",\"v2\",\"v3\",\"v4\",\"v5\",\"v6\",\"v7\"]},\"e5\":{\"enum\":[\"v0\",\"v1\",\"v2\",\"v3\",\"v4\",\"v5\",\"v6\",\"v7\",\"v8\",\"v9\",\"v10\",\"v11\",\"v12\",\"v13\",\"v14\",\"v15\",\"v16\",\"v17\",\"v18\",\"v19\",\"v20\",\"v21\",\"v22\",\"v23\",\"v24\",\"v25\",\"v26\",\"v27\",\"v28\",\"v29\",\"v30\",\"v31\"]},\"y\":{\"type\":\"integer\",\"format\":\"uint8\"},\"b\":{\"type\":\"boolean\"}},\"required\":[\"a\",\"x\",\"e3\",\"e5\",\"y\",\"b\"]}",
+      "hash": "bb4adfe263f810f8",
+      "descriptor": "01bb4adfe263f810f8070f060801020e070e1f0201016101780265330265350179016202763002763102763202763302763402763502763602763702763002763102763202763302763402763502763602763702763802763903763130037631310376313203763133037631340376313503763136037631370376313803763139037632300376323103763232037632330376323403763235037632360376323703763238037632390376333003763331",
+      "cases": [
+        {
+          "name": "all zero",
+          "value": {
+            "a": false,
+            "x": 0,
+            "e3": "v0",
+            "e5": "v0",
+            "y": 0,
+            "b": false
+          },
+          "wire": "00000000"
+        },
+        {
+          "name": "all set",
+          "value": {
+            "a": true,
+            "x": 255,
+            "e3": "v7",
+            "e5": "v31",
+            "y": 170,
+            "b": true
+          },
+          "wire": "0fff3faa"
+        },
+        {
+          "name": "mixed",
+          "value": {
+            "a": true,
+            "x": 1,
+            "e3": "v5",
+            "e5": "v17",
+            "y": 2,
+            "b": false
+          },
+          "wire": "0b011102"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "unused bits in the first bit byte",
+          "wire": "1000000000",
+          "error": "invalid"
+        },
+        {
+          "name": "unused bits in the last bit byte",
+          "wire": "00004000",
+          "error": "invalid"
+        },
+        {
+          "name": "missing second bit byte",
+          "wire": "000000",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": []
+    },
+    {
+      "name": "int8 and uint8",
+      "about": "int8 and uint8 are one raw byte (int8 in two's complement).",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "u": {
+            "type": "integer",
+            "format": "uint8"
+          },
+          "i": {
+            "type": "integer",
+            "format": "int8"
+          }
+        },
+        "required": [
+          "u",
+          "i"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"u\":{\"type\":\"integer\",\"format\":\"uint8\"},\"i\":{\"type\":\"integer\",\"format\":\"int8\"}},\"required\":[\"u\",\"i\"]}",
+      "hash": "78a5f998afc9f939",
+      "descriptor": "0178a5f998afc9f939030f0202020301750169",
+      "cases": [
+        {
+          "name": "zeros",
+          "value": {
+            "u": 0,
+            "i": 0
+          },
+          "wire": "0000"
+        },
+        {
+          "name": "extremes",
+          "value": {
+            "u": 255,
+            "i": -128
+          },
+          "wire": "ff80"
+        },
+        {
+          "name": "other extremes",
+          "value": {
+            "u": 127,
+            "i": 127
+          },
+          "wire": "7f7f"
+        },
+        {
+          "name": "minus one",
+          "value": {
+            "u": 1,
+            "i": -1
+          },
+          "wire": "01ff"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "truncated",
+          "wire": "00",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "uint8 256",
+          "value": {
+            "u": 256,
+            "i": 0
+          },
+          "error": "range"
+        },
+        {
+          "name": "uint8 -1",
+          "value": {
+            "u": -1,
+            "i": 0
+          },
+          "error": "range"
+        },
+        {
+          "name": "int8 -129",
+          "value": {
+            "u": 0,
+            "i": -129
+          },
+          "error": "range"
+        },
+        {
+          "name": "int8 128",
+          "value": {
+            "u": 0,
+            "i": 128
+          },
+          "error": "range"
+        },
+        {
+          "name": "not whole",
+          "value": {
+            "u": 1.5,
+            "i": 0
+          },
+          "error": "range"
+        },
+        {
+          "name": "string",
+          "value": {
+            "u": "1",
+            "i": 0
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "uint16",
+      "about": "Unsigned LEB128 varint, at most 3 bytes, value < 2^16.",
+      "schema": {
+        "type": "integer",
+        "format": "uint16"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"uint16\"}",
+      "hash": "b64a8edd6222839a",
+      "descriptor": "01b64a8edd6222839a0104",
+      "cases": [
+        {
+          "name": "0",
+          "value": 0,
+          "wire": "00"
+        },
+        {
+          "name": "127",
+          "value": 127,
+          "wire": "7f"
+        },
+        {
+          "name": "128",
+          "value": 128,
+          "wire": "8001"
+        },
+        {
+          "name": "300",
+          "value": 300,
+          "wire": "ac02"
+        },
+        {
+          "name": "65535",
+          "value": 65535,
+          "wire": "ffff03"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "65536",
+          "wire": "808004",
+          "error": "invalid"
+        },
+        {
+          "name": "4 bytes",
+          "wire": "80808001",
+          "error": "invalid"
+        },
+        {
+          "name": "redundant zero byte",
+          "wire": "8000",
+          "error": "invalid"
+        },
+        {
+          "name": "continuation then end",
+          "wire": "80",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "65536",
+          "value": 65536,
+          "error": "range"
+        },
+        {
+          "name": "-1",
+          "value": -1,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "int16",
+      "about": "Zigzag LEB128 varint, at most 3 bytes, zigzag value < 2^16.",
+      "schema": {
+        "type": "integer",
+        "format": "int16"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"int16\"}",
+      "hash": "d219c6119ceca19c",
+      "descriptor": "01d219c6119ceca19c0105",
+      "cases": [
+        {
+          "name": "0",
+          "value": 0,
+          "wire": "00"
+        },
+        {
+          "name": "-1",
+          "value": -1,
+          "wire": "01"
+        },
+        {
+          "name": "1",
+          "value": 1,
+          "wire": "02"
+        },
+        {
+          "name": "63",
+          "value": 63,
+          "wire": "7e"
+        },
+        {
+          "name": "-64",
+          "value": -64,
+          "wire": "7f"
+        },
+        {
+          "name": "64",
+          "value": 64,
+          "wire": "8001"
+        },
+        {
+          "name": "-65",
+          "value": -65,
+          "wire": "8101"
+        },
+        {
+          "name": "32767",
+          "value": 32767,
+          "wire": "feff03"
+        },
+        {
+          "name": "-32768",
+          "value": -32768,
+          "wire": "ffff03"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "zigzag 65536",
+          "wire": "808004",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "32768",
+          "value": 32768,
+          "error": "range"
+        },
+        {
+          "name": "-32769",
+          "value": -32769,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "uint32",
+      "about": "Unsigned LEB128 varint, at most 5 bytes, value < 2^32.",
+      "schema": {
+        "type": "integer",
+        "format": "uint32"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"uint32\"}",
+      "hash": "41e63a52fc0063e0",
+      "descriptor": "0141e63a52fc0063e00106",
+      "cases": [
+        {
+          "name": "0",
+          "value": 0,
+          "wire": "00"
+        },
+        {
+          "name": "2^31",
+          "value": 2147483648,
+          "wire": "8080808008"
+        },
+        {
+          "name": "2^32-1",
+          "value": 4294967295,
+          "wire": "ffffffff0f"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "2^32",
+          "wire": "8080808010",
+          "error": "invalid"
+        },
+        {
+          "name": "6 bytes",
+          "wire": "808080808001",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "2^32",
+          "value": 4294967296,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "int32",
+      "about": "Zigzag LEB128 varint, at most 5 bytes.",
+      "schema": {
+        "type": "integer",
+        "format": "int32"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"int32\"}",
+      "hash": "71118840ce310a59",
+      "descriptor": "0171118840ce310a590107",
+      "cases": [
+        {
+          "name": "30",
+          "value": 30,
+          "wire": "3c"
+        },
+        {
+          "name": "-300",
+          "value": -300,
+          "wire": "d704"
+        },
+        {
+          "name": "2^31-1",
+          "value": 2147483647,
+          "wire": "feffffff0f"
+        },
+        {
+          "name": "-2^31",
+          "value": -2147483648,
+          "wire": "ffffffff0f"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "zigzag 2^32",
+          "wire": "8080808010",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "2^31",
+          "value": 2147483648,
+          "error": "range"
+        },
+        {
+          "name": "-2^31-1",
+          "value": -2147483649,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "uint64",
+      "about": "Unsigned LEB128 varint, at most 10 bytes, value < 2^64. A JS number holds every integer up to 2^53 and some beyond; JS refuses to decode the others (precision).",
+      "schema": {
+        "type": "integer",
+        "format": "uint64"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"uint64\"}",
+      "hash": "24bf9615c972254e",
+      "descriptor": "0124bf9615c972254e0108",
+      "cases": [
+        {
+          "name": "0",
+          "value": 0,
+          "wire": "00"
+        },
+        {
+          "name": "a timestamp",
+          "value": 1790000300123,
+          "wire": "db80d4a28c34"
+        },
+        {
+          "name": "2^53-1",
+          "value": 9007199254740991,
+          "wire": "ffffffffffffff0f"
+        },
+        {
+          "name": "2^53",
+          "value": 9007199254740992,
+          "wire": "8080808080808010"
+        },
+        {
+          "name": "2^60",
+          "value": 1152921504606846976,
+          "wire": "808080808080808010"
+        },
+        {
+          "name": "largest double below 2^64",
+          "value": 18446744073709549568,
+          "wire": "80f0ffffffffffffff01"
+        },
+        {
+          "name": "2^53+1",
+          "value": 9007199254740993,
+          "wire": "8180808080808010",
+          "js": "precision"
+        },
+        {
+          "name": "2^64-1",
+          "value": 18446744073709551615,
+          "wire": "ffffffffffffffffff01",
+          "js": "precision"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "10th byte above 1",
+          "wire": "ffffffffffffffffff02",
+          "error": "invalid"
+        },
+        {
+          "name": "11 bytes",
+          "wire": "ffffffffffffffffff8100",
+          "error": "invalid"
+        },
+        {
+          "name": "redundant zero byte",
+          "wire": "808000",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "2^64",
+          "value": 18446744073709551616,
+          "error": "range"
+        },
+        {
+          "name": "-1",
+          "value": -1,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "int64",
+      "about": "Zigzag LEB128 varint, at most 10 bytes.",
+      "schema": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"int64\"}",
+      "hash": "a9c1e148dbe19962",
+      "descriptor": "01a9c1e148dbe199620109",
+      "cases": [
+        {
+          "name": "0",
+          "value": 0,
+          "wire": "00"
+        },
+        {
+          "name": "-1",
+          "value": -1,
+          "wire": "01"
+        },
+        {
+          "name": "2^53-1",
+          "value": 9007199254740991,
+          "wire": "feffffffffffff1f"
+        },
+        {
+          "name": "-(2^53-1)",
+          "value": -9007199254740991,
+          "wire": "fdffffffffffff1f"
+        },
+        {
+          "name": "-2^63",
+          "value": -9223372036854775808,
+          "wire": "ffffffffffffffffff01"
+        },
+        {
+          "name": "largest double below 2^63",
+          "value": 9223372036854774784,
+          "wire": "80f0ffffffffffffff01"
+        },
+        {
+          "name": "2^63-1",
+          "value": 9223372036854775807,
+          "wire": "feffffffffffffffff01",
+          "js": "precision"
+        },
+        {
+          "name": "-2^63+1",
+          "value": -9223372036854775807,
+          "wire": "fdffffffffffffffff01",
+          "js": "precision"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "zigzag above 2^64-1",
+          "wire": "ffffffffffffffffff02",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "2^63",
+          "value": 9223372036854775808,
+          "error": "range"
+        },
+        {
+          "name": "not whole",
+          "value": 0.5,
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "integer default",
+      "about": "An integer without format is int64: the same canonical form and descriptor.",
+      "schema": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10,
+        "description": "validation keywords are ignored"
+      },
+      "canonical": "{\"type\":\"integer\",\"format\":\"int64\"}",
+      "hash": "a9c1e148dbe19962",
+      "descriptor": "01a9c1e148dbe199620109",
+      "cases": [
+        {
+          "name": "-5 (minimum is not enforced)",
+          "value": -5,
+          "wire": "09"
+        },
+        {
+          "name": "1000 (maximum is not enforced)",
+          "value": 1000,
+          "wire": "d00f"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "floats",
+      "about": "float and double are raw IEEE 754 binary32/binary64, little-endian. Every value is encoded, including infinities and NaN (written as the canonical quiet NaN). A double given for a float is rounded to the nearest binary32, ties to even (Math.fround).",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number",
+            "format": "float"
+          },
+          "b": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\",\"format\":\"float\"},\"b\":{\"type\":\"number\",\"format\":\"double\"}},\"required\":[\"a\",\"b\"]}",
+      "hash": "48654624d4fdfa96",
+      "descriptor": "0148654624d4fdfa96030f02020a0b01610162",
+      "cases": [
+        {
+          "name": "zeros",
+          "value": {
+            "a": 0,
+            "b": 0
+          },
+          "wire": "000000000000000000000000"
+        },
+        {
+          "name": "negative zeros",
+          "value": {
+            "a": 0,
+            "b": 0
+          },
+          "wire": "000000800000000000000080",
+          "value_f64": {
+            "/a": "8000000000000000",
+            "/b": "8000000000000000"
+          }
+        },
+        {
+          "name": "1.5",
+          "value": {
+            "a": 1.5,
+            "b": 1.5
+          },
+          "wire": "0000c03f000000000000f83f",
+          "value_f64": {
+            "/a": "3ff8000000000000",
+            "/b": "3ff8000000000000"
+          }
+        },
+        {
+          "name": "0.1",
+          "value": {
+            "a": 0.10000000149011612,
+            "b": 0.1
+          },
+          "wire": "cdcccc3d9a9999999999b93f",
+          "value_f64": {
+            "/a": "3fb99999a0000000",
+            "/b": "3fb999999999999a"
+          }
+        },
+        {
+          "name": "infinities",
+          "value": {
+            "a": null,
+            "b": null
+          },
+          "wire": "0000807f000000000000f0ff",
+          "value_f64": {
+            "/a": "7ff0000000000000",
+            "/b": "fff0000000000000"
+          }
+        },
+        {
+          "name": "NaN",
+          "value": {
+            "a": null,
+            "b": null
+          },
+          "wire": "0000c07f000000000000f87f",
+          "value_f64": {
+            "/a": "7ff8000000000000",
+            "/b": "7ff8000000000000"
+          }
+        },
+        {
+          "name": "largest finite",
+          "value": {
+            "a": 3.4028234663852886e+38,
+            "b": 1.7976931348623157e+308
+          },
+          "wire": "ffff7f7fffffffffffffef7f",
+          "value_f64": {
+            "/a": "47efffffe0000000",
+            "/b": "7fefffffffffffff"
+          }
+        },
+        {
+          "name": "smallest subnormal",
+          "value": {
+            "a": 1.401298464324817e-45,
+            "b": 5e-324
+          },
+          "wire": "010000000100000000000000",
+          "value_f64": {
+            "/a": "36a0000000000000",
+            "/b": "0000000000000001"
+          }
+        },
+        {
+          "name": "non-canonical NaN decodes as NaN",
+          "value": {
+            "a": null,
+            "b": null
+          },
+          "wire": "0100c0ff010000000000f8ff",
+          "decode_only": true,
+          "value_f64": {
+            "/a": "7ff8000000000000",
+            "/b": "7ff8000000000000"
+          }
+        },
+        {
+          "name": "double 0.1 rounds to the nearest float",
+          "value": {
+            "a": 0.1,
+            "b": 0
+          },
+          "wire": "cdcccc3d0000000000000000",
+          "value_f64": {
+            "/a": "3fb999999999999a"
+          },
+          "decoded": {
+            "a": 0.10000000149011612,
+            "b": 0
+          },
+          "decoded_f64": {
+            "/a": "3fb99999a0000000"
+          }
+        },
+        {
+          "name": "double 6.4 rounds to the nearest float",
+          "value": {
+            "a": 6.4,
+            "b": 0
+          },
+          "wire": "cdcccc400000000000000000",
+          "value_f64": {
+            "/a": "401999999999999a"
+          },
+          "decoded": {
+            "a": 6.400000095367432,
+            "b": 0
+          },
+          "decoded_f64": {
+            "/a": "40199999a0000000"
+          }
+        },
+        {
+          "name": "a tie rounds to even",
+          "value": {
+            "a": 1.0000000596046448,
+            "b": 0
+          },
+          "wire": "0000803f0000000000000000",
+          "value_f64": {
+            "/a": "3ff0000010000000"
+          },
+          "decoded": {
+            "a": 1,
+            "b": 0
+          }
+        },
+        {
+          "name": "1e39 rounds to infinity",
+          "value": {
+            "a": 1e+39,
+            "b": 0
+          },
+          "wire": "0000807f0000000000000000",
+          "value_f64": {
+            "/a": "48078287f49c4a1d"
+          },
+          "decoded": {
+            "a": null,
+            "b": 0
+          },
+          "decoded_f64": {
+            "/a": "7ff0000000000000"
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "truncated",
+          "wire": "0000000000000000000000",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "string",
+          "value": {
+            "a": 0,
+            "b": "1"
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "number default",
+      "about": "A number without format is double.",
+      "schema": {
+        "type": "number",
+        "multipleOf": 0.01
+      },
+      "canonical": "{\"type\":\"number\",\"format\":\"double\"}",
+      "hash": "2725a8b069b70284",
+      "descriptor": "012725a8b069b70284010b",
+      "cases": [
+        {
+          "name": "6.4",
+          "value": 6.4,
+          "wire": "9a99999999991940",
+          "value_f64": {
+            "": "401999999999999a"
+          }
+        },
+        {
+          "name": "1/3",
+          "value": 0.3333333333333333,
+          "wire": "555555555555d53f",
+          "value_f64": {
+            "": "3fd5555555555555"
+          }
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "strings",
+      "about": "Length in bytes (unsigned varint, < 2^32) then UTF-8, strictly validated on decode.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "maxLength": 2,
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "s"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"s\":{\"type\":\"string\"}},\"required\":[\"s\"]}",
+      "hash": "c395031329e7d1a4",
+      "descriptor": "01c395031329e7d1a4020f01010c0173",
+      "cases": [
+        {
+          "name": "empty",
+          "value": {
+            "s": ""
+          },
+          "wire": "00"
+        },
+        {
+          "name": "ASCII (maxLength and format are ignored)",
+          "value": {
+            "s": "hello"
+          },
+          "wire": "0568656c6c6f"
+        },
+        {
+          "name": "non-ASCII",
+          "value": {
+            "s": "é日本😀"
+          },
+          "wire": "0cc3a9e697a5e69cacf09f9880"
+        },
+        {
+          "name": "200 bytes: 2-byte length",
+          "value": {
+            "s": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+          },
+          "wire": "c8016162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "overlong UTF-8",
+          "wire": "02c080",
+          "error": "invalid"
+        },
+        {
+          "name": "surrogate",
+          "wire": "03eda080",
+          "error": "invalid"
+        },
+        {
+          "name": "bad continuation",
+          "wire": "02c328",
+          "error": "invalid"
+        },
+        {
+          "name": "length past the end",
+          "wire": "0561",
+          "error": "truncated"
+        },
+        {
+          "name": "length of 2^32",
+          "wire": "8080808010",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "number",
+          "value": {
+            "s": 1
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "bytes",
+      "about": "contentEncoding base64 marks a byte string: length (unsigned varint) then raw bytes. In vectors a byte string is written as hex.",
+      "schema": {
+        "type": "string",
+        "contentEncoding": "base64"
+      },
+      "canonical": "{\"type\":\"string\",\"contentEncoding\":\"base64\"}",
+      "hash": "e4164d01946504eb",
+      "descriptor": "01e4164d01946504eb010d",
+      "cases": [
+        {
+          "name": "empty",
+          "value": "",
+          "wire": "00"
+        },
+        {
+          "name": "two",
+          "value": "00ff",
+          "wire": "0200ff"
+        },
+        {
+          "name": "130 bytes",
+          "value": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081",
+          "wire": "8201000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "length past the end",
+          "wire": "0300ff",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "number",
+          "value": 5,
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "enums",
+      "about": "Index in bitLength(n - 1) bits of the bit byte; a const takes 0 bits.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "one": {
+            "const": "x"
+          },
+          "two": {
+            "enum": [
+              "a",
+              "b"
+            ]
+          },
+          "three": {
+            "type": "string",
+            "enum": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          "utf8": {
+            "enum": [
+              "é",
+              "日本",
+              "😀",
+              ""
+            ]
+          }
+        },
+        "required": [
+          "one",
+          "two",
+          "three",
+          "utf8"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"one\":{\"enum\":[\"x\"]},\"two\":{\"enum\":[\"a\",\"b\"]},\"three\":{\"enum\":[\"a\",\"b\",\"c\"]},\"utf8\":{\"enum\":[\"é\",\"日本\",\"😀\",\"\"]}},\"required\":[\"one\",\"two\",\"three\",\"utf8\"]}",
+      "hash": "f815daa745694a4c",
+      "descriptor": "01f815daa745694a4c050f04080e000e010e020e03036f6e650374776f057468726565047574663801780161016201610162016302c3a906e697a5e69cac04f09f988000",
+      "cases": [
+        {
+          "name": "first values",
+          "value": {
+            "one": "x",
+            "two": "a",
+            "three": "a",
+            "utf8": "é"
+          },
+          "wire": "00"
+        },
+        {
+          "name": "last values",
+          "value": {
+            "one": "x",
+            "two": "b",
+            "three": "c",
+            "utf8": ""
+          },
+          "wire": "1d"
+        },
+        {
+          "name": "non-ASCII",
+          "value": {
+            "one": "x",
+            "two": "a",
+            "three": "b",
+            "utf8": "😀"
+          },
+          "wire": "12"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "index 3 of 3",
+          "wire": "06",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "unknown value",
+          "value": {
+            "one": "x",
+            "two": "a",
+            "three": "d",
+            "utf8": ""
+          },
+          "error": "range"
+        },
+        {
+          "name": "const mismatch",
+          "value": {
+            "one": "y",
+            "two": "a",
+            "three": "a",
+            "utf8": ""
+          },
+          "error": "range"
+        },
+        {
+          "name": "not a string",
+          "value": {
+            "one": "x",
+            "two": 1,
+            "three": "a",
+            "utf8": ""
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "enum of 256",
+      "about": "The largest enum: an 8-bit index, a whole bit byte.",
+      "schema": {
+        "enum": [
+          "v0",
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6",
+          "v7",
+          "v8",
+          "v9",
+          "v10",
+          "v11",
+          "v12",
+          "v13",
+          "v14",
+          "v15",
+          "v16",
+          "v17",
+          "v18",
+          "v19",
+          "v20",
+          "v21",
+          "v22",
+          "v23",
+          "v24",
+          "v25",
+          "v26",
+          "v27",
+          "v28",
+          "v29",
+          "v30",
+          "v31",
+          "v32",
+          "v33",
+          "v34",
+          "v35",
+          "v36",
+          "v37",
+          "v38",
+          "v39",
+          "v40",
+          "v41",
+          "v42",
+          "v43",
+          "v44",
+          "v45",
+          "v46",
+          "v47",
+          "v48",
+          "v49",
+          "v50",
+          "v51",
+          "v52",
+          "v53",
+          "v54",
+          "v55",
+          "v56",
+          "v57",
+          "v58",
+          "v59",
+          "v60",
+          "v61",
+          "v62",
+          "v63",
+          "v64",
+          "v65",
+          "v66",
+          "v67",
+          "v68",
+          "v69",
+          "v70",
+          "v71",
+          "v72",
+          "v73",
+          "v74",
+          "v75",
+          "v76",
+          "v77",
+          "v78",
+          "v79",
+          "v80",
+          "v81",
+          "v82",
+          "v83",
+          "v84",
+          "v85",
+          "v86",
+          "v87",
+          "v88",
+          "v89",
+          "v90",
+          "v91",
+          "v92",
+          "v93",
+          "v94",
+          "v95",
+          "v96",
+          "v97",
+          "v98",
+          "v99",
+          "v100",
+          "v101",
+          "v102",
+          "v103",
+          "v104",
+          "v105",
+          "v106",
+          "v107",
+          "v108",
+          "v109",
+          "v110",
+          "v111",
+          "v112",
+          "v113",
+          "v114",
+          "v115",
+          "v116",
+          "v117",
+          "v118",
+          "v119",
+          "v120",
+          "v121",
+          "v122",
+          "v123",
+          "v124",
+          "v125",
+          "v126",
+          "v127",
+          "v128",
+          "v129",
+          "v130",
+          "v131",
+          "v132",
+          "v133",
+          "v134",
+          "v135",
+          "v136",
+          "v137",
+          "v138",
+          "v139",
+          "v140",
+          "v141",
+          "v142",
+          "v143",
+          "v144",
+          "v145",
+          "v146",
+          "v147",
+          "v148",
+          "v149",
+          "v150",
+          "v151",
+          "v152",
+          "v153",
+          "v154",
+          "v155",
+          "v156",
+          "v157",
+          "v158",
+          "v159",
+          "v160",
+          "v161",
+          "v162",
+          "v163",
+          "v164",
+          "v165",
+          "v166",
+          "v167",
+          "v168",
+          "v169",
+          "v170",
+          "v171",
+          "v172",
+          "v173",
+          "v174",
+          "v175",
+          "v176",
+          "v177",
+          "v178",
+          "v179",
+          "v180",
+          "v181",
+          "v182",
+          "v183",
+          "v184",
+          "v185",
+          "v186",
+          "v187",
+          "v188",
+          "v189",
+          "v190",
+          "v191",
+          "v192",
+          "v193",
+          "v194",
+          "v195",
+          "v196",
+          "v197",
+          "v198",
+          "v199",
+          "v200",
+          "v201",
+          "v202",
+          "v203",
+          "v204",
+          "v205",
+          "v206",
+          "v207",
+          "v208",
+          "v209",
+          "v210",
+          "v211",
+          "v212",
+          "v213",
+          "v214",
+          "v215",
+          "v216",
+          "v217",
+          "v218",
+          "v219",
+          "v220",
+          "v221",
+          "v222",
+          "v223",
+          "v224",
+          "v225",
+          "v226",
+          "v227",
+          "v228",
+          "v229",
+          "v230",
+          "v231",
+          "v232",
+          "v233",
+          "v234",
+          "v235",
+          "v236",
+          "v237",
+          "v238",
+          "v239",
+          "v240",
+          "v241",
+          "v242",
+          "v243",
+          "v244",
+          "v245",
+          "v246",
+          "v247",
+          "v248",
+          "v249",
+          "v250",
+          "v251",
+          "v252",
+          "v253",
+          "v254",
+          "v255"
+        ]
+      },
+      "canonical": "{\"enum\":[\"v0\",\"v1\",\"v2\",\"v3\",\"v4\",\"v5\",\"v6\",\"v7\",\"v8\",\"v9\",\"v10\",\"v11\",\"v12\",\"v13\",\"v14\",\"v15\",\"v16\",\"v17\",\"v18\",\"v19\",\"v20\",\"v21\",\"v22\",\"v23\",\"v24\",\"v25\",\"v26\",\"v27\",\"v28\",\"v29\",\"v30\",\"v31\",\"v32\",\"v33\",\"v34\",\"v35\",\"v36\",\"v37\",\"v38\",\"v39\",\"v40\",\"v41\",\"v42\",\"v43\",\"v44\",\"v45\",\"v46\",\"v47\",\"v48\",\"v49\",\"v50\",\"v51\",\"v52\",\"v53\",\"v54\",\"v55\",\"v56\",\"v57\",\"v58\",\"v59\",\"v60\",\"v61\",\"v62\",\"v63\",\"v64\",\"v65\",\"v66\",\"v67\",\"v68\",\"v69\",\"v70\",\"v71\",\"v72\",\"v73\",\"v74\",\"v75\",\"v76\",\"v77\",\"v78\",\"v79\",\"v80\",\"v81\",\"v82\",\"v83\",\"v84\",\"v85\",\"v86\",\"v87\",\"v88\",\"v89\",\"v90\",\"v91\",\"v92\",\"v93\",\"v94\",\"v95\",\"v96\",\"v97\",\"v98\",\"v99\",\"v100\",\"v101\",\"v102\",\"v103\",\"v104\",\"v105\",\"v106\",\"v107\",\"v108\",\"v109\",\"v110\",\"v111\",\"v112\",\"v113\",\"v114\",\"v115\",\"v116\",\"v117\",\"v118\",\"v119\",\"v120\",\"v121\",\"v122\",\"v123\",\"v124\",\"v125\",\"v126\",\"v127\",\"v128\",\"v129\",\"v130\",\"v131\",\"v132\",\"v133\",\"v134\",\"v135\",\"v136\",\"v137\",\"v138\",\"v139\",\"v140\",\"v141\",\"v142\",\"v143\",\"v144\",\"v145\",\"v146\",\"v147\",\"v148\",\"v149\",\"v150\",\"v151\",\"v152\",\"v153\",\"v154\",\"v155\",\"v156\",\"v157\",\"v158\",\"v159\",\"v160\",\"v161\",\"v162\",\"v163\",\"v164\",\"v165\",\"v166\",\"v167\",\"v168\",\"v169\",\"v170\",\"v171\",\"v172\",\"v173\",\"v174\",\"v175\",\"v176\",\"v177\",\"v178\",\"v179\",\"v180\",\"v181\",\"v182\",\"v183\",\"v184\",\"v185\",\"v186\",\"v187\",\"v188\",\"v189\",\"v190\",\"v191\",\"v192\",\"v193\",\"v194\",\"v195\",\"v196\",\"v197\",\"v198\",\"v199\",\"v200\",\"v201\",\"v202\",\"v203\",\"v204\",\"v205\",\"v206\",\"v207\",\"v208\",\"v209\",\"v210\",\"v211\",\"v212\",\"v213\",\"v214\",\"v215\",\"v216\",\"v217\",\"v218\",\"v219\",\"v220\",\"v221\",\"v222\",\"v223\",\"v224\",\"v225\",\"v226\",\"v227\",\"v228\",\"v229\",\"v230\",\"v231\",\"v232\",\"v233\",\"v234\",\"v235\",\"v236\",\"v237\",\"v238\",\"v239\",\"v240\",\"v241\",\"v242\",\"v243\",\"v244\",\"v245\",\"v246\",\"v247\",\"v248\",\"v249\",\"v250\",\"v251\",\"v252\",\"v253\",\"v254\",\"v255\"]}",
+      "hash": "91ae165c891542de",
+      "descriptor": "0191ae165c891542de010eff027630027631027632027633027634027635027636027637027638027639037631300376313103763132037631330376313403763135037631360376313703763138037631390376323003763231037632320376323303763234037632350376323603763237037632380376323903763330037633310376333203763333037633340376333503763336037633370376333803763339037634300376343103763432037634330376343403763435037634360376343703763438037634390376353003763531037635320376353303763534037635350376353603763537037635380376353903763630037636310376363203763633037636340376363503763636037636370376363803763639037637300376373103763732037637330376373403763735037637360376373703763738037637390376383003763831037638320376383303763834037638350376383603763837037638380376383903763930037639310376393203763933037639340376393503763936037639370376393803763939047631303004763130310476313032047631303304763130340476313035047631303604763130370476313038047631303904763131300476313131047631313204763131330476313134047631313504763131360476313137047631313804763131390476313230047631323104763132320476313233047631323404763132350476313236047631323704763132380476313239047631333004763133310476313332047631333304763133340476313335047631333604763133370476313338047631333904763134300476313431047631343204763134330476313434047631343504763134360476313437047631343804763134390476313530047631353104763135320476313533047631353404763135350476313536047631353704763135380476313539047631363004763136310476313632047631363304763136340476313635047631363604763136370476313638047631363904763137300476313731047631373204763137330476313734047631373504763137360476313737047631373804763137390476313830047631383104763138320476313833047631383404763138350476313836047631383704763138380476313839047631393004763139310476313932047631393304763139340476313935047631393604763139370476313938047631393904763230300476323031047632303204763230330476323034047632303504763230360476323037047632303804763230390476323130047632313104763231320476323133047632313404763231350476323136047632313704763231380476323139047632323004763232310476323232047632323304763232340476323235047632323604763232370476323238047632323904763233300476323331047632333204763233330476323334047632333504763233360476323337047632333804763233390476323430047632343104763234320476323433047632343404763234350476323436047632343704763234380476323439047632353004763235310476323532047632353304763235340476323535",
+      "cases": [
+        {
+          "name": "first",
+          "value": "v0",
+          "wire": "00"
+        },
+        {
+          "name": "last",
+          "value": "v255",
+          "wire": "ff"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "objects",
+      "about": "Fields in declared order; an optional field is preceded by its presence bit (1 = present).",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint8"
+          },
+          "flag": {
+            "type": "boolean"
+          },
+          "inner": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "y": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "y"
+            ]
+          },
+          "empty": {
+            "type": "object"
+          },
+          "last": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "empty",
+          "last"
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"format\":\"uint8\"},\"flag\":{\"type\":\"boolean\"},\"inner\":{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"integer\",\"format\":\"int32\"},\"y\":{\"type\":\"boolean\"}},\"required\":[\"y\"]},\"empty\":{\"type\":\"object\",\"properties\":{},\"required\":[]},\"last\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"empty\",\"last\"]}",
+      "hash": "3b50fde7629a3b7e",
+      "descriptor": "013b50fde7629a3b7e080f050b02818f020287010f00000102696404666c616705696e6e657205656d707479046c61737401780179",
+      "cases": [
+        {
+          "name": "everything present",
+          "value": {
+            "id": 5,
+            "flag": true,
+            "inner": {
+              "x": -2,
+              "y": true
+            },
+            "empty": {},
+            "last": true
+          },
+          "wire": "053f03"
+        },
+        {
+          "name": "no optional fields",
+          "value": {
+            "id": 0,
+            "empty": {},
+            "last": false
+          },
+          "wire": "0000"
+        },
+        {
+          "name": "nested optional absent",
+          "value": {
+            "id": 7,
+            "inner": {
+              "y": false
+            },
+            "empty": {},
+            "last": true
+          },
+          "wire": "0712"
+        },
+        {
+          "name": "extra properties are ignored",
+          "value": {
+            "id": 1,
+            "empty": {
+              "z": 1
+            },
+            "last": false,
+            "zzz": "x"
+          },
+          "wire": "0100",
+          "decoded": {
+            "id": 1,
+            "empty": {},
+            "last": false
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "bit byte missing",
+          "wire": "05",
+          "error": "truncated"
+        },
+        {
+          "name": "x present but missing",
+          "wire": "050f",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "missing required",
+          "value": {
+            "flag": true,
+            "empty": {},
+            "last": false
+          },
+          "error": "shape"
+        },
+        {
+          "name": "null object",
+          "value": {
+            "id": 0,
+            "inner": null,
+            "empty": {},
+            "last": false
+          },
+          "error": "shape"
+        },
+        {
+          "name": "array for object",
+          "value": {
+            "id": 0,
+            "empty": [],
+            "last": false
+          },
+          "error": "shape"
+        },
+        {
+          "name": "null for an optional field",
+          "value": {
+            "id": 0,
+            "flag": null,
+            "empty": {},
+            "last": false
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "presence bits across bytes",
+      "about": "Ten optional booleans: presence and value bits fill bit bytes in order.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "b0": {
+            "type": "boolean"
+          },
+          "b1": {
+            "type": "boolean"
+          },
+          "b2": {
+            "type": "boolean"
+          },
+          "b3": {
+            "type": "boolean"
+          },
+          "b4": {
+            "type": "boolean"
+          },
+          "b5": {
+            "type": "boolean"
+          },
+          "b6": {
+            "type": "boolean"
+          },
+          "b7": {
+            "type": "boolean"
+          },
+          "b8": {
+            "type": "boolean"
+          },
+          "b9": {
+            "type": "boolean"
+          }
+        },
+        "required": []
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"b0\":{\"type\":\"boolean\"},\"b1\":{\"type\":\"boolean\"},\"b2\":{\"type\":\"boolean\"},\"b3\":{\"type\":\"boolean\"},\"b4\":{\"type\":\"boolean\"},\"b5\":{\"type\":\"boolean\"},\"b6\":{\"type\":\"boolean\"},\"b7\":{\"type\":\"boolean\"},\"b8\":{\"type\":\"boolean\"},\"b9\":{\"type\":\"boolean\"}},\"required\":[]}",
+      "hash": "7289ba73973248d8",
+      "descriptor": "017289ba73973248d80b0f0a0a81818181818181818181026230026231026232026233026234026235026236026237026238026239",
+      "cases": [
+        {
+          "name": "none",
+          "value": {},
+          "wire": "0000"
+        },
+        {
+          "name": "first and last",
+          "value": {
+            "b0": true,
+            "b9": false
+          },
+          "wire": "0304"
+        },
+        {
+          "name": "all",
+          "value": {
+            "b0": true,
+            "b1": false,
+            "b2": true,
+            "b3": false,
+            "b4": true,
+            "b5": false,
+            "b6": true,
+            "b7": false,
+            "b8": true,
+            "b9": true
+          },
+          "wire": "77770f"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "bit bytes missing",
+          "wire": "ff",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": []
+    },
+    {
+      "name": "empty object",
+      "about": "Zero bits: the message is zero bytes long.",
+      "schema": {
+        "type": "object"
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{},\"required\":[]}",
+      "hash": "ab7bd4d62ff6dcee",
+      "descriptor": "01ab7bd4d62ff6dcee010f0000",
+      "cases": [
+        {
+          "name": "empty",
+          "value": {},
+          "wire": ""
+        },
+        {
+          "name": "extra property ignored",
+          "value": {
+            "a": 1
+          },
+          "wire": "",
+          "decoded": {}
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "any byte is trailing",
+          "wire": "00",
+          "error": "trailing"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "array",
+          "value": [],
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "const root",
+      "about": "A single-value enum at the root: zero bytes.",
+      "schema": {
+        "const": "only"
+      },
+      "canonical": "{\"enum\":[\"only\"]}",
+      "hash": "9b9a8bc08a519011",
+      "descriptor": "019b9a8bc08a519011010e00046f6e6c79",
+      "cases": [
+        {
+          "name": "the value",
+          "value": "only",
+          "wire": ""
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "any byte is trailing",
+          "wire": "00",
+          "error": "trailing"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "other value",
+          "value": "other",
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "arrays",
+      "about": "Length (unsigned varint, < 2^32) then the items. minItems/maxItems are ignored.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "format": "uint8"
+        },
+        "maxItems": 2
+      },
+      "canonical": "{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"uint8\"}}",
+      "hash": "dab723859459f419",
+      "descriptor": "01dab723859459f41902100102",
+      "cases": [
+        {
+          "name": "empty",
+          "value": [],
+          "wire": "00"
+        },
+        {
+          "name": "one",
+          "value": [
+            1
+          ],
+          "wire": "0101"
+        },
+        {
+          "name": "three (maxItems is not enforced)",
+          "value": [
+            255,
+            0,
+            7
+          ],
+          "wire": "03ff0007"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "truncated item",
+          "wire": "0201",
+          "error": "truncated"
+        },
+        {
+          "name": "length of 2^32",
+          "wire": "8080808010",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "not an array",
+          "value": {
+            "0": 1
+          },
+          "error": "shape"
+        },
+        {
+          "name": "bad item",
+          "value": [
+            256
+          ],
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "array of booleans",
+      "about": "Items that are bit fields pack into bit bytes after the length.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        }
+      },
+      "canonical": "{\"type\":\"array\",\"items\":{\"type\":\"boolean\"}}",
+      "hash": "ad1ebe7361451b16",
+      "descriptor": "01ad1ebe7361451b1602100101",
+      "cases": [
+        {
+          "name": "three",
+          "value": [
+            true,
+            false,
+            true
+          ],
+          "wire": "0305"
+        },
+        {
+          "name": "200",
+          "value": [
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false
+          ],
+          "wire": "c80149922449922449922449922449922449922449922449922449"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "bit byte missing",
+          "wire": "0900",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "wrong item type",
+          "value": [
+            1
+          ],
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "array of objects",
+      "about": "Each item is a full object; its presence bits continue the current bit byte.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer",
+              "format": "int16"
+            },
+            "b": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        }
+      },
+      "canonical": "{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\",\"format\":\"int16\"},\"b\":{\"type\":\"boolean\"}},\"required\":[\"a\"]}}",
+      "hash": "10ffbf8a0af6af59",
+      "descriptor": "0110ffbf8a0af6af590410050f0202058101610162",
+      "cases": [
+        {
+          "name": "two",
+          "value": [
+            {
+              "a": 1
+            },
+            {
+              "a": -3,
+              "b": true
+            }
+          ],
+          "wire": "02020605"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "unions",
+      "about": "oneOf with a tag property: branch index in bitLength(n - 1) bits of the bit byte, then the branch as an object without the tag. Decoded with the tag first.",
+      "schema": {
+        "$defs": {
+          "Inner": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "A"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "B"
+                  },
+                  "v": {
+                    "type": "integer",
+                    "format": "uint32"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "v"
+                ]
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kind"
+            }
+          }
+        },
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "const": "Empty"
+              }
+            },
+            "required": [
+              "tag"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "const": "Point"
+              },
+              "x": {
+                "type": "integer",
+                "format": "int8"
+              },
+              "y": {
+                "type": "integer",
+                "format": "int8"
+              }
+            },
+            "required": [
+              "tag",
+              "x",
+              "y"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "const": "Named"
+              },
+              "name": {
+                "enum": [
+                  "a",
+                  "b"
+                ]
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tag",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "const": "Nested"
+              },
+              "inner": {
+                "$ref": "#/$defs/Inner"
+              }
+            },
+            "required": [
+              "tag",
+              "inner"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"tag\":{\"enum\":[\"Empty\"]}},\"required\":[\"tag\"]},{\"type\":\"object\",\"properties\":{\"tag\":{\"enum\":[\"Point\"]},\"x\":{\"type\":\"integer\",\"format\":\"int8\"},\"y\":{\"type\":\"integer\",\"format\":\"int8\"}},\"required\":[\"tag\",\"x\",\"y\"]},{\"type\":\"object\",\"properties\":{\"tag\":{\"enum\":[\"Named\"]},\"name\":{\"enum\":[\"a\",\"b\"]},\"note\":{\"type\":\"string\"}},\"required\":[\"tag\",\"name\"]},{\"type\":\"object\",\"properties\":{\"tag\":{\"enum\":[\"Nested\"]},\"inner\":{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"enum\":[\"A\"]}},\"required\":[\"kind\"]},{\"type\":\"object\",\"properties\":{\"kind\":{\"enum\":[\"B\"]},\"v\":{\"type\":\"integer\",\"format\":\"uint32\"}},\"required\":[\"kind\",\"v\"]}],\"discriminator\":{\"propertyName\":\"kind\"}}},\"required\":[\"tag\",\"inner\"]}],\"discriminator\":{\"propertyName\":\"tag\"}}",
+      "hash": "5b3f5f18e323d537",
+      "descriptor": "015b3f5f18e323d5370d11031b0f00000f020203030f02030e018c0f010a1101070f00000f0101060374616705456d70747905506f696e74054e616d6564064e657374656401780179046e616d65046e6f74650161016205696e6e6572046b696e64014101420176",
+      "cases": [
+        {
+          "name": "empty branch",
+          "value": {
+            "tag": "Empty"
+          },
+          "wire": "00"
+        },
+        {
+          "name": "point",
+          "value": {
+            "tag": "Point",
+            "x": -8,
+            "y": 7
+          },
+          "wire": "01f807"
+        },
+        {
+          "name": "named without the optional",
+          "value": {
+            "tag": "Named",
+            "name": "b"
+          },
+          "wire": "06"
+        },
+        {
+          "name": "named with the optional",
+          "value": {
+            "tag": "Named",
+            "name": "a",
+            "note": "hi"
+          },
+          "wire": "0a026869"
+        },
+        {
+          "name": "nested A",
+          "value": {
+            "tag": "Nested",
+            "inner": {
+              "kind": "A"
+            }
+          },
+          "wire": "03"
+        },
+        {
+          "name": "nested B",
+          "value": {
+            "tag": "Nested",
+            "inner": {
+              "kind": "B",
+              "v": 300
+            }
+          },
+          "wire": "07ac02"
+        },
+        {
+          "name": "property of another branch is ignored",
+          "value": {
+            "tag": "Empty",
+            "x": 1
+          },
+          "wire": "00",
+          "decoded": {
+            "tag": "Empty"
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "nested B with its varint missing",
+          "wire": "0f",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "unknown tag",
+          "value": {
+            "tag": "Nope"
+          },
+          "error": "range"
+        },
+        {
+          "name": "missing tag",
+          "value": {
+            "x": 1,
+            "y": 1
+          },
+          "error": "shape"
+        },
+        {
+          "name": "tag not a string",
+          "value": {
+            "tag": 1
+          },
+          "error": "shape"
+        },
+        {
+          "name": "missing branch property",
+          "value": {
+            "tag": "Point",
+            "x": 1
+          },
+          "error": "shape"
+        },
+        {
+          "name": "branch value out of range",
+          "value": {
+            "tag": "Point",
+            "x": 128,
+            "y": 0
+          },
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "union of three",
+      "about": "Three branches in 2 bits: index 3 is invalid.",
+      "schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "t": {
+                "const": "a"
+              }
+            },
+            "required": [
+              "t"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "t": {
+                "const": "b"
+              }
+            },
+            "required": [
+              "t"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "t": {
+                "const": "c"
+              }
+            },
+            "required": [
+              "t"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"t\":{\"enum\":[\"a\"]}},\"required\":[\"t\"]},{\"type\":\"object\",\"properties\":{\"t\":{\"enum\":[\"b\"]}},\"required\":[\"t\"]},{\"type\":\"object\",\"properties\":{\"t\":{\"enum\":[\"c\"]}},\"required\":[\"t\"]}],\"discriminator\":{\"propertyName\":\"t\"}}",
+      "hash": "7de7cc8c0c522153",
+      "descriptor": "017de7cc8c0c522153041102090f00000f00000f00000174016101620163",
+      "cases": [
+        {
+          "name": "a",
+          "value": {
+            "t": "a"
+          },
+          "wire": "00"
+        },
+        {
+          "name": "c",
+          "value": {
+            "t": "c"
+          },
+          "wire": "02"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "index 3",
+          "wire": "03",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": []
+    },
+    {
+      "name": "union of one",
+      "about": "A single branch: 0 index bits.",
+      "schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "t": {
+                "const": "Only"
+              },
+              "v": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "t",
+              "v"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"t\":{\"enum\":[\"Only\"]},\"v\":{\"type\":\"boolean\"}},\"required\":[\"t\",\"v\"]}],\"discriminator\":{\"propertyName\":\"t\"}}",
+      "hash": "f8f0aaa390d4a8d6",
+      "descriptor": "01f8f0aaa390d4a8d6031100040f0101010174044f6e6c790176",
+      "cases": [
+        {
+          "name": "only",
+          "value": {
+            "t": "Only",
+            "v": true
+          },
+          "wire": "01"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "deepest nesting",
+      "about": "31 nested arrays around a boolean: depth 32, the limit.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "array",
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "array",
+                                                              "items": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "array",
+                                                                  "items": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                      "type": "boolean"
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "canonical": "{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"boolean\"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "hash": "4ccef615edcab55a",
+      "descriptor": "014ccef615edcab55a20103d103b10391037103510331031102f102d102b10291027102510231021101f101d101b10191017101510131011100f100d100b1009100710051003100101",
+      "cases": [
+        {
+          "name": "full",
+          "value": [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        true
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          "wire": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "name": "outer empty",
+          "value": [],
+          "wire": "00"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+[package]
+name = "bitwire"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Compact binary codec for JSON Schema types: no_std, allocation-free interpreter (working name)"
+license = "MIT"
+authors = ["Andrew Beck <esensible@gmail.com>"]
+publish = false
+categories = ["encoding", "no-std", "no-std::no-alloc", "embedded"]
+keywords = ["codec", "json-schema", "binary", "no_std", "serialization"]
+
+# Stand-alone crate: not a member of any enclosing workspace.
+[workspace]
+
+[dependencies]
+
+[dev-dependencies]
+# The shared golden vectors (../vectors/*.json) are JSON; integers beyond 2^53
+# must parse exactly (serde_json keeps u64/i64), floats must parse correctly
+# rounded (float_roundtrip; the default parser is off by an ulp on e.g.
+# 3.4028234663852886e38), and decoded objects are compared in key order
+# (preserve_order).
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

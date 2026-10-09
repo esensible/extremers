@@ -1,0 +1,26 @@
+{
+  "name": "bitwire",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Compact binary codec for JSON Schema types: compiler and codec (working name)",
+  "license": "MIT",
+  "author": "Andrew Beck <esensible@gmail.com>",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./codec": "./codec.js",
+    "./compile": "./compile.js"
+  },
+  "files": [
+    "index.js",
+    "codec.js",
+    "compile.js"
+  ],
+  "scripts": {
+    "test": "node test/node.js",
+    "test:qjs": "qjs test/qjs.js",
+    "bench": "node bench/node.js",
+    "vectors": "node scripts/gen-vectors.js",
+    "vectors:check": "node scripts/gen-vectors.js --check"
+  }
+}
