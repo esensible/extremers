@@ -225,6 +225,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
+name = "bitwire"
+version = "0.0.0"
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -389,6 +393,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "bitwire",
  "critical-section",
  "defmt 1.1.1",
  "edge-http",
@@ -411,6 +416,7 @@ dependencies = [
  "postcard",
  "postcard-schema",
  "serde",
+ "serde_json",
  "static_cell",
  "trouble-host",
 ]
@@ -2044,6 +2050,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "libm",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -4054,7 +4061,10 @@ dependencies = [
  "esp-rtos",
  "esp-storage",
  "extreme-packages",
+ "extreme-protocol",
+ "extreme-sdk",
  "portable-atomic",
+ "postcard",
  "rtt-target",
  "sequential-storage",
  "static_cell",

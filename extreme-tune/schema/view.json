@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TuneView",
+  "description": "What clients see of the tuning engine. Mirrors extreme-tune TuneView field for field and type for type; property order follows the Rust field order (the postcard bridge depends on it).",
+  "type": "object",
+  "properties": {
+    "speed": {
+      "description": "Current speed over ground, knots (f32).",
+      "type": "number",
+      "format": "float"
+    },
+    "speed_dev": {
+      "description": "Current speed minus its 30 s average, knots (f32).",
+      "type": "number",
+      "format": "float"
+    },
+    "heading_dev": {
+      "description": "Current course minus its 30 s average, degrees, -180..180 (f32).",
+      "type": "number",
+      "format": "float"
+    }
+  },
+  "required": ["speed", "speed_dev", "heading_dev"]
+}

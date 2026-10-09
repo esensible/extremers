@@ -14,6 +14,7 @@ pub mod host;
 pub mod http;
 pub mod nmea;
 pub mod tasks;
+pub mod wire_bridge;
 
 /// Memory use on the device, for the logs (see the targets' heap/stack
 /// logging): how much heap wasm3 holds, where the target can tell.

@@ -42,6 +42,9 @@ portable-atomic = { workspace = true, features = ["fallback"] }
 extreme-protocol = { path = "../extreme-protocol" }
 extreme-sdk = { path = "../extreme-sdk" }
 extreme-wasm3 = { path = "../extreme-wasm3" }
+# The bitwire codec (wire/rust, a stand-alone crate); src/wire_bridge.rs
+# converts the engines' postcard to and from it until the engines speak it.
+bitwire = { path = "../wire/rust" }
 
 [features]
 default = []
@@ -61,3 +64,5 @@ extreme-packages = { path = "../extreme-packages" }
 extreme-race = { path = "../extreme-race" }
 extreme-tune = { path = "../extreme-tune" }
 log = { workspace = true, features = ["std"] }
+# src/wire_bridge.rs tests read fixtures/wire-bridge/wire-bridge.json
+serde_json = { workspace = true }

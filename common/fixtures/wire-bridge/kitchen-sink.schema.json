@@ -1,0 +1,71 @@
+{
+  "title": "KitchenSink",
+  "description": "Every kind the postcard bridge maps, mirrored by the KitchenSink Rust types in common/src/wire_bridge.rs tests: property and oneOf order follow the Rust field and variant order. Option<T> fields are the optional properties.",
+  "type": "object",
+  "properties": {
+    "flag": { "type": "boolean" },
+    "small": { "type": "integer", "format": "uint8" },
+    "tiny": { "type": "integer", "format": "int8" },
+    "short": { "type": "integer", "format": "int16" },
+    "word": { "type": "integer", "format": "uint32" },
+    "big": { "type": "integer", "format": "int64" },
+    "ratio": { "type": "number", "format": "double" },
+    "speed": { "type": "number", "format": "float" },
+    "name": { "type": "string" },
+    "note": { "type": "string" },
+    "mode": { "$ref": "#/$defs/Mode" },
+    "maybe_mode": { "$ref": "#/$defs/Mode" },
+    "blob": { "type": "string", "contentEncoding": "base64" },
+    "points": { "type": "array", "items": { "$ref": "#/$defs/Point" } },
+    "shape": { "$ref": "#/$defs/Shape" },
+    "nested": { "$ref": "#/$defs/Inner" }
+  },
+  "required": ["flag", "small", "tiny", "short", "word", "big", "ratio", "speed", "name", "mode", "blob", "points", "shape"],
+  "$defs": {
+    "Mode": { "enum": ["Off", "Slow", "Fast"] },
+    "Point": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer", "format": "int32" },
+        "y": { "type": "integer", "format": "int32" },
+        "label": { "type": "string" }
+      },
+      "required": ["x", "y"]
+    },
+    "Inner": {
+      "type": "object",
+      "properties": {
+        "on": { "type": "boolean" },
+        "count": { "type": "integer", "format": "uint16" }
+      },
+      "required": ["on", "count"]
+    },
+    "Shape": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "Empty" } }, "required": ["kind"] },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "Circle" }, "r": { "type": "number", "format": "float" } },
+          "required": ["kind", "r"]
+        },
+        {
+          "description": "A newtype variant Poly(Vec<Point>): one field holding the inner value.",
+          "type": "object",
+          "properties": { "kind": { "const": "Poly" }, "points": { "type": "array", "items": { "$ref": "#/$defs/Point" } } },
+          "required": ["kind", "points"]
+        },
+        {
+          "description": "A tuple variant Pair(u8, bool): its elements as fields in order.",
+          "type": "object",
+          "properties": {
+            "kind": { "const": "Pair" },
+            "a": { "type": "integer", "format": "uint8" },
+            "b": { "type": "boolean" }
+          },
+          "required": ["kind", "a", "b"]
+        }
+      ],
+      "discriminator": { "propertyName": "kind" }
+    }
+  }
+}

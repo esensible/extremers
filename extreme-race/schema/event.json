@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RaceEvent",
+  "description": "A client event for the race engine. Mirrors extreme-race RaceEvent variant for variant and type for type; oneOf and property order follow the Rust variant and field order (the postcard bridge depends on it).",
+  "oneOf": [
+    {
+      "description": "Set the starboard end of the line at the current position.",
+      "type": "object",
+      "properties": { "tag": { "const": "LineStbd" } },
+      "required": ["tag"]
+    },
+    {
+      "description": "Set the port end.",
+      "type": "object",
+      "properties": { "tag": { "const": "LinePort" } },
+      "required": ["tag"]
+    },
+    {
+      "description": "Bump the start sequence. Not in a sequence: start one with the gun seconds from the tap. In a sequence: seconds > 0 moves the start earlier, < 0 later, and 0 syncs (rounds the time remaining down to a whole minute). timestamp is when the tap happened, in device time.",
+      "type": "object",
+      "properties": {
+        "tag": { "const": "BumpSeq" },
+        "seconds": { "type": "integer", "format": "int32" },
+        "timestamp": {
+          "description": "Epoch milliseconds on the device's clock (u64).",
+          "type": "integer",
+          "format": "uint64"
+        }
+      },
+      "required": ["tag", "seconds", "timestamp"]
+    },
+    {
+      "description": "Finish the race, or abort a start sequence.",
+      "type": "object",
+      "properties": { "tag": { "const": "RaceFinish" } },
+      "required": ["tag"]
+    }
+  ]
+}

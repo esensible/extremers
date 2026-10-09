@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RaceView",
+  "description": "What clients see of a race. Mirrors extreme-race RaceView field for field and type for type; property and oneOf order follow the Rust field and variant order (the postcard bridge depends on it). Times are absolute epoch milliseconds on the device's clock.",
+  "type": "object",
+  "properties": {
+    "speed": {
+      "description": "Speed over ground, knots (f32).",
+      "type": "number",
+      "format": "float"
+    },
+    "phase": {
+      "description": "Where the race is, with what each phase shows.",
+      "oneOf": [
+        {
+          "description": "No start sequence running; the line can be set.",
+          "type": "object",
+          "properties": {
+            "tag": { "const": "Active" },
+            "line": { "$ref": "#/$defs/LineView" }
+          },
+          "required": ["tag", "line"]
+        },
+        {
+          "description": "Counting down to the start at start_time.",
+          "type": "object",
+          "properties": {
+            "tag": { "const": "InSequence" },
+            "start_time": { "$ref": "#/$defs/Time" },
+            "line": { "$ref": "#/$defs/LineView" }
+          },
+          "required": ["tag", "start_time", "line"]
+        },
+        {
+          "description": "Racing since start_time; the line is no longer shown.",
+          "type": "object",
+          "properties": {
+            "tag": { "const": "Racing" },
+            "start_time": { "$ref": "#/$defs/Time" },
+            "heading": {
+              "description": "Course over ground, degrees true (f32); 0 until the first GPS update after the start.",
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": ["tag", "start_time", "heading"]
+        }
+      ]
+    }
+  },
+  "required": ["speed", "phase"],
+  "$defs": {
+    "Time": {
+      "description": "Epoch milliseconds on the device's clock (u64).",
+      "type": "integer",
+      "format": "uint64"
+    },
+    "LineView": {
+      "description": "The start line, as far as it has been set.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "tag": { "const": "None" } },
+          "required": ["tag"]
+        },
+        {
+          "description": "Only the starboard end is set.",
+          "type": "object",
+          "properties": { "tag": { "const": "Stbd" } },
+          "required": ["tag"]
+        },
+        {
+          "description": "Only the port end is set.",
+          "type": "object",
+          "properties": { "tag": { "const": "Port" } },
+          "required": ["tag"]
+        },
+        {
+          "description": "Both ends: on the current course the boat crosses the line cross percent of the way along it (0 = port end, 100 = starboard end) at time (in the past if sailing away from it).",
+          "type": "object",
+          "properties": {
+            "tag": { "const": "Both" },
+            "cross": { "type": "integer", "format": "uint8" },
+            "time": { "$ref": "#/$defs/Time" }
+          },
+          "required": ["tag", "cross", "time"]
+        }
+      ]
+    }
+  }
+}

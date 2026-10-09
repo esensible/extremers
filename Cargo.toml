@@ -22,6 +22,10 @@ members = [
     "tgt-xiaoc6",
     "tgt-pico",
 ]
+# wire/ is the stand-alone bitwire codec (its own workspace; to be open
+# sourced). common depends on wire/rust by path, which would otherwise make
+# it a member.
+exclude = ["wire"]
 
 [workspace.package]
 edition = "2024"
