@@ -48,6 +48,19 @@ impl<T: core::fmt::Debug + ?Sized> core::fmt::Debug for Dbg<'_, T> {
     }
 }
 
+/// Bytes as lowercase hex digits, for `Disp`.
+#[allow(dead_code)] // the BLE transport's
+pub(crate) struct Hex<'a>(pub &'a [u8]);
+
+impl core::fmt::Display for Hex<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for b in self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// A `Display` value as a log argument, formatted with `{}`.
 #[cfg(not(feature = "defmt"))]
 pub(crate) struct Disp<'a, T: core::fmt::Display + ?Sized>(pub &'a T);

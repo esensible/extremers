@@ -123,6 +123,48 @@ impl BondRecord {
     }
 }
 
+/// What a bonded device's GATT client state is, kept with its bond (BLE.md
+/// "GATT caching"): what it configured in the GATT service, which must
+/// survive disconnection and power loss for a bonded client, and whether
+/// it is *change-aware*, i.e. knows the database as it is now. Kept by
+/// meaning, not by handle, so it still applies after the database changed.
+/// (The `state` subscription is not kept: the watch subscribes on every
+/// connection.)
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct GattClientRecord {
+    pub aware: bool,
+    /// Its Service Changed CCCD (bit 1: indications).
+    pub service_changed: u16,
+    /// Its Client Supported Features (bit 0: robust caching).
+    pub features: u8,
+}
+
+/// Version byte of the [`GattClientRecord`] layout.
+const GATT_CLIENT_RECORD_VERSION: u8 = 1;
+/// Encoded size of a [`GattClientRecord`].
+pub const GATT_CLIENT_RECORD_LEN: usize = 5;
+
+impl GattClientRecord {
+    /// `[1][aware][service changed CCCD u16 LE][features]`.
+    pub fn encode(&self) -> [u8; GATT_CLIENT_RECORD_LEN] {
+        let [lo, hi] = self.service_changed.to_le_bytes();
+        [GATT_CLIENT_RECORD_VERSION, self.aware as u8, lo, hi, self.features]
+    }
+
+    /// `None` for anything that is not exactly a version-1 record.
+    pub fn decode(b: &[u8]) -> Option<Self> {
+        let &[version, aware, lo, hi, features] = <&[u8; GATT_CLIENT_RECORD_LEN]>::try_from(b).ok()?;
+        if version != GATT_CLIENT_RECORD_VERSION || aware > 1 {
+            return None;
+        }
+        Some(Self {
+            aware: aware == 1,
+            service_changed: u16::from_le_bytes([lo, hi]),
+            features,
+        })
+    }
+}
+
 // The wire types of pairing (the Kindle's `HostEvent::Ble` commands and the
 // status in Choose's view) are the host protocol's.
 pub use extreme_protocol::{BLE_STATUS_VIEW_MAX, BleCommand, BleNote, BleStatusView};
@@ -198,6 +240,25 @@ mod tests {
         let mut bad = bytes;
         bad[0] = 2;
         assert_eq!(BondRecord::decode(&bad), None);
+    }
+
+    #[test]
+    fn gatt_client_record_round_trip() {
+        let record = GattClientRecord { aware: true, service_changed: 0x0002, features: 0x01 };
+        assert_eq!(record.encode(), [1, 1, 2, 0, 1]);
+        assert_eq!(GattClientRecord::decode(&record.encode()), Some(record));
+        // an unaware client that configured nothing (a bond from before
+        // GATT caching)
+        let empty = GattClientRecord::default();
+        assert_eq!(empty.encode(), [1, 0, 0, 0, 0]);
+        assert_eq!(GattClientRecord::decode(&empty.encode()), Some(empty));
+        let odd = GattClientRecord { aware: false, service_changed: 0xbeef, features: 0xff };
+        assert_eq!(GattClientRecord::decode(&odd.encode()), Some(odd));
+        // wrong version, bad flag, wrong length: nothing
+        assert_eq!(GattClientRecord::decode(&[2, 0, 0, 0, 0]), None);
+        assert_eq!(GattClientRecord::decode(&[1, 2, 0, 0, 0]), None);
+        assert_eq!(GattClientRecord::decode(&[1, 0, 0, 0]), None);
+        assert_eq!(GattClientRecord::decode(&[1, 0, 0, 0, 0, 0]), None);
     }
 
     #[test]

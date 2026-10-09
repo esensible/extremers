@@ -1,11 +1,19 @@
 //! BLE GATT transport for a [`Host`] (BLE.md).
 //!
-//! One service with two characteristics: `state` (read, notify) carries the
-//! host's envelope, `event` (write, write-without-response) takes host
-//! events, both postcard (README "Host protocol"). Up to [`CONNECTIONS_MAX`] centrals at once, each
+//! One service with three characteristics: `state` (read, notify) carries
+//! the host's envelope, `event` (write, write-without-response) takes host
+//! events, both postcard (README "Host protocol"), and `ui-psm` (read) names
+//! the L2CAP channel that serves watch bundles ([`UI_PSM`], BLE.md "Watch
+//! bundles"). Up to [`CONNECTIONS_MAX`] centrals at once, each
 //! served by its own worker; a worker with no connection advertises, and
 //! only one advertises at a time, so the device is connectable exactly
 //! while a slot is free.
+//!
+//! GATT caching (BLE.md "GATT caching"): the GATT service has Service
+//! Changed, Client Supported Features and Database Hash. A bonded client's
+//! subscriptions and features are kept with its bond, and when the database
+//! is not the one it last saw (a firmware update) it is told: Service Changed
+//! if it subscribed, Database Out Of Sync errors if it uses robust caching.
 //!
 //! Security (BLE.md "Security"): both characteristics (and `state`'s CCCD)
 //! need a link encrypted with a bond this box holds. LE Secure Connections,
@@ -22,18 +30,22 @@ use core::cell::{Cell, RefCell};
 
 use embassy_futures::{
     join::{join3, join_array},
-    select::{Either, Either4, select, select4},
+    select::{Either, Either3, Either4, select, select3, select4},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Instant, Timer};
-use trouble_host::{att::AttClient, prelude::*};
+use trouble_host::{
+    att::{AttClient, AttReq},
+    prelude::*,
+};
 
 use extreme_protocol::ENVELOPE_MAX;
 
 use crate::{
-    ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord},
+    ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord, GattClientRecord},
+    bulk::{self, Transfer},
     config::{BLE_NAME, BLE_PAIRING_WINDOW_SECS, MAX_BLE_BONDS, MAX_BLE_CONNECTIONS},
-    fmt::{Dbg, Disp},
+    fmt::{Dbg, Disp, Hex},
     host::{Host, Refused, StateMessage, Transport},
 };
 
@@ -41,8 +53,25 @@ use crate::{
 /// The target sizes its controller with it too.
 pub const CONNECTIONS_MAX: usize = MAX_BLE_CONNECTIONS;
 
-/// L2CAP channels: signal + ATT, as in the esp-hal coex example.
-const L2CAP_CHANNELS_MAX: usize = 2;
+/// L2CAP connection-oriented channels (signalling and ATT are fixed
+/// channels and take none): the bulk channel on each connection, plus one
+/// each so a second request on a connection can be refused rather than sit
+/// in the only slot.
+const L2CAP_CHANNELS_MAX: usize = 2 * CONNECTIONS_MAX;
+
+/// The bulk channel's LE PSM (BLE.md "Watch bundles"), from the dynamic
+/// range 0x0080..=0x00FF; published in `ui-psm`.
+pub const UI_PSM: u16 = 0x0081;
+
+/// Largest SDU this side takes on the bulk channel: a `GetAsset` is at most
+/// 13 bytes, and an L2CAP MTU is at least 23.
+const BULK_RX_MTU: u16 = 23;
+/// Credits this side grants on the bulk channel: requests come one at a
+/// time, each a single PDU; each is given back as it is read.
+const BULK_RX_CREDITS: u16 = 2;
+/// A bulk channel with no request for this long is closed; the client opens
+/// another when it needs one.
+const BULK_IDLE: Duration = Duration::from_secs(30);
 
 /// The host's bond table: every stored bond, plus room for a fresh pairing
 /// on each connection before it is stored (or refused and removed).
@@ -57,6 +86,7 @@ const STALE_GRACE: Duration = Duration::from_secs(10);
 const SERVICE_UUID: u128 = 0xe4a1c000_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const STATE_UUID: u128 = 0xe4a1c001_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const EVENT_UUID: u128 = 0xe4a1c002_6b2f_4f77_9a0d_3c5e7b9d1f20;
+const UI_PSM_UUID: u128 = 0xe4a1c003_6b2f_4f77_9a0d_3c5e7b9d1f20;
 
 /// Largest `state` value: an `Envelope` at its largest. A notification
 /// carries at most ATT MTU - 3 bytes, so a central must exchange a larger
@@ -78,9 +108,16 @@ const COMPANY_NONE: u16 = 0xffff;
 type StateValue = heapless09::Vec<u8, STATE_MAX>;
 type EventValue = heapless09::Vec<u8, EVENT_MAX>;
 
+/// The attribute table: GAP, the GATT service with its caching
+/// characteristics, and ours.
+const ATT_TABLE_SIZE: usize =
+    GAP_SERVICE_ATTRIBUTE_COUNT + GATT_CACHING_ATTRIBUTE_COUNT + RaceService::ATTRIBUTE_COUNT;
+
 /// `connections_max` sizes the per-client tables (CCCDs); the default of 1
-/// would refuse the second central its subscription.
-#[gatt_server(connections_max = CONNECTIONS_MAX)]
+/// would refuse the second central its subscription. Built with
+/// [`GapConfig::build_with_caching`] and `new` (not `new_with_config`), so
+/// the table is sized here.
+#[gatt_server(connections_max = CONNECTIONS_MAX, attribute_table_size = ATT_TABLE_SIZE)]
 struct Server {
     race: RaceService,
 }
@@ -100,6 +137,9 @@ struct RaceService {
     state: StateValue,
     #[characteristic(uuid = EVENT_UUID, write, write_without_response, value = heapless09::Vec::new(), permissions(encrypted))]
     event: EventValue,
+    /// The bulk channel's LE PSM, u16 little-endian.
+    #[characteristic(uuid = UI_PSM_UUID, read, value = UI_PSM, permissions(encrypted))]
+    ui_psm: u16,
 }
 
 /// Where the target keeps bonds across power cycles (the C6: its settings
@@ -110,8 +150,24 @@ pub trait BondStore {
     async fn load(&self) -> [Option<BondRecord>; MAX_BLE_BONDS];
     /// Stores `bond` in `slot`, replacing what was there; `false` on failure.
     async fn save(&self, slot: usize, bond: &BondRecord) -> bool;
-    /// Deletes every bond; `false` on failure.
+    /// Deletes every bond and its GATT client record; `false` on failure.
     async fn clear(&self) -> bool;
+    /// Every stored GATT client record by bond slot, and the database hash
+    /// the bonded clients were last served (BLE.md "GATT caching").
+    async fn load_gatt(&self) -> ([Option<GattClientRecord>; MAX_BLE_BONDS], Option<[u8; 16]>);
+    /// Stores the GATT client record of bond `slot`; `false` on failure.
+    async fn save_gatt(&self, slot: usize, record: &GattClientRecord) -> bool;
+    /// Stores the database hash now served; `false` on failure.
+    async fn save_gatt_hash(&self, hash: &[u8; 16]) -> bool;
+}
+
+/// What the target can say about its memory, for the bulk channel's log.
+#[derive(Clone, Copy)]
+pub struct Diagnostics {
+    /// Free heap now, bytes.
+    pub heap_free: fn() -> usize,
+    /// Logs the heap and stack, labelled.
+    pub log_memory: fn(&str),
 }
 
 /// What the workers and the control loop share. One executor and no borrow
@@ -120,6 +176,9 @@ struct Shared {
     address: [u8; 6],
     /// The stored bonds by slot: the source of truth for who may connect.
     records: RefCell<[Option<BondRecord>; MAX_BLE_BONDS]>,
+    /// Each bond's GATT client state, as stored (`None`: nothing stored,
+    /// which reads as nothing configured and change-unaware).
+    gatt: RefCell<[Option<GattClientRecord>; MAX_BLE_BONDS]>,
     /// When the pairing window closes; `None` while it is closed.
     pair_until: Cell<Option<Instant>>,
     note: Cell<BleNote>,
@@ -183,6 +242,7 @@ pub async fn serve_ble<C, S>(
     runtime: &Host,
     address: [u8; 6],
     store: &S,
+    diagnostics: Diagnostics,
 ) -> !
 where
     C: Controller,
@@ -192,6 +252,7 @@ where
     let shared = Shared {
         address,
         records: RefCell::new([None; MAX_BLE_BONDS]),
+        gatt: RefCell::new([None; MAX_BLE_BONDS]),
         pair_until: Cell::new(None),
         note: Cell::new(BleNote::None),
         kick: [const { Signal::new() }; CONNECTIONS_MAX],
@@ -208,18 +269,30 @@ where
     let stack = trouble_host::new(controller, &mut resources)
         .set_random_address(address)
         .set_io_capabilities(IoCapabilities::NoInputNoOutput)
+        .register_l2cap_spsm(UI_PSM)
         .build();
     let mut peripheral = stack.peripheral();
     let mut runner = stack.runner();
 
-    let server = match Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
+    let mut table: AttributeTable<'_, NoopRawMutex, ATT_TABLE_SIZE> = AttributeTable::new();
+    let caching = match GapConfig::Peripheral(PeripheralConfig {
         name: BLE_NAME,
         appearance: &appearance::UNKNOWN,
-    })) {
-        Ok(server) => server,
+    })
+    .build_with_caching(&mut table)
+    {
+        Ok(caching) => caching,
         Err(e) => {
-            // only a GATT table too small for the service gets here
+            // only a GATT table too small for the services gets here
             error!("ble: cannot build the GATT server: {:?}", Dbg(&e));
+            core::future::pending().await
+        }
+    };
+    let server = Server::new(table);
+    let db_hash = match caching.set_database_hash(&server) {
+        Ok(hash) => hash,
+        Err(e) => {
+            error!("ble: cannot set the database hash: {:?}", Dbg(&e));
             core::future::pending().await
         }
     };
@@ -245,6 +318,7 @@ where
         shared.records.borrow().iter().flatten().count(),
         MAX_BLE_BONDS
     );
+    restore_gatt(&shared, store, db_hash).await;
     shared.publish(runtime).await;
 
     let host = async {
@@ -258,13 +332,76 @@ where
 
     let advertising = Mutex::<NoopRawMutex, _>::new(&mut peripheral);
     let unit = unit_id(address.addr.raw());
-    let workers: [_; CONNECTIONS_MAX] = core::array::from_fn(|me| {
-        worker(me, &shared, &stack, &advertising, &server, runtime, store, &unit)
-    });
+    let context = Context {
+        shared: &shared,
+        stack: &stack,
+        server: &server,
+        caching: &caching,
+        runtime,
+        store,
+        diagnostics,
+    };
+    let workers: [_; CONNECTIONS_MAX] =
+        core::array::from_fn(|me| worker(me, &context, &advertising, &unit));
 
     join3(host, control(&shared, &stack, runtime, store), join_array(workers)).await;
     // all three loop forever
     unreachable!()
+}
+
+/// What every connection's worker uses.
+struct Context<'a, 'd, C: Controller, S> {
+    shared: &'a Shared,
+    stack: &'a Stack<'d, C, DefaultPacketPool>,
+    /// Its values are all `'static` (the name, the services' storage).
+    server: &'a Server<'static>,
+    caching: &'a GattCaching,
+    runtime: &'a Host,
+    store: &'a S,
+    diagnostics: Diagnostics,
+}
+
+/// The bonded clients' GATT state from flash. If the database is not the
+/// one last served (a firmware update changed the table), every bonded
+/// client is change-unaware until it is told (BLE.md "GATT caching"); a
+/// bond with no record yet (made before GATT caching) is one too.
+async fn restore_gatt<S: BondStore>(shared: &Shared, store: &S, db_hash: [u8; 16]) {
+    let (records, served) = store.load_gatt().await;
+    let changed = served != Some(db_hash);
+    info!(
+        "ble: database hash {}{}",
+        Disp(&Hex(&db_hash)),
+        match served {
+            None => " (none stored: first boot with GATT caching)",
+            Some(_) if changed => " (changed since last served: bonded clients are change-unaware)",
+            Some(_) => " (unchanged)",
+        }
+    );
+    for slot in 0..MAX_BLE_BONDS {
+        if shared.records.borrow()[slot].is_none() {
+            continue;
+        }
+        let mut record = records[slot].unwrap_or_default();
+        if changed && record.aware {
+            record.aware = false;
+            if !store.save_gatt(slot, &record).await {
+                warn!("ble: bond slot {}: GATT record not saved", slot);
+            }
+        }
+        info!(
+            "ble: bond slot {}: GATT client {}, Service Changed CCCD {:04x}, features {:02x}",
+            slot,
+            if record.aware { "change-aware" } else { "change-unaware" },
+            record.service_changed,
+            record.features
+        );
+        shared.gatt.borrow_mut()[slot] = Some(record);
+    }
+    // after the records, so a power cut in between leaves the old hash and
+    // the next boot marks them again
+    if changed && !store.save_gatt_hash(&db_hash).await {
+        warn!("ble: database hash not saved");
+    }
 }
 
 /// The pairing window and the Kindle's commands.
@@ -335,6 +472,7 @@ async fn forget_all<C: Controller, S: BondStore>(
     }
     let count = shared.records.borrow().iter().flatten().count();
     *shared.records.borrow_mut() = [None; MAX_BLE_BONDS];
+    *shared.gatt.borrow_mut() = [None; MAX_BLE_BONDS];
     if store.clear().await {
         info!("ble: all {} bond(s) forgotten (from the Kindle)", count);
     } else {
@@ -345,20 +483,16 @@ async fn forget_all<C: Controller, S: BondStore>(
 
 /// Worker `me`: advertise (while holding the advertising lock), accept,
 /// serve the connection until it drops, repeat.
-#[allow(clippy::too_many_arguments)]
 async fn worker<'v, C, S>(
     me: usize,
-    shared: &Shared,
-    stack: &Stack<'_, C, DefaultPacketPool>,
+    ctx: &Context<'_, '_, C, S>,
     advertising: &Mutex<NoopRawMutex, &mut Peripheral<'v, C, DefaultPacketPool>>,
-    server: &Server<'_>,
-    runtime: &Host,
-    store: &S,
     unit: &[u8; 6],
 ) where
     C: Controller,
     S: BondStore,
 {
+    let shared = ctx.shared;
     loop {
         let conn = {
             let mut peripheral = advertising.lock().await;
@@ -402,8 +536,8 @@ async fn worker<'v, C, S>(
         // a kick from before this connection is not about it
         shared.kick[me].reset();
         let raw = conn.clone();
-        match conn.with_attribute_server(server) {
-            Ok(conn) => serve(me, shared, stack, server, &conn, runtime, store).await,
+        match conn.with_attribute_server(ctx.server) {
+            Ok(conn) => serve(me, ctx, &conn).await,
             Err(e) => {
                 warn!("ble: attribute server: {:?}; disconnecting", Dbg(&e));
                 raw.disconnect();
@@ -485,8 +619,21 @@ fn scan_data_encode(unit: &[u8; 6], out: &mut [u8; 31]) -> Option<usize> {
     .ok()
 }
 
-/// One connection, until it drops: state changes out as notifications,
-/// events in as writes, both only once the link is trusted.
+/// What the two halves of a connection ([`serve_gatt`], [`serve_bulk`])
+/// share.
+struct Link {
+    /// Encrypted with a bond this box holds (see [`serve`]).
+    trusted: Cell<bool>,
+    /// The bond slot of a trusted link.
+    slot: Cell<Option<usize>>,
+    /// The client knows the database as it is (BLE.md "GATT caching").
+    /// Only a trusted bonded client can be change-unaware.
+    aware: Cell<bool>,
+}
+
+/// One connection, until it drops: GATT ([`serve_gatt`]) and the bulk
+/// channel ([`serve_bulk`]) side by side, both only once the link is
+/// trusted.
 ///
 /// Trusted = encrypted with a bond this box holds: either the central
 /// resumed encryption with a stored bond's key (`Encrypted` with that
@@ -496,19 +643,36 @@ fn scan_data_encode(unit: &[u8; 6], out: &mut [u8; 31]) -> Option<usize> {
 /// claim a bonded device's identity address while doing so.
 async fn serve<C, S>(
     me: usize,
-    shared: &Shared,
-    stack: &Stack<'_, C, DefaultPacketPool>,
-    server: &Server<'_>,
+    ctx: &Context<'_, '_, C, S>,
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
-    runtime: &Host,
-    store: &S,
 ) where
     C: Controller,
     S: BondStore,
 {
+    let link = Link {
+        trusted: Cell::new(false),
+        slot: Cell::new(None),
+        aware: Cell::new(true),
+    };
+    // the bulk half never ends by itself; the connection ends with GATT's
+    select(serve_gatt(me, ctx, conn, &link), serve_bulk(me, ctx, conn.raw(), &link)).await;
+}
+
+/// The GATT half of a connection, until it drops: state changes out as
+/// notifications, events in as writes.
+async fn serve_gatt<C, S>(
+    me: usize,
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    link: &Link,
+) where
+    C: Controller,
+    S: BondStore,
+{
+    let (shared, stack, server, runtime, store) =
+        (ctx.shared, ctx.stack, ctx.server, ctx.runtime, ctx.store);
     let state = &server.race.state;
     let event = &server.race.event;
-    let mut trusted = false;
     // set when the peer turned out to hold a bond this box does not
     let mut stale_deadline: Option<Instant> = None;
 
@@ -553,7 +717,7 @@ async fn serve<C, S>(
         {
             Either4::First(gatt) => gatt,
             Either4::Second(message) => {
-                if trusted && let Some(value) = state_value(runtime, &message) {
+                if link.trusted.get() && let Some(value) = state_value(runtime, &message) {
                     // A notification carries at most ATT MTU - 3 bytes and
                     // the host would cut a longer one short, which no
                     // central could decode: not sent (stored for reads,
@@ -581,9 +745,10 @@ async fn serve<C, S>(
             Either4::Third(()) => {
                 // the window opened or closed, or bonds were deleted
                 let _ = conn.raw().set_bondable(shared.pairing_open());
-                if trusted && shared.slot_of(&conn.raw().peer_identity()).is_none() {
+                if link.trusted.get() && shared.slot_of(&conn.raw().peer_identity()).is_none() {
                     info!("ble: connection {}: its bond was deleted; disconnecting", me);
-                    trusted = false;
+                    link.trusted.set(false);
+                    link.slot.set(None);
                     conn.raw().disconnect();
                 }
                 continue;
@@ -612,13 +777,15 @@ async fn serve<C, S>(
             }
             // A bonded central resumed encryption with its key.
             GattConnectionEvent::Encrypted { bond: Some(bond), .. } => {
-                trusted = shared.holds(&bond);
-                if trusted {
+                link.trusted.set(shared.holds(&bond));
+                if link.trusted.get() {
                     info!(
                         "ble: connection {}: encrypted with the bond of {}",
                         me,
                         Disp(&AddrText(addr_of(&bond.identity.addr)))
                     );
+                    link.slot.set(shared.slot_of(&bond.identity));
+                    resume_gatt_client(me, ctx, conn, link).await;
                 } else {
                     warn!(
                         "ble: connection {}: encrypted with a key that is not a stored bond; untrusted",
@@ -633,7 +800,12 @@ async fn serve<C, S>(
                 match bond {
                     Some(bond) if shared.pairing_open() => {
                         enrol(shared, stack, store, &bond).await;
-                        trusted = true;
+                        link.trusted.set(true);
+                        link.slot.set(shared.slot_of(&bond.identity));
+                        // it discovered the database as it is
+                        link.aware.set(true);
+                        // what it configured before pairing goes with the bond
+                        save_gatt_client(ctx, conn, link).await;
                         stale_deadline = None;
                         shared.publish(runtime).await;
                     }
@@ -663,7 +835,8 @@ async fn serve<C, S>(
                                 let _ = stack.remove_bond_information(peer);
                             }
                         }
-                        trusted = false;
+                        link.trusted.set(false);
+                        link.slot.set(None);
                         conn.raw().disconnect();
                         shared.note.set(if shared.pairing_open() {
                             BleNote::Failed
@@ -697,6 +870,50 @@ async fn serve<C, S>(
                 shared.publish(runtime).await;
             }
             GattConnectionEvent::Gatt { event: request } => {
+                // GATT caching: what this request means for a client that
+                // may not know the database as it is.
+                let caching = ctx.caching;
+                let incoming = request.payload().incoming();
+                let reads_hash = match &incoming {
+                    AttClient::Request(AttReq::Read { handle } | AttReq::ReadBlob { handle, .. }) => {
+                        *handle == caching.database_hash.handle
+                    }
+                    AttClient::Request(AttReq::ReadByType { attribute_type, .. }) => {
+                        *attribute_type == Uuid::from(characteristic::DATABASE_HASH)
+                    }
+                    _ => false,
+                };
+                let command = matches!(incoming, AttClient::Command(_));
+                // client-specific values the bond keeps
+                let configures = matches!(
+                    &request,
+                    GattEvent::Write(w) if Some(w.handle()) == caching.service_changed.cccd_handle
+                        || w.handle() == caching.client_supported_features.handle
+                );
+                if !link.aware.get() {
+                    if reads_hash {
+                        // reading the hash makes it change-aware
+                        // (Core Vol 3 Part G 2.5.2.1)
+                        info!("ble: connection {}: client read the database hash; change-aware", me);
+                        link.aware.set(true);
+                        save_gatt_client(ctx, conn, link).await;
+                    } else if robust_caching(ctx, conn) {
+                        // A change-unaware client with robust caching gets
+                        // Database Out Of Sync for its requests until it
+                        // reads the hash; its commands are ignored.
+                        if command {
+                            let _ = request.into_payload();
+                            continue;
+                        }
+                        debug!("ble: connection {}: request refused: database out of sync", me);
+                        match request.reject(AttErrorCode::DATABASE_OUT_OF_SYNC) {
+                            Ok(reply) => reply.send().await,
+                            Err(e) => warn!("ble: connection {}: reply failed: {:?}", me, Dbg(&e)),
+                        }
+                        continue;
+                    }
+                }
+                let trusted = link.trusted.get();
                 let reply = match request {
                     // The host refused an access on the unencrypted link.
                     // Insufficient Authentication makes a central with a
@@ -799,15 +1016,365 @@ async fn serve<C, S>(
                             read.accept()
                         }
                     }
+                    // Client Supported Features: bits are set, never
+                    // cleared (Core Vol 3 Part G 7.2).
+                    GattEvent::Write(write) if write.handle() == caching.client_supported_features.handle => {
+                        let current = client_features(ctx, conn);
+                        let new = write.with_data(|offset, data| match (offset, data) {
+                            (0, &[features]) => Some(features),
+                            _ => None,
+                        });
+                        match new {
+                            Some(new) if GattCaching::client_features_write_allowed(current, new) => {
+                                info!("ble: connection {}: client supported features {:02x}", me, new);
+                                write.accept()
+                            }
+                            _ => {
+                                warn!(
+                                    "ble: connection {}: client supported features {:?} refused (now {:02x})",
+                                    me,
+                                    Dbg(&new),
+                                    current
+                                );
+                                if command {
+                                    let _ = write.into_payload();
+                                    continue;
+                                }
+                                write.reject(AttErrorCode::VALUE_NOT_ALLOWED)
+                            }
+                        }
+                    }
                     other => other.accept(),
                 };
                 match reply {
                     Ok(reply) => reply.send().await,
                     Err(e) => warn!("ble: connection {}: reply failed: {:?}", me, Dbg(&e)),
                 }
+                if configures && trusted {
+                    save_gatt_client(ctx, conn, link).await;
+                }
             }
             _ => {}
         }
+    }
+}
+
+/// The client's Service Changed CCCD on this link.
+fn service_changed_cccd<C: Controller, S>(
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+) -> u16 {
+    let Some(handle) = ctx.caching.service_changed.cccd_handle else {
+        return 0;
+    };
+    let mut value = [0u8; 2];
+    match ctx.server.read(conn.raw(), handle, 0, &mut value) {
+        Ok(2) => u16::from_le_bytes(value),
+        _ => 0,
+    }
+}
+
+/// The client's Client Supported Features on this link.
+fn client_features<C: Controller, S>(
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+) -> u8 {
+    let mut value = [0u8; 1];
+    match ctx
+        .server
+        .read(conn.raw(), ctx.caching.client_supported_features.handle, 0, &mut value)
+    {
+        Ok(1) => value[0],
+        _ => 0,
+    }
+}
+
+fn robust_caching<C: Controller, S>(
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+) -> bool {
+    client_features(ctx, conn) & GattCaching::ROBUST_CACHING != 0
+}
+
+/// A bonded client is back (encrypted with its bond): what it configured
+/// in the GATT service comes back from its record (merged with anything it
+/// set on this link before encrypting), and if the database is not the one
+/// it last saw it is told: Service Changed if it subscribed, else Database
+/// Out Of Sync errors if it uses robust caching ([`serve_gatt`]).
+async fn resume_gatt_client<C: Controller, S: BondStore>(
+    me: usize,
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    link: &Link,
+) {
+    let Some(slot) = link.slot.get() else {
+        return;
+    };
+    let caching = ctx.caching;
+    let record = ctx.shared.gatt.borrow()[slot].unwrap_or_default();
+    if let Some(mut table) = ctx.server.get_client_att_table(conn.raw()) {
+        if let Some(cccd) = caching.service_changed.cccd_handle {
+            let now = service_changed_cccd(ctx, conn);
+            let value = if now != 0 { now } else { record.service_changed };
+            let _ = table.write(cccd, 0, &value.to_le_bytes());
+        }
+        let features = client_features(ctx, conn) | record.features;
+        let _ = table.write(caching.client_supported_features.handle, 0, &[features]);
+        ctx.server.set_client_att_table(conn.raw(), &table.view());
+    }
+    link.aware.set(record.aware);
+    info!(
+        "ble: connection {}: GATT client {}, Service Changed CCCD {:04x}, features {:02x}",
+        me,
+        if record.aware { "change-aware" } else { "change-unaware" },
+        service_changed_cccd(ctx, conn),
+        client_features(ctx, conn)
+    );
+    if !record.aware {
+        if caching.service_changed.should_indicate(conn) {
+            info!(
+                "ble: connection {}: the database changed since this client saw it: indicating Service Changed",
+                me
+            );
+            match caching
+                .service_changed
+                .indicate(conn, &GattCaching::WHOLE_DATABASE, false)
+                .await
+            {
+                Ok(()) => {
+                    info!("ble: connection {}: Service Changed confirmed; change-aware", me);
+                    link.aware.set(true);
+                }
+                Err(e) => warn!("ble: connection {}: Service Changed not confirmed: {:?}", me, Dbg(&e)),
+            }
+        } else if robust_caching(ctx, conn) {
+            info!(
+                "ble: connection {}: the database changed since this client saw it: Database Out Of Sync until it reads the hash",
+                me
+            );
+        } else {
+            warn!(
+                "ble: connection {}: the database changed since this client saw it, and it neither subscribed to Service Changed nor uses robust caching: it may use a stale copy (forget {} on the device to clear it)",
+                me,
+                BLE_NAME
+            );
+        }
+    }
+    save_gatt_client(ctx, conn, link).await;
+}
+
+/// Stores what a trusted bonded client configured in the GATT service, and
+/// whether it is change-aware, with its bond, if that changed.
+async fn save_gatt_client<C: Controller, S: BondStore>(
+    ctx: &Context<'_, '_, C, S>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    link: &Link,
+) {
+    let Some(slot) = link.slot.get() else {
+        return;
+    };
+    let record = GattClientRecord {
+        aware: link.aware.get(),
+        service_changed: service_changed_cccd(ctx, conn),
+        features: client_features(ctx, conn),
+    };
+    if ctx.shared.gatt.borrow()[slot] == Some(record) {
+        return;
+    }
+    if ctx.store.save_gatt(slot, &record).await {
+        debug!("ble: bond slot {}: GATT record {:?} saved", slot, Dbg(&record));
+    } else {
+        warn!("ble: bond slot {}: GATT record not saved", slot);
+    }
+    ctx.shared.gatt.borrow_mut()[slot] = Some(record);
+}
+
+/// The bulk half of a connection (BLE.md "Watch bundles"): an L2CAP
+/// connection-oriented channel on [`UI_PSM`] that serves watch bundles,
+/// accepted only on a trusted link. Never returns: the connection ends with
+/// its GATT half.
+async fn serve_bulk<C: Controller, S>(
+    me: usize,
+    ctx: &Context<'_, '_, C, S>,
+    conn: &Connection<'_, DefaultPacketPool>,
+    link: &Link,
+) {
+    let listener = L2capChannel::listen(ctx.stack, conn);
+    loop {
+        let Ok(pending) = listener.next().await else {
+            // the connection is gone
+            break;
+        };
+        if !link.trusted.get() {
+            let encrypted = conn.security_level().is_ok_and(|level| level.encrypted());
+            let code = if encrypted {
+                LeCreditConnResultCode::InsufficientAuthorization
+            } else {
+                LeCreditConnResultCode::InsufficientEncryption
+            };
+            warn!(
+                "ble: connection {}: bulk channel refused ({:?}): link not bonded",
+                me,
+                Dbg(&code)
+            );
+            if let Err(e) = pending.reject(ctx.stack, code).await {
+                debug!("ble: connection {}: bulk refusal: {:?}", me, Dbg(&e));
+            }
+            continue;
+        }
+        let config = L2capChannelConfig {
+            mtu: Some(BULK_RX_MTU),
+            mps: Some(BULK_RX_MTU),
+            flow_policy: CreditFlowPolicy::Every(1),
+            initial_credits: Some(BULK_RX_CREDITS),
+        };
+        let mut channel = match pending.accept(ctx.stack, &config).await {
+            Ok(channel) => channel,
+            Err(e) => {
+                warn!("ble: connection {}: bulk channel accept failed: {:?}", me, Dbg(&e));
+                continue;
+            }
+        };
+        info!(
+            "ble: connection {}: bulk channel open: peer MTU {} MPS {} credits {}; ours MTU {} MPS {} credits {}",
+            me,
+            channel.peer_mtu(),
+            channel.peer_mps(),
+            channel.peer_credits(),
+            BULK_RX_MTU,
+            BULK_RX_MTU,
+            BULK_RX_CREDITS
+        );
+        serve_channel(me, ctx, &listener, &mut channel, link).await;
+        // dropping the channel closes it
+    }
+    core::future::pending().await
+}
+
+/// One bulk channel, until it closes: each request answered with its
+/// header and the asset, streamed from flash an SDU at a time.
+async fn serve_channel<'d, C: Controller, S>(
+    me: usize,
+    ctx: &Context<'_, '_, C, S>,
+    listener: &L2capChannelListener<'d, C, DefaultPacketPool>,
+    channel: &mut L2capChannel<'d, DefaultPacketPool>,
+    link: &Link,
+) {
+    let sdu_max = bulk::sdu_max(
+        channel.peer_mtu(),
+        channel.peer_mps(),
+        <DefaultPacketPool as PacketPool>::MTU,
+    );
+    if sdu_max == 0 {
+        warn!(
+            "ble: connection {}: bulk channel: peer MTU {} MPS {} leave no room for data; closing",
+            me,
+            channel.peer_mtu(),
+            channel.peer_mps()
+        );
+        return;
+    }
+    loop {
+        let mut request = [0u8; BULK_RX_MTU as usize];
+        let n = match select3(
+            channel.receive(ctx.stack, &mut request),
+            listener.next(),
+            Timer::after(BULK_IDLE),
+        )
+        .await
+        {
+            Either3::First(Ok(n)) => n,
+            Either3::First(Err(e)) => {
+                info!("ble: connection {}: bulk channel closed: {:?}", me, Dbg(&e));
+                return;
+            }
+            Either3::Second(Ok(extra)) => {
+                warn!("ble: connection {}: a second bulk channel refused (one at a time)", me);
+                if let Err(e) = extra.reject(ctx.stack, LeCreditConnResultCode::NoResources).await {
+                    debug!("ble: connection {}: bulk refusal: {:?}", me, Dbg(&e));
+                }
+                continue;
+            }
+            Either3::Second(Err(_)) => return,
+            Either3::Third(()) => {
+                info!(
+                    "ble: connection {}: bulk channel idle for {} s; closing",
+                    me,
+                    BULK_IDLE.as_secs()
+                );
+                return;
+            }
+        };
+        if !link.trusted.get() {
+            warn!("ble: connection {}: bulk request on a link no longer trusted; closing", me);
+            return;
+        }
+        let request = match bulk::parse_request(&request[..n]) {
+            Ok(request) => request,
+            Err(e) => {
+                warn!(
+                    "ble: connection {}: bulk request refused ({:?}): {:?}; closing",
+                    me,
+                    Dbg(&e),
+                    Dbg(&&request[..n])
+                );
+                return;
+            }
+        };
+        let (header, asset) = ctx.runtime.asset(&request);
+        let name = ctx.runtime.package(request.package).map_or("?", |p| p.name);
+        let transfer = Transfer::new(header, asset, sdu_max);
+        info!(
+            "ble: connection {}: bulk: {} watch bundle {} asked for: status {}, {} B in {} SDUs of up to {} B (peer MTU {} MPS {} credits {})",
+            me,
+            name,
+            Disp(&Hex(&request.hash)),
+            header.status,
+            header.len,
+            transfer.sdus(),
+            sdu_max,
+            channel.peer_mtu(),
+            channel.peer_mps(),
+            channel.peer_credits()
+        );
+        let diagnostics = ctx.diagnostics;
+        let heap_before = (diagnostics.heap_free)();
+        let mut heap_min = heap_before;
+        let mut credit_waits = 0u32;
+        let start = Instant::now();
+        let mut sent = 0usize;
+        for sdu in transfer {
+            if channel.peer_credits() == 0 {
+                credit_waits += 1;
+            }
+            if let Err(e) = channel.send(ctx.stack, sdu.bytes()).await {
+                warn!(
+                    "ble: connection {}: bulk: send failed after {} of {} B: {:?}; closing",
+                    me,
+                    sent,
+                    header.len,
+                    Dbg(&e)
+                );
+                return;
+            }
+            if let bulk::Sdu::Data(d) = sdu {
+                sent += d.len();
+            }
+            heap_min = heap_min.min((diagnostics.heap_free)());
+        }
+        let ms = start.elapsed().as_millis();
+        info!(
+            "ble: connection {}: bulk: sent {} B of {} in {} ms ({} B/s); waited for credits {} times; heap free {} before, min {} during",
+            me,
+            sent,
+            name,
+            ms,
+            bulk::throughput(sent, ms),
+            credit_waits,
+            heap_before,
+            heap_min
+        );
+        (diagnostics.log_memory)("after a bulk transfer");
     }
 }
 
@@ -858,6 +1425,16 @@ async fn enrol<C: Controller, S: BondStore>(
     let record = record_of(bond, seq);
     let saved = store.save(slot, &record).await;
     shared.records.borrow_mut()[slot] = Some(record);
+    // a new client: it discovered the database as it is, and has no stored
+    // subscriptions (another device's are gone with its bond)
+    let gatt = GattClientRecord {
+        aware: true,
+        ..Default::default()
+    };
+    if !store.save_gatt(slot, &gatt).await {
+        warn!("ble: bond slot {}: GATT record not saved", slot);
+    }
+    shared.gatt.borrow_mut()[slot] = Some(gatt);
     shared.pair_until.set(None);
     if saved {
         info!(
@@ -960,11 +1537,26 @@ mod tests {
         let tail = [
             0x6b, 0x2f, 0x4f, 0x77, 0x9a, 0x0d, 0x3c, 0x5e, 0x7b, 0x9d, 0x1f, 0x20,
         ];
-        for (uuid, n) in [(SERVICE_UUID, 0x00), (STATE_UUID, 0x01), (EVENT_UUID, 0x02)] {
+        for (uuid, n) in [
+            (SERVICE_UUID, 0x00),
+            (STATE_UUID, 0x01),
+            (EVENT_UUID, 0x02),
+            (UI_PSM_UUID, 0x03),
+        ] {
             let bytes = uuid.to_be_bytes();
             assert_eq!(bytes[..4], [0xe4, 0xa1, 0xc0, n]);
             assert_eq!(bytes[4..], tail);
         }
+    }
+
+    /// The bulk channel's PSM is an LE PSM from the dynamic range, which
+    /// the host can register.
+    #[test]
+    fn ui_psm_is_dynamic() {
+        assert!((0x0080..=0x00ff).contains(&UI_PSM));
+        // a request fits one SDU of ours, and ours is a legal L2CAP MTU
+        assert!(extreme_protocol::GET_ASSET_MAX <= BULK_RX_MTU as usize);
+        assert!(BULK_RX_MTU >= 23);
     }
 
     /// The advertising data fits one legacy advertisement.
@@ -1015,6 +1607,7 @@ mod tests {
         let shared = Shared {
             address: [0; 6],
             records: RefCell::new([None; MAX_BLE_BONDS]),
+            gatt: RefCell::new([None; MAX_BLE_BONDS]),
             pair_until: Cell::new(None),
             note: Cell::new(BleNote::None),
             kick: [const { Signal::new() }; CONNECTIONS_MAX],

@@ -153,6 +153,7 @@ heartbeat.
 |---|---|---|---|---|
 | `state` | `…001` | read, notify (bonded link only) | 22–289 | the host's `Envelope`, sent on every change |
 | `event` | `…002` | write, write-without-response (bonded link only) | 1–64 | a `HostEvent` |
+| `ui-psm` | `…003` | read (bonded link only) | 2 | the bulk channel's LE PSM, u16 little-endian: `81 00` (0x0081; "Watch bundles") |
 
 `state` is pushed on every change (the same moments the websocket clients
 get a message) and can be read at any time; a read captures the state
@@ -162,6 +163,95 @@ host refuses is answered with ATT `0x13` Value Not Allowed; a write command
 (write without response) is never answered, and a refused one is dropped
 and logged on the device. An accepted event is acknowledged by the `state`
 notification it causes, if it changed anything.
+
+## Watch bundles: the bulk channel
+
+A watch bundle (a package's `watch.js`, 10–30 KB) is too big for GATT
+values; it comes over an **L2CAP connection-oriented channel** (LE credit
+based flow control) instead. `common/src/ble.rs` (`serve_bulk`), the
+messages and their streaming in `common/src/bulk.rs`.
+
+1. Read `ui-psm` (encrypted, like everything in the service) for the LE
+   PSM: 0x0081. CoreBluetooth: `peripheral.openL2CAPChannel(0x0081)`.
+2. The box accepts the channel only on a **bonded, encrypted** link (the
+   same rule as GATT): otherwise it refuses with result `0x0008`
+   Insufficient Encryption (not encrypted) or `0x0006` Insufficient
+   Authorization (encrypted, but not with a bond it holds). One channel per
+   connection at a time; a second is refused with `0x0004` No Resources.
+3. Write a request, `GetAsset { package: u32, hash: [u8; 8] }` (postcard,
+   at most 13 bytes, one SDU): the package and the `ui.watch` it saw in the
+   envelope.
+4. The box answers with `AssetHeader { status: u8, len: u32 }` (postcard,
+   its own SDU), then exactly `len` bytes of the bundle, streamed straight
+   from flash. `status`: `0` ok, `1` no such asset (the package is not
+   installed, or has no watch bundle), `2` hash not current (the bundle
+   changed since that envelope; take the hash from the latest envelope and
+   ask again). With `1` and `2`, `len` is 0 and nothing follows.
+
+A package with **no watch bundle** has `ui.watch` = `0000000000000000`
+(`NO_WATCH_BUNDLE`; never the hash of an actual bundle): nothing to fetch,
+don't ask (it would get `1`).
+
+The watch may close the channel at any time, mid-stream included (the
+envelope changed, the user left): the box stops sending, frees the channel
+and takes the next one; a sender waiting for credits is woken by the close
+(trouble-host fix on branch `bundle-ble-fixes`).
+5. Check the first 8 bytes of SHA-256 of the bytes against the hash before
+   using or caching them.
+
+More requests may follow on the same channel, one at a time; the box closes
+a channel that sends something that is not exactly one `GetAsset`, or
+nothing for 30 s. The SDU boundaries mean nothing: read the channel as a
+byte stream (header, then `len` bytes).
+
+| | bytes |
+|---|---|
+| `GetAsset` race, `ui.watch` `9a01fe007f8012c3` | `9885eff508 9a01fe007f8012c3` |
+| `GetAsset` Choose | `00` + the hash |
+| `AssetHeader` ok, 21345 bytes follow | `00 e1a601` |
+| `AssetHeader` hash not current | `02 00` |
+
+(`protocol-js/test/vectors.json` has these and more; the Swift is generated
+in `protocol-swift`.)
+
+**Sizes.** The box takes SDUs of up to 23 bytes (MTU = MPS = 23; a request
+is one PDU) and grants 2 credits, given back as each request is read. It
+sends one SDU per PDU, each of `min(peer MTU, peer MPS − 2, 245)` bytes
+(245: its 251-byte packets less the L2CAP and SDU headers), so each costs
+the watch one credit; the watch's credits pace it. The box logs each
+transfer: `bulk channel open: peer MTU … MPS … credits …`, then `bulk: race
+watch bundle … asked for: status 0, N B in K SDUs of up to S B`, then `bulk:
+sent N B of race in T ms (R B/s); waited for credits W times; heap free …`.
+
+## GATT caching
+
+The box's GATT service (`0x1801`) has **Service Changed** (`0x2A05`,
+indicate), **Client Supported Features** (`0x2B29`, read/write, per
+client) and **Database Hash** (`0x2B2A`, read; the hash of the attribute
+table, Core Vol 3 Part G 7.3), so a bonded client keeps its discovery of
+the database across connections and rediscovers only when the database
+changed (a firmware update that changed the table):
+
+- What a bonded client set in the GATT service (its Service Changed
+  subscription, its Client Supported Features) is kept with its bond in
+  flash, and so is whether it is *change-aware*. At boot the box compares
+  the database hash with the one it last served; if it differs, every
+  bonded client is change-unaware.
+- When a change-unaware bonded client reconnects and encrypts, the box
+  indicates Service Changed (handles `0x0001`–`0xFFFF`) if the client
+  subscribed to it; the confirmation makes it change-aware. A client that
+  set robust caching (Client Supported Features bit 0) instead gets ATT
+  error `0x12` Database Out Of Sync for its requests until it reads the
+  Database Hash. A client that did neither cannot be told: forget `nacra`
+  on it and pair again.
+- Client Supported Features bits can be set, never cleared (a write that
+  clears one: `0x13` Value Not Allowed).
+
+**After the firmware that brought GATT caching** (and `ui-psm`) the table
+changed shape: the GATT service gained its three characteristics, so every
+handle of the box's service moved. A watch bonded before it has cached the
+old table without Service Changed, and cannot be told: forget `nacra` on
+the watch and pair again once. From then on it is told about changes.
 
 ## State: `Envelope`
 

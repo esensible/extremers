@@ -27,10 +27,16 @@
 //!   `KEY_WIFI`           [ssid_len][ssid..][psk_len][psk..]   (`WifiCreds`)
 //!   `KEY_BOND_BASE + n`  bond slot n < MAX_BLE_BONDS, 46 bytes
 //!                        (`common::ble_settings::BondRecord`)
+//!   `KEY_GATT_HASH`      the GATT database hash last served, 16 bytes
+//!   `KEY_GATT_BASE + n`  bond slot n's GATT client state, 5 bytes
+//!                        (`common::ble_settings::GattClientRecord`)
 
 use core::ops::Range;
 
-use common::{ble_settings::BondRecord, config::MAX_BLE_BONDS};
+use common::{
+    ble_settings::{BondRecord, GattClientRecord},
+    config::MAX_BLE_BONDS,
+};
 use defmt::{info, warn};
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -46,6 +52,10 @@ pub type Key = [u8; 1];
 pub const KEY_WIFI: Key = [0x10];
 /// Bond slots: `KEY_BOND_BASE + slot`, slot < `MAX_BLE_BONDS`.
 pub const KEY_BOND_BASE: u8 = 0x20;
+/// The GATT database hash the bonded clients were last served.
+pub const KEY_GATT_HASH: Key = [0x30];
+/// Each bond slot's GATT client state: `KEY_GATT_BASE + slot`.
+pub const KEY_GATT_BASE: u8 = 0x40;
 
 /// sequential-storage's scratch buffer. It must hold the largest item of
 /// ANY key plus its key, word-rounded: a page migration triggered by storing
@@ -556,8 +566,8 @@ pub async fn store_bond(slot: usize, bond: &BondRecord) -> bool {
     store(bond_key(slot), &bond.encode()).await
 }
 
-/// Removes every bond slot. `true` if all removals succeeded (removing an
-/// absent key succeeds).
+/// Removes every bond slot and its GATT client record. `true` if all
+/// removals succeeded (removing an absent key succeeds).
 pub async fn clear_bonds() -> bool {
     let mut guard = STORE.lock().await;
     let Some(store) = guard.as_mut() else {
@@ -565,11 +575,46 @@ pub async fn clear_bonds() -> bool {
     };
     let mut ok = true;
     for slot in 0..MAX_BLE_BONDS {
-        let key = bond_key(slot);
-        if let Err(e) = store.map.remove_item(&mut store.buf[..], &key).await {
-            warn!("storage: remove {=u8:#04x} failed: {:?}", key[0], defmt::Debug2Format(&e));
-            ok = false;
+        for key in [bond_key(slot), gatt_key(slot)] {
+            if let Err(e) = store.map.remove_item(&mut store.buf[..], &key).await {
+                warn!("storage: remove {=u8:#04x} failed: {:?}", key[0], defmt::Debug2Format(&e));
+                ok = false;
+            }
         }
     }
     ok
+}
+
+fn gatt_key(slot: usize) -> Key {
+    [KEY_GATT_BASE + slot as u8]
+}
+
+/// Every bond slot's GATT client record (a record that does not decode is
+/// logged and read as absent), and the database hash last served.
+pub async fn gatt() -> ([Option<GattClientRecord>; MAX_BLE_BONDS], Option<[u8; 16]>) {
+    let mut records = [None; MAX_BLE_BONDS];
+    for (slot, entry) in records.iter_mut().enumerate() {
+        *entry = with_value(gatt_key(slot), |v| {
+            let v = v?;
+            let r = GattClientRecord::decode(v);
+            if r.is_none() {
+                warn!("storage: GATT slot {=usize}: {=usize}-byte record does not decode", slot, v.len());
+            }
+            r
+        })
+        .await;
+    }
+    let hash = with_value(KEY_GATT_HASH, |v| v.and_then(|v| <[u8; 16]>::try_from(v).ok())).await;
+    (records, hash)
+}
+
+pub async fn store_gatt(slot: usize, record: &GattClientRecord) -> bool {
+    if slot >= MAX_BLE_BONDS {
+        return false;
+    }
+    store(gatt_key(slot), &record.encode()).await
+}
+
+pub async fn store_gatt_hash(hash: &[u8; 16]) -> bool {
+    store(KEY_GATT_HASH, hash).await
 }

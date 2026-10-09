@@ -7,6 +7,7 @@ mod fmt;
 #[cfg(feature = "ble")]
 pub mod ble;
 pub mod ble_settings;
+pub mod bulk;
 pub mod config;
 pub mod engine;
 pub mod host;

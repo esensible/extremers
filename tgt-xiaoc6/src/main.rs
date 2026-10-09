@@ -41,8 +41,8 @@ use crate::network_tasks::{
     wifi_task,
 };
 use common::{
-    ble::{BondStore, CONNECTIONS_MAX, serve_ble},
-    ble_settings::{BondRecord, static_random_address},
+    ble::{BondStore, CONNECTIONS_MAX, Diagnostics, serve_ble},
+    ble_settings::{BondRecord, GattClientRecord, static_random_address},
     config::{
         AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
         SOCKET_BUFFER_SIZE,
@@ -204,7 +204,14 @@ async fn httpd_task(stack: Stack<'static>, runtime: &'static Host) -> ! {
 
 #[embassy_executor::task]
 async fn ble_task(controller: BleController, runtime: &'static Host, address: [u8; 6]) -> ! {
-    serve_ble(controller, runtime, address, &FlashBonds).await
+    let diagnostics = Diagnostics {
+        heap_free: || {
+            let s = esp_alloc::HEAP.stats();
+            s.size - s.current_usage
+        },
+        log_memory: memory::log,
+    };
+    serve_ble(controller, runtime, address, &FlashBonds, diagnostics).await
 }
 
 /// BLE bonds in the settings partition (storage.rs).
@@ -221,6 +228,18 @@ impl BondStore for FlashBonds {
 
     async fn clear(&self) -> bool {
         storage::clear_bonds().await
+    }
+
+    async fn load_gatt(&self) -> ([Option<GattClientRecord>; MAX_BLE_BONDS], Option<[u8; 16]>) {
+        storage::gatt().await
+    }
+
+    async fn save_gatt(&self, slot: usize, record: &GattClientRecord) -> bool {
+        storage::store_gatt(slot, record).await
+    }
+
+    async fn save_gatt_hash(&self, hash: &[u8; 16]) -> bool {
+        storage::store_gatt_hash(hash).await
     }
 }
 
