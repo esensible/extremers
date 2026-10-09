@@ -98,7 +98,7 @@ struct ShellRouter {
     default:
       break
     }
-    // A package without a watch bundle: its hash is that of no bytes.
+    // A package without a watch bundle (NO_WATCH_BUNDLE): don't ask.
     if key.hash == AssetHash.none {
       screen = .missing(id: key.id, hash: key.hash)
       return .missing

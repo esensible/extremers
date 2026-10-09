@@ -49,10 +49,11 @@ bundle runs meanwhile (its state was another package's).
 - Wrong bytes are discarded and fetched once more, then "Couldn't load …"
   (Try again, Exit). A timeout (5 s with nothing), a short read or a channel
   that does not open is tried 3 times, then the same screen; the link
-  coming back tries again by itself. Status 1 (no such package), or a
-  `ui.watch` that is the hash of no bytes (`e3b0c44298fc1c14`: a package
-  without a watch bundle, not fetched at all), is the "No watch screen"
-  screen.
+  coming back tries again by itself. Status 1 (no such asset), or a
+  `ui.watch` of all zeros (`NO_WATCH_BUNDLE`: a package without a watch
+  bundle, not asked for at all), is the "No watch screen" screen.
+- One asset channel at a time: the box refuses a second (`0x0004`), so the
+  previous one is always closed before another is opened.
 
 Debug builds launched with `-SimulateBox` (the simulator has no Bluetooth)
 serve the packages' committed builds (`<package>/watch-js/fixtures/bundle.js`)

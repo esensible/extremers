@@ -74,9 +74,9 @@ enum AssetError: Error, Equatable {
 }
 
 enum AssetHash {
-  /// The hash of no bytes: what `ui.watch` is for a package without a
-  /// watch bundle (`e3b0c44298fc1c14`).
-  static let none: [UInt8] = prefix(Data())
+  /// `ui.watch` of a package without a watch bundle (`NO_WATCH_BUNDLE`,
+  /// all zeros; never an actual bundle's hash): nothing to fetch.
+  static let none = [UInt8](repeating: 0, count: 8)
 
   /// The first 8 bytes of SHA-256: what `ui.watch` names a bundle by.
   static func prefix(_ data: Data) -> [UInt8] {

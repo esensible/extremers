@@ -53,7 +53,9 @@ final class BundleDeliveryTests: XCTestCase {
     let requests = all.filter { $0.type == "GetAsset" }
     let headers = all.filter { $0.type == "AssetHeader" }
     XCTAssertGreaterThanOrEqual(requests.count, 3)
-    XCTAssertGreaterThanOrEqual(headers.count, 5)
+    // ok and at least one refusal
+    let statuses = Set(try headers.map { try decodeAssetHeader(SimulatedHex.bytes($0.hex)).status })
+    XCTAssertTrue(statuses.contains(AssetHeader.ok) && statuses.count >= 2, "\(statuses)")
     for v in requests {
       let request = try decodeGetAsset(SimulatedHex.bytes(v.hex))
       XCTAssertEqual(request.bytes, SimulatedHex.bytes(v.hex), v.what)

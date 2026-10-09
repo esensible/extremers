@@ -503,6 +503,13 @@ final class RaceComputer: NSObject, ObservableObject {
   func openAssetChannel() async throws -> AssetChannel {
     guard link == .connected, let p = peripheral, p.state == .connected else { throw AssetError.linkDown }
     guard let psmChar = psmCharacteristic else { throw AssetError.noChannel("no ui-psm characteristic") }
+    // The box serves one channel per connection and refuses a second
+    // (0x0004 No Resources): the last one goes first, whoever held it.
+    if let previous = assetChannel, previous.isOpen {
+      log("asset channel: closing the previous one before opening another")
+      previous.close()
+    }
+    assetChannel = nil
     let t0 = ContinuousClock.now
     let value: Data
     do {
@@ -525,8 +532,13 @@ final class RaceComputer: NSObject, ObservableObject {
     let parameters = "PSM 0x\(String(format: "%04x", psm)), ATT MTU \(attMtu), "
       + "ui-psm read \(t1 - t0), channel open \(ContinuousClock.now - t1)"
     log("asset channel open: \(parameters)")
-    return L2capAssetChannel(channel, parameters: parameters)
+    let opened = L2capAssetChannel(channel, parameters: parameters)
+    assetChannel = opened
+    return opened
   }
+
+  /// The last asset channel opened (closing it again is a no-op).
+  private weak var assetChannel: L2capAssetChannel?
 
   /// What a failed step of opening the asset channel means.
   private func assetFailure(_ error: Error, opening what: String) -> Error {

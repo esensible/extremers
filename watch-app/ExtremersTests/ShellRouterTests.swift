@@ -103,12 +103,12 @@ final class ShellRouterTests: XCTestCase {
     XCTAssertEqual(r.screen, .app(id: 0, hash: hashA, name: "choose"))
   }
 
-  /// A package without a watch bundle (`ui.watch` the hash of no bytes):
-  /// missing at once, no fetch; once it has one, fetched.
+  /// A package without a watch bundle (`ui.watch` all zeros,
+  /// NO_WATCH_BUNDLE): missing at once, no fetch; once it has one, fetched.
   func testNoWatchBundleIsMissingWithoutAFetch() {
     let source = FakeSource([:])
     var r = ShellRouter()
-    XCTAssertEqual(AssetHash.none, [0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14])
+    XCTAssertEqual(AssetHash.none, [0, 0, 0, 0, 0, 0, 0, 0])
     XCTAssertEqual(r.route(envelope(race, AssetHash.none), source: source, name: "race"), .missing)
     XCTAssertEqual(r.screen, .missing(id: race, hash: AssetHash.none))
     XCTAssertEqual(r.route(envelope(race, AssetHash.none), source: source, name: "race"), .none)

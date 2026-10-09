@@ -29,6 +29,9 @@ final class L2capAssetChannel: NSObject, AssetChannel {
     }
   }
 
+  /// Not yet closed (by either side).
+  var isOpen: Bool { channel != nil }
+
   func write(_ bytes: [UInt8]) {
     outbox += bytes
     flush()
