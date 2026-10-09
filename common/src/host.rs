@@ -269,7 +269,9 @@ impl Host {
     pub fn asset(&self, request: &GetAsset) -> (AssetHeader, &'static [u8]) {
         let refused = |status| (AssetHeader { status, len: 0 }, &[][..]);
         match self.package(request.package) {
+            // not installed, or nothing to fetch
             None => refused(ASSET_UNKNOWN_PACKAGE),
+            Some(package) if package.watch.is_empty() => refused(ASSET_UNKNOWN_PACKAGE),
             Some(package) if package.ui.watch != request.hash => refused(ASSET_HASH_NOT_CURRENT),
             Some(package) => (
                 AssetHeader {

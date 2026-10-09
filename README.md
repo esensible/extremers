@@ -92,7 +92,7 @@ order, each as name, NUL, length u32 LE, contents), then watch.js. Each
 client's UI also has its own hash, the same 8-byte prefix of the SHA-256
 of its files alone: `ui.web` over the web bundle (as above), `ui.watch`
 over watch.js (plain SHA-256 of its bytes, so a watch can check a
-download against it). Bundle file names are content hashes too, so the
+download against it; all zeros for a package with no watch bundle). Bundle file names are content hashes too, so the
 same sources make the same hashes.
 
 The firmware embeds Race and Tune (preinstalled) and Choose

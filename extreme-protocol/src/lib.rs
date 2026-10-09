@@ -100,10 +100,15 @@ pub struct UiHashes {
     /// The Kindle page: its web files, in name order, each as name, NUL,
     /// length (u32 LE) and contents.
     pub web: [u8; 8],
-    /// The watch bundle (`watch.js`), as is; the hash of no bytes for a
-    /// package without one.
+    /// The watch bundle (`watch.js`), as is; [`NO_WATCH_BUNDLE`] (all
+    /// zeros) for a package without one.
     pub watch: [u8; 8],
 }
+
+/// [`UiHashes::watch`] of a package that has no watch bundle: nothing to
+/// fetch (a `GetAsset` for it is answered [`ASSET_UNKNOWN_PACKAGE`]). Not a
+/// hash any bundle has, short of a 2^-64 chance.
+pub const NO_WATCH_BUNDLE: [u8; 8] = [0; 8];
 
 /// Host to client, on every change of the active package or its view: the
 /// websocket's binary frames, BLE's `state` characteristic.
@@ -153,7 +158,8 @@ pub const ASSET_HEADER_MAX: usize = 1 + 5;
 
 /// [`AssetHeader::status`]: here it comes.
 pub const ASSET_OK: u8 = 0;
-/// [`AssetHeader::status`]: no such package is installed.
+/// [`AssetHeader::status`]: no such asset: the package is not installed,
+/// or it has no watch bundle.
 pub const ASSET_UNKNOWN_PACKAGE: u8 = 1;
 /// [`AssetHeader::status`]: the package's watch bundle is not (any more)
 /// the one with that hash.

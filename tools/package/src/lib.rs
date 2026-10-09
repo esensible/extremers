@@ -133,8 +133,12 @@ pub fn web_hash(web: &[(String, Vec<u8>)]) -> [u8; 8] {
 }
 
 /// The watch bundle's own hash ([`UiHashes::watch`]): its bytes, so a watch
-/// can check what it fetched against it.
+/// can check what it fetched against it; all zeros for a package without
+/// one ([`extreme_protocol::NO_WATCH_BUNDLE`]).
 pub fn watch_hash(watch: &[u8]) -> [u8; 8] {
+    if watch.is_empty() {
+        return extreme_protocol::NO_WATCH_BUNDLE;
+    }
     let mut h = Sha256::new();
     h.update(watch);
     prefix(h)
@@ -504,8 +508,11 @@ mod tests {
         // watch checks its download against)
         assert_eq!(web_hash(&web), content_hash(&[], &web, &[]));
         assert_eq!(watch_hash(b"watch"), content_hash(&[], &[], b"watch"));
+        assert_ne!(watch_hash(b"watch"), extreme_protocol::NO_WATCH_BUNDLE);
         // SHA-256("abc") = ba7816bf 8f01cfea ...
         assert_eq!(watch_hash(b"abc"), [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea]);
+        // no watch bundle: all zeros, not the hash of no bytes
+        assert_eq!(watch_hash(b""), [0; 8]);
     }
 
     #[test]

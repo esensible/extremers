@@ -108,6 +108,26 @@ fn watch_bundles_by_hash() {
     let (header, bytes) = host.asset(&GetAsset { package: 12345, hash: race.ui.watch });
     assert_eq!(header, AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 });
     assert!(bytes.is_empty());
+    // installed, but no watch bundle: its ui.watch says so, and there is
+    // nothing to fetch, whatever the hash
+    static NO_WATCH: Package = Package {
+        id: package_id("nowatch"),
+        name: "nowatch",
+        version: 1,
+        abi: 1,
+        content_hash: [1; 8],
+        ui: UiHashes { web: [2; 8], watch: extreme_protocol::NO_WATCH_BUNDLE },
+        memory: 0,
+        engine: b"\0asm",
+        web: &[],
+        watch: &[],
+    };
+    block_on(host.install(&NO_WATCH)).unwrap();
+    for hash in [extreme_protocol::NO_WATCH_BUNDLE, [0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14]] {
+        let (header, bytes) = host.asset(&GetAsset { package: NO_WATCH.id, hash });
+        assert_eq!(header, AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 });
+        assert!(bytes.is_empty());
+    }
 }
 
 #[test]

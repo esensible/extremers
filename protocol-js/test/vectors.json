@@ -2607,7 +2607,7 @@
       "what": "longest name"
     },
     {
-      "hex": "938984c2060474756e6501015e1f00ff01807f423c00ff80017fa55a9a01fe007f8012c300",
+      "hex": "938984c2060474756e6501015e1f00ff01807f423c00ff80017fa55a000000000000000000",
       "type": "Manifest",
       "value": {
         "abi": 1,
@@ -2625,14 +2625,14 @@
         "name": "tune",
         "ui": {
           "watch": [
-            154,
-            1,
-            254,
             0,
-            127,
-            128,
-            18,
-            195
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
           ],
           "web": [
             60,
@@ -2714,15 +2714,6 @@
       "what": "ok, 21345 bytes follow"
     },
     {
-      "hex": "0000",
-      "type": "AssetHeader",
-      "value": {
-        "len": 0,
-        "status": 0
-      },
-      "what": "ok, empty"
-    },
-    {
       "hex": "00ffffffff0f",
       "type": "AssetHeader",
       "value": {
@@ -2738,7 +2729,7 @@
         "len": 0,
         "status": 1
       },
-      "what": "unknown package"
+      "what": "unknown package, or no watch bundle"
     },
     {
       "hex": "0200",

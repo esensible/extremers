@@ -4,8 +4,8 @@
 
 use extreme_protocol::{
     ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, BleCommand, BleNote,
-    BleStatusView, CHOOSE, ChooseView, Envelope, GetAsset, HostEvent, Manifest, Name, PackageInfo,
-    UiHashes, package_id,
+    BleStatusView, CHOOSE, ChooseView, Envelope, GetAsset, HostEvent, Manifest, NO_WATCH_BUNDLE,
+    Name, PackageInfo, UiHashes, package_id,
 };
 use extreme_race::{LineView, Phase, RaceEvent, RaceView};
 use extreme_tune::TuneView;
@@ -205,7 +205,7 @@ pub fn host_vectors() -> Value {
     for (what, m) in [
         ("race", Manifest { id: RACE, name: Name::try_from("race").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UI, watch_len: 21_345 }),
         ("longest name", Manifest { id: package_id("sixteen-chars-xx"), name: Name::try_from("sixteen-chars-xx").unwrap(), version: u16::MAX, abi: 1, content_hash: [0xff; 8], ui: UiHashes { web: [0xff; 8], watch: [0; 8] }, watch_len: u32::MAX }),
-        ("no watch bundle", Manifest { id: TUNE, name: Name::try_from("tune").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UI, watch_len: 0 }),
+        ("no watch bundle", Manifest { id: TUNE, name: Name::try_from("tune").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UiHashes { web: UI.web, watch: NO_WATCH_BUNDLE }, watch_len: 0 }),
     ] {
         all.push(vector("Manifest", what, &m));
     }
@@ -218,9 +218,8 @@ pub fn host_vectors() -> Value {
     }
     for (what, header) in [
         ("ok, 21345 bytes follow", AssetHeader { status: ASSET_OK, len: 21_345 }),
-        ("ok, empty", AssetHeader { status: ASSET_OK, len: 0 }),
         ("ok, largest", AssetHeader { status: ASSET_OK, len: u32::MAX }),
-        ("unknown package", AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 }),
+        ("unknown package, or no watch bundle", AssetHeader { status: ASSET_UNKNOWN_PACKAGE, len: 0 }),
         ("hash not current", AssetHeader { status: ASSET_HASH_NOT_CURRENT, len: 0 }),
     ] {
         all.push(vector("AssetHeader", what, &header));
