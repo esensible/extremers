@@ -6,41 +6,35 @@
 // "connection lost" line is the watch shell's (it owns the link).
 import { Switch, Match } from "solid-js";
 import { createApp } from "solid-watch";
-import { state, STATE_ACTIVE, STATE_SEQ, STATE_RACE } from "./common.jsx";
+import { state, STATE_ACTIVE, STATE_SEQ, STATE_RACE, EXIT_SIZE, raceConfirm } from "./common.jsx";
 import { Active } from "./idle.jsx";
 import { Race } from "./race.jsx";
 import { Sequence } from "./sequence.jsx";
-import { confirm } from "./confirm.jsx";
 import { Haptic } from "./haptics.jsx";
 import { onState, selectDefault } from "./api.js";
 
-const [Confirm, doConfirm] = confirm();
+const [Confirm, doConfirm] = raceConfirm();
 
-// The exit button's side, as a share of the screen height. The Kindle's is
-// 15 %; on the watch the rounded corner and the system bar eat into a
-// corner that small, so it is 30 % here (clear of every other button in
-// every phase: test/bundle.test.mjs).
-const EXIT_SIZE = 0.3;
-
-export const Main = () => (
+// props: the screen ({ width, height }), for the views' confirm buttons
+export const Main = (props) => (
   <Switch fallback={<text fontSize={20} textAlign="center">Loading...</text>}>
     <Match when={state() === STATE_ACTIVE}>
-      <Active />
+      <Active width={props.width} height={props.height} />
     </Match>
     <Match when={state() === STATE_SEQ}>
-      <Sequence />
+      <Sequence width={props.width} height={props.height} />
     </Match>
     <Match when={state() === STATE_RACE}>
-      <Race />
+      <Race width={props.width} height={props.height} />
     </Match>
   </Switch>
 );
 
 const App = (props) => (
   <view flexGrow={1}>
-    <Main />
+    <Main width={props.width} height={props.height} />
     <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} onPress={() => doConfirm(() => selectDefault(), 2)} />
-    <Confirm />
+    <Confirm width={props.width} height={props.height} />
     <Haptic />
   </view>
 );

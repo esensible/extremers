@@ -31,16 +31,23 @@ export const Pad = (props) => (
   </button>
 );
 
+// A row's height, and the gap between Pads and between rows (pt)
+const ROW = 40;
+const GAP = 4;
+
+// The height of `n` Rows in <Buttons>
+export const rowsHeight = (n) => (n > 0 ? n * ROW + (n - 1) * GAP : 0);
+
 // A row of Pads (.row)
 export const Row = (props) => (
-  <view flexDirection="row" gap={4} height={40} alignSelf="stretch">
+  <view flexDirection="row" gap={GAP} height={ROW} alignSelf="stretch">
     {props.children}
   </view>
 );
 
 // The buttons at the bottom (.buttons)
 export const Buttons = (props) => (
-  <view marginTop="auto" gap={4} alignSelf="stretch">
+  <view marginTop="auto" gap={GAP} alignSelf="stretch">
     {props.children}
   </view>
 );

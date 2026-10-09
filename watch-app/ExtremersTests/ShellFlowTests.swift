@@ -81,6 +81,20 @@ final class ShellFlowTests: XCTestCase {
     shell.session.dispatch(tag: b.tag, name: "press")
   }
 
+  /// The shown confirm button's frame (round, accent), if any.
+  func confirmButton(_ shell: Shell) -> CGRect? {
+    guard let snap = shell.session.snapshot, let root = snap.root else { return nil }
+    var found: CGRect?
+    func walk(_ n: LayoutNode, _ origin: CGPoint) {
+      if n.props["display"] == .string("none") { return }
+      let f = n.frame.offsetBy(dx: origin.x, dy: origin.y)
+      if n.type == "button", n.props["background"] == .string("accent") { found = f }
+      for c in n.children { if let k = snap[c] { walk(k, f.origin) } }
+    }
+    walk(root, .zero)
+    return found
+  }
+
   func spin(_ seconds: TimeInterval) {
     RunLoop.main.run(until: Date().addingTimeInterval(seconds))
   }
@@ -96,18 +110,24 @@ final class ShellFlowTests: XCTestCase {
     shell.session.setViewport(CGSize(width: 198, height: 242))
     XCTAssertNil(shell.session.error)
     guard case .app(_, _, "race") = shell.screen else { return XCTFail("\(shell.screen)") }
-    let centre = CGPoint(x: 99, y: 121)
     press(shell, at: CGPoint(x: 10, y: 10))
     spin(0.5)
-    XCTAssertTrue(buttons(shell).contains { $0.frame.contains(centre) && $0.frame.width == 60 }, "the confirm button shows")
-    press(shell, at: centre)
+    guard let first = confirmButton(shell) else { return XCTFail("the confirm button shows") }
+    // 60 pt, under the exit square (72.6 pt) by its 4 pt margin, its centre
+    // within 50 % +- 10 % of the width
+    XCTAssertEqual(first.width, 60)
+    XCTAssertGreaterThanOrEqual(first.minY, 72.6 + 4 - 0.5)
+    XCTAssertEqual(first.midX, 99, accuracy: 19.8 + 0.5)
+    press(shell, at: CGPoint(x: first.midX, y: first.midY))
     spin(0.5)
     XCTAssertEqual(sent, [], "one more tap to go")
-    press(shell, at: centre)
+    guard let second = confirmButton(shell) else { return XCTFail("the confirm button stays") }
+    XCTAssertNotEqual(first, second, "each tap re-places it")
+    press(shell, at: CGPoint(x: second.midX, y: second.midY))
     spin(0.5)
     XCTAssertNil(shell.session.error)
     XCTAssertEqual(sent, [ShellEvents.selectDefault])
-    XCTAssertFalse(buttons(shell).contains { $0.frame.width == 60 }, "the confirm button hides")
+    XCTAssertNil(confirmButton(shell), "the confirm button hides")
   }
 
   /// The box switching packages back and forth: Choose -> Race -> Choose
@@ -137,8 +157,10 @@ final class ShellFlowTests: XCTestCase {
       XCTAssertFalse(buttons(shell).isEmpty, "round \(round): drawn")
       // exit, as on the watch
       press(shell, at: CGPoint(x: 10, y: 10))
-      press(shell, at: CGPoint(x: 99, y: 121))
-      press(shell, at: CGPoint(x: 99, y: 121))
+      for _ in 0..<2 {
+        guard let c = confirmButton(shell) else { return XCTFail("round \(round): no confirm button") }
+        press(shell, at: CGPoint(x: c.midX, y: c.midY))
+      }
       XCTAssertEqual(sent.last, ShellEvents.selectDefault, "round \(round): SelectDefault")
     }
   }

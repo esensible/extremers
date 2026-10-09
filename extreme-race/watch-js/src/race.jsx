@@ -2,15 +2,14 @@
 // (a tick loop, each minute) on the finish button, behind the confirm
 // widget (2 taps). Entering the race from the sequence also buzzes the gun
 // if the countdown's own tick did not (haptics.jsx).
-import { startTime, speed, heading, state, STATE_SEQ, STATE_RACE } from "./common.jsx";
+import { startTime, speed, heading, state, STATE_SEQ, STATE_RACE, raceConfirm } from "./common.jsx";
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import { confirm } from "./confirm.jsx";
 import { postEvent, timestamp, previousPhase } from "./api.js";
 import { raceStarted } from "./haptics.jsx";
 import { Big, Pad, Row, Buttons } from "./style.jsx";
 
 const [raceTime, setRaceTime] = createSignal("0:00");
-const [Confirm, doConfirm] = confirm();
+const [Confirm, doConfirm] = raceConfirm();
 
 createEffect(() => {
   if (state() !== STATE_RACE) {
@@ -61,7 +60,8 @@ export const finishClick = () => {
   doConfirm(() => { postEvent({ tag: "RaceFinish" }); }, 2);
 };
 
-export const Race = () => (
+// props: the screen ({ width, height }), for the confirm button
+export const Race = (props) => (
   <view flexGrow={1}>
     <Big>{speed().toFixed(1)}</Big>
     <Big>{heading().toFixed(0)}</Big>
@@ -70,6 +70,6 @@ export const Race = () => (
         <Pad refresh onPress={finishClick} label={raceTime()} />
       </Row>
     </Buttons>
-    <Confirm />
+    <Confirm width={props.width} height={props.height} />
   </view>
 );

@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { runNode, replay } from "../../../solid-watch/test/lib.mjs";
 import { decodeHostEvent } from "../../../protocol-js/protocol.js";
 import { packageId } from "../../../client-common/host.js";
-import { exitClear, buttonsPerCommit } from "../../../watch-js/test/fixture-tags.mjs";
+import { exitClear, buttonsPerCommit, confirmClear, CONFIRM } from "../../../watch-js/test/fixture-tags.mjs";
 import { decodeRaceEvent } from "../../protocol-js/protocol.js";
 
 const dir = new URL("../fixtures/", import.meta.url);
@@ -115,4 +115,36 @@ test("the exit button is 30 % of the height, square, top left, and covers no oth
   // the script goes through every phase, with the confirm button shown in each
   const texts = lines("log.jsonl").join("\n");
   for (const label of ['"10"', '"Sync"', '"Port"']) assert.ok(texts.includes(label), label);
+});
+
+// The confirm keeps CONFIRM_MARGIN (4 pt) above and below; the check allows
+// 1 pt for its place's rounding and the layout's pixel grid.
+const CLEAR = 3;
+
+test("the confirm button covers no other button, nor the exit, in any phase or screen; shrinks to fit the room", () => {
+  const script = JSON.parse(read("script.json"));
+  for (const [width, height] of SCREENS) {
+    const run = runNode(read("bundle.js"), { ...script, ctx: { width, height } });
+    const frames = replay(run, { fragments: [fragment] });
+    const { shown, sizes, places, problems } = confirmClear(run, frames, [width, height], CLEAR);
+    assert.deepEqual(problems, [], `${width}x${height}`);
+    assert.ok(shown >= 10, `${width}x${height}: shown in ${shown} commits`);
+    assert.ok(places >= 8, `${width}x${height}: ${places} places`);
+    // 60 pt where there is room (Racing), smaller where Active / InSequence
+    // leave less, never below a button row's height
+    assert.equal(sizes.at(-1), 60, `${width}x${height}: ${sizes}`);
+    assert.ok(sizes[0] >= 40, `${width}x${height}: ${sizes}`);
+    // its centre within the screen's centre +- 10 % of the width
+    for (const b of buttonsPerCommit(run, frames).flat().filter((b) => CONFIRM(b.props))) {
+      const cx = b.rect[0] + b.rect[2] / 2;
+      assert.ok(Math.abs(cx - width / 2) <= 0.1 * width + 0.5, `${width}x${height}: centre x ${cx}`);
+    }
+  }
+  // the smallest screen's sizes: the Active / InSequence room, Racing's 60
+  const run = runNode(read("bundle.js"), { ...script, ctx: { width: 162, height: 197 } });
+  assert.deepEqual(confirmClear(run, replay(run, { fragments: [fragment] }), [162, 197], CLEAR).sizes, [45, 60]);
+});
+
+test("the confirm's places come from the clock-seeded generator: the same clock, the same places", () => {
+  assert.deepEqual(runNode(read("bundle.js"), script()), runNode(read("bundle.js"), script()));
 });

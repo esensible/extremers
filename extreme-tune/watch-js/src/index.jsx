@@ -8,12 +8,13 @@ import { createApp } from "solid-watch";
 import { tune, onState, selectDefault } from "./api.js";
 import { confirm } from "./confirm.jsx";
 
-const [Confirm, doConfirm] = confirm();
-
 // The exit button's side, as a share of the screen height. The Kindle's is
 // 15 %; on the watch the rounded corner and the system bar eat into a
 // corner that small, so it is 30 % here, as in the race bundle.
 const EXIT_SIZE = 0.3;
+
+// The confirm button: clear of the exit square; there are no other buttons.
+const [Confirm, doConfirm] = confirm({ exit: EXIT_SIZE, buttons: () => 0 });
 
 // .speed / .deviation (style.css)
 const BIG = 46;
@@ -45,7 +46,7 @@ const App = (props) => (
     <Big><FormatDeviation value={tune.speed_dev} /><text fontSize={SMALL}>k</text></Big>
     <Big><FormatDeviation value={tune.heading_dev} precision={0} /><text fontSize={SMALL}>°</text></Big>
     <button position="absolute" left={0} top={0} width={props.height * EXIT_SIZE} height={props.height * EXIT_SIZE} onPress={() => doConfirm(() => selectDefault(), 2)} />
-    <Confirm />
+    <Confirm width={props.width} height={props.height} />
   </view>
 );
 

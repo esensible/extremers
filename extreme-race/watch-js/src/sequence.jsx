@@ -4,9 +4,8 @@
 // (haptics.jsx): it runs just after each whole second, so the second it
 // has just passed is the one to buzz.
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import { speed, startTime, LineButtons, state, STATE_SEQ } from "./common.jsx";
+import { speed, startTime, LineButtons, state, STATE_SEQ, raceConfirm } from "./common.jsx";
 import { postEvent, timestamp } from "./api.js";
-import { confirm } from "./confirm.jsx";
 import { countdownCue } from "./haptics.jsx";
 import { Big, Pad, Row, Buttons } from "./style.jsx";
 
@@ -16,7 +15,7 @@ const SYNC_MASK_SECONDS = 10;
 
 const [countdown, setCountdown] = createSignal("0:00");
 
-const [Confirm, doConfirm] = confirm();
+const [Confirm, doConfirm] = raceConfirm();
 
 function bumpStart(seconds) {
   return () => {
@@ -72,7 +71,8 @@ createEffect(() => {
   startTimerTask();
 });
 
-export const Sequence = () => (
+// props: the screen ({ width, height }), for the confirm button
+export const Sequence = (props) => (
   <view flexGrow={1}>
     <Big>{speed().toFixed(1)}</Big>
     <Big>{countdown()}</Big>
@@ -86,6 +86,6 @@ export const Sequence = () => (
         <Pad onPress={bumpStart(300)} label="5" />
       </Row>
     </Buttons>
-    <Confirm />
+    <Confirm width={props.width} height={props.height} />
   </view>
 );

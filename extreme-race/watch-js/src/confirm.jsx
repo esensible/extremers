@@ -1,40 +1,50 @@
 // The Kindle's confirm widget (client-common/confirm.js) drawn on the watch:
-// [Confirm, doConfirm, cancel]; the button sits at the centre of the
-// screen (the Kindle's moves to a random spot).
-import { createSignal } from "solid-js";
+// [Confirm, doConfirm, cancel]. As on the Kindle, the button goes to a
+// random place when it appears and on each tap, so each tap of a multi-tap
+// confirm is a fresh aim; on the watch that place is near the centre, clear
+// of the exit square and of the other buttons, the button shrinking where
+// the room between them is short (client-common/confirm-place.js).
+//
+//   confirm({ exit, buttons })
+//     exit       the exit square's side, as a share of the screen height
+//     buttons()  the height of the button rows at the bottom of the screen
+//                now (0 for none)
+//   <Confirm width={…} height={…} />   the screen, in points
+import { createMemo, createSignal } from "solid-js";
 import { confirmLogic } from "../../../client-common/confirm.js";
+import { seededRandom, confirmDraw, confirmRect, CONFIRM_MIDDLE } from "../../../client-common/confirm-place.js";
 
-const SIZE = 60; // pt
+// One random source for every confirm in the bundle, seeded from the clock.
+const random = seededRandom(Date.now() % 4294967296);
 
-const centre = () => ({ left: "50%", top: "50%" });
-
-export const confirm = () => {
+export const confirm = ({ exit, buttons }) => {
   const [shown, setShown] = createSignal(false);
-  const [pos, setPos] = createSignal(centre());
+  // the latest placement; mapped into the free band of the moment below
+  const [draw, setDraw] = createSignal(CONFIRM_MIDDLE);
   const c = confirmLogic({
-    place: centre,
+    place: () => confirmDraw(random),
     show: () => setShown(true),
     hide: () => setShown(false),
-    move: setPos,
+    move: setDraw,
   });
 
-  return [
-    () => (
+  const Confirm = (props) => {
+    const rect = createMemo(() =>
+      confirmRect({ width: props.width, height: props.height, top: props.height * exit, bottom: props.height - buttons() }, draw()));
+    return (
       <button
         position="absolute"
-        left={pos().left}
-        top={pos().top}
-        marginLeft={-SIZE / 2}
-        marginTop={-SIZE / 2}
-        width={SIZE}
-        height={SIZE}
-        borderRadius={SIZE / 2}
+        left={rect().left}
+        top={rect().top}
+        width={rect().size}
+        height={rect().size}
+        borderRadius={rect().size / 2}
         background="accent"
         display={shown() ? "flex" : "none"}
         onPress={c.tap}
       />
-    ),
-    c.confirm,
-    c.cancel,
-  ];
+    );
+  };
+
+  return [Confirm, c.confirm, c.cancel];
 };

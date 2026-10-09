@@ -129,5 +129,33 @@ export function exitClear(lines, frames) {
   return [checked, problems];
 }
 
-// The confirm widget's button (60 pt, centred).
-export const CONFIRM = (p) => p.width === 60 && p.left === "50%";
+// The confirm widget's button (round, accent, absolute; placed in points).
+export const CONFIRM = (p) => p.background === "accent" && p.position === "absolute" && p.borderRadius === p.width / 2;
+
+/**
+ * Checks the shown confirm button against every other shown button (the
+ * exit among them) and the screen, in every commit: { shown: commits with
+ * it shown, sizes: its sizes, places: its distinct [left, top]s, problems }.
+ * MARGIN: the gap it must keep above and below the others.
+ */
+export function confirmClear(lines, frames, [width, height], margin = 0) {
+  const problems = [];
+  const sizes = new Set();
+  const places = new Set();
+  let shown = 0;
+  buttonsPerCommit(lines, frames).forEach((buttons, commit) => {
+    const confirm = buttons.find((b) => CONFIRM(b.props));
+    if (!confirm) return;
+    shown++;
+    const [x, y, w, h] = confirm.rect;
+    sizes.add(w);
+    places.add(`${x},${y}`);
+    if (w !== h) problems.push(`commit ${commit}: confirm not square ${confirm.rect}`);
+    if (x < 0 || y < 0 || x + w > width || y + h > height) problems.push(`commit ${commit}: confirm ${confirm.rect} off the ${width}x${height} screen`);
+    const grown = [x, y - margin, w, h + 2 * margin];
+    for (const b of buttons) {
+      if (b !== confirm && overlap(grown, b.rect)) problems.push(`commit ${commit}: confirm ${confirm.rect} (+${margin} pt) covers button ${b.tag} ${b.rect}`);
+    }
+  });
+  return { shown, sizes: [...sizes].sort((a, b) => a - b), places: places.size, problems };
+}

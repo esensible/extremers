@@ -3,11 +3,18 @@
 // CSS classes are solid-watch props here (style.jsx).
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { race, postEvent, timestamp, timezoneSecs } from "./api.js";
-import { Pad, Row } from "./style.jsx";
+import { Pad, Row, rowsHeight } from "./style.jsx";
+import { confirm } from "./confirm.jsx";
 
 export const STATE_ACTIVE = "Active";
 export const STATE_SEQ = "InSequence";
 export const STATE_RACE = "Racing";
+
+// The exit button's side, as a share of the screen height. The Kindle's is
+// 15 %; on the watch the rounded corner and the system bar eat into a
+// corner that small, so it is 30 % here (clear of every other button in
+// every phase: test/bundle.test.mjs).
+export const EXIT_SIZE = 0.3;
 
 export const LINE_NONE = "None";
 export const LINE_PORT = "Port";
@@ -95,6 +102,18 @@ const crossTime = () => {
   }
   return `${neg ? "-" : ""}${Math.floor(absSeconds / 60)}:${Math.floor(absSeconds) % 60}`;
 };
+
+// The height of the phase's button rows (<Buttons>): the line buttons and
+// the start / bump row in Active and InSequence, Finish in Racing, none
+// while loading. Every confirm keeps clear of them (confirm.jsx).
+export const buttonsHeight = () => {
+  const s = state();
+  return rowsHeight(s === STATE_ACTIVE || s === STATE_SEQ ? 2 : s === STATE_RACE ? 1 : 0);
+};
+
+// The confirm widget of this package: clear of the exit square and of the
+// phase's buttons.
+export const raceConfirm = () => confirm({ exit: EXIT_SIZE, buttons: buttonsHeight });
 
 // The line buttons, and when both ends are set, the time to the line.
 // <Show> (rather than an early return) so setting the second end while

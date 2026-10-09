@@ -1,11 +1,10 @@
 // As the Kindle race page's idle.jsx: speed, the wall clock, the line
 // buttons and the start-sequence buttons (each behind the confirm widget).
-import { speed, time, LineButtons } from "./common.jsx";
-import { confirm } from "./confirm.jsx";
+import { speed, time, LineButtons, raceConfirm } from "./common.jsx";
 import { postEvent, timestamp } from "./api.js";
 import { Big, Pad, Row, Buttons } from "./style.jsx";
 
-const [Confirm, doConfirm] = confirm();
+const [Confirm, doConfirm] = raceConfirm();
 
 function seqClick(seconds) {
   return () => {
@@ -15,7 +14,8 @@ function seqClick(seconds) {
   };
 }
 
-export const Active = () => (
+// props: the screen ({ width, height }), for the confirm button
+export const Active = (props) => (
   <view flexGrow={1}>
     <Big>{speed().toFixed(1)}</Big>
     <Big>{time()}</Big>
@@ -28,6 +28,6 @@ export const Active = () => (
         <Pad onPress={seqClick(60)} label="1" />
       </Row>
     </Buttons>
-    <Confirm />
+    <Confirm width={props.width} height={props.height} />
   </view>
 );

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { runNode, replay } from "../../../solid-watch/test/lib.mjs";
-import { exitClear, buttonsPerCommit } from "../../../watch-js/test/fixture-tags.mjs";
+import { exitClear, buttonsPerCommit, confirmClear, CONFIRM } from "../../../watch-js/test/fixture-tags.mjs";
 
 const dir = new URL("../fixtures/", import.meta.url);
 const read = (f) => readFileSync(new URL(f, dir), "utf8");
@@ -55,7 +55,7 @@ test("100 states; each update is setProps + one commit; another package's envelo
   assert.deepEqual(names(states[51]), ["commit"]);
 });
 
-test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the confirm button centred; 5 s without a tap cancels", () => {
+test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the confirm button re-placed on each tap; 5 s without a tap cancels", () => {
   const segs = segments().filter((s) => s.marker[0] !== "#state" && s.marker[0] !== "#mount");
   const confirmTag = segs[4].marker[1];
   const display = (seg) => seg.ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag && m[2] === "display").map((m) => m[3]);
@@ -76,9 +76,17 @@ test("Exit is the Kindle's: the exit button, doConfirm(selectDefault(), 2), the 
   assert.deepEqual(names(segs[4]).filter((n) => n === "send"), []);
   assert.deepEqual(segs[5].ops.filter((m) => m[0] === "send"), [["send", [1]]]);
   assert.deepEqual(display(segs[5]), ["none"]);
-  // centred: absolute at 50% / 50%, pulled back by half its size
+  // round, absolute, 60 pt (there is room for the full size here)
   const props = Object.fromEntries(segments()[0].ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag).map((m) => [m[2], m[3]]));
-  assert.deepEqual([props.position, props.left, props.top, props.marginLeft, props.marginTop, props.width], ["absolute", "50%", "50%", -30, -30, 60]);
+  assert.deepEqual([props.position, props.width, props.height, props.borderRadius], ["absolute", 60, 60, 30]);
+  // re-placed when it appears and on each tap: a new left / top each time
+  const moves = segs.slice(0, 5).map((s) => s.ops.filter((m) => m[0] === "setProp" && m[1] === confirmTag && (m[2] === "left" || m[2] === "top")).length);
+  assert.deepEqual(moves.map((n) => n > 0), [true, false, false, true, true], `${moves}`);
+});
+
+test("the confirm's places come from the clock-seeded generator: the same clock, the same places", () => {
+  const script = JSON.parse(read("script.json"));
+  assert.deepEqual(runNode(read("bundle.js"), script), runNode(read("bundle.js"), { ...script }));
 });
 
 // Watch screens (points): 40/41, 42, 44 (SE 3), 44/45 (the fixtures'), 46, 49, 49 mm (Ultra 4).
@@ -94,5 +102,15 @@ test("the exit button is 30 % of the height, square, top left, and covers no oth
     assert.deepEqual(problems, [], `${width}x${height}`);
     const exit = buttonsPerCommit(run, frames).at(-1).find((b) => b.props.left === 0 && b.props.top === 0);
     assert.ok(Math.abs(exit.rect[2] - 0.3 * height) <= 0.5 && exit.rect[2] === exit.rect[3], `${width}x${height}: ${exit.rect}`);
+    // the confirm button: clear of the exit (4 pt by design; 3 allows for
+    // rounding), on the screen, full size, its centre within 50 % +- 10 %
+    // of the width
+    const c = confirmClear(run, frames, [width, height], 3);
+    assert.deepEqual(c.problems, [], `${width}x${height}`);
+    assert.ok(c.shown >= 2, `${width}x${height}: shown in ${c.shown} commits`);
+    assert.deepEqual(c.sizes, [60], `${width}x${height}`);
+    for (const b of buttonsPerCommit(run, frames).flat().filter((b) => CONFIRM(b.props))) {
+      assert.ok(Math.abs(b.rect[0] + 30 - width / 2) <= 0.1 * width + 0.5, `${width}x${height}: ${b.rect}`);
+    }
   }
 });

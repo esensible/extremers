@@ -7,7 +7,8 @@
 //   tap()                       the confirm button's tap handler
 //
 // Each tap moves the button to `place()` (the Kindle: a random spot; the
-// watch: the centre) and gives 5 s for the next one; 5 s without a tap
+// watch: a random spot near the centre, confirm-place.js) and gives 5 s for
+// the next one; 5 s without a tap
 // cancels. Uses the standard setTimeout / clearTimeout. No imports, so it
 // builds the same in every client.
 //
