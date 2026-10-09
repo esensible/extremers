@@ -18,6 +18,16 @@ enum RaceProtocol {
   static let stateUUID = "E4A1C001-6B2F-4F77-9A0D-3C5E7B9D1F20"
   /// write (with response): a `HostEvent`.
   static let eventUUID = "E4A1C002-6B2F-4F77-9A0D-3C5E7B9D1F20"
+  /// read (bonded link only): the LE PSM of the box's asset channel, u16
+  /// little-endian (an L2CAP connection-oriented channel; `AssetRequest`).
+  static let uiPsmUUID = "E4A1C003-6B2F-4F77-9A0D-3C5E7B9D1F20"
+
+  /// The PSM in a `ui-psm` value, or nil if it is not one.
+  static func psm(_ value: [UInt8]) -> UInt16? {
+    guard value.count == 2 else { return nil }
+    let psm = UInt16(value[0]) | UInt16(value[1]) << 8
+    return psm == 0 ? nil : psm
+  }
 }
 
 /// A package's id: FNV-1a 32-bit of its name (README "Packages"). Choose
@@ -37,18 +47,22 @@ enum Packages {
   }
 }
 
-/// Host -> client: `Envelope { timestamp: u64, active: PackageId, ui_hash:
-/// [u8; 8], state: bytes }` (README "Host protocol"). `timestamp` is the
-/// device clock at send, epoch ms; `ui_hash` the active package's UI build,
-/// which bundle shows its state; `state` its view bytes, for its bundle.
+/// Host -> client: `Envelope { timestamp: u64, active: PackageId, ui:
+/// UiHashes, state: bytes }` (README "Host protocol"). `timestamp` is the
+/// device clock at send, epoch ms; `ui.watch` the first 8 bytes of the
+/// SHA-256 of the active package's watch bundle, which bundle shows its
+/// state (and the key it is fetched and cached by); `state` its view
+/// bytes, for its bundle.
 typealias Envelope = HostProtocol.Envelope
 
 extension Envelope {
-  /// The active package's UI build (`ui_hash`).
-  var uiHash: [UInt8] { ui_hash }
+  /// The active package's watch bundle: the first 8 bytes of its SHA-256.
+  var watchHash: [UInt8] { ui.watch }
 
-  init(timestamp: UInt64, active: PackageId, uiHash: [UInt8], state: [UInt8]) {
-    self.init(timestamp: timestamp, active: active, ui_hash: uiHash, state: state)
+  /// An envelope whose `ui.web` does not matter (tests, the simulator).
+  init(timestamp: UInt64, active: PackageId, watchHash: [UInt8], state: [UInt8]) {
+    self.init(timestamp: timestamp, active: active, ui: UiHashes(web: [UInt8](repeating: 0, count: 8), watch: watchHash),
+              state: state)
   }
 
   /// The envelope, or why these bytes are not one.

@@ -1,6 +1,6 @@
 import XCTest
 
-/// Which bundle runs for each envelope, and where bundles come from.
+/// Which bundle runs for each envelope: loaded from the cache, or fetched.
 final class ShellRouterTests: XCTestCase {
   /// A source with bundles for some ids, counting lookups.
   final class FakeSource: BundleSource {
@@ -11,10 +11,10 @@ final class ShellRouterTests: XCTestCase {
       self.names = names
     }
 
-    func bundle(id: PackageId, uiHash: [UInt8]) -> AppBundle? {
-      lookups.append((id, uiHash))
+    func bundle(id: PackageId, hash: [UInt8]) -> AppBundle? {
+      lookups.append((id, hash))
       guard let name = names[id] else { return nil }
-      return AppBundle(id: id, name: name, uiHash: uiHash, source: Data(name.utf8), sha256: "x")
+      return AppBundle(id: id, name: name, hash: hash, source: Data(name.utf8), sha256: "x")
     }
   }
 
@@ -23,72 +23,111 @@ final class ShellRouterTests: XCTestCase {
   let hashB: [UInt8] = [2, 2, 2, 2, 2, 2, 2, 2]
 
   func envelope(_ active: PackageId, _ hash: [UInt8]) -> Envelope {
-    Envelope(timestamp: 1, active: active, uiHash: hash, state: [])
+    Envelope(timestamp: 1, active: active, watchHash: hash, state: [])
   }
 
-  func testLoadsOnceThenFeeds() {
+  func testCachedLoadsOnceThenFeeds() {
     let source = FakeSource([race: "race", 0: "choose"])
     var r = ShellRouter()
     XCTAssertEqual(r.screen, .none)
-    guard case .load(let b) = r.route(envelope(race, hashA), source: source) else { return XCTFail("no load") }
+    guard case .load(let b) = r.route(envelope(race, hashA), source: source, name: "race") else { return XCTFail("no load") }
     XCTAssertEqual(b.name, "race")
-    XCTAssertEqual(r.screen, .app(id: race, uiHash: hashA, name: "race"))
-    XCTAssertEqual(r.route(envelope(race, hashA), source: source), .feed)
-    XCTAssertEqual(r.route(envelope(race, hashA), source: source), .feed)
+    XCTAssertEqual(r.screen, .app(id: race, hash: hashA, name: "race"))
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .feed)
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .feed)
     XCTAssertEqual(source.lookups.count, 1)
   }
 
-  func testNewActiveOrNewUiHashLoadsAgain() {
+  func testNewActiveOrNewHashLoadsAgain() {
     let source = FakeSource([race: "race", 0: "choose"])
     var r = ShellRouter()
-    _ = r.route(envelope(race, hashA), source: source)
-    guard case .load(let c) = r.route(envelope(0, hashA), source: source) else { return XCTFail("no load") }
+    _ = r.route(envelope(race, hashA), source: source, name: "race")
+    guard case .load(let c) = r.route(envelope(0, hashA), source: source, name: "choose") else { return XCTFail("no load") }
     XCTAssertEqual(c.name, "choose")
-    _ = r.route(envelope(race, hashA), source: source)
-    guard case .load = r.route(envelope(race, hashB), source: source) else { return XCTFail("a new ui_hash loads") }
+    _ = r.route(envelope(race, hashA), source: source, name: "race")
+    guard case .load = r.route(envelope(race, hashB), source: source, name: "race") else { return XCTFail("a new hash loads") }
     XCTAssertEqual(source.lookups.map(\.1), [hashA, hashA, hashA, hashB])
   }
 
-  func testUnknownPackageIsMissingUntilAnotherIsActive() {
+  /// Not cached: fetch, wait while it runs, load what it brings.
+  func testUncachedIsFetchedThenLoaded() {
+    let source = FakeSource([:])
+    var r = ShellRouter()
+    let key = BundleKey(id: race, hash: hashA)
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .fetch(key))
+    XCTAssertEqual(r.screen, .loading(id: race, hash: hashA, name: "race"))
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .wait)
+    XCTAssertEqual(source.lookups.count, 1, "no lookup while it is fetched")
+    let b = AppBundle(id: race, name: "race", hash: hashA, source: Data(), sha256: "x")
+    XCTAssertEqual(r.fetched(b), .load(b))
+    XCTAssertEqual(r.screen, .app(id: race, hash: hashA, name: "race"))
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .feed)
+  }
+
+  /// The box moving on mid-fetch: the new bundle is fetched, the old
+  /// fetch's result is not loaded.
+  func testEnvelopeChangeMidFetch() {
+    let source = FakeSource([:])
+    var r = ShellRouter()
+    _ = r.route(envelope(race, hashA), source: source, name: "race")
+    XCTAssertEqual(r.route(envelope(race, hashB), source: source, name: "race"), .fetch(BundleKey(id: race, hash: hashB)))
+    let stale = AppBundle(id: race, name: "race", hash: hashA, source: Data(), sha256: "x")
+    XCTAssertEqual(r.fetched(stale), .none)
+    r.failed(BundleKey(id: race, hash: hashA), reason: "late")
+    XCTAssertEqual(r.screen, .loading(id: race, hash: hashB, name: "race"), "a stale failure changes nothing")
+  }
+
+  func testFailedWaitsForRetry() {
+    var r = ShellRouter()
+    let key = BundleKey(id: race, hash: hashA)
+    _ = r.route(envelope(race, hashA), source: FakeSource([:]), name: "race")
+    r.failed(key, reason: "timed out")
+    XCTAssertEqual(r.screen, .failed(id: race, hash: hashA, name: "race", reason: "timed out"))
+    XCTAssertEqual(r.route(envelope(race, hashA), source: FakeSource([:]), name: "race"), .wait)
+    XCTAssertEqual(r.retry(), key)
+    XCTAssertEqual(r.screen, .loading(id: race, hash: hashA, name: "race"))
+    XCTAssertNil(r.retry(), "only a failure is retried")
+  }
+
+  /// The box has no watch bundle for it: the missing screen until another
+  /// package is active.
+  func testMissingUntilAnotherIsActive() {
     let source = FakeSource([0: "choose"])
     var r = ShellRouter()
-    XCTAssertEqual(r.route(envelope(race, hashA), source: source), .missing)
-    XCTAssertEqual(r.screen, .missing(id: race))
-    XCTAssertEqual(r.route(envelope(race, hashA), source: source), .none)
+    _ = r.route(envelope(race, hashA), source: source, name: "race")
+    r.missing(BundleKey(id: race, hash: hashA))
+    XCTAssertEqual(r.screen, .missing(id: race, hash: hashA))
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .none)
     // the Exit there sends SelectDefault; the box then makes Choose active
-    guard case .load = r.route(envelope(0, hashA), source: source) else { return XCTFail("no load") }
-    XCTAssertEqual(r.screen, .app(id: 0, uiHash: hashA, name: "choose"))
+    guard case .load = r.route(envelope(0, hashA), source: source, name: "choose") else { return XCTFail("no load") }
+    XCTAssertEqual(r.screen, .app(id: 0, hash: hashA, name: "choose"))
+  }
+
+  /// A package without a watch bundle (`ui.watch` the hash of no bytes):
+  /// missing at once, no fetch; once it has one, fetched.
+  func testNoWatchBundleIsMissingWithoutAFetch() {
+    let source = FakeSource([:])
+    var r = ShellRouter()
+    XCTAssertEqual(AssetHash.none, [0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14])
+    XCTAssertEqual(r.route(envelope(race, AssetHash.none), source: source, name: "race"), .missing)
+    XCTAssertEqual(r.screen, .missing(id: race, hash: AssetHash.none))
+    XCTAssertEqual(r.route(envelope(race, AssetHash.none), source: source, name: "race"), .none)
+    XCTAssertTrue(source.lookups.isEmpty)
+    XCTAssertEqual(r.route(envelope(race, hashA), source: source, name: "race"), .fetch(BundleKey(id: race, hash: hashA)))
   }
 
   func testResetLoadsAgain() {
     let source = FakeSource([race: "race"])
     var r = ShellRouter()
-    _ = r.route(envelope(race, hashA), source: source)
+    _ = r.route(envelope(race, hashA), source: source, name: "race")
     r.reset()
     XCTAssertEqual(r.screen, .none)
-    guard case .load = r.route(envelope(race, hashA), source: source) else { return XCTFail("no load") }
+    guard case .load = r.route(envelope(race, hashA), source: source, name: "race") else { return XCTFail("no load") }
   }
 
-  /// The compiled-in bundles: a directory per package name, Choose's as 0.
-  func testCompiledBundles() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("bundles-\(UUID())")
-    defer { try? FileManager.default.removeItem(at: root) }
-    for name in ["choose", "race", "tune"] {
-      let d = root.appendingPathComponent(name)
-      try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-      try Data("// \(name)".utf8).write(to: d.appendingPathComponent("bundle.js"))
-      try Data("abc\(name)  bundle.js\n".utf8).write(to: d.appendingPathComponent("bundle.js.sha256"))
-    }
-    // a directory without a bundle is not one
-    try FileManager.default.createDirectory(at: root.appendingPathComponent("empty"), withIntermediateDirectories: true)
-    let source = CompiledBundles(root: root)
-    XCTAssertEqual(source.names, ["choose", "race", "tune"])
-    let choose = source.bundle(id: 0, uiHash: hashA)
-    XCTAssertEqual(choose?.name, "choose")
-    XCTAssertEqual(choose?.sha256, "abcchoose")
-    XCTAssertEqual(choose?.source, Data("// choose".utf8))
-    // any ui_hash: the box's hash covers the whole package
-    XCTAssertEqual(source.bundle(id: Packages.id("tune"), uiHash: hashB)?.name, "tune")
-    XCTAssertNil(source.bundle(id: Packages.id("wind"), uiHash: hashA))
+  func testNames() {
+    XCTAssertEqual(PackageNames.fallback(Packages.choose), "choose")
+    XCTAssertEqual(PackageNames.fallback(0x1234_abcd), "1234abcd")
+    XCTAssertEqual(PackageNames.display("race"), "Race")
   }
 }

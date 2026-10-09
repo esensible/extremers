@@ -44,36 +44,8 @@ targets:
         product: SolidWatch
       - package: HostProtocol
         product: HostProtocol
-    preBuildScripts:
-      # The package bundles, compiled in for now (Bundles/<package name>/):
-      # each package's watch-js build, as committed in its fixtures (its
-      # tests check fixtures/bundle.js is dist/watch.js) with its sha256.
-      # Delivery over BLE replaces this later (BundleSource).
-      - name: Copy package bundles
-        basedOnDependencyAnalysis: true
-        inputFiles:
-          - $(SRCROOT)/../extreme-race/watch-js/fixtures/bundle.js
-          - $(SRCROOT)/../extreme-race/watch-js/fixtures/bundle.js.sha256
-          - $(SRCROOT)/../extreme-tune/watch-js/fixtures/bundle.js
-          - $(SRCROOT)/../extreme-tune/watch-js/fixtures/bundle.js.sha256
-          - $(SRCROOT)/../choose/watch-js/fixtures/bundle.js
-          - $(SRCROOT)/../choose/watch-js/fixtures/bundle.js.sha256
-        outputFiles:
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/race/bundle.js
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/race/bundle.js.sha256
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/tune/bundle.js
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/tune/bundle.js.sha256
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/choose/bundle.js
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Bundles/choose/bundle.js.sha256
-        script: |
-          set -eu
-          out="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Bundles"
-          for p in race:extreme-race tune:extreme-tune choose:choose; do
-            name=${p%%:*}
-            src="$SRCROOT/../${p#*:}/watch-js/fixtures"
-            mkdir -p "$out/$name"
-            cp "$src/bundle.js" "$src/bundle.js.sha256" "$out/$name/"
-          done
+    # No bundles in the app: each package's (Choose's too) is fetched from
+    # the box over BLE and cached (Model/BundleCache.swift).
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.esensible.extremers.watch
@@ -117,6 +89,10 @@ targets:
       - path: ExtremersTests
       - path: Extremers/Model/Protocol.swift
       - path: Extremers/Model/Bundles.swift
+      - path: Extremers/Model/AssetProtocol.swift
+      - path: Extremers/Model/BundleCache.swift
+      - path: Extremers/Model/BundleFetcher.swift
+      - path: Extremers/Model/ScriptedAssetLink.swift
       - path: Extremers/Model/Shell.swift
       - path: Extremers/Model/ShellLog.swift
       - path: ../watch-js/generated/ExtremersNodeProps.swift

@@ -60,7 +60,11 @@ struct ContentView: View {
         }
       }
       .ignoresSafeArea()
-    case .missing(let id):
+    case .loading(_, _, let name):
+      LoadingBundleView(name: name, progress: shell.progress, live: computer.isLive)
+    case .failed(_, _, let name, let reason):
+      BundleFailedView(name: name, reason: reason)
+    case .missing(let id, _):
       MissingAppView(id: id)
     case .none:
       ConnectingView()
@@ -138,16 +142,88 @@ struct MissingAppView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 10) {
-        Text("This app isn\u{2019}t on the watch")
+        Text("No watch screen for this app")
           .font(.headline)
           .multilineTextAlignment(.center)
-        Text(verbatim: "Package \(String(format: "%08x", id)). Update the watch app to use it here.")
+        Text(verbatim: "The box has no watch UI for package \(String(format: "%08x", id)).")
           .font(.footnote)
           .foregroundStyle(Palette.caption)
           .multilineTextAlignment(.center)
         Button("Exit") { shell.selectDefault() }
           .buttonStyle(PadButtonStyle.primary)
           .liveOnly()
+      }
+      .padding(.horizontal, 4)
+    }
+  }
+}
+
+/// The box made a package active whose watch UI this watch does not have
+/// yet: it is coming over the asset channel. Nothing of the previous app
+/// runs meanwhile (its state was another package's).
+struct LoadingBundleView: View {
+  @EnvironmentObject private var computer: RaceComputer
+  let name: String
+  let progress: FetchProgress?
+  let live: Bool
+
+  var body: some View {
+    VStack(spacing: 10) {
+      Text(verbatim: "Loading \(PackageNames.display(name))\u{2026}")
+        .font(.headline)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+        .minimumScaleFactor(0.7)
+      if let total = progress?.total, total > 0 {
+        ProgressView(value: Double(progress?.received ?? 0), total: Double(total))
+          .tint(Palette.accent)
+        Text(verbatim: "\(kb(progress?.received ?? 0)) of \(kb(total)) kB")
+          .font(.footnote.monospacedDigit())
+          .foregroundStyle(Palette.caption)
+      } else {
+        ProgressView()
+        Text(live ? "Asking the box" : "Waiting for the box")
+          .font(.footnote)
+          .foregroundStyle(Palette.caption)
+      }
+      Button("Quit") { computer.stop() }
+        .buttonStyle(PadButtonStyle(fill: .clear, foreground: Palette.caption, height: 30, fontSize: 14))
+    }
+    .padding(.horizontal, 8)
+  }
+
+  private func kb(_ bytes: Int) -> String {
+    String(format: "%.1f", Double(bytes) / 1000)
+  }
+}
+
+/// The active package's watch UI could not be fetched: why, and the ways
+/// on (it is tried again by itself when the link comes back).
+struct BundleFailedView: View {
+  @EnvironmentObject private var computer: RaceComputer
+  @EnvironmentObject private var shell: Shell
+  let name: String
+  let reason: String
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 8) {
+        Text(verbatim: "Couldn\u{2019}t load \(PackageNames.display(name))")
+          .font(.headline)
+          .foregroundStyle(Color.orange)
+          .multilineTextAlignment(.center)
+        Text(verbatim: "\(PackageNames.display(reason)).")
+          .font(.footnote)
+          .foregroundStyle(Palette.caption)
+          .multilineTextAlignment(.center)
+        Button("Try again") { shell.retry() }
+          .buttonStyle(PadButtonStyle.primary)
+          .liveOnly()
+        Button("Exit") { shell.selectDefault() }
+          .buttonStyle(PadButtonStyle())
+          .liveOnly()
+        Button("Quit") { computer.stop() }
+          .buttonStyle(PadButtonStyle(fill: .clear, foreground: Palette.caption, height: 30, fontSize: 14))
       }
       .padding(.horizontal, 4)
     }

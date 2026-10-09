@@ -1,28 +1,38 @@
+import HostProtocol
 import SolidWatch
 import SwiftUI
 import XCTest
 
-/// The shell with the real package bundles (the committed builds), real
-/// envelopes from the bundles' fixture scripts and a stub for the BLE write:
-/// taps go in as solid-watch presses, events come out of `send`.
+/// The shell with the real package bundles (the committed builds, in its
+/// cache as if fetched before), real envelopes from the bundles' fixture
+/// scripts (naming those builds by hash) and a stub for the BLE write: taps
+/// go in as solid-watch presses, events come out of `send`.
 @MainActor
 final class ShellFlowTests: XCTestCase {
   /// The repository root, from this file's path.
   static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
-  /// A compiled-bundle folder as the app has it, from the committed builds.
-  func bundles() throws -> CompiledBundles {
+  /// The packages' committed watch builds: (id, name, directory).
+  static let packages: [(PackageId, String, String)] = [
+    (Packages.id("race"), "race", "extreme-race"), (Packages.id("tune"), "tune", "extreme-tune"),
+    (Packages.choose, "choose", "choose"),
+  ]
+
+  static func build(_ id: PackageId) throws -> Data {
+    guard let dir = packages.first(where: { $0.0 == id })?.2 else { throw CocoaError(.fileNoSuchFile) }
+    return try Data(contentsOf: repo.appendingPathComponent("\(dir)/watch-js/fixtures/bundle.js"))
+  }
+
+  /// A cache holding every package's build, as the app has them once fetched.
+  func bundles() throws -> BundleCache {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("shell-flow-\(UUID())")
-    for (name, pkg) in [("race", "extreme-race"), ("tune", "extreme-tune"), ("choose", "choose")] {
-      let src = Self.repo.appendingPathComponent("\(pkg)/watch-js/fixtures")
-      let dst = root.appendingPathComponent(name)
-      try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
-      for f in ["bundle.js", "bundle.js.sha256"] {
-        try FileManager.default.copyItem(at: src.appendingPathComponent(f), to: dst.appendingPathComponent(f))
-      }
-    }
     addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-    return CompiledBundles(root: root)
+    let cache = BundleCache(directory: root, log: ShellLog(directory: nil))
+    for (id, name, _) in Self.packages {
+      let data = try Self.build(id)
+      cache.store(package: id, hash: AssetHash.prefix(data), name: name, source: data)
+    }
+    return cache
   }
 
   /// The state values of a bundle's fixture script, as bytes.
@@ -38,9 +48,15 @@ final class ShellFlowTests: XCTestCase {
     }
   }
 
+  /// An envelope from a fixture script, naming its package's committed
+  /// build by that build's hash, as the box does.
   func receive(_ shell: Shell, _ bytes: [UInt8]) {
-    guard case .success(let e) = Envelope.decode(bytes) else { return XCTFail("not an envelope") }
-    shell.receive(bytes, envelope: e)
+    guard case .success(let e) = Envelope.decode(bytes), let data = try? Self.build(e.active) else {
+      return XCTFail("not an envelope")
+    }
+    var named = e
+    named.ui.watch = AssetHash.prefix(data)
+    shell.receive(encodeEnvelope(named), envelope: named)
   }
 
   /// Shown buttons with their absolute frames.
@@ -74,7 +90,7 @@ final class ShellFlowTests: XCTestCase {
   /// the taps as on the watch.
   func testRaceExitSendsSelectDefault() throws {
     var sent: [[UInt8]] = []
-    let shell = Shell(source: try bundles()) { sent.append($0) }
+    let shell = Shell(cache: try bundles()) { sent.append($0) }
     let race = try states("extreme-race")
     receive(shell, race[0])
     shell.session.setViewport(CGSize(width: 198, height: 242))
@@ -99,7 +115,7 @@ final class ShellFlowTests: XCTestCase {
   /// package's bundle, which then draws and sends.
   func testSwitchingPackagesBackAndForth() throws {
     var sent: [[UInt8]] = []
-    let shell = Shell(source: try bundles()) { sent.append($0) }
+    let shell = Shell(cache: try bundles()) { sent.append($0) }
     shell.session.setViewport(CGSize(width: 198, height: 242))
     let choose = try states("choose")[1]
     let race = try states("extreme-race")[0]
@@ -132,7 +148,7 @@ final class ShellFlowTests: XCTestCase {
   /// draws of the same session, and each package's screen differs from the
   /// one before. (Field bug: the screen stayed on the first bundle drawn.)
   func testDisplayedTreeFollowsBundleSwaps() throws {
-    let shell = Shell(source: try bundles()) { _ in }
+    let shell = Shell(cache: try bundles()) { _ in }
     let size = CGSize(width: 198, height: 242)
     shell.session.setViewport(size)
     let kept = ImageRenderer(content: MountView(session: shell.session).frame(width: size.width, height: size.height))
@@ -171,7 +187,7 @@ final class ShellFlowTests: XCTestCase {
     for size in Self.screens {
       for state in choose {
         guard case .success(let e) = Envelope.decode(state), e.active == Packages.choose else { continue }
-        let shell = Shell(source: source) { _ in }
+        let shell = Shell(cache: source) { _ in }
         shell.session.setViewport(size)
         receive(shell, state)
         let menu = ShellMenuPlacement.frame(in: size)
@@ -189,7 +205,7 @@ final class ShellFlowTests: XCTestCase {
     let source = try bundles()
     let race = try states("extreme-race")
     for size in Self.screens {
-      let shell = Shell(source: source) { _ in }
+      let shell = Shell(cache: source) { _ in }
       shell.session.setViewport(size)
       for state in race {
         guard case .success = Envelope.decode(state) else { continue }

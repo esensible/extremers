@@ -10,13 +10,14 @@ package's Kindle page, that the shell runs. The box is the only source of
 truth. It says which package is active, and the watch renders what the box
 notifies and sends events. It never changes anything itself.
 
-The box's `state` value is a postcard `Envelope { timestamp, active,
-ui_hash, state }`. The shell reads `active` and `ui_hash` to pick the
+The box's `state` value is a postcard `Envelope { timestamp, active, ui:
+{ web, watch }, state }`. The shell reads `active` and `ui.watch` (the
+first 8 bytes of the SHA-256 of the package's watch bundle) to pick the
 bundle (`Model/Protocol.swift`, `Model/Bundles.swift`), and hands every
 envelope's bytes to the running bundle. The bundle decodes them, keeps the
 box's clock offset, and sends `HostEvent` bytes, which the shell writes to
-the `event` characteristic. A package this watch has no bundle for shows
-"This app isn't on the watch" with an Exit (`SelectDefault`). The
+the `event` characteristic. A package the box has no watch bundle for
+shows "No watch screen for this app" with an Exit (`SelectDefault`). The
 envelope and event types are the generated host bindings,
 [`protocol-swift`](../protocol-swift) (`tools/bindgen`; see the main
 README, "Host protocol"); the bundles use the JS ones (`protocol-js/` and
@@ -24,10 +25,39 @@ each package's `protocol-js/`). `ExtremersTests/EnvelopeTests.swift`
 checks the shell's reading of them against the Rust encoder's vectors
 (`protocol-js/test/vectors.json`).
 
-For now the bundles are compiled in. A build phase copies each package's
-`watch-js/fixtures/bundle.js` (its committed build) and its sha256 into
-`Bundles/<package name>/`. Delivery over BLE takes the place of
-`CompiledBundles` later.
+### Bundles come from the box
+
+No bundle is built into the app, Choose's included. When an envelope
+names a `(active, ui.watch)` the watch has not got, the shell shows
+"Loading Race…" with a progress bar and fetches it over the box's asset
+channel (BLE.md, "Watch bundles"): it reads the PSM from `ui-psm`, opens an
+L2CAP connection-oriented channel (`Model/RaceComputer.swift`,
+`Model/L2capAssetChannel.swift`), sends `GetAsset { package, hash }`, reads
+`AssetHeader { status, len }` and exactly `len` bytes in whatever chunks
+they come (`Model/AssetProtocol.swift`), and checks the SHA-256 prefix
+against the hash (`Model/BundleFetcher.swift`). Nothing of the previous
+bundle runs meanwhile (its state was another package's).
+
+- Verified bundles are cached in `Application Support/bundles` by
+  `(package, hash)` (`Model/BundleCache.swift`): the newest build per
+  package, at most 1 MB in all (least recently used out first). A cached
+  bundle loads at once, also after a relaunch.
+- Only the latest envelope's bundle is fetched: if the box moves on
+  mid-fetch, that fetch is abandoned (its channel closed) and the new one
+  fetched. A link drop abandons it too; it starts again when the link is
+  back.
+- Wrong bytes are discarded and fetched once more, then "Couldn't load …"
+  (Try again, Exit). A timeout (5 s with nothing), a short read or a channel
+  that does not open is tried 3 times, then the same screen; the link
+  coming back tries again by itself. Status 1 (no such package), or a
+  `ui.watch` that is the hash of no bytes (`e3b0c44298fc1c14`: a package
+  without a watch bundle, not fetched at all), is the "No watch screen"
+  screen.
+
+Debug builds launched with `-SimulateBox` (the simulator has no Bluetooth)
+serve the packages' committed builds (`<package>/watch-js/fixtures/bundle.js`)
+over an in-memory channel at about 20 kB/s, so the Loading screen and the
+cache work as on the watch.
 
 ## Build
 
@@ -57,7 +87,7 @@ editing `project.yml`. It rewrites the project, so any change made in
 Xcode's project editor (signing team included) is lost: put lasting
 settings in `project.yml`.
 
-Unit tests (the envelope, bundle routing, link bookkeeping, pairing decisions, the paired box) run on a watch simulator:
+Unit tests (the envelope, bundle routing and delivery, the bundle cache, link bookkeeping, pairing decisions, the paired box) run on a watch simulator:
 pick a watchOS simulator and press Cmd-U. They need no device.
 
 ## Signing
@@ -127,8 +157,12 @@ from Xcode again each week. Paid accounts get a year.
 
 The app keeps a rolling log, `Documents/shell.log` (1 MB, then moved to
 `shell.log.1`). It records the link (Bluetooth state, connects with the
-ATT MTU, drops), every envelope (active package, ui_hash, size, how it was
-routed, the bundle's timer counts), bundle loads and failures, taps, every
+ATT MTU, drops), every envelope (active package, ui.watch, size, how it was
+routed, the bundle's timer counts), bundle cache hits and misses, every
+fetch (package, hash, attempt, transport with the PSM, ATT MTU and how long
+the `ui-psm` read and the channel open took, bytes, ms, kB/s, chunks and
+the largest, the verify result or why it failed, and what next), cache
+evictions, bundle loads and failures, taps, every
 event sent with its bytes and whether the box answered the write, haptics
 and main-thread stalls. Copy it off the watch with:
 
@@ -151,8 +185,13 @@ project.yml                  XcodeGen spec: app + unit tests
 Extremers/
   ExtremersApp.swift
   Model/Protocol.swift       UUIDs, package ids, Envelope decode, SelectDefault (pure Swift)
-  Model/Bundles.swift        BundleSource, the compiled-in bundles, ShellRouter (pure Swift)
-  Model/Shell.swift          runs the active package's bundle (SolidWatchSession)
+  Model/Bundles.swift        ShellRouter: which bundle for each envelope, cached or fetched (pure Swift)
+  Model/AssetProtocol.swift  GetAsset / AssetHeader framing, the response parser, hashes (pure Swift)
+  Model/BundleFetcher.swift  one fetch over an AssetChannel, and the retry policy (pure Swift)
+  Model/BundleCache.swift    the on-disk bundle cache (pure Swift)
+  Model/ScriptedAssetLink.swift  an in-memory asset server (debug: tests, -SimulateBox)
+  Model/L2capAssetChannel.swift  the asset channel over a CBL2CAPChannel's streams
+  Model/Shell.swift          fetches and runs the active package's bundle (SolidWatchSession)
   Model/LinkPolicy.swift     backoff, loop generations, waiter table, workout restart rule (pure Swift)
   Model/Security.swift       CoreBluetooth errors -> retry / pairing problem / notice (no CB objects)
   Model/Box.swift            the paired box: scan-response address, matching, UserDefaults (pure Swift)
@@ -161,6 +200,8 @@ Extremers/
   Views/                     the shell's screens and its menu
 ExtremersTests/EnvelopeTests.swift
 ExtremersTests/ShellRouterTests.swift
+ExtremersTests/BundleDeliveryTests.swift  framing in any chunking, fetch failures, cache, the shell fetching
+ExtremersTests/ShellFlowTests.swift
 ExtremersTests/LinkPolicyTests.swift
 ExtremersTests/SecurityTests.swift
 ExtremersTests/BoxTests.swift

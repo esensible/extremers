@@ -44,7 +44,7 @@ final class EnvelopeTests: XCTestCase {
         XCTFail("\(v.what): not decoded")
         continue
       }
-      XCTAssertEqual(e.uiHash.count, 8, v.what)
+      XCTAssertEqual(e.watchHash.count, 8, v.what)
       if v.what.hasPrefix("race") { XCTAssertEqual(e.active, Packages.id("race"), v.what) }
       if v.what.hasPrefix("tune") { XCTAssertEqual(e.active, Packages.id("tune"), v.what) }
       if v.what.hasPrefix("choose") { XCTAssertEqual(e.active, Packages.choose, v.what) }

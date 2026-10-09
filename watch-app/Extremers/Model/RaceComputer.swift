@@ -31,6 +31,9 @@ final class RaceComputer: NSObject, ObservableObject {
   static let service = CBUUID(string: RaceProtocol.serviceUUID)
   static let stateUUID = CBUUID(string: RaceProtocol.stateUUID)
   static let eventUUID = CBUUID(string: RaceProtocol.eventUUID)
+  static let uiPsmUUID = CBUUID(string: RaceProtocol.uiPsmUUID)
+  /// How long the asset channel may take to open.
+  private static let channelTimeout: TimeInterval = 10
 
   /// How long a direct connect to the last peripheral may take before
   /// scanning instead. CoreBluetooth itself never gives up on a connect.
@@ -44,8 +47,15 @@ final class RaceComputer: NSObject, ObservableObject {
   private static let stableLink: TimeInterval = 10
 
   @Published private(set) var link: LinkState = .connecting {
-    didSet { if link != oldValue { log("link \(oldValue) -> \(link)") } }
+    didSet {
+      guard link != oldValue else { return }
+      log("link \(oldValue) -> \(link)")
+      if (link == .connected) != (oldValue == .connected) { onLive?(link == .connected) }
+    }
   }
+  /// The link came up (secured, subscribed) or went down: whether asset
+  /// channels can be opened (the shell's bundle fetches).
+  var onLive: ((Bool) -> Void)?
   private let log = ShellLog.shared
   /// Why the link cannot come up (Bluetooth off, not allowed), if that is why.
   @Published private(set) var problem: String?
@@ -88,6 +98,8 @@ final class RaceComputer: NSObject, ObservableObject {
   private(set) var peripheral: CBPeripheral?
   private var stateCharacteristic: CBCharacteristic?
   private var eventCharacteristic: CBCharacteristic?
+  /// The asset channel's PSM (`ui-psm`); nil on firmware without one.
+  private var psmCharacteristic: CBCharacteristic?
 
   /// A step of the loop waiting on a delegate callback, and its timeout.
   private struct Pending {
@@ -200,6 +212,7 @@ final class RaceComputer: NSObject, ObservableObject {
     if let p = peripheral { manager?.cancelPeripheralConnection(p) }
     stateCharacteristic = nil
     eventCharacteristic = nil
+    psmCharacteristic = nil
     mismatch = nil
     workout.stop()
   }
@@ -371,6 +384,8 @@ final class RaceComputer: NSObject, ObservableObject {
     }
     stateCharacteristic = stateChar
     eventCharacteristic = eventChar
+    psmCharacteristic = chars[Self.uiPsmUUID]
+    if psmCharacteristic == nil { log("no ui-psm characteristic: this box cannot send bundles") }
     try await secure(p, stateChar)
   }
 
@@ -433,7 +448,7 @@ final class RaceComputer: NSObject, ObservableObject {
       throw BleFailure.missingService
     }
     let _: Any = try await waitFor("characteristics", timeout: Self.gattTimeout) {
-      p.discoverCharacteristics([Self.stateUUID, Self.eventUUID], for: service)
+      p.discoverCharacteristics([Self.stateUUID, Self.eventUUID, Self.uiPsmUUID], for: service)
     }
     var out: [CBUUID: CBCharacteristic] = [:]
     for c in service.characteristics ?? [] { out[c.uuid] = c }
@@ -445,6 +460,7 @@ final class RaceComputer: NSObject, ObservableObject {
   private func closeLink() {
     stateCharacteristic = nil
     eventCharacteristic = nil
+    psmCharacteristic = nil
     if let p = peripheral, p.state == .connected || p.state == .connecting {
       manager?.cancelPeripheralConnection(p)
     }
@@ -476,6 +492,48 @@ final class RaceComputer: NSObject, ObservableObject {
       log("UNDECODABLE state (\(failure.detail)): \(bytes.count) B \(ShellLog.hex(bytes))")
       mismatch = failure
     }
+  }
+
+  // MARK: - The asset channel
+
+  /// A new L2CAP channel to the box's asset server (BLE.md, "Bundles"): reads
+  /// its PSM from `ui-psm` (every time: it may change when the box
+  /// restarts), then opens the channel. Only on the secured link: the box
+  /// accepts the channel only on a bonded, encrypted one.
+  func openAssetChannel() async throws -> AssetChannel {
+    guard link == .connected, let p = peripheral, p.state == .connected else { throw AssetError.linkDown }
+    guard let psmChar = psmCharacteristic else { throw AssetError.noChannel("no ui-psm characteristic") }
+    let t0 = ContinuousClock.now
+    let value: Data
+    do {
+      value = try await waitFor("psm", timeout: Self.gattTimeout) { p.readValue(for: psmChar) }
+    } catch {
+      throw assetFailure(error, opening: "ui-psm read")
+    }
+    guard let psm = RaceProtocol.psm([UInt8](value)) else {
+      throw AssetError.noChannel("ui-psm is \(ShellLog.hex([UInt8](value)))")
+    }
+    let t1 = ContinuousClock.now
+    let channel: CBL2CAPChannel
+    do {
+      channel = try await waitFor("l2cap", timeout: Self.channelTimeout) { p.openL2CAPChannel(CBL2CAPPSM(psm)) }
+    } catch {
+      throw assetFailure(error, opening: "PSM 0x\(String(format: "%04x", psm))")
+    }
+    guard link == .connected, isCurrent(p) else { throw AssetError.linkDown }
+    let attMtu = p.maximumWriteValueLength(for: .withoutResponse) + 3
+    let parameters = "PSM 0x\(String(format: "%04x", psm)), ATT MTU \(attMtu), "
+      + "ui-psm read \(t1 - t0), channel open \(ContinuousClock.now - t1)"
+    log("asset channel open: \(parameters)")
+    return L2capAssetChannel(channel, parameters: parameters)
+  }
+
+  /// What a failed step of opening the asset channel means.
+  private func assetFailure(_ error: Error, opening what: String) -> Error {
+    if error is CancellationError { return error }
+    if link != .connected { return AssetError.linkDown }
+    let failure = (error as? BleFailure) ?? .other(error)
+    return AssetError.openFailed("\(what): \(failure)")
   }
 
   // MARK: - Manager and power
@@ -579,6 +637,8 @@ final class RaceComputer: NSObject, ObservableObject {
 
 // MARK: - CBCentralManagerDelegate
 
+extension RaceComputer: AssetLink {}
+
 extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
   /// Any change wakes the power wait, which decides what to do. Anything
   /// but on, mid-session (Bluetooth turned off, access revoked, the stack
@@ -601,6 +661,7 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     }
     stateCharacteristic = nil
     eventCharacteristic = nil
+    psmCharacteristic = nil
     peripheral = nil
     if link == .connected { link = .reconnecting }
     failAll(failure)
@@ -659,6 +720,7 @@ extension RaceComputer: @preconcurrency CBCentralManagerDelegate {
     if peripheral.state == .connecting || peripheral.state == .connected { return }
     stateCharacteristic = nil
     eventCharacteristic = nil
+    psmCharacteristic = nil
     if link == .connected { link = .reconnecting }
     // Nor does it end the scan that replaced a stalled connect, or the
     // pause while a pairing problem shows (a late disconnect from the
@@ -699,6 +761,14 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
 
   /// Both the read and every notification land here; each is the latest state.
   func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+    if isCurrent(peripheral), characteristic.uuid == Self.uiPsmUUID {
+      if let failure = BleFailure.from(error) {
+        complete("psm", .failure(failure))
+      } else {
+        complete("psm", .success(characteristic.value ?? Data()))
+      }
+      return
+    }
     guard isCurrent(peripheral), characteristic.uuid == Self.stateUUID else {
       log("value ignored: \(characteristic.uuid) from \(peripheral.identifier.uuidString) (current: \(isCurrent(peripheral)))")
       return
@@ -724,6 +794,17 @@ extension RaceComputer: @preconcurrency CBPeripheralDelegate {
     guard isCurrent(peripheral), characteristic.uuid == Self.eventUUID, let error, link != .stopped else { return }
     bleLog.error("event refused: \(String(describing: BleFailure.from(error)), privacy: .public)")
     show(notice: BleFailure.refusedEventNotice(error))
+  }
+
+  func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+    log("L2CAP channel \(channel.map { "PSM 0x\(String(format: "%04x", $0.psm))" } ?? "none")"
+        + "\(error.map { ": \(String(describing: BleFailure.from($0)))" } ?? " open")")
+    guard isCurrent(peripheral) else { return }
+    if let channel, error == nil {
+      complete("l2cap", .success(channel))
+    } else {
+      complete("l2cap", .failure(BleFailure.from(error) ?? .other(AssetError.openFailed("no channel"))))
+    }
   }
 
   func peripheral(
