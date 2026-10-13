@@ -274,6 +274,8 @@ pub enum ExprKind {
     List(Vec<Expr>),
     /// `xs[i]` with a computed index.
     Index(Box<Expr>, Box<Expr>),
+    /// `xs[a:b]`, either bound left out.
+    Slice(Box<Expr>, Option<Box<Expr>>, Option<Box<Expr>>),
 }
 
 #[derive(Clone, Debug)]
@@ -366,9 +368,8 @@ impl Parser {
         }
     }
 
-    fn unsupported(&self, span: Span, what: &str) -> Diag {
-        Diag::error("E-UNSUPPORTED", span, format!("{what} aren't implemented yet"))
-            .help("this build of the compiler handles literals, records, `let`, conditionals, arithmetic and the math builtins")
+    fn unsupported(&self, span: Span, what: &str, help: &str) -> Diag {
+        Diag::error("E-UNSUPPORTED", span, format!("{what} aren't implemented yet")).help(help)
     }
 
     /// expression := `let` name `=` expression `;` expression | conditional
@@ -498,7 +499,7 @@ impl Parser {
         let mut lhs = self.unary()?;
         loop {
             if self.is_op("..") {
-                return Err(self.unsupported(self.peek().span, "ranges"));
+                return Err(self.unsupported(self.peek().span, "ranges (`a..b`)", "write the list out, e.g. `[1, 2, 3]`, or slice a list: `xs[a:b]`"));
             }
             // `x not in xs`: `!(x in xs)`.
             if self.is_word("not") && self.peek_word_at(1, "in") && BP_CMP > min {
@@ -595,7 +596,7 @@ impl Parser {
                 let optional = self.is_op("?.");
                 self.next();
                 if self.is_op("[") {
-                    return Err(self.unsupported(self.peek().span, "lists and indexing"));
+                    return Err(self.unsupported(self.peek().span, "optional indexes (`xs?.[i]`)", "test the list first: `xs != nil ? xs[i] : …`, or use `get(xs, i)`"));
                 }
                 let name = self.next();
                 let Tok::Ident(field) = name.tok else {
@@ -630,13 +631,17 @@ impl Parser {
                     }
                     _ => {
                         self.next();
+                        // `xs[a:b]`, `xs[a:]`, `xs[:b]`, `xs[:]`.
+                        let lo = if self.is_op(":") { None } else { Some(self.expr()?) };
                         if self.is_op(":") {
-                            return Err(self.unsupported(t.span, "slices"));
+                            self.next();
+                            let hi = if self.is_op("]") { None } else { Some(self.expr()?) };
+                            let close = self.expect_op("]", None)?;
+                            let span = e.span.to(close.span);
+                            e = Expr { kind: ExprKind::Slice(Box::new(e), lo.map(Box::new), hi.map(Box::new)), span };
+                            continue;
                         }
-                        let i = self.expr()?;
-                        if self.is_op(":") {
-                            return Err(self.unsupported(t.span, "slices"));
-                        }
+                        let i = lo.expect("an index, since `:` didn't follow `[`");
                         let close = self.expect_op("]", None)?;
                         let span = e.span.to(close.span);
                         e = Expr { kind: ExprKind::Index(Box::new(e), Box::new(i)), span };

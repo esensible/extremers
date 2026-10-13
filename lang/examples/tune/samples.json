@@ -1,0 +1,12 @@
+{
+  "runs": [
+    {"inputs": {"state": null, "event": {"gps": {}}, "timestamp": 1790000000000, "gps": []}},
+    {"inputs": {"event": {"wake": {}}, "timestamp": 1790000001000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 10.0, "heading": 90.0}}}, "timestamp": 1790000100000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 11.0, "heading": 92.0}}}, "timestamp": 1790000105000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 9.0, "heading": 88.0}}}, "timestamp": 1790000115000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 12.0, "heading": 91.0}}}, "timestamp": 1790000125000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 13.0, "heading": 93.0}}}, "timestamp": 1790000135000, "gps": []}, "chain": {"state": "output.state"}},
+    {"inputs": {"event": {"gps": {"velocity": {"speed": 20.0, "heading": 180.0}}}, "timestamp": 1790000135000, "gps": []}, "chain": {"state": "output.state"}}
+  ]
+}

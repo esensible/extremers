@@ -117,13 +117,45 @@ pub fn leaves(t: &Ty) -> u16 {
 /// leaf.
 pub fn same_layout(a: &Ty, b: &Ty) -> bool {
     match (a, b) {
-        // A list is a handle: one leaf, whatever its items.
-        (Ty::List(..), Ty::List(..)) => true,
+        // A list is a handle: one leaf. Its items are read by leaf number,
+        // so they must number their leaves the same way too.
+        (Ty::List(x, _), Ty::List(y, _)) => matches!(**x, Ty::Never) || matches!(**y, Ty::Never) || same_layout(x, y),
+        (Ty::Opt(x), y) | (y, Ty::Opt(x)) if matches!(**x, Ty::List(..)) => same_layout(x, unopt(y)),
         (Ty::Rec(x, _), Ty::Rec(y, _)) => x.len() == y.len() && x.iter().zip(y).all(|((k, s), (l, t))| k == l && same_layout(s, t)),
         (Ty::Opt(x), Ty::Opt(y)) if matches!(**x, Ty::Rec(..)) || matches!(**y, Ty::Rec(..)) => same_layout(x, y),
         (Ty::Rec(..), _) | (_, Ty::Rec(..)) => false,
         (Ty::Opt(x), _) | (_, Ty::Opt(x)) if matches!(**x, Ty::Rec(..)) => false,
         _ => true,
+    }
+}
+
+/// Whether a list inside `src`, written where `dst` is wanted, must be
+/// rewritten item by item: its items are laid out differently, or an item
+/// leaf is an int where `dst`'s is a float (a list's items are stored as
+/// they are, so the conversion the output does for a scalar leaf has to be
+/// made when the list is built).
+pub fn list_converts(src: &Ty, dst: &Ty) -> bool {
+    match (unopt(src), unopt(dst)) {
+        (Ty::List(x, _), Ty::List(y, _)) => !matches!(**x, Ty::Never) && (!same_layout(x, y) || int_to_float(x, y)),
+        (Ty::Rec(x, _), Ty::Rec(y, _)) => y.iter().any(|(k, t)| x.get(k).is_some_and(|s| list_converts(s, t))),
+        _ => false,
+    }
+}
+
+/// Whether some leaf of `src` is an int where `dst`'s is a float.
+pub fn int_to_float(src: &Ty, dst: &Ty) -> bool {
+    match (unopt(src), unopt(dst)) {
+        (Ty::Int(_), Ty::Float) => true,
+        (Ty::Rec(x, _), Ty::Rec(y, _)) => y.iter().any(|(k, t)| x.get(k).is_some_and(|s| int_to_float(s, t))),
+        _ => false,
+    }
+}
+
+/// `T` for `T?`, else the type itself.
+pub fn unopt(t: &Ty) -> &Ty {
+    match t {
+        Ty::Opt(inner) => inner,
+        t => t,
     }
 }
 

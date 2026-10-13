@@ -20,10 +20,11 @@ fn read(path: &str) -> Json {
 fn go_error_code(e: &str) -> &'static str {
     if e.contains("integer divide by zero") {
         "R-DIV0"
-    } else if e.contains("zero Value") {
-        // How Go expr reports a list builtin given nil (`sum(nil)`).
+    } else if e.contains("zero Value") || e.contains("cannot concat invalid") {
+        // How Go expr reports a list builtin given nil (`sum(nil)`, `concat(nil, xs)`).
         "R-NIL"
-    } else if e.contains("reduce of empty array") {
+    } else if e.contains("reduce of empty array") || e.contains("reflect.Value.Slice") {
+        // `reflect.Value.Slice`: how Go expr reports a negative `take`.
         "R-ARG"
     } else if e.contains("<nil>") || e.contains("nil") {
         "R-NIL"
@@ -40,7 +41,8 @@ fn float_of(v: &Json) -> f64 {
 }
 
 /// Go's value, normalised to the output schema: an int in a float position
-/// becomes a float, recursively through records (and their variants).
+/// becomes a float, recursively through records (and their variants) and
+/// lists.
 fn normalise(go: &Json, schema: &Json) -> Json {
     let object = schema.get("type").and_then(Json::as_str) == Some("object") || schema.get("oneOf").is_some();
     match schema.get("type").and_then(Json::as_str) {
@@ -52,6 +54,10 @@ fn normalise(go: &Json, schema: &Json) -> Json {
             let fields: serde_json::Map<String, Json> =
                 go["fields"].as_object().unwrap().iter().map(|(k, v)| (k.clone(), normalise(v, &property(schema, k)))).collect();
             json!({"kind": "record", "fields": fields})
+        }
+        Some("array") if go["kind"] == "list" => {
+            let items: Vec<Json> = go["items"].as_array().unwrap().iter().map(|v| normalise(v, &schema["items"])).collect();
+            json!({"kind": "list", "items": items})
         }
         _ => go.clone(),
     }
@@ -112,6 +118,10 @@ fn agree(ours: &Json, go: &Json) -> bool {
         (Some("record"), Some("record")) => {
             let (a, b) = (ours["fields"].as_object().unwrap(), go["fields"].as_object().unwrap());
             a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|w| agree(v, w)))
+        }
+        (Some("list"), Some("list")) => {
+            let (a, b) = (ours["items"].as_array().unwrap(), go["items"].as_array().unwrap());
+            a.len() == b.len() && a.iter().zip(b).all(|(v, w)| agree(v, w))
         }
         _ => ours == go,
     }

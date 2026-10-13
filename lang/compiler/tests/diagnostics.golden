@@ -206,19 +206,81 @@ program.expr:1:4: error[E-TYPE]: an index must be an integer, but this is a floa
   help: e.g. `xs[int(n / 2)]`
 
 ── b ? filter(xs, # > 1) : xs
-program.expr:1:5: error[E-UNSUPPORTED]: a `map` or `filter` result can only be passed to another list builtin here
-  help: reduce it to a value (`sum`, `count`, `first`, `find`, …); keeping a computed list isn't implemented yet
 program.expr:1:1: error[E-TYPE]: the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
-
-── xs
-program.expr:1:1: error[E-UNSUPPORTED]: the output is a list; writing lists to the output isn't implemented yet
-  help: it comes in the next step (list outputs)
 
 ── sortBy(xs, #)[0]
 program.expr:1:1: error[E-UNSUPPORTED]: `sortBy` isn't implemented yet
-  help: lists that are sorted, deduplicated or built from parts come in the next step
+  help: not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`
 program.expr:1:12: error[E-POINTER]: `#` is only meaningful inside a predicate
   help: use it in the expression argument of a list builtin, e.g. `filter(xs, # > 0)`
+
+── concat(xs, [1])
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 20 items, but this can have 21
+  help: keep the last 20: `(…)[-20:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── filter(xs, # > 1)
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 20
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── map(xs, # * 2)
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 20
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+program.expr:1:1: error[E-RANGE]: each item of the output is an integer (-2147483648..2147483647) but this can be -4294967296..4294967294
+  help: keep it in range, e.g. `min(max(…, -2147483648), 2147483647)`
+
+── xs[i:]
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 20
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── xs[-6:]
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 6
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── take(xs, i)
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 20
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── [1, 2, 3, 4, 5, 6]
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 5 items, but this can have 6
+  help: keep the last 5: `(…)[-5:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing
+
+── map(xs, # + 1)
+program.expr:1:1: error[E-RANGE]: each item of the output is an integer (-2147483648..2147483647) but this can be -2147483647..2147483648
+  help: keep it in range, e.g. `min(max(…, -2147483648), 2147483647)`
+
+── map(xs, # / 2)
+program.expr:1:1: error[E-TYPE]: each item of the output is an integer but this is a float
+  help: convert it: `int(…)` truncates, `int(round(…))` rounds (`/` always gives a float)
+
+── [{lat: 1.0}]
+program.expr:1:1: error[E-FIELD]: each item of the output is missing the field `lon`
+  help: every required field must be written, e.g. `lon: …`
+
+── xs
+program.expr:1:1: error[E-TYPE]: the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
+
+── xs[1.5:]
+program.expr:1:4: error[E-TYPE]: a slice bound must be an integer, but this is a float
+  help: e.g. `xs[int(n / 2):]`
+
+── take(xs, n)
+program.expr:1:10: error[E-TYPE]: `take`'s count must be an integer, but this may be nil
+  help: test it first: `n != nil ? … : …` (in the first branch `n` isn't nil), or give a default: `n ?? 0`
+
+── concat(xs, [true])
+program.expr:1:12: error[E-TYPE]: `concat`'s lists don't agree: items of an integer (-2147483648..2147483647) and of a bool
+  help: every list's items must be the same kind of value (ints and floats mix; records need the same fields)
+
+── concat()
+program.expr:1:1: error[E-ARG]: `concat` takes 1 or more arguments, but this gives 0
+
+── filter(ps, .lat > 0.0)
+program.expr:1:1: error[E-HOLD]: this list is held: up to 65535 items of 3 slots, 196605 slots (3145680 bytes); a program's lists can hold at most 32768 slots in all, and these need 196605
+  help: slice it first (`(…)[-N:]`, `take(…, N)`), or keep only what you need (`first`, `last`, `sum`, `count`, …)
+
+── concat(xs, [1])[-20:]
+program.expr:1:1: error[E-LIMIT]: the program needs 512 bytes (stack 3 × 16, locals 28 × 16, output 1 × 16); the limit is 256
+  help: 21 of the 28 locals hold lists (each held list is its bound × its items' leaves): lower the output's `maxItems`, or slice before holding: `(…)[-N:]`
 
 ── len(reduce(xs, [#], []))
 program.expr:1:16: error[E-ACC-GROWS]: a `reduce` accumulator can't be a list

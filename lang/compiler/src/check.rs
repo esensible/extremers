@@ -64,6 +64,13 @@ pub enum TKind {
     Map { src: Box<TExpr>, body: Box<TExpr> },
     /// `filter(src, pred)`: a pipeline stage.
     Filter { src: Box<TExpr>, pred: Box<TExpr> },
+    /// `src[lo:hi]`, either bound left out: a pipeline stage that passes
+    /// only the items at those positions.
+    Slice { src: Box<TExpr>, lo: Option<Box<TExpr>>, hi: Option<Box<TExpr>> },
+    /// `take(src, k)`: a pipeline stage (`src[:k]`, but a negative `k` fails).
+    Take { src: Box<TExpr>, k: Box<TExpr> },
+    /// `concat(a, b, …)`: a pipeline source, each part's items in turn.
+    Concat(Vec<TExpr>),
     /// A builtin that consumes a list (or a pipeline) and gives one value.
     /// `f` is the predicate, the mapped expression, the index or the needle,
     /// as the sink needs; `init` is `reduce`'s initial value.
@@ -139,10 +146,31 @@ struct Pred {
     acc: Option<Ty>,
 }
 
-/// Whether `e` is a `map`/`filter` pipeline, which only another list
-/// builtin can consume: it's never stored.
+/// Whether `e` is a list the program builds (`map`, `filter`, a slice,
+/// `take`, `concat`): a pipeline. A list builtin consuming it runs it as one
+/// loop, with nothing held; anywhere a list value is needed (the output, a
+/// record field, a branch) it is held, built into its own block of locals.
+/// A `let` of one isn't stored: each use re-runs it.
 pub fn is_pipeline(e: &TExpr) -> bool {
-    matches!(e.kind, TKind::Map { .. } | TKind::Filter { .. })
+    matches!(e.kind, TKind::Map { .. } | TKind::Filter { .. } | TKind::Slice { .. } | TKind::Take { .. } | TKind::Concat(_))
+}
+
+/// The most items `src[lo:hi]` can have, from `src`'s bound `n` and the
+/// ranges of the bounds (spec §4.2; a constant is a range of one value). An
+/// index counts from the end when it's negative, and both are clamped.
+fn slice_bound(n: u32, lo: Option<Range>, hi: Option<Range>) -> u32 {
+    let n = n as i128;
+    let end = match hi {
+        Some(h) if h.hi < 0 => (n + h.hi).max(0),
+        Some(h) if h.lo >= 0 => h.hi.min(n),
+        _ => n,
+    };
+    let len = match lo {
+        Some(l) if l.lo >= 0 => (end - l.lo).max(0),
+        Some(l) if l.hi < 0 => end.min(-l.lo),
+        _ => end,
+    };
+    len.clamp(0, n) as u32
 }
 
 /// What a narrowing fact is about: an input, a `let` name, or a predicate's
@@ -210,7 +238,6 @@ pub fn check(ast: &Expr, iface: &Interface) -> Result<TExpr, Vec<Diag>> {
         let_names: HashMap::new(),
     };
     let e = c.expr(ast);
-    c.stored(&e);
     c.output(Some(&e), &e.ty, &iface.output, e.span, "");
     let mut lets = HashMap::new();
     collect_lets(&e, &mut lets);
@@ -244,7 +271,9 @@ pub fn children(e: &TExpr) -> Vec<&TExpr> {
         TKind::Chain { first, rest } => std::iter::once(&**first).chain(rest.iter().map(|(_, e)| e)).collect(),
         TKind::Cond(c, a, b) => vec![c, a, b],
         TKind::Let { value, body, .. } => vec![value, body],
-        TKind::Call(_, args) | TKind::HostCall { args, .. } | TKind::ListLit(args) => args.iter().collect(),
+        TKind::Call(_, args) | TKind::HostCall { args, .. } | TKind::ListLit(args) | TKind::Concat(args) => args.iter().collect(),
+        TKind::Slice { src, lo, hi } => std::iter::once(&**src).chain(lo.as_deref()).chain(hi.as_deref()).collect(),
+        TKind::Take { src, k } => vec![src, k],
         TKind::Record(fields) => fields.iter().map(|(_, e)| e).collect(),
         TKind::Path { base, .. } => vec![base],
         TKind::Map { src, body: f } | TKind::Filter { src, pred: f } => vec![src, f],
@@ -255,7 +284,7 @@ pub fn children(e: &TExpr) -> Vec<&TExpr> {
 use crate::schema::EXPR_BUILTINS;
 
 /// Builtins the language will have, but this build doesn't yet.
-const LATER: &[&str] = &["sortBy", "median", "take", "sort", "concat", "flatten", "uniq", "reverse"];
+const LATER: &[&str] = &["sortBy", "median", "sort", "flatten", "uniq", "reverse"];
 
 struct Checker<'a> {
     iface: &'a Interface,
@@ -303,8 +332,6 @@ impl Checker<'_> {
                 let f = self.facts(&c);
                 let a = self.narrowed(&f.when_true, |m| m.expr(a));
                 let b = self.narrowed(&f.when_false, |m| m.expr(b));
-                self.stored(&a);
-                self.stored(&b);
                 let ty = match unify(&a.ty, &b.ty) {
                     Some(t) => t,
                     None => {
@@ -364,7 +391,6 @@ impl Checker<'_> {
                 let mut out: BTreeMap<String, TExpr> = BTreeMap::new();
                 for (k, kspan, v) in fields {
                     let t = self.expr(v);
-                    self.stored(&t);
                     if out.contains_key(k) {
                         self.err(Diag::error("E-DUP-KEY", *kspan, format!("the field `{k}` appears twice")).help("keep one"));
                         continue;
@@ -384,7 +410,6 @@ impl Checker<'_> {
                 let mut item = Ty::Never;
                 for it in items {
                     let t = self.expr(it);
-                    self.stored(&t);
                     if crate::schema::contains_list(&t.ty) {
                         self.err(Diag::error("E-UNSUPPORTED", t.span, "lists inside lists aren't supported yet"));
                     }
@@ -407,6 +432,18 @@ impl Checker<'_> {
                 let base = self.expr(base);
                 let i = self.expr(i);
                 self.list_sink(Sink::At, base, Some(i), None, span)
+            }
+            ExprKind::Slice(base, lo, hi) => {
+                let src = self.expr(base);
+                let lo = lo.as_ref().map(|e| self.expr(e));
+                let hi = hi.as_ref().map(|e| self.expr(e));
+                let ranges: Vec<Option<Range>> = [&lo, &hi].iter().map(|b| b.as_ref().and_then(|b| self.index_range(b, "a slice bound"))).collect();
+                let Some((item, n)) = self.list_of(&src, "[:]") else {
+                    return node(TKind::Nil, Ty::Unknown, span);
+                };
+                let bound = slice_bound(n, lo.as_ref().and(ranges[0]), hi.as_ref().and(ranges[1]));
+                let kind = TKind::Slice { src: Box::new(src), lo: lo.map(Box::new), hi: hi.map(Box::new) };
+                node(kind, Ty::List(Box::new(item), bound), span)
             }
         }
     }
@@ -443,16 +480,6 @@ impl Checker<'_> {
         }
     }
 
-    /// A `map`/`filter` result can only be consumed by another list builtin
-    /// for now: holding one (in a branch, a record, the output) comes later.
-    fn stored(&mut self, e: &TExpr) {
-        if is_pipeline(e) {
-            self.err(
-                Diag::error("E-UNSUPPORTED", e.span, "a `map` or `filter` result can only be passed to another list builtin here")
-                    .help("reduce it to a value (`sum`, `count`, `first`, `find`, …); keeping a computed list isn't implemented yet"),
-            );
-        }
-    }
 
     /// The item type and bound of a list operand (nil is allowed: most
     /// list builtins fail on it at run time, as in expr).
@@ -500,13 +527,21 @@ impl Checker<'_> {
             "last" => (1..=1, Some(Sink::Last)),
             "get" => (2..=2, Some(Sink::Get)),
             "reduce" => (2..=3, Some(Sink::Reduce)),
-            "map" | "filter" => (2..=2, None),
+            "map" | "filter" | "take" => (2..=2, None),
+            "concat" => (1..=usize::MAX, None),
             _ => unreachable!(),
         };
         if !want.contains(&args.len()) {
-            let n = if want.start() == want.end() { format!("{}", want.start()) } else { format!("{} or {}", want.start(), want.end()) };
+            let n = match (want.start(), want.end()) {
+                (a, b) if a == b => format!("{a}"),
+                (a, &usize::MAX) => format!("{a} or more"),
+                (a, b) => format!("{a} or {b}"),
+            };
             self.err(Diag::error("E-ARG", span, format!("`{name}` takes {n} arguments, but this gives {}", args.len())));
             return node(TKind::Nil, Ty::Unknown, span);
+        }
+        if name == "concat" {
+            return self.concat(args, span);
         }
         let src = self.expr(&args[0]);
         let Some((item, n)) = self.list_of(&src, name) else {
@@ -516,7 +551,6 @@ impl Checker<'_> {
         match (name, sink) {
             ("map", _) => {
                 let body = self.in_pred(&args[1], &item, index, None);
-                self.stored(&body);
                 if crate::schema::contains_list(&body.ty) {
                     self.err(Diag::error("E-UNSUPPORTED", body.span, "a `map` that gives lists isn't supported yet"));
                 }
@@ -527,6 +561,15 @@ impl Checker<'_> {
                 let pred = self.in_pred(&args[1], &item, None, None);
                 self.want_pred_bool(&pred, "filter");
                 node(TKind::Filter { src: Box::new(src), pred: Box::new(pred) }, Ty::List(Box::new(item), n), span)
+            }
+            // At most min(n, hi(k)) items (spec §4.2).
+            ("take", _) => {
+                let k = self.expr(&args[1]);
+                let bound = match self.index_range(&k, "`take`'s count") {
+                    Some(r) => r.hi.clamp(0, n as i128) as u32,
+                    None => n,
+                };
+                node(TKind::Take { src: Box::new(src), k: Box::new(k) }, Ty::List(Box::new(item), bound), span)
             }
             (_, Some(Sink::Reduce)) => {
                 let init = args.get(2).map(|a| self.expr(a));
@@ -551,8 +594,8 @@ impl Checker<'_> {
                             break;
                         }
                         None => {
-                            self.err(Diag::error("E-TYPE", body.span, format!("this `reduce` step gives {}, but the accumulator is {}", body.ty.describe(), acc.describe()))
-                                .help("each step must give the same kind of value as the initial one"));
+                            self.err(Diag::error("E-TYPE", body.span, format!("this `reduce` expression gives {}, but the accumulator is {}", body.ty.describe(), acc.describe()))
+                                .help("the expression must give the same kind of value as the initial one, for every item"));
                             break;
                         }
                     }
@@ -589,6 +632,36 @@ impl Checker<'_> {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// `concat(a, b, …)`: the parts' items unify (they may be laid out
+    /// differently, e.g. a record literal without an optional field: each
+    /// part's items are converted as they're read), and the bound is the
+    /// sum of the parts' (spec §4.2), saturating.
+    fn concat(&mut self, args: &[Expr], span: Span) -> TExpr {
+        let parts: Vec<TExpr> = args.iter().map(|a| self.expr(a)).collect();
+        let mut item = Ty::Never;
+        let mut bound: u32 = 0;
+        let mut ok = true;
+        for p in &parts {
+            let Some((t, n)) = self.list_of(p, "concat") else {
+                ok = false;
+                continue;
+            };
+            bound = bound.saturating_add(n);
+            match unify(&item, &t) {
+                Some(u) => item = u,
+                None => {
+                    self.err(
+                        Diag::error("E-TYPE", p.span, format!("`concat`'s lists don't agree: items of {} and of {}", item.describe(), t.describe()))
+                            .help("every list's items must be the same kind of value (ints and floats mix; records need the same fields)"),
+                    );
+                    ok = false;
+                }
+            }
+        }
+        let ty = if ok { Ty::List(Box::new(item), bound) } else { Ty::Unknown };
+        node(TKind::Concat(parts), ty, span)
     }
 
     /// Types a sink over `src`: `f` is already checked.
@@ -903,6 +976,24 @@ impl Checker<'_> {
         }
     }
 
+    /// A slice bound or `take`'s count: an int that can't be nil. Its range,
+    /// or `None` after an error.
+    fn index_range(&mut self, t: &TExpr, what: &str) -> Option<Range> {
+        match &t.ty {
+            Ty::Int(r) => Some(*r),
+            Ty::Unknown => None,
+            Ty::Opt(inner) if matches!(**inner, Ty::Int(_)) => {
+                let help = self.nil_help(Some(t), "0");
+                self.err(Diag::error("E-TYPE", t.span, format!("{what} must be an integer, but this may be nil")).help(help));
+                None
+            }
+            other => {
+                self.err(Diag::error("E-TYPE", t.span, format!("{what} must be an integer, but this is {}", other.describe())).help("e.g. `xs[int(n / 2):]`"));
+                None
+            }
+        }
+    }
+
     fn unary(&mut self, op: UnOp, a: &Expr, span: Span) -> TExpr {
         let a = self.expr(a);
         let ty = match op {
@@ -941,7 +1032,6 @@ impl Checker<'_> {
                 return node(k, Ty::Bool, span);
             }
             BinOp::In => {
-                self.stored(&a);
                 return self.list_sink(Sink::In, b, Some(a), None, span);
             }
             BinOp::Eq | BinOp::Ne if [&a, &b].iter().any(|t| matches!(t.ty.non_nil(), Some(Ty::List(..)))) => {
@@ -954,8 +1044,6 @@ impl Checker<'_> {
                 Ty::Bool
             }
             BinOp::Coalesce => {
-                self.stored(&a);
-                self.stored(&b);
                 let ty = match a.ty.non_nil() {
                     None => Some(b.ty.clone()),
                     Some(left) => unify(&left, &b.ty),
@@ -1080,9 +1168,6 @@ impl Checker<'_> {
             return node(TKind::Nil, Ty::Unknown, span);
         }
         let _ = name_span;
-        for a in &targs {
-            self.stored(a);
-        }
         for (a, (pname, pty, _)) in targs.iter().zip(&d.params) {
             if let Err(why) = conform(&a.ty, pty) {
                 // A nullable argument that narrowing could make non-nil: say how.
@@ -1106,7 +1191,7 @@ impl Checker<'_> {
         let list_builtin = matches!(
             name,
             "len" | "count" | "sum" | "mean" | "any" | "all" | "none" | "one" | "find" | "findLast" | "findIndex" | "findLastIndex"
-                | "first" | "last" | "get" | "reduce" | "map" | "filter"
+                | "first" | "last" | "get" | "reduce" | "map" | "filter" | "take" | "concat"
         ) || (matches!(name, "min" | "max") && args.len() == 1);
         if list_builtin {
             return self.list_call(name, args, span);
@@ -1123,7 +1208,7 @@ impl Checker<'_> {
             _ => {
                 let d = if LATER.contains(&name) {
                     Diag::error("E-UNSUPPORTED", name_span, format!("`{name}` isn't implemented yet"))
-                        .help("lists that are sorted, deduplicated or built from parts come in the next step")
+                        .help("not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`")
                 } else if matches!(name, "now" | "date" | "duration" | "timezone") {
                     Diag::error("E-UNSUPPORTED", name_span, format!("`{name}` isn't available: a program is pure"))
                         .help("pass time in as an input")
@@ -1200,14 +1285,15 @@ impl Checker<'_> {
     /// The program's value must fit the output type at every position
     /// (spec §3.4). `at` names the position for messages ("" is the output itself).
     fn output(&mut self, e: Option<&TExpr>, got: &Ty, want: &Ty, span: Span, at: &str) {
-        let place = if at.is_empty() { "the output".to_string() } else { format!("the output field `{at}`") };
+        let place = match at.strip_suffix("[]") {
+            _ if at.is_empty() => "the output".to_string(),
+            Some("") => "each item of the output".to_string(),
+            Some(list) => format!("each item of the output field `{list}`"),
+            None => format!("the output field `{at}`"),
+        };
         let field = |k: &str| if at.is_empty() { k.to_string() } else { format!("{at}.{k}") };
         match (got, want) {
             (Ty::Unknown, _) => {}
-            (_, Ty::List(..)) => self.err(
-                Diag::error("E-UNSUPPORTED", span, format!("{place} is a list; writing lists to the output isn't implemented yet"))
-                    .help("it comes in the next step (list outputs)"),
-            ),
             (Ty::Nil, Ty::Opt(_)) => {}
             (g, Ty::Opt(w)) => {
                 let g = g.non_nil().unwrap_or(Ty::Nil);
@@ -1246,6 +1332,19 @@ impl Checker<'_> {
                         Some(n) => d.help(format!("did you mean `{n}`?")),
                         None => d.help(format!("its fields are: {}", names.join(", "))),
                     });
+                }
+            }
+            // A list: at most `maxItems`, and each item fits the items' schema.
+            (Ty::List(gi, gn), Ty::List(wi, wn)) => {
+                if gn > wn {
+                    self.err(
+                        Diag::error("E-OUTPUT-BOUND", span, format!("{place} holds at most {wn} items, but this can have {gn}"))
+                            .help(format!("keep the last {wn}: `(…)[-{wn}:]`. If you count with `len(…)`, keep a separate count: a capped list stops growing")),
+                    );
+                }
+                if !matches!(**gi, Ty::Never) {
+                    let items = if at.is_empty() { "[]".to_string() } else { format!("{at}[]") };
+                    self.output(None, gi, wi, span, &items);
                 }
             }
             (Ty::Int(g), Ty::Int(w)) => {
@@ -1488,6 +1587,7 @@ fn kind_name(t: &Ty) -> &'static str {
         Ty::Float => "a float",
         Ty::Str(_) => "a string",
         Ty::Rec(..) => "a record",
+        Ty::List(..) => "a list",
         _ => "a value",
     }
 }

@@ -17,6 +17,10 @@ fn ints() -> Json {
     json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20})
 }
 
+fn ints_of(max: u32) -> Json {
+    json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": max})
+}
+
 fn ints_in() -> Json {
     json!([{"name": "xs", "schema": ints()}])
 }
@@ -134,9 +138,29 @@ fn cases() -> Vec<(&'static str, &'static str, Json, Options)> {
         ("E-TYPE", "sum(xs) + len(i)", iface(json!([{"name": "xs", "schema": ints()}, {"name": "i", "schema": int()}]), int()), none),
         ("E-TYPE", "filter(xs, # + 1)[0]", iface(ints_in(), int()), none),
         ("E-TYPE", "xs[1.5]", iface(ints_in(), int()), none),
-        ("E-UNSUPPORTED", "b ? filter(xs, # > 1) : xs", iface(json!([{"name": "b", "schema": {"type": "boolean"}}, {"name": "xs", "schema": ints()}]), int()), none),
-        ("E-UNSUPPORTED", "xs", iface(ints_in(), ints()), none),
+        ("E-TYPE", "b ? filter(xs, # > 1) : xs", iface(json!([{"name": "b", "schema": {"type": "boolean"}}, {"name": "xs", "schema": ints()}]), int()), none),
         ("E-UNSUPPORTED", "sortBy(xs, #)[0]", iface(ints_in(), int()), none),
+        // Lists written to the output: each construct's bound over `maxItems`
+        ("E-OUTPUT-BOUND", "concat(xs, [1])", iface(ints_in(), ints()), none),
+        ("E-OUTPUT-BOUND", "filter(xs, # > 1)", iface(ints_in(), ints_of(5)), none),
+        ("E-OUTPUT-BOUND", "map(xs, # * 2)", iface(ints_in(), ints_of(5)), none),
+        ("E-OUTPUT-BOUND", "xs[i:]", iface(json!([{"name": "xs", "schema": ints()}, {"name": "i", "schema": int()}]), ints_of(5)), none),
+        ("E-OUTPUT-BOUND", "xs[-6:]", iface(ints_in(), ints_of(5)), none),
+        ("E-OUTPUT-BOUND", "take(xs, i)", iface(json!([{"name": "xs", "schema": ints()}, {"name": "i", "schema": int()}]), ints_of(5)), none),
+        ("E-OUTPUT-BOUND", "[1, 2, 3, 4, 5, 6]", iface(json!([]), ints_of(5)), none),
+        // … and the items against the items' schema
+        ("E-RANGE", "map(xs, # + 1)", iface(ints_in(), json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20})), none),
+        ("E-TYPE", "map(xs, # / 2)", iface(ints_in(), ints()), none),
+        ("E-FIELD", "[{lat: 1.0}]", iface(json!([]), json!({"type": "array", "items": fix(), "maxItems": 4})), none),
+        ("E-TYPE", "xs", iface(ints_in(), int()), none),
+        // Building lists
+        ("E-TYPE", "xs[1.5:]", iface(ints_in(), ints()), none),
+        ("E-TYPE", "take(xs, n)", iface(json!([{"name": "xs", "schema": ints()}, {"name": "n", "schema": int(), "nullable": true}]), ints()), none),
+        ("E-TYPE", "concat(xs, [true])", iface(ints_in(), ints()), none),
+        ("E-ARG", "concat()", iface(json!([]), ints()), none),
+        // Held lists: their blocks are charged as locals
+        ("E-HOLD", "filter(ps, .lat > 0.0)", iface(json!([{"name": "ps", "schema": {"type": "array", "items": fix(), "maxItems": 65535}}]), json!({"type": "array", "items": fix(), "maxItems": 65535})), none),
+        ("E-LIMIT", "concat(xs, [1])[-20:]", iface(ints_in(), ints()), Options { limit_bytes: Some(256), ..Options::default() }),
         ("E-ACC-GROWS", "len(reduce(xs, [#], []))", iface(ints_in(), int()), none),
         ("E-SCHEMA", "1", iface(json!([{"name": "xs", "schema": {"type": "array", "items": int()}}]), int()), none),
         // Schemas
@@ -145,7 +169,7 @@ fn cases() -> Vec<(&'static str, &'static str, Json, Options)> {
         ("E-SCHEMA", "1", iface(json!([{"name": "u", "schema": {"type": "integer", "format": "uint64"}}]), int()), none),
         ("E-SCHEMA", "1", iface(json!([{"name": "x", "schema": {"type": ["integer", "null"]}}]), int()), none),
         // Limits
-        ("E-LIMIT", "1 + (2 + (3 + (4 + 5)))", iface(json!([]), int()), Options { limit_bytes: Some(64), code_in_ram: false }),
+        ("E-LIMIT", "1 + (2 + (3 + (4 + 5)))", iface(json!([]), int()), Options { limit_bytes: Some(64), ..Options::default() }),
         // Narrowing: only where the test shows it, and no further
         ("E-TYPE", "n != nil ? n : n", iface(n_nullable(), int()), none),
         ("E-TYPE", "{a: n != nil ? n : 0, b: n}", iface(n_nullable(), json!({"type": "object", "properties": {"a": int(), "b": int()}, "required": ["a", "b"]})), none),

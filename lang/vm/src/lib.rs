@@ -43,8 +43,10 @@ pub enum Value<'a> {
 }
 
 /// Where a list's items are. Both kinds live for the whole evaluation: inputs
-/// don't change during it, and a list literal's locals are reserved for it
-/// alone. So a handle can be copied freely.
+/// don't change during it, and the locals of a list literal or of a list the
+/// program builds are reserved for it alone. So a handle can be copied
+/// freely. A `Local` handle in the output stays readable after `run`
+/// returns, until the locals are reused (the next `run` clears them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListRef {
     /// Input list `id`, read through the host's accessor.
@@ -314,6 +316,22 @@ pub fn run<'a>(
                 None => push!(Value::Nil),
             },
             Op::MakeList { base, len, stride } => push!(Value::List(ListRef::Local { base, len, stride })),
+            // A built list's item `i` into its block; the operands were
+            // checked at load (the block lies inside the locals).
+            Op::ListStore { base, cap, stride } => {
+                let i = match pop!() {
+                    Value::Int(i) if i >= 0 && i < cap as i64 => i as usize,
+                    _ => return Err(fail(ErrorCode::Type, at)),
+                };
+                let at_item = base as usize + i * stride as usize;
+                for k in (0..stride as usize).rev() {
+                    locals[at_item + k] = pop!();
+                }
+            }
+            Op::ListMake { base, cap, stride } => match pop!() {
+                Value::Int(n) if n >= 0 && n <= cap as i64 => push!(Value::List(ListRef::Local { base, len: n as u16, stride })),
+                _ => return Err(fail(ErrorCode::Type, at)),
+            },
             Op::ListLen => {
                 let n = list_len(p, lists, pop!()).map_err(|c| fail(c, at))?;
                 push!(Value::Int(n as i64));

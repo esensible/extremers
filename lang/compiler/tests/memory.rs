@@ -202,6 +202,58 @@ fn a_bound_record_written_out_first_is_built_in_place() {
     assert_eq!(counts, [12, 12]);
 }
 
+/// A list written to the output is one output leaf, its handle. An input
+/// list passed on, or a literal, costs nothing more (the literal's items
+/// are in its block of locals anyway). A list the program builds is held:
+/// its bound × its items' leaves are reserved in locals, below every other
+/// local, for the whole evaluation, so the handle stays good after it.
+#[test]
+fn lists_written_to_the_output_are_counted_exactly() {
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20});
+    let iface = json!({"inputs": [{"name": "xs", "schema": ints}], "output": ints});
+    let runs = [json!({"xs": []}), json!({"xs": [1, 2, 3]}), json!({"xs": (0..20).collect::<Vec<i32>>()})];
+    // The handle alone.
+    exact(&iface, "xs", &runs, 1, 0);
+    // 3 locals: the literal's items.
+    exact(&iface, "[1, 2, 3]", &runs, 1, 3);
+    // 20 held, then the loop's handle, length and position, and the count.
+    // The stack peaks at 2: an item and its index, for the store.
+    exact(&iface, "filter(xs, # > 1)", &runs, 2, 24);
+    // 21 reserved (20 held, 1 for the literal), then 7: the count, the
+    // window's counter, the concat's length (a replay) and the window's
+    // start, and one loop's handle, length and position at a time.
+    exact(&iface, "concat(xs, [1])[-20:]", &runs, 3, 28);
+    // Records: 3 leaves an item.
+    let fix = json!({"type": "object", "properties": {"lat": {"type": "number"}, "lon": {"type": "number"}, "alt": {"type": "number"}}, "required": ["lat", "lon"]});
+    let fixes = json!({"type": "array", "items": fix, "maxItems": 4});
+    let iface = json!({"inputs": [{"name": "ps", "schema": fixes}], "output": fixes});
+    let runs = [json!({"ps": []}), json!({"ps": [{"lat": 1.0, "lon": 2.0}, {"lat": -1.0, "lon": 0.5, "alt": 3.0}]})];
+    // 12 held (4 × 3), then the loop's 3 and the count; the store takes an
+    // item's 3 leaves and its index.
+    exact(&iface, "filter(ps, .lat > 0.0)", &runs, 4, 16);
+}
+
+/// A slice or `take` straight on a list visits only its window: the work
+/// is the same for a list of 5 items as for one of 20 (`gps[-64:]` doesn't
+/// walk the whole track).
+#[test]
+fn a_window_on_a_list_visits_only_the_window() {
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20});
+    let iface = json!({"inputs": [{"name": "xs", "schema": ints}], "output": {"type": "integer"}});
+    let runs = [json!({"xs": [1, 2, 3, 4, 5]}), json!({"xs": (0..20).collect::<Vec<i32>>()})];
+    for src in ["sum(xs[-3:])", "sum(take(xs, 3))", "count(xs[1:4], # > 0)"] {
+        let c = compile(src, &iface, &Options::default()).unwrap_or_else(|d| panic!("{src}: {d:?}"));
+        let steps: Vec<u32> = runs
+            .iter()
+            .map(|r| match run(&c.bytes, &iface, r.as_object().unwrap(), &[]).unwrap() {
+                RunResult::Ok { steps, .. } => steps,
+                RunResult::Failed { code, .. } => panic!("`{src}` failed with {code}"),
+            })
+            .collect();
+        assert_eq!(steps[0], steps[1], "`{src}`: the work grows with the list ({steps:?})");
+    }
+}
+
 /// Variant groups are laid out as optional records (a presence leaf, then
 /// the fields), so the same exact accounting covers them. The state
 /// machine's figures, and its instruction count for each kind of event.

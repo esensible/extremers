@@ -11,6 +11,7 @@ The language is **generic**. A program is one expression over named, immutable, 
 Anything still open is marked **(provisional)**.
 
 **Changes since draft 3:**
+- **Lists in the output** (§4.3 H1, §7.3, §8): a list may be written into the output, at any depth, and a list the program builds (`map`, `filter`, `concat`, slices, `take`) may be kept as a value. Slices, `concat` and `take` are built (§2.3).
 - **Nil narrowing** (§3.3): after `p != nil`, `p` isn't nil, in the checker's eyes. It only changes which programs are accepted, never what one does.
 - **Variants** (`oneOf`, §3.2): a record may have variants, exactly one of which is present, in inputs and outputs alike. They replace the flattened `oneOf` inputs of draft 3, which were never built.
 
@@ -202,6 +203,8 @@ Also, `-2 ** 2 == -4` and `2 ** 3 ** 2 == 512`.
 | `flatten(xs)` | list | |
 | `a..b` | ints, inclusive | Empty when `b < a`. |
 | `x in xs` | bool | Compares with `==`. Not on records. |
+
+> **As built:** slices, `map`, `filter`, `reduce`, `take` and `concat` are built, consumed by any list builtin or kept as a value (§4.3 H1). Not yet (`E-UNSUPPORTED`): `reverse`, `uniq`, `sortBy`, `sort`, `flatten`, `median`, ranges `a..b`, `xs?.[i]`, a list that holds lists, and a `reduce` accumulator that is a list.
 
 **Math:** `abs`, `int`, `float`, `round`, `floor`, `ceil`.
 
@@ -477,11 +480,8 @@ Ranges are computed **exactly in i128**. If a result could leave i64 (so it coul
 | `a..b` | `max(0, hi(b) − lo(a) + 1)` |
 | `map`, `filter`, `reverse`, `sortBy`, `sort` or `uniq` of `xs` | `n` |
 | `take(xs, k)` | `min(n, max(0, hi(k)))` |
-| `xs[a:]` | constant `a < 0`: `min(n, −a)`; constant `a ≥ 0`: `max(0, n − a)` |
-| `xs[:b]` | constant `b ≥ 0`: `min(n, b)`; constant `b < 0`: `max(0, n + b)` |
-| `xs[a:b]`, constants `0 ≤ a ≤ b` | `min(n, b − a)` |
-| any other slice | `n` |
-| `concat(a, b, …)` | the sum of the bounds |
+| `xs[a:b]` (either left out) | `end − start`, from the ranges of `a` and `b` (a constant is a range of one value): `end` is `max(0, n + hi(b))` if `b` is always negative, `min(n, hi(b))` if it is never negative, else `n` (and `n` without `b`); then `max(0, end − lo(a))` if `a` is never negative, `min(end, −lo(a))` if it is always negative, else `end`; clamped to `0..n`. So `xs[-5:]` is `min(n, 5)`, `xs[1:]` is `n − 1`, and `xs[k:]` with `k` an input of unknown sign is `n` |
+| `concat(a, b, …)` | the sum of the bounds (saturating) |
 | `flatten(xs)` | the product of the bounds at every level |
 | `c ? a : b`, `a ?? b` | the larger of the two |
 
@@ -494,6 +494,8 @@ A bound only matters for holds, for output positions and for work. A flowing lis
 **H1. A list written into the output.**
 - Charge: none. The list is built in place in the output layout, and its bound must be at most `maxItems` (§3.4).
 - A `sortBy`, `sort` or `uniq` written straight into the output is done in place in that list.
+
+> **As built (lists in the output):** there is no arena yet, so a list is *held* in locals instead. The output's leaf at a list position is the list's handle (§8). An input list passed on, or a list literal, needs nothing more: the handle points at the input, or at the literal's block of locals. A list the program builds (`map`, `filter`, `concat`, a slice, `take`) is held wherever a value is needed (the output, a record field, a branch, `??`): a block of `bound × leaves(item)` locals is reserved for it, its items are written there by one loop, and the value is a handle to the block. Every literal's and held list's block is reserved for the whole evaluation, below all other locals, so a handle can be copied freely and stays readable after the evaluation (§8). The charge is counted in the program's locals (`Memory.locals`; `held_slots` of them, reported in `E-LIMIT`'s help), so a list's `maxItems` counts against the caller's limit (`--limit`, `E-LIMIT`); the blocks together may take at most 32,768 slots (`E-HOLD`). A list consumed by a list builtin is never held (§6). Writing a held list also converts an int item leaf into a float one where the output wants a float, and rewrites items laid out differently from the output's items (e.g. a record without an optional field).
 
 **H2. `sortBy` and `sort`.**
 - Charge: `n × (8 + size(T))`. The buffer holds `(key, item)` pairs.
@@ -638,10 +640,11 @@ Profiles may add their own wording to the help, for example naming their inputs.
 | `E-RANGE` | `n: prev.n + 1` where `maximum` is 10 | "`n` is at most 10 but this can be 11" / "clamp it: `min(prev.n + 1, 10)`" |
 | `E-OUTPUT-BOUND` | `recent: filter(xs, …)` | "`recent` holds at most {maxItems} but this can have {bound}" / "keep the last N: `(…)[-{maxItems}:]`. If you count with `len(recent)`, keep a separate count: a capped list stops growing" |
 | `E-HOLD` | `sortBy(filter(xs, …), .v)` | "`{builtin}` holds up to {bound} {items} ({bytes} bytes); the arena limit is {limit}" / "slice the input first (`xs[-N:]`), or take only what you need (`first`, `take(…, k)`, `min`, `max`)" |
+| `E-HOLD` (as built: held lists) | `filter(ps, …)` into an output list of 65,535 records | "this list is held: up to {bound} items of {stride} slots, {slots} slots ({bytes} bytes); a program's lists can hold at most 32768 slots in all, and these need {total}" / "slice it first (`(…)[-N:]`, `take(…, N)`), or keep only what you need (`first`, `last`, `sum`, `count`, …)" |
 | `E-HOLD` (index) | `ys[i]` in a loop, where `ys` is filtered | "`ys[…]` in this loop needs all of `ys` held ({bytes} bytes), because a filtered list can't be indexed" / "look back by a constant: `ys[#index - 1]` in `map(ys, …)`, or `ys[#index]` in `map(ys[1:], …)`" |
 | `E-UNBOUNDED` | `take(sortBy(xs, .v), prev.n)` with no `maximum` on `n` | "the size of `{expr}` depends on `{value}`, which has no upper bound" / "add `maximum` to `{path}`, or cap it: `min({value}, N)`" |
 | `E-ACC-GROWS` | `reduce(xs, concat(#acc, [#]), [])` | "this `reduce` accumulator grows with every item" / "`concat(#acc, [#])[-N:]`, or use `map`/`filter`" |
-| `E-LIMIT` | (the totals) | "the program needs {total} bytes (output {o}, buffers {a}, stack {k}); the limit is {limit}" / the largest item's own help, with its span |
+| `E-LIMIT` | (the totals) | "the program needs {total} bytes (output {o}, buffers {a}, stack {k}); the limit is {limit}" / the largest item's own help, with its span. As built: "… (stack {k} × 16, locals {l} × 16, output {o} × 16); the limit is {limit}" / with held lists, "{h} of the {l} locals hold lists (each held list is its bound × its items' leaves): lower the output's `maxItems`, or slice before holding: `(…)[-N:]`" |
 | `E-WORK` | `map(xs, count(xs, …))` against a work limit | "about {work} instructions (loops over {bounds} multiply)" / "slice the input (`xs[-N:]`), or carry a running total in the output" |
 | `E-SCHEMA` | an array without `maxItems` | "`{path}`: {problem}" / "add `maxItems`: every list needs a maximum length" |
 | `E-DUP-KEY` | `{a: 1, a: 2}` | "key `a` appears twice" / "keep one" |
@@ -707,6 +710,8 @@ Every list-typed expression is lowered to a **pipeline**: a source, then stages,
 - arena buffers outside their write window.
 
 A `reduce` accumulator is double-buffered (H8), so replays can read it.
+
+> **As built:** sources are a list value (an input list, a literal, a held list, or any expression giving a handle) or a `Concat` of pipelines; stages are `Map`, `Filter`, `Slice` and `Take`; sinks are the aggregates and finders of §2.3 and `WriteList`, which writes the items into a held list's block (§4.3 H1). A `Concat` runs one loop per part, each part's items through its own stages, then the stages after the `concat`, then the sink (that code is emitted once per part); a part laid out differently from the whole is converted item by item. A window (`Slice`, `Take`) skips the items before its start and leaves the pipeline's loops at its end; one straight on a list sets the loop's bounds instead, so `gps[-64:]` visits only 64 fixes, however long the track. A negative bound counts the items before the window first, by a replay (the length of a list is read directly). A negative `take` count fails before any loop (`R-ARG`).
 
 **Cursor state** lives in locals, and its size is static:
 - one counter per stage;
@@ -809,6 +814,8 @@ A `Slot` is 16 bytes, 8-aligned:
 
 > **As built (records slice):** records are values, never references. A record is flattened into **leaves**, one 16-byte slot per scalar field, in field-name order; an optional record has a presence leaf (true, or nil when absent, when all its leaves are nil too) before its fields. Inputs and the output are lists of leaves, each with its own check in the header, and `Return(n)` writes the output's `n` leaves. Binding a record copies its leaves into locals; reading a field loads that field's leaves. The exception: when a `let` body's value starts with the binding itself, laid out as it is (`let r = …; {a: r, b: r.x}`, also as the first field of a field, or past further `let`s), the binding is built right there on the stack, as the leading leaves of the body's value, and read where it lies with `Peek` (§7.4): it takes no locals and is never copied. Anywhere else (read before it's written out, written out in another position or layout, or not written out at all) it lives in locals. No arena is used for records. The packed layouts below remain the plan for held lists.
 >
+> **Lists (as built).** A list is one leaf, its handle (§8), wherever it is: in an input, the output, a record, a local. In the output, a handle to an input list points at the input; one to a literal or a held list points at a block of locals reserved for the whole evaluation (§4.3 H1), and is readable until the locals are reused (the next evaluation clears them). The output carries no items of its own, so the packed `list<T>` layout below isn't used yet. A host that keeps an output list for later (the state, chained into the next evaluation's input) reads the items through the handle when the evaluation completes and serves them as that input's list next time (§8); a host that encodes the output at once (the view) reads them through the handle (`bundle`'s `ViewSource` does).
+>
 > **Variants** are laid out as what they are typed as: optional record fields, each a presence leaf then its fields, in field-name order among the record's other fields. A record with no fields (`idle: {}`) is its presence leaf alone. So a value with variants costs the leaves of all its variants, and the memory figures stay exact with no new rule. Sharing slots between variants (only one is ever present) is a later optimisation.
 >
 > **Variant groups in the header.** For the inputs and for the output, the header lists each variant group as `(guard, members)`: the members are the variants' presence leaves, and the guard is the presence leaf of the optional record the group sits in (a nullable input, an optional field, or a variant), or none. Before evaluation starts the VM checks that in each input group whose guard isn't nil exactly one member is non-nil (`R-INPUT` otherwise); at `Return` it checks the output's groups the same way (`R-RANGE`). The checks read leaves already in hand: no allocation, one pass over the group table.
@@ -857,7 +864,7 @@ There is a value stack and a set of locals, both made of slots. Arguments are pu
 | Layout reads | `LoadField kind off`, `RefAt space off layout` | `kind` is one of `int float bool enum string opt(kind) ref(layout)`. An absent `opt` gives `Nil`. Input spaces are read through the host's accessor. |
 | Layout writes | `StoreField kind off` (`Ref`, value →) | Into the output or the arena only. Into the output, it checks int ranges, enum membership and string capacity, raising `R-RANGE` on failure. Floats are stored as they are. Storing `Nil` into an `opt` clears it. |
 | | `CopyLayout layout` (src, dst →) | Identical layouts only. |
-| Lists (as built) | `PushInputList id`, `MakeList base len stride`, `ListLen`, `ListRead leaf` | `PushInputList` pushes a handle to input list `id` (nil if the host says it's absent); `MakeList` a handle to items in locals. `ListLen`: handle → int (nil is `R-NIL`). `ListRead leaf`: handle, index → that item's leaf; it needs `0 ≤ i < len`, else `R-INDEX` (the compiler adds `len` to a negative index first). Loops are ordinary backward jumps. Writing lists (outputs) comes with step 1b. |
+| Lists (as built) | `PushInputList id`, `MakeList base len stride`, `ListLen`, `ListRead leaf`, `ListStore base cap stride`, `ListMake base cap stride` | `PushInputList` pushes a handle to input list `id` (nil if the host says it's absent); `MakeList` a handle to items in locals. `ListLen`: handle → int (nil is `R-NIL`). `ListRead leaf`: handle, index → that item's leaf; it needs `0 ≤ i < len`, else `R-INDEX` (the compiler adds `len` to a negative index first). A held list's block is `cap` items of `stride` leaves from local `base` (checked at load to lie in the locals): `ListStore` pops an item's `stride` leaves and then (on top) its index `i < cap`, and writes item `i`; `ListMake`: len → a handle to the block's first `len ≤ cap` items. Either out of range is `R-TYPE` (a compiler bug). Loops are ordinary backward jumps. |
 | Errors (as built) | `Error code` | Fails the evaluation: 1 `R-NIL`, 2 `R-INDEX`, 3 `R-ARG`; ends a path. |
 | Holds | `HoldSortInsert buf dir k`, `HoldSort buf dir`, `HoldUniqueInsert buf`, `HoldMedian buf` | Stable insertion. A `Nil` key is `R-ARG`. Each comparison or move costs 1. |
 | Host builtins | `CallHost import args results` | Pops `args` leaves, calls the builtin linked as `import`, pushes its `results` leaves. The counts must equal the import's. A host failure is `R-ARG`. (Builtins over lists come with lists.) |
@@ -906,7 +913,7 @@ As built (`lang/vm/src/lib.rs`), for scalars, records, host builtins and list in
 
 ```rust
 pub enum Value<'a> { Nil, Bool(bool), Int(i64), Float(f64), Str(&'a [u8]), List(ListRef) }   // 16 bytes on the C6
-pub enum ListRef { Input(u16), Local { base: u16, len: u16, stride: u16 } }   // a handle: an input list, or a literal's items in locals
+pub enum ListRef { Input(u16), Local { base: u16, len: u16, stride: u16 } }   // a handle: an input list, or a literal's or held list's items in locals
 
 /// A list input, read in place (e.g. from flash). Items are flattened like
 /// records (§7.3): `read(i, k)` is leaf `k` of item `i`.
@@ -936,7 +943,8 @@ pub fn run<'a>(p: &Program<'a>, host: &[Option<&HostFn>], inputs: &[Value<'a>],
 - **No budget.** Every loop runs over a list with a static bound, so an evaluation always ends; there is no instruction budget.
 - **Failure handling.** The VM is `no_std`, has no `alloc`, and never panics. Every failure is a `Fail { code, pc }` or a `LoadError`; the program's span table maps `pc` to source.
 - **List inputs.** Every list inside the inputs (a list input, or a list field of an input record; not inside list items) has an id, in leaf order, and the host passes an accessor for each in `lists`, or `None` when the list sits in an optional record that's absent. The input leaf at a list's position is ignored (pass nil). A list longer than its `maxItems`, or an item leaf that doesn't fit its schema, is `R-INPUT`: the checker's bounds rely on both.
-- **List handles.** A list value is a handle (`ListRef`) to an input list, or to a list literal's items in locals. Both live for the whole evaluation (inputs don't change; each literal has its own block of locals, never reused), so a handle can be copied freely through `let`, `?:` and `??`. `map`/`filter` results are never stored: each consumer runs the pipeline as one loop.
+- **List handles.** A list value is a handle (`ListRef`) to an input list, or to items in locals: a list literal's, or a held list's (§4.3 H1). Both live for the whole evaluation (inputs don't change; each literal and held list has its own block of locals, never reused), so a handle can be copied freely through `let`, `?:` and `??`. A pipeline consumed by a list builtin is never stored: the consumer runs it as one loop.
+- **Lists in the output.** The output's leaf at a list position is a handle. A `Local` handle stays readable after `run` returns, until the host reuses the locals (the next `run` clears them first): a host reads an output list's items through it, `read(i, k)`-style, from `locals[base + i·stride + k]`, or from the input list for an `Input` handle. To chain an output list into the next evaluation (a list in the state), the host copies its items out before the next `run` and serves them as that input's list (`ListInput`); a plain copy of the output leaves would copy only the handle. `compiler::run` does this through JSON (`langc check --samples` chains it). **Not yet on the device:** the engine host copies the state's leaves only, and an engine's install check accepts only the `gps` input list, so an engine with a list in its state is refused at install.
 
 What the host does with an output, or with a failure, is the profile's business.
 
@@ -984,7 +992,7 @@ Each implementation must be exact: integer arithmetic, or floats with no transce
 2. A nil result, or a result that violates the schema, is an error.
 3. Decode the VM's output through `LAYOUT`.
 4. Compare:
-   - ints, bools, enums, strings and list lengths exactly;
+   - ints, bools, enums, strings and list lengths exactly, and lists item by item (Go's list is normalised item by item to the items' schema);
    - floats within 4 ulp or a relative 1e-12;
    - `-0.0` equals `0.0`, and NaN equals NaN.
 
@@ -994,8 +1002,8 @@ Each implementation must be exact: integer arithmetic, or floats with no transce
 |---|---|
 | `integer divide by zero` | `R-DIV0` |
 | `index out of range` / `out of bounds` | `R-INDEX` |
-| `from <nil>` / `<nil>` operands | `R-NIL` |
-| test-builtin errors, `reduce of empty`, `unknown order`, a negative `take` | `R-ARG` |
+| `from <nil>` / `<nil>` operands, `cannot concat invalid` (a nil `concat` argument) | `R-NIL` |
+| test-builtin errors, `reduce of empty`, `unknown order`, a negative `take` (`reflect.Value.Slice: slice index out of bounds`) | `R-ARG` |
 
 `R-RANGE`, `R-INPUT` and `R-TYPE` never appear in the corpus.
 
@@ -1027,6 +1035,8 @@ Profiles add their own corpora on top of this.
 **Open:**
 - **D2: `median` over large inputs.** Hold within the limit only, or use multi-pass selection, or a remedian.
 - **D13: the builtin ABI.** Only flat scalars cross it. Strings, enums and list results are not supported. Is that enough for the host builtins we expect?
+- **D15: lists in a host's kept output.** A list in the output is a handle into the locals (§8). A host that chains it (the engine state) must copy the items out between evaluations; the engine host doesn't yet (§8), so a list in the state works in `langc` and the studio but not on the device. The alternative is the packed layout of §7.3, items in the output after the handle, which would make the state a plain copy again at the cost of output slots.
+- **D16: trigonometry.** The language has no `sin`, `cos` or `atan2` (nor does the engine profile, which removed them). A circular mean of headings (extreme-tune) can't be written; `lang/examples/tune` uses the mean of wrapped differences instead, which agrees to 1.3e-4° on extreme-tune's test.
 - **D14: the interface file.** The format in §1.1 is the compiler's. Should profiles generate it, or should authors ever write it?
 
 ---

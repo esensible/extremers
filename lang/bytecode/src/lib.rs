@@ -170,6 +170,13 @@ impl Builtin {
 ///   is absent); `MakeList { base, len, stride }` → a handle to `len` items of
 ///   `stride` leaves in locals from `base`; `ListLen`: handle → int;
 ///   `ListRead(leaf)`: handle, index → that item's leaf (`R-INDEX` out of range).
+/// - A list the program builds (a `map`, `filter`, `concat`, slice or
+///   `take` kept as a value) is written into a block of `cap` items of
+///   `stride` leaves in locals from `base`: `ListStore { base, cap, stride }`
+///   pops an item's `stride` leaves and then (on top) its index `i < cap`,
+///   and writes them as item `i`; `ListMake { base, cap, stride }`: len →
+///   a handle to the block's first `len ≤ cap` items. Either out of range is
+///   `R-TYPE` (a compiler bug).
 /// - `AssertNotNil`: pops a value; nil is `R-NIL`.
 /// - `Return(n)`: pops the output's `n` leaves (the last leaf on top); the
 ///   stack must then be empty, and `n` must equal the output's leaf count.
@@ -211,6 +218,8 @@ pub enum Op {
     MakeList { base: u16, len: u16, stride: u16 },
     ListLen,
     ListRead(u16),
+    ListStore { base: u16, cap: u16, stride: u16 },
+    ListMake { base: u16, cap: u16, stride: u16 },
     /// Fails the evaluation: 1 `R-NIL`, 2 `R-INDEX`, 3 `R-ARG`. Ends a path,
     /// like `Return`.
     Error(u8),
@@ -262,6 +271,8 @@ mod code {
     pub const MAKE_LIST: u8 = 0x49;
     pub const LIST_LEN: u8 = 0x4A;
     pub const LIST_READ: u8 = 0x4B;
+    pub const LIST_STORE: u8 = 0x4C;
+    pub const LIST_MAKE: u8 = 0x4D;
     pub const ERROR: u8 = 0x4F;
     pub const RETURN: u8 = 0x50;
 }
@@ -314,13 +325,9 @@ impl Op {
                 with(buf, CALL_HOST, &o)
             }
             Op::PushInputList(id) => with(buf, PUSH_INPUT_LIST, &id.to_le_bytes()),
-            Op::MakeList { base, len, stride } => {
-                let mut o = [0u8; 6];
-                o[0..2].copy_from_slice(&base.to_le_bytes());
-                o[2..4].copy_from_slice(&len.to_le_bytes());
-                o[4..6].copy_from_slice(&stride.to_le_bytes());
-                with(buf, MAKE_LIST, &o)
-            }
+            Op::MakeList { base, len, stride } => with(buf, MAKE_LIST, &three(base, len, stride)),
+            Op::ListStore { base, cap, stride } => with(buf, LIST_STORE, &three(base, cap, stride)),
+            Op::ListMake { base, cap, stride } => with(buf, LIST_MAKE, &three(base, cap, stride)),
             Op::ListLen => with(buf, LIST_LEN, &[]),
             Op::ListRead(leaf) => with(buf, LIST_READ, &leaf.to_le_bytes()),
             Op::Error(code) => with(buf, ERROR, &[code]),
@@ -382,10 +389,16 @@ impl Op {
                 (Op::CallHost { import: w(0), args: w(2), results: w(4) }, 6)
             }
             PUSH_INPUT_LIST => (Op::PushInputList(u16_at()?), 2),
-            MAKE_LIST => {
+            MAKE_LIST | LIST_STORE | LIST_MAKE => {
                 let b = arg(6)?;
                 let w = |i: usize| u16::from_le_bytes([b[i], b[i + 1]]);
-                (Op::MakeList { base: w(0), len: w(2), stride: w(4) }, 6)
+                let (base, n, stride) = (w(0), w(2), w(4));
+                let op = match op {
+                    MAKE_LIST => Op::MakeList { base, len: n, stride },
+                    LIST_STORE => Op::ListStore { base, cap: n, stride },
+                    _ => Op::ListMake { base, cap: n, stride },
+                };
+                (op, 6)
             }
             LIST_LEN => (Op::ListLen, 0),
             LIST_READ => (Op::ListRead(u16_at()?), 2),
@@ -413,11 +426,21 @@ impl Op {
             Op::PushInputList(_) | Op::MakeList { .. } => (0, 1),
             Op::ListLen => (1, 1),
             Op::ListRead(_) => (2, 1),
+            Op::ListStore { stride, .. } => (stride + 1, 0),
+            Op::ListMake { .. } => (1, 1),
             Op::Error(_) => (0, 0),
             Op::AssertNotNil => (1, 0),
             Op::Return(n) => (n, 0),
         }
     }
+}
+
+fn three(a: u16, b: u16, c: u16) -> [u8; 6] {
+    let mut o = [0u8; 6];
+    o[0..2].copy_from_slice(&a.to_le_bytes());
+    o[2..4].copy_from_slice(&b.to_le_bytes());
+    o[4..6].copy_from_slice(&c.to_le_bytes());
+    o
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +952,9 @@ impl<'a> Program<'a> {
             Op::Return(n) => n == self.output_count,
             Op::PushInputList(id) => id < self.list_count,
             Op::Error(code) => (1..=3).contains(&code),
-            Op::MakeList { base, len, stride } => (base as u32 + len as u32 * stride as u32) <= self.locals as u32,
+            Op::MakeList { base, len: n, stride } | Op::ListStore { base, cap: n, stride } | Op::ListMake { base, cap: n, stride } => {
+                (base as u32 + n as u32 * stride as u32) <= self.locals as u32 && stride < u16::MAX
+            }
             _ => true,
         };
         if ok { Ok(()) } else { Err(LoadError::BadOperand(pc)) }
@@ -1056,7 +1081,8 @@ mod tests {
             Op::Sub, Op::Mul, Op::Div, Op::Mod, Op::Pow, Op::Neg, Op::Eq, Op::Ne, Op::Lt, Op::Le,
             Op::Gt, Op::Ge, Op::Not, Op::Jump(9), Op::JumpIfFalse(10), Op::JumpIfNotNil(11),
             Op::Call(Builtin::Max, 3), Op::CallHost { import: 2, args: 4, results: 3 }, Op::PushInputList(4),
-            Op::MakeList { base: 1, len: 2, stride: 3 }, Op::ListLen, Op::ListRead(5), Op::AssertNotNil, Op::Return(3),
+            Op::MakeList { base: 1, len: 2, stride: 3 }, Op::ListStore { base: 4, cap: 64, stride: 3 },
+            Op::ListMake { base: 4, cap: 64, stride: 3 }, Op::ListLen, Op::ListRead(5), Op::AssertNotNil, Op::Return(3),
         ] {
             roundtrip(op);
         }

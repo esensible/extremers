@@ -377,9 +377,16 @@ func encode(v any) map[string]any {
 			}
 		}
 		return map[string]any{"kind": "record", "fields": fields}
-	default:
-		return map[string]any{"kind": fmt.Sprintf("unsupported %T", v)}
 	}
+	// A list, of any element type (`concat([], [])` is a nil []any: empty).
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice {
+		items := make([]any, rv.Len())
+		for i := range items {
+			items[i] = encode(rv.Index(i).Interface())
+		}
+		return map[string]any{"kind": "list", "items": items}
+	}
+	return map[string]any{"kind": fmt.Sprintf("unsupported %T", v)}
 }
 
 // expand replaces each {"$name": true} schema with defs[name], recursively.

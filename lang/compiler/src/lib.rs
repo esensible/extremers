@@ -56,7 +56,7 @@ pub fn compile(source: &str, interface: &Json, opts: &Options) -> Result<Compile
     let iface = schema::parse_interface(interface)?;
     let ast = syntax::parse(source).map_err(|d| vec![d])?;
     let checked = check::check(&ast, &iface)?;
-    let em = emit::emit(&checked, &iface);
+    let em = emit::emit(&checked, &iface).map_err(|d| vec![d])?;
     let slot_bytes = SLOT_BYTES as u32;
     let program_bytes = em.bytes.len() as u32;
     let mut total = (em.max_stack as u32 + em.locals as u32 + em.output_leaves as u32) * slot_bytes;
@@ -74,6 +74,15 @@ pub fn compile(source: &str, interface: &Json, opts: &Options) -> Result<Compile
     if let Some(limit) = opts.limit_bytes {
         if total > limit {
             let code = if opts.code_in_ram { format!(", program {program_bytes}") } else { String::new() };
+            // Held lists usually dominate when there are any.
+            let help = if em.held_slots > 0 {
+                format!(
+                    "{} of the {} locals hold lists (each held list is its bound × its items' leaves): lower the output's `maxItems`, or slice before holding: `(…)[-N:]`",
+                    em.held_slots, em.locals
+                )
+            } else {
+                "nest to the left: `a + b + c` needs less stack than `a + (b + c)`".to_string()
+            };
             return Err(vec![Diag::error(
                 "E-LIMIT",
                 ast.span,
@@ -82,7 +91,7 @@ pub fn compile(source: &str, interface: &Json, opts: &Options) -> Result<Compile
                     em.max_stack, em.locals, em.output_leaves
                 ),
             )
-            .help("nest to the left: `a + b + c` needs less stack than `a + (b + c)`")]);
+            .help(help)]);
         }
     }
     Ok(Compiled { bytes: em.bytes, memory })
@@ -163,8 +172,11 @@ pub fn run(bytes: &[u8], interface: &Json, inputs: &serde_json::Map<String, Json
     let mut locals = vec![Value::Nil; p.locals as usize];
     Ok(match vm::run(&p, &linked, &values, &lists, &mut output, &mut stack, &mut locals) {
         Ok(stats) => {
-            let mut leaves_iter = output.iter();
-            RunResult::Ok { value: unflatten(&mut leaves_iter, &iface.output), stack_high: stats.stack_high, steps: stats.steps }
+            // A list in the output is a handle: its items are read where it
+            // points, in the locals or an input list, as a host does.
+            let lists = Lists { locals: &locals, inputs: &lists };
+            let mut leaves_iter = output.iter().copied();
+            RunResult::Ok { value: unflatten(&mut leaves_iter, &iface.output, &lists), stack_high: stats.stack_high, steps: stats.steps }
         }
         Err(f) => RunResult::Failed { code: f.code.as_str(), span: p.span(f.pc) },
     })
@@ -214,17 +226,21 @@ fn flatten<'a>(v: &'a Json, t: &Ty, out: &mut Vec<Value<'a>>) -> Option<()> {
     Some(())
 }
 
+/// Where an output list's handle points after a run.
+struct Lists<'r, 'a> {
+    locals: &'r [Value<'a>],
+    inputs: &'r [Option<&'r dyn vm::ListInput<'a>>],
+}
+
 /// Output leaves back into a value, as tagged JSON (floats as IEEE bits so
-/// nothing is lost). Absent optional fields are left out of records.
-fn unflatten<'a, 'b>(leaves_iter: &mut impl Iterator<Item = &'b Value<'a>>, t: &Ty) -> Json
-where
-    'a: 'b,
-{
+/// nothing is lost). Absent optional fields are left out of records; a list
+/// is `{"kind": "list", "items": […]}`, its items read through its handle.
+fn unflatten<'a>(leaves_iter: &mut impl Iterator<Item = Value<'a>>, t: &Ty, lists: &Lists<'_, 'a>) -> Json {
     match t {
         Ty::Rec(f, _) => {
             let mut fields = serde_json::Map::new();
             for (k, ft) in f {
-                let v = unflatten(leaves_iter, ft);
+                let v = unflatten(leaves_iter, ft, lists);
                 if v["kind"] != "nil" {
                     fields.insert(k.clone(), v);
                 }
@@ -232,21 +248,41 @@ where
             json!({"kind": "record", "fields": fields})
         }
         Ty::Opt(inner) if matches!(**inner, Ty::Rec(..)) => {
-            let present = *leaves_iter.next().unwrap() != Value::Nil;
-            let v = unflatten(leaves_iter, inner);
+            let present = leaves_iter.next().unwrap() != Value::Nil;
+            let v = unflatten(leaves_iter, inner, lists);
             if present { v } else { json!({"kind": "nil"}) }
         }
-        _ => from_value(leaves_iter.next().unwrap()),
+        _ if matches!(types::unopt(t), Ty::List(..)) => {
+            let Ty::List(item, _) = types::unopt(t) else { unreachable!() };
+            let h = leaves_iter.next().unwrap();
+            let n = leaves(item) as usize;
+            let read = |i: usize| -> Vec<Value<'a>> {
+                match h {
+                    Value::List(vm::ListRef::Local { base, stride, .. }) => (0..n).map(|k| lists.locals[base as usize + i * stride as usize + k]).collect(),
+                    Value::List(vm::ListRef::Input(id)) => (0..n).map(|k| lists.inputs[id as usize].unwrap().read(i as u32, k as u16)).collect(),
+                    _ => unreachable!(),
+                }
+            };
+            let len = match h {
+                Value::Nil => return json!({"kind": "nil"}),
+                Value::List(vm::ListRef::Local { len, .. }) => len as usize,
+                Value::List(vm::ListRef::Input(id)) => lists.inputs[id as usize].map_or(0, |l| l.len() as usize),
+                other => return from_value(&other),
+            };
+            let items: Vec<Json> = (0..len).map(|i| unflatten(&mut read(i).into_iter(), item, lists)).collect();
+            json!({"kind": "list", "items": items})
+        }
+        _ => from_value(&leaves_iter.next().unwrap()),
     }
 }
 
-/// `run`'s tagged output as plain JSON (records as objects, absent fields
-/// left out, ints and floats as numbers): what the next evaluation takes as
-/// an input. A list in the output is only its handle there, so it becomes
-/// null.
+/// `run`'s tagged output as plain JSON (records as objects, lists as
+/// arrays, absent fields left out, ints and floats as numbers): what the
+/// next evaluation takes as an input.
 pub fn plain(v: &Json) -> Json {
     match v["kind"].as_str() {
         Some("record") => Json::Object(v["fields"].as_object().into_iter().flatten().map(|(k, f)| (k.clone(), plain(f))).collect()),
+        Some("list") => Json::Array(v["items"].as_array().into_iter().flatten().map(plain).collect()),
         Some("int") => v["int"].as_str().and_then(|s| s.parse::<i64>().ok()).map_or(Json::Null, |i| json!(i)),
         Some("float") => v["bits"].as_str().and_then(|s| u64::from_str_radix(s, 16).ok()).map_or(Json::Null, |b| json!(f64::from_bits(b))),
         Some("string") => v["string"].clone(),

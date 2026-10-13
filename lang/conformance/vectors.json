@@ -3625,6 +3625,1627 @@
           }
         }
       ]
+    },
+    {
+      "name": "list out: an input list passed on",
+      "results": [
+        {
+          "ok": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "1",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list out: a literal",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "5",
+                "kind": "int"
+              },
+              {
+                "int": "6",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "-7",
+                "kind": "int"
+              },
+              {
+                "int": "-6",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list out: ints into a list of numbers",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "1",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "bits": "4004000000000000",
+                "kind": "float"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list out: map, into numbers",
+      "results": [
+        {
+          "ok": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "-4",
+                "kind": "int"
+              },
+              {
+                "int": "4294967294",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list out: filter",
+      "results": [
+        {
+          "ok": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "4",
+                "kind": "int"
+              },
+              {
+                "int": "6",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list out: in a branch",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "1",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bounded idiom: concat then the last 20",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "5",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "1",
+                "kind": "int"
+              },
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              },
+              {
+                "int": "4",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              },
+              {
+                "int": "4",
+                "kind": "int"
+              },
+              {
+                "int": "5",
+                "kind": "int"
+              },
+              {
+                "int": "6",
+                "kind": "int"
+              },
+              {
+                "int": "7",
+                "kind": "int"
+              },
+              {
+                "int": "8",
+                "kind": "int"
+              },
+              {
+                "int": "9",
+                "kind": "int"
+              },
+              {
+                "int": "10",
+                "kind": "int"
+              },
+              {
+                "int": "11",
+                "kind": "int"
+              },
+              {
+                "int": "12",
+                "kind": "int"
+              },
+              {
+                "int": "13",
+                "kind": "int"
+              },
+              {
+                "int": "14",
+                "kind": "int"
+              },
+              {
+                "int": "15",
+                "kind": "int"
+              },
+              {
+                "int": "16",
+                "kind": "int"
+              },
+              {
+                "int": "17",
+                "kind": "int"
+              },
+              {
+                "int": "18",
+                "kind": "int"
+              },
+              {
+                "int": "19",
+                "kind": "int"
+              },
+              {
+                "int": "20",
+                "kind": "int"
+              },
+              {
+                "int": "99",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bounded idiom: a list kept in the state",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "count": {
+                "int": "1",
+                "kind": "int"
+              },
+              "splits": {
+                "items": [
+                  {
+                    "int": "61000",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "count": {
+                "int": "3",
+                "kind": "int"
+              },
+              "splits": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "count": {
+                "int": "10",
+                "kind": "int"
+              },
+              "splits": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "slices",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "slices of pipelines",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "take",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "reflect.Value.Slice: slice index out of bounds (1:21)"
+        }
+      ]
+    },
+    {
+      "name": "concat: records laid out differently",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "fields": {
+                  "lat": {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "fields": {
+                  "alt": {
+                    "bits": "401c000000000000",
+                    "kind": "float"
+                  },
+                  "lat": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              },
+              {
+                "fields": {
+                  "lat": {
+                    "bits": "4020000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4022000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              },
+              {
+                "fields": {
+                  "lat": {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat: parts with their own stages",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "7",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "2",
+                "kind": "int"
+              },
+              {
+                "int": "3",
+                "kind": "int"
+              },
+              {
+                "int": "40",
+                "kind": "int"
+              },
+              {
+                "int": "50",
+                "kind": "int"
+              },
+              {
+                "int": "7",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat and slices consumed by aggregates",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "f": {
+                "int": "0",
+                "kind": "int"
+              },
+              "i": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "l": {
+                "int": "0",
+                "kind": "int"
+              },
+              "m": {
+                "int": "0",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "c": {
+                "int": "2",
+                "kind": "int"
+              },
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "i": {
+                "int": "2",
+                "kind": "int"
+              },
+              "l": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "m": {
+                "int": "5",
+                "kind": "int"
+              },
+              "n": {
+                "int": "1",
+                "kind": "int"
+              },
+              "s": {
+                "int": "12",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "c": {
+                "int": "1",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "i": {
+                "int": "3",
+                "kind": "int"
+              },
+              "l": {
+                "int": "-2",
+                "kind": "int"
+              },
+              "m": {
+                "int": "9",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "s": {
+                "int": "11",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reduce over a list of records, with an initial value",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "400e000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "map over a slice: #index counts from the slice",
+      "results": [
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "6",
+                "kind": "int"
+              },
+              {
+                "int": "17",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a held list in a record, read again",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "back": {
+                "items": [],
+                "kind": "list"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "second": {
+                "int": "0",
+                "kind": "int"
+              },
+              "ys": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "back": {
+                "items": [
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "second": {
+                "int": "8",
+                "kind": "int"
+              },
+              "ys": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a window on a list of records",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4031000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat of a nil list fails",
+      "results": [
+        {
+          "error": "cannot concat invalid (1:5)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
     }
   ],
   "oracle": "github.com/expr-lang/expr v1.17.9-0.20260412144015-3a46b1970b37 (v1.17.8 + PR #954), Optimize(false), arm64"
