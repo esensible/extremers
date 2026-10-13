@@ -39,6 +39,12 @@ With a view schema, the output also has `view: …`, computed from `next`.
 
 **Keeping a bounded list in the state.** Write `concat(state?.splits ?? [], [split_ms])[-5:]`. Once the list is capped, `len(state.splits)` stops growing, so keep a separate count field if you need one. The new list is held in the VM's locals: `maxItems` × the item's fields slots of the 256 (§3), so keep `maxItems` small. The device host keeps the list between evaluations in a region of its own, `maxItems` × the item's fields slots of the 1,024 it has for at most 4 state lists (§3, "State lists").
 
+**Lists the program reorders.** Every list builtin of expr is built (`lang/SPEC.md` §2.3), `reverse`, ranges, `flatten`, `sortBy`, `sort`, `uniq` and `median` included; SPEC §4.3 (as built) and §7.6 say exactly what each holds. In this profile's terms:
+- `reverse`, ranges and `flatten` consumed by a list builtin hold nothing: `reverse(gps)`, `reverse(gps[-N:])` and `sum(1..n)` cost no RAM, and `gps[-N:]` visits only N fixes.
+- A sort whose consumer needs only k items (`first`, `last`, `find`, `take(…, k)`, `[:k]`, `[-k:]`) holds k items; under an aggregate that ignores order (`sum`, `count`, `min`, `max`, `mean`, `median`, …) it holds nothing. Otherwise a sort, `uniq` or `median` holds its input's bound: `median(map(gps[-60:], …))` holds 60 slots, a sort of `gps[-N:]` kept in order N × 4 (a Fix is 4 leaves; a computed key adds one a fix).
+- A sort of the whole `gps` kept in order needs 20,480 × 4 slots, over the compiler's 32,768-slot limit (`E-HOLD`, with the fix: take k, aggregate, or slice first). Smaller holds of the whole track that pass the compiler (`median(map(gps, .lat))`, 20,480) still don't fit the C6's 256 locals (§3), so the bundle is refused. Slice `gps` before sorting it.
+- Ties in a sort of more than 12 items may come out in another order than Go's expr, which stops being stable there (SPEC §2.6); the device and the studio agree.
+
 ---
 
 ## 2. The interface
@@ -95,7 +101,7 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 - Every `t` is at or before `timestamp`.
 - The length is **snapshotted** for each evaluation. The host never rewrites any fix below that length during the evaluation.
 
-**Time windows.** A filter such as `filter(gps, .t > timestamp - 10000)` has a bound of 20,480 whenever it is held, because the schema can't express the gap between fixes. When a window has to be held, slice by count instead: `gps[-11:]`. A window that only flows into an aggregate, such as `sum`, `count` or `last`, is free.
+**Time windows.** A filter such as `filter(gps, .t > timestamp - 10000)` has a bound of 20,480 whenever it is held, because the schema can't express the gap between fixes. When a window has to be held, slice by count instead: `gps[-11:]`. A window that only flows into an aggregate, such as `sum`, `count` or `last`, is free. So is one walked backwards (`reverse`); a sort, `uniq` or `median` of a window holds it (§1, "Lists the program reorders").
 
 ---
 
@@ -118,12 +124,14 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 
 **Memory on the C6.** The host holds one set of buffers for the active engine, sized once (`EngineMemory`, `common/src/engine.rs`), nothing allocated:
 - the state's leaves (128 slots), the input leaves (192: state, event, timestamp and the `gps` handle) and the output leaves (128: `{state, view?, wake?}`, being built);
-- the VM's stack (128 slots) and locals (256);
+- the VM's stack (128 slots) and locals (256). The locals include every list the program holds for the whole evaluation: a list literal, a list kept as a value, and the block of a sort, `uniq` or `median` (`compiler::Memory::held_slots`; `lang/SPEC.md` §4.3). The compiler's own ceiling on held slots is 32,768 (`E-HOLD`); the C6's 256 is the one that binds, checked at install;
 - the state lists' items (1,024 slots, 16 KiB, for at most 4 lists; below);
 - the load scratch (8 KiB of code at most), used while a bundle is loaded;
 - two 256-byte buffers for the published value as bitwire (the last one, and the one being encoded).
 
 The program runs in place from the bundle in flash. An engine whose compiled needs exceed any of these (`compiler::Memory`; `engine/profile`'s layout) is refused when its bundle is installed (`OverLimit`, BLE.md "Errors"), so an installed engine always fits.
+
+Sorts, k-selections and `median` use the VM op `HoldInsert` (`lang/SPEC.md` §7.4, from 1bd66ab). A firmware whose VM predates it can't decode such a program and refuses it at load (SPEC §7.5); the firmware must be rebuilt with the current VM before bundles that use them are installed.
 
 **State lists.** A list in the state (`samples` in Tune: the last 30 s of velocity samples) is an input list of the `state` input, like `gps` (`lang/SPEC.md` D15). In the output it is a handle: to items in the evaluation's locals when the program built the list, or to the input list it passed through. The next evaluation clears the locals, so the host keeps the items elsewhere:
 - Each state list has a region in `EngineMemory::state_lists`, room for `maxItems × item leaves` slots, the regions one after another in the order of `layout.bin`'s list table. The bundle is refused (`OverLimit`) when they don't fit in 1,024 slots together, or there are more than 4.
@@ -177,6 +185,8 @@ Six, `engine/builtins` (`BUILTINS`). `P` is the record `{lat: float, lon: float}
 3. Of the two antipodal points, the one nearer the first position (by haversine) is taken.
 4. The result is `nil` beyond `range` (default 200,000 m), when the circles coincide, or when a line is degenerate (`tiny = 1e-12`).
 5. A negative `range` fails (`R-ARG`).
+
+**The language's own builtins** (`lang/SPEC.md` §2.3) are available beside these six, the list builtins included; what each costs on the C6 is §1, "Lists the program reorders". No sailing builtin takes a list yet.
 
 **Removed from the old design:** `push_last` (the bounded-list idiom replaces it), `fail`, and the raw trigonometry (`sin`, `cos`, `atan2`, `sqrt`, `fmod`).
 

@@ -876,7 +876,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
       args: [DIR_OPT,
         { name: 'opts.limitBytes', type: 'integer', required: false, description: "the engine RAM budget to check against (default: the compiler's, the C6's)" },
         { name: 'opts.codeInRam', type: 'boolean', required: false, description: 'count the code as copied into RAM (default false: it runs in place from flash)' }],
-      returns: '{ ok, programBytes, memory: { stack_slots, locals, held_slots, output_slots, slot_bytes, program_bytes, total_bytes }, interfaceHash, imports: string[], diagnostics: [] } | { ok:false, error, hint, diagnostics: [' + DIAG + '] } — held_slots: of locals, the slots list literals and built lists hold for the whole evaluation (each maxItems × item leaves); the C6 allows 256 locals',
+      returns: '{ ok, programBytes, memory: { stack_slots, locals, held_slots, output_slots, slot_bytes, program_bytes, total_bytes }, interfaceHash, imports: string[], diagnostics: [] } | { ok:false, error, hint, diagnostics: [' + DIAG + '] } — held_slots: of locals, the slots list literals, built lists and the blocks of sorts, uniq and median hold for the whole evaluation (each its bound × item leaves; a k-selection k items); the C6 allows 256 locals',
       example: 'await api.engine.compile()',
       run: async (opts = {}) => {
         const { built } = await getBuilt(opts);

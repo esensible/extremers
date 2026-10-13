@@ -152,8 +152,9 @@ again (or pack with that name). A project without the file uses its own name.
 5. `api.engine.check()` — compile, the smoke runs and `engine/samples.json`
    (chained). Fix every diagnostic from its `help` before going on. Its
    `compile.memory` has `locals` and `held_slots` (the locals that list
-   literals and built lists hold for the whole evaluation, each `maxItems ×
-   item leaves`); the C6 allows 256 locals, which the compile does not
+   literals, built lists, and the blocks of sorts, `uniq` and `median` hold
+   for the whole evaluation, each its bound × item leaves: the expr-engine
+   skill gives each one's charge); the C6 allows 256 locals, which the compile does not
    check: `sim.start` (6, below) does. `api.engine.layout()` shows the tables
    the bundle carries, `stateLists` among them: each list the state keeps
    between evaluations (`maxItems × itemLeaves` slots; the C6 holds 1,024

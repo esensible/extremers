@@ -90,11 +90,11 @@ In JSON a value is `{"countdown": {"gun": 1790000300000}}`. An alternative that 
 
 **Model "which of several" with variants, never with a tag string.** Use an enum only for a value that an event carries.
 
-**Lists (as built).** A list can go in the state and in the view. Its value can be a list literal (`[]`, `[{t: timestamp, v: x}]`), a list passed on (`s.samples`), or a list the program builds with `map`, `filter`, `concat`, a slice `xs[a:b]` or `take(xs, n)`.
+**Lists (as built).** A list can go in the state and in the view. Its value can be a list literal (`[]`, `[{t: timestamp, v: x}]`), a list passed on (`s.samples`), or a list the program builds with `map`, `filter`, `concat`, a slice `xs[a:b]`, `take(xs, n)`, `reverse`, a range `a..b`, `flatten`, `sortBy`/`sort` or `uniq` (section 7, "Reordering, deduplicating and flattening", for what each holds).
 
 - **The bounded-list idiom.** Append and keep the newest N: `concat(state?.xs ?? [], [x])[-N:]`, with the field's `maxItems` at least N. Without the slice it is `E-OUTPUT-BOUND` "the output field `state.samples` holds at most 64 items, but this can have 65" / "keep the last 64: `(…)[-64:]`". To keep a time window, filter by time and still bound it: `filter(concat(s.xs, [x]), .t >= timestamp - 30000)[-64:]`. Once the list is capped `len` stops growing, so keep a separate count if you need one.
-- **What a built list costs.** A list literal, and a list the program builds where a value is needed (an output field, a record field, a branch, a `??`, a `let` used as a value), is *held*: a block of `bound × item leaves` locals, reserved for the **whole evaluation**. The bound is the most items the compiler can prove: `xs[-N:]` has at most N items, `concat` the sum of its parts, `filter` and `map` their input's. An item's leaves are one per scalar field (plus one for each optional record in it). The block counts against the program's locals, and the C6 allows **256 locals** for everything. `api.engine.compile()` reports `memory.held_slots`, the locals that hold lists. **The compile does not stop you at 256**: it is the host that refuses the bundle, `api.sim.start()` (and the box at install) with "the engine needs more than the C6 has: locals". So check `memory.locals ≤ 256` after every change to a list's `maxItems`. (With `api.engine.compile({ limitBytes })` the compile fails with `E-LIMIT`, and its help names the held slots.) Beyond 32,768 held slots the compile fails with `E-HOLD`. Tune (section 5) keeps 64 samples of 3 fields: its lists hold 198 of its 225 locals. A list consumed by another list builtin (`sum(map(xs, .v))`, `last(filter(…))`) is never held and costs nothing.
-- **Hold a slice of `gps`, never `gps` itself.** A held `filter(gps, …)` or `map(gps, …)` has a bound of 20,480 (the schema can't express the gap between fixes), which can never fit. Slice by count first: `map(gps[-11:], ({lat: .lat, lon: .lon}))`.
+- **What a built list costs.** A list literal, and a list the program builds where a value is needed (an output field, a record field, a branch, a `??`, a `let` used as a value), is *held*: a block of `bound × item leaves` locals, reserved for the **whole evaluation**. The bound is the most items the compiler can prove: `xs[-N:]` has at most N items, `concat` the sum of its parts, `filter` and `map` their input's. An item's leaves are one per scalar field (plus one for each optional record in it). The block counts against the program's locals, and the C6 allows **256 locals** for everything. `api.engine.compile()` reports `memory.held_slots`, the locals that hold lists. **The compile does not stop you at 256**: it is the host that refuses the bundle, `api.sim.start()` (and the box at install) with "the engine needs more than the C6 has: locals". So check `memory.locals ≤ 256` after every change to a list's `maxItems`. (With `api.engine.compile({ limitBytes })` the compile fails with `E-LIMIT`, and its help names the held slots.) Beyond 32,768 held slots the compile fails with `E-HOLD`. Tune (section 5) keeps 64 samples of 3 fields: its lists hold 198 of its 225 locals. A list consumed by another list builtin (`sum(map(xs, .v))`, `last(filter(…))`) is never held and costs nothing, except what a sort, `uniq` or `median` holds (section 7).
+- **Hold a slice of `gps`, never `gps` itself.** A held `filter(gps, …)` or `map(gps, …)` has a bound of 20,480 (the schema can't express the gap between fixes), which can never fit. Slice by count first: `map(gps[-11:], ({lat: .lat, lon: .lon}))`. The same goes for a sort, `uniq` or `median` of `gps` that holds its input: `median(map(gps[-60:], …))` holds 60, `median(map(gps, …))` 20,480.
 - **A state list round-trips on the device** (engine/PROFILE.md §3, "State lists"). After each accepted evaluation the host copies each list in the state into a region of its own, `maxItems × item leaves` slots. It serves that region to the next evaluation as `state`'s list. A rejected evaluation keeps the last state and its lists. Nothing survives a reboot. The C6 has **1,024 slots for up to 4 state lists** in all. A bundle over either limit is refused at install (`OverLimit`: state-list slots, or state lists). `api.engine.layout().stateLists` lists the state's lists with their `maxItems` and `itemLeaves`. In practice the 256 locals bind first: a list the program builds must also fit in them.
 - **A list in the view** is encoded in full on every publish, and the published value must fit 256 bytes. Keep view lists short.
 
@@ -228,7 +228,7 @@ let next =
   - `max(map(gps, .lat)) - min(map(gps, .lat))`, `sum(gps, .lat)`, `mean(map(gps, .lon))`;
   - each fix with the one before it: `sum(map(gps, #index > 0 ? distance(gps[#index - 1], #) : 0.0))` is the track length, and adding `&& .t > since` to the condition limits it to a time window.
   - the newest N fixes: `gps[-11:]`, e.g. `sum(map(gps[-11:], .lat))`. Inside `map(gps[-11:], …)`, `#index` counts from the slice's start, so look back through the slice itself: `let w = gps[-11:]; sum(map(w, #index > 0 ? distance(w[#index - 1], #) : 0.0))` is the length of the last 10 legs (a slice of an input list is read in place: nothing is held).
-- **What a look-back costs.** A `map`, `filter`, `sum`, `count` or `find` over `gps` runs its predicate once per fix: up to **20,480 iterations per evaluation**, on every GPS event, on the C6. A time filter does not shorten the walk: `filter(gps, .t > w0)` still visits every fix. **A slice does**: `gps[-64:]` visits only the newest 64 fixes, however long the track. So prefer `gps[-N:]` to walking the whole track whenever a count of fixes will do (the receiver's rate gives the count for a time: at 1 Hz, `gps[-31:]` covers 30 s), and filter by time inside the slice if you must: `filter(gps[-64:], .t > w0)`. When you must walk the whole track, put the cheap test first and the work behind it: `#.t > w0 ? distance(…) : 0.0` costs one comparison for each fix outside the window. Two such sums are two walks. Prefer the newest fix directly: `last(gps)` is one access, not a walk. Keep a running aggregate, or a bounded list, in the state when the whole track is not needed.
+- **What a look-back costs.** A `map`, `filter`, `sum`, `count` or `find` over `gps` runs its predicate once per fix: up to **20,480 iterations per evaluation**, on every GPS event, on the C6. A time filter does not shorten the walk: `filter(gps, .t > w0)` still visits every fix. **A slice does**: `gps[-64:]` visits only the newest 64 fixes, however long the track. So prefer `gps[-N:]` to walking the whole track whenever a count of fixes will do (the receiver's rate gives the count for a time: at 1 Hz, `gps[-31:]` covers 30 s), and filter by time inside the slice if you must: `filter(gps[-64:], .t > w0)`. When you must walk the whole track, put the cheap test first and the work behind it: `#.t > w0 ? distance(…) : 0.0` costs one comparison for each fix outside the window. Two such sums are two walks. Prefer the newest fix directly: `last(gps)` is one access, not a walk. Walking backwards is free: `reverse(gps[-N:])` visits the same N fixes, newest first, and holds nothing. A sort of the window holds N × the item's leaves (section 7); a sort of the whole track is refused unless only k items or an order-free aggregate are taken from it. Keep a running aggregate, or a bounded list, in the state when the whole track is not needed.
 - **A mean direction.** There is no `sin`, `cos` or `atan2`, and no `mean_heading` (section 6), so a circular mean of headings can't be written today. Two things can. A mean of recent velocity headings, kept in a state list, as the weighted mean of each heading's wrapped difference from the current one (Tune, below). And a mean direction of travel from the track's displacements, with `distance` and `bearing` standing in for the trigonometry:
   - the window: `let w0 = timestamp - span_ms;` and the newest fix, `let newest = last(gps);`, inside `newest != nil ? … : nil`;
   - metres per degree here: `let m_lat = distance(newest, {lat: newest.lat + 0.01, lon: newest.lon}) * 100.0; let m_lon = distance(newest, {lat: newest.lat, lon: newest.lon + 0.01}) * 100.0;`
@@ -376,9 +376,54 @@ expr is **not JavaScript, Rust or Python**. A program is one expression. There a
 | `take(xs, n)` | the first `min(n, len)` items; a negative `n` is `R-ARG` |
 | `concat(a, b, …)` | the lists one after another; a nil argument is `R-NIL` (write `state?.xs ?? []`) |
 | `[a, b]` | a list literal. `[]` is the empty list of whatever the field holds |
+| `reverse(xs)` | the items last first. The loops run backwards: nothing held |
+| `a..b` | the ints `a` to `b`, inclusive (empty when `b < a`). A counter: nothing held. Both ends ints |
+| `flatten(xs)` | one level: `flatten([xs, ys])`, `flatten(map(ps, [.a, .b]))`, `flatten(map(xs, filter(ys, …)))`. Nested loops |
+| `sortBy(xs, key[, dir])`, `sort(xs[, dir])` | sorted, stable, by a number key (`sort`: the items are the numbers). `dir` is the literal `"asc"` (default) or `"desc"` |
+| `uniq(xs)` | first occurrences, in order, compared with `==`. Not on records |
+| `median(xs)` | float, the middle value (the mean of the middle two); `0.0` for an empty list. Takes no predicate: `median(map(xs, .v))` |
 | `reduce(xs, e, init)` | the fold. **`init` comes last**: `reduce(gps, 0, #acc + 1)` is `E-POINTER` "`#acc` is only meaningful inside a predicate". Over numbers or records: `reduce(gps, #acc + 1, 0)`, `reduce(map(gps, .lat), max(#acc, #), -90.0)`. The accumulator can't be a list: `reduce(xs, concat(#acc, [#]), [])` is `E-ACC-GROWS` "a `reduce` accumulator can't be a list" (use `map`/`filter`, or `concat(…)[-N:]` outside a `reduce`). |
 
-**Not implemented yet** (`E-UNSUPPORTED`, "`reverse` isn't implemented yet" / "not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`"): `reverse`, `uniq`, `sortBy`, `sort`, `flatten`, `median`, ranges `a..b`, `xs?.[i]`, lists inside lists, comparing lists, and a list as a `reduce` accumulator. Instead of `median`, keep a running aggregate or a `mean`; instead of `reverse`, index from the end (`xs[n - 1 - #index]` in `map(xs, …)`).
+**Reordering, deduplicating and flattening: what each holds.** The compiler looks at what *consumes* a list (SPEC §4.3 and §7.6, the pipeline IR) and holds only what that consumer needs. Holds are blocks of locals (16-byte slots), reserved for the whole evaluation and counted in `memory.held_slots`: an item is its leaves (a Fix is 4: `t`, `lat`, `lon`, `alt`), and a sort keeps one slot more per item for a *computed* key (`distance(fix, #)`, `-.t`), none when the key is one of the item's own leaves (`.lat`, `sort(xs)`). Every figure below was measured with `api.engine.compile()`.
+
+| You write | Held |
+|---|---|
+| `reverse(…)`, `a..b`, `flatten(…)` consumed by a list builtin | nothing: `first(reverse(gps))` and `sum(1..10)` hold 0. A list literal is still a literal: `max(flatten(map(gps[-3:], [.lat, .lon])))` holds its 2-item literal, 2 |
+| `first`, `last`, `find`, `findLast`, `xs[c]`, `get(xs, c)` of a sort | 1 item (`c + 1` for `[c]`): a **k-selection**, one pass over the input. `last(sortBy(gps, .lat))` holds 4 |
+| `take(…, k)`, `[:k]`, `[-k:]` of a sort (`reverse` first is the same from the other end) | k items. `take(sortBy(marks, distance(fix, #)), 3)` consumed: 3 × (2 + 1 key) = 9. `k` needs an upper bound: a literal, or `min(n, 5)` (5 items); `take(…, state.n)` with no `maximum` holds the whole input |
+| a sort under `len`, `count`, `sum`, `mean`, `median`, `min`, `max`, `any`, `all`, `none`, `one`, `in` | nothing: the sort is dropped (`sum(map(sortBy(gps, .lat), .lon))` holds 0) |
+| a sort anywhere else: `reduce`, `findIndex`, a `map` reading `#index` | its input's bound × (item leaves + key). `reduce(sortBy(gps[-60:], .lat), …)`: 60 × 4 = 240 |
+| `uniq(xs)` | its input's bound (`len(uniq(map(gps[-10:], int(.lat))))`: 10); k under `take(…, k)`; nothing under `first`, `min`, `max`, `in` |
+| `median(xs)` | its input's bound, one slot a value. `median(map(gps[-60:], …))`: 60. A sort under it is dropped |
+| any of these **kept as a value** (a state or view field, a record field, a branch, `??`) | the value's own block on top, bound × item leaves: `reverse(gps[-5:])` into a field is 5 × 4 = 20; `take(sortBy(marks, distance(fix, #)), 3)` into a field is the 9 above plus 3 × 2 = 15; `sortBy(gps, -.t)[:5]` into a Fix list, 25 + 20 |
+
+**The cost in words.** A `gps[-N:]` window visits only N fixes, whatever the track's length, and `reverse(gps)`, `reverse(gps[-N:])` and ranges, consumed by a list builtin, cost no memory at all. A sort, `uniq` or `median` of the window holds at most N × item leaves. Of the **whole** `gps` (20,480 fixes) it holds 20,480 × the item's leaves: a sort of full Fixes is 81,920 slots (102,400 with a computed key), over the compiler's 32,768-slot limit, so it is refused (`E-HOLD`) unless the consumer needs only k items or ignores order (above). One slot an item fits under the 32,768 (`median(map(gps, .lat))` compiles, at 20,480 held slots), but nothing near it fits the C6's **256 locals**: `api.sim.start()` and the box refuse it ("the engine needs more than the C6 has: locals"). So slice first, always: `gps[-N:]`.
+
+**When it's over.** The compile fails with `E-HOLD`, and the help names the fix:
+- a sort: "this sort holds its whole input: up to 20480 items of 4 slots, 81920 slots (1310720 bytes); a program's lists can hold at most 32768 slots in all, and these need 81920" / "take only what you need of it (`first(sortBy(…))`, `last(…)`, `take(sortBy(…), k)`, `sortBy(…)[-k:]`: k items), aggregate it (`sum`, `count`, `max`, …: nothing held), or slice its input first (`xs[-N:]`)";
+- `uniq`: "`uniq` holds the values it has kept: …" / "take only what you need of it (`take(uniq(…), k)`: k items), or slice its input first (`xs[-N:]`)";
+- `median`: "`median` holds every value: …" / "slice its input first (`xs[-N:]`)";
+- a second `reverse` in one loop: "this list is held to be reversed again: …" / "reverse it once: `reverse(reverse(xs))` is `xs`".
+
+A range whose ends aren't bounded (`1..state.n` with no `maximum`) is `E-UNBOUNDED` "this range can have up to 9223372036854775807 items …; a range is a loop, and can have at most 65535" / "bound its ends: give the inputs `minimum` and `maximum` in their schemas, or clamp them, e.g. `max(a, 0)..min(b, 1000)`". A `flatten` that could give more than 65,535 items is `E-UNBOUNDED` too ("slice the lists first: `flatten(map(xs[-N:], …))`").
+
+**Sorts and ties.** The sort is stable: equal keys keep their order, exactly as Go's expr does for up to 12 items. On more than 12 items Go's sort isn't stable, so **ties among more than 12 items may come out in a different order on Go** than here; the device and the studio agree with each other. If the order of ties matters and the engine must agree with Go, sort at most 12 items, or take only what doesn't depend on it (a `min`, a `sum`). A key that may be nil is `E-TYPE` ("give it a default: `(…) ?? 0`"); a NaN key never moves past anything (as in Go).
+
+**One-liners an author reaches for** (each compiled; `fix` is `last(gps)`, tested `!= nil`):
+- **The 3 closest marks:** `take(sortBy(s.marks, distance(fix, #)), 3)`. Holds 3 × (2 leaves + 1 key) = 9, plus 6 if kept as a value.
+- **The newest fix with a speed over 5 kn.** Fixes carry no speed, so derive it from each fix and the one before it within the window, then take the last match: `let w = gps[-61:]; last(filter(map(w[1:], ({t: #.t, lat: #.lat, lon: #.lon, kn: distance(w[#index], #) / float(#.t - w[#index].t) * 1943.84})), .kn > 5.0))`. Holds nothing (`filter` and `last` flow); visits 61 fixes. (`1943.84` turns metres per ms into knots; `t` strictly increases, so the divisor is never 0.)
+- **The median speed over the last minute** (1 Hz): `let w = gps[-61:]; median(map(w[1:], distance(w[#index], #) / float(#.t - w[#index].t) * 1943.84))`. Holds 60.
+- **The last 5 fixes, newest first:** `reverse(gps[-5:])`: nothing held consumed, 5 × 4 = 20 kept as a value.
+- **1 + 2 + … + n:** `sum(1..len(s.marks))`: a counter, nothing held.
+
+A studio project with all four (`marks` ≤ 8, `closest` ≤ 3, `recent` ≤ 5 Fixes, `median`) checks clean at `held_slots` 113: 16 + 2 (the marks list and the appended literal), 15 (closest), 20 (recent), 60 (median).
+
+**Still not implemented** (`E-UNSUPPORTED`, with the fix in the help):
+- **Lists inside lists**, except straight inside `flatten`: `[xs, ys]` anywhere else, `map(xs, [#])` not under `flatten` ("a `map` that gives lists is supported only straight inside `flatten`"), and `flatten` of lists nested more than one deep.
+- **Walking two lists in lockstep** (zip), and **comparing lists** with `==` ("comparing lists isn't implemented yet" / "compare their lengths or items"). Index one from the other instead: `map(w[1:], distance(w[#index], #))`.
+- **A list as a `reduce` accumulator** (`E-ACC-GROWS` "a `reduce` accumulator can't be a list").
+- **`xs?.[i]`** ("test the list first, or use `get(xs, i)`").
+- **`uniq` of records** ("`uniq` doesn't compare records").
 
 **Numbers**
 
@@ -391,7 +436,7 @@ expr is **not JavaScript, Rust or Python**. A program is one expression. There a
 **Nil**
 
 - An absent field reads as nil.
-- On nil, `.f` fails (`R-NIL`). So do arithmetic, comparisons other than `==`/`!=`, `!`, `len`, `int`, `map`, `filter` and `sum`.
+- On nil, `.f` fails (`R-NIL`). So do arithmetic, comparisons other than `==`/`!=`, `!`, `len`, `int`, `map`, `filter`, `sum`, `concat`, `reverse`, `flatten`, `uniq`, `median` and `sortBy`. `sort(nil)` is `[]`, as in Go.
 - `first(nil)` and `last(nil)` give nil, and `x in nil` is false.
 - `== nil`, `!= nil`, `?.` and `??` are always safe.
 
@@ -439,7 +484,7 @@ Every compile diagnostic has a stable rule id, a position, a message stating the
 | `E-RANGE` | an int that can leave its schema range | clamp with `min`/`max` |
 | `E-VARIANT` | two variants, none, or one that may be nil | section 4 |
 | `E-DUP-KEY` | `{n: 1, n: 2}` | keep one |
-| `E-UNSUPPORTED` | `now()`, string building, dynamic keys, and everything in "Not implemented yet" | section 7 |
+| `E-UNSUPPORTED` | `now()`, string building, dynamic keys, and everything in "Still not implemented" | section 7 |
 | `E-SCHEMA` | a list without `maxItems`, a string without `maxLength`, a `oneOf` alternative that isn't a named record | fix the schema at the path given |
 
 For lists and memory:
@@ -448,10 +493,11 @@ For lists and memory:
 |---|---|---|
 | `E-OUTPUT-BOUND` | `concat(s.xs, [x])` into a field of `maxItems` 64: "holds at most 64 items, but this can have 65" | `(…)[-64:]` |
 | `E-LIMIT` | with `compile({ limitBytes })`: the program's stack, locals and output over that budget; with held lists the help says "{h} of the {l} locals hold lists". Without a budget, over 256 locals is the host's refusal at `sim.start` / install instead | lower `maxItems`, keep fewer item fields, or slice before holding: `(…)[-N:]` |
-| `E-HOLD` | held lists over 32,768 slots (`map(gps, …)` kept as a value); `ys[i]` in a loop where `ys` is filtered | slice first (`gps[-N:]`); look back with `ys[#index - 1]` in `map(ys, …)` |
+| `E-HOLD` | held lists over 32,768 slots in all: `map(gps, …)` kept as a value; a sort of `gps` kept in order (`reduce(sortBy(gps, .lat), …)`, `take(sortBy(gps, …), state.n)` with an unbounded `n`); `uniq` or `median` over too much; a second `reverse` in one loop (section 7) | the help's fix: take k (`first`, `take(sortBy(…), k)`, `[-k:]`), aggregate (`sum`, `max`, …: the sort is dropped), or slice first (`gps[-N:]`) |
+| `E-UNBOUNDED` | a range whose ends have no bound (`1..state.n`); a `flatten` that could give more than 65,535 items | `minimum`/`maximum` in the schema, or clamp: `max(a, 0)..min(b, 1000)`; slice the lists first |
 | `E-ACC-GROWS` | a list as a `reduce` accumulator | `map`/`filter`, or `concat(…)[-N:]` |
 
-SPEC §5.1 also defines `E-UNBOUNDED` and `E-WORK`.
+SPEC §5.1 also defines `E-WORK`.
 
 **Run-time errors** (from a sample run, or logged by the host, which keeps the old state):
 

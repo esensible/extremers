@@ -19,8 +19,8 @@ export const KEYWORDS = ['let', 'in', 'nil', 'true', 'false', 'and', 'or', 'not'
 
 /**
  * expr's builtins the language accepts (lang/SPEC.md §2.3; the test checks
- * this list against the spec). Some aren't implemented yet (the expr-engine
- * skill lists which); they are still the language's names.
+ * this list against the spec). All of them are built; what each holds is in
+ * the expr-engine skill's "Lists" sections.
  */
 export const EXPR_BUILTINS = [
   'len', 'sum', 'mean', 'median', 'min', 'max', 'count', 'any', 'all', 'none', 'one',
