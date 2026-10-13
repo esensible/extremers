@@ -1,0 +1,13 @@
+{
+  "name": "extremers-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Author, check, run, pack and install extremers bundles in the browser. Plain ES modules, no bundler.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "skills": "node sync-skills.mjs",
+    "serve": "python3 serve.py"
+  }
+}

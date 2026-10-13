@@ -1,0 +1,2102 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {},
+          "phase": {
+            "idle": {}
+          }
+        },
+        "view": {
+          "line": {
+            "port": false,
+            "stbd": false
+          },
+          "phase": {
+            "idle": {}
+          }
+        }
+      },
+      "run": 0,
+      "stack_high": 30,
+      "steps": 129,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {},
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": false,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": false,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 0,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {},
+          "phase": {
+            "idle": {}
+          }
+        },
+        "view": {
+          "line": {
+            "port": false,
+            "stbd": false
+          },
+          "phase": {
+            "idle": {}
+          }
+        }
+      },
+      "run": 1,
+      "stack_high": 30,
+      "steps": 103,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {},
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": false,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": false,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 1,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {},
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 90.0,
+            "speed": 4.0
+          }
+        },
+        "view": {
+          "line": {
+            "port": false,
+            "stbd": false
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 4.0
+        }
+      },
+      "run": 2,
+      "stack_high": 30,
+      "steps": 136,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {},
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4056800000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": false,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": false,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 2,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 90.0,
+            "speed": 4.0
+          }
+        },
+        "view": {
+          "line": {
+            "port": false,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 4.0
+        }
+      },
+      "run": 3,
+      "stack_high": 30,
+      "steps": 142,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4056800000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": false,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 3,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 270.0,
+            "speed": 4.0
+          }
+        },
+        "view": {
+          "line": {
+            "port": false,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 4.0
+        }
+      },
+      "run": 4,
+      "stack_high": 30,
+      "steps": 139,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4070e00000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": false,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 4,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 270.0,
+            "speed": 4.0
+          }
+        },
+        "view": {
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 4.0
+        }
+      },
+      "run": 5,
+      "stack_high": 30,
+      "steps": 146,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4070e00000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 5,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000133587,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 0.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "crossing": 1790000133587,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 5.0
+        }
+      },
+      "run": 6,
+      "stack_high": 30,
+      "steps": 223,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000133587",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000133587",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 6,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000133587,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000304200
+            }
+          },
+          "velocity": {
+            "heading": 0.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "crossing": 1790000133587,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000304200
+            }
+          },
+          "speed": 5.0
+        },
+        "wake": 1790000304200
+      },
+      "run": 7,
+      "stack_high": 30,
+      "steps": 131,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000133587",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000304200",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000133587",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000304200",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          },
+          "wake": {
+            "int": "1790000304200",
+            "kind": "int"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 7,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000133587,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000250000
+            }
+          },
+          "velocity": {
+            "heading": 0.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "crossing": 1790000133587,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000250000
+            }
+          },
+          "speed": 5.0
+        },
+        "wake": 1790000250000
+      },
+      "run": 8,
+      "stack_high": 30,
+      "steps": 139,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000133587",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000250000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000133587",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000250000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          },
+          "wake": {
+            "int": "1790000250000",
+            "kind": "int"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 8,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000133587,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000220000
+            }
+          },
+          "velocity": {
+            "heading": 0.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "crossing": 1790000133587,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000220000
+            }
+          },
+          "speed": 5.0
+        },
+        "wake": 1790000220000
+      },
+      "run": 9,
+      "stack_high": 30,
+      "steps": 134,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000133587",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000133587",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          },
+          "wake": {
+            "int": "1790000220000",
+            "kind": "int"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 9,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000120089,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000220000
+            }
+          },
+          "velocity": {
+            "heading": 1.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "crossing": 1790000120089,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "countdown": {
+              "gun": 1790000220000
+            }
+          },
+          "speed": 5.0
+        },
+        "wake": 1790000220000
+      },
+      "run": 10,
+      "stack_high": 30,
+      "steps": 223,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000120089",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000120089",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          },
+          "wake": {
+            "int": "1790000220000",
+            "kind": "int"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 10,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000120089,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "racing": {
+              "gun": 1790000220000
+            }
+          },
+          "velocity": {
+            "heading": 1.0,
+            "speed": 5.0
+          }
+        },
+        "view": {
+          "heading": 1.0,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "racing": {
+              "gun": 1790000220000
+            }
+          },
+          "speed": 5.0
+        }
+      },
+      "run": 11,
+      "stack_high": 30,
+      "steps": 107,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000120089",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "heading": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 11,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000120089,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "racing": {
+              "gun": 1790000220000
+            }
+          },
+          "velocity": {
+            "heading": 10.0,
+            "speed": 6.0
+          }
+        },
+        "view": {
+          "heading": 10.0,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "racing": {
+              "gun": 1790000220000
+            }
+          },
+          "speed": 6.0
+        }
+      },
+      "run": 12,
+      "stack_high": 30,
+      "steps": 136,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000120089",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4024000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "heading": {
+                "bits": "4024000000000000",
+                "kind": "float"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "1790000220000",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4018000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 12,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000120089,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 10.0,
+            "speed": 6.0
+          }
+        },
+        "view": {
+          "crossing": 1790000120089,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 6.0
+        }
+      },
+      "run": 13,
+      "stack_high": 30,
+      "steps": 115,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000120089",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4024000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000120089",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4018000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    },
+    {
+      "chained_from": 13,
+      "ok": true,
+      "output": {
+        "state": {
+          "line": {
+            "crossing": 1790000120089,
+            "port": {
+              "lat": -33.85,
+              "lon": 151.25,
+              "t": 1790000002900
+            },
+            "stbd": {
+              "lat": -33.85,
+              "lon": 151.252,
+              "t": 1790000001500
+            }
+          },
+          "phase": {
+            "idle": {}
+          },
+          "velocity": {
+            "heading": 10.0,
+            "speed": 6.0
+          }
+        },
+        "view": {
+          "crossing": 1790000120089,
+          "line": {
+            "port": true,
+            "stbd": true
+          },
+          "phase": {
+            "idle": {}
+          },
+          "speed": 6.0
+        }
+      },
+      "run": 14,
+      "stack_high": 30,
+      "steps": 103,
+      "tagged": {
+        "fields": {
+          "state": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "crossing": {
+                    "int": "1790000120089",
+                    "kind": "int"
+                  },
+                  "port": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e80000000000",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000002900",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "stbd": {
+                    "fields": {
+                      "lat": {
+                        "bits": "c040eccccccccccd",
+                        "kind": "float"
+                      },
+                      "lon": {
+                        "bits": "4062e810624dd2f2",
+                        "kind": "float"
+                      },
+                      "t": {
+                        "int": "1790000001500",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "velocity": {
+                "fields": {
+                  "heading": {
+                    "bits": "4024000000000000",
+                    "kind": "float"
+                  },
+                  "speed": {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          },
+          "view": {
+            "fields": {
+              "crossing": {
+                "int": "1790000120089",
+                "kind": "int"
+              },
+              "line": {
+                "fields": {
+                  "port": {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  "stbd": {
+                    "bool": true,
+                    "kind": "bool"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "speed": {
+                "bits": "4018000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        "kind": "record"
+      }
+    }
+  ]
+}

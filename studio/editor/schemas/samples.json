@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "inmemory://studio/schemas/samples.json",
+  "title": "Sample runs",
+  "description": "engine/samples.json: the runs `langc check --samples` evaluates in order (lang/SPEC.md §5.3, lang/compiler/src/samples.rs). The engine profile's inputs are state, event, timestamp and gps (engine/PROFILE.md).",
+  "type": "object",
+  "required": [
+    "runs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "A note (langc ignores it).",
+      "type": "string"
+    },
+    "$comment": {
+      "description": "A note (langc ignores it).",
+      "type": "string"
+    },
+    "runs": {
+      "description": "Evaluated in order. A run with `chain` takes inputs from the output of the run before it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/run"
+      }
+    }
+  },
+  "definitions": {
+    "run": {
+      "type": "object",
+      "required": [
+        "inputs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "A note (langc ignores it).",
+          "type": "string"
+        },
+        "$comment": {
+          "description": "A note (langc ignores it).",
+          "type": "string"
+        },
+        "inputs": {
+          "description": "The inputs by name, as JSON (null for a nil nullable input). An input named in `chain` is taken from the previous output instead.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "patternErrorMessage": "an input name is letters, digits and _, not starting with a digit"
+          }
+        },
+        "chain": {
+          "description": "Input name → `output` or `output.<path>` of the run before this one, e.g. {\"state\": \"output.state\"}.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "patternErrorMessage": "an input name is letters, digits and _, not starting with a digit"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^output(\\.[^.]+)*$",
+            "patternErrorMessage": "`chain` maps input names to `output` or `output.<path>`"
+          }
+        }
+      }
+    }
+  }
+}

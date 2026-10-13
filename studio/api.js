@@ -1,0 +1,1307 @@
+// api.js — window.api: the surface an AI agent (or the page's own buttons) drives.
+//
+// Origin: dingo-cli/web/api.js (createLogger, toPlain, the FUNCTIONS registry,
+// describe() generated from it, makeFn, bindArgs, withUnknownGuard), copied
+// with its conventions unchanged; the studio's functions and the grouped
+// names (`project.list` → api.project.list) are new.
+//
+// One registry (FUNCTIONS below) defines every function: its metadata (summary,
+// args, returns, example) AND its implementation. describe() is generated from
+// that same table, so the tool list cannot drift from what exists.
+//
+// Every function is async, never throws, and resolves to plain JSON data:
+//   { ok: true, ... }  or  { ok: false, error: "...", hint?: "what to do next" }
+
+import { zipStore, unzip, toBase64, fromBase64 } from './zip.js';
+import { templateFiles, isBinaryPath, TEMPLATES } from './templates.js';
+import { FILES as ENGINE_FILES, SMOKE, EngineError, buildEngine, runSamples, tables, engineBundleFiles, textHash, PLACEHOLDER_WEB } from './engine/project.js';
+import { Sim, SimError, flatGps, record as simRecord, hex as simHex } from './sim/host.js';
+import { rmcUpdate } from './sim/nmea.js';
+
+export const API_NAME = 'extremers-studio';
+export const API_VERSION = '0.1.0';
+
+// ------------------------------------------------------------------ log ----
+
+/** A ring buffer of timestamped lines. log(level, msg); lines(last) → string[]. (dingo-cli/web, verbatim) */
+export function createLogger({ max = 500, sink, now = () => new Date() } = {}) {
+  const buf = [];
+  const listeners = new Set();
+  function log(level, msg) {
+    const d = now();
+    const ts = d.toISOString().slice(11, 23);
+    const line = `${ts} ${String(level).toUpperCase().padEnd(5)} ${msg}`;
+    buf.push(line);
+    if (buf.length > max) buf.splice(0, buf.length - max);
+    try { sink?.(level, line); } catch { /* ignore */ }
+    for (const cb of listeners) { try { cb(line); } catch { /* ignore */ } }
+  }
+  return { log, lines: (last = 50) => buf.slice(-Math.max(0, last | 0)), total: () => buf.length, onLine: (cb) => { listeners.add(cb); return () => listeners.delete(cb); } };
+}
+
+// -------------------------------------------------------------- helpers ----
+
+export class ApiError extends Error {
+  constructor(message, hint) { super(message); this.hint = hint; }
+}
+
+const errText = (e) => (e?.message ? e.message : String(e));
+export const toHex = (b) => [...new Uint8Array(b instanceof ArrayBuffer ? b : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength))].map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+/** JSON-safe deep copy: byte arrays → hex strings, bigint → number, functions dropped. (dingo-cli/web) */
+export function toPlain(v) {
+  return JSON.parse(JSON.stringify(v, (k, x) => {
+    if (typeof x === 'bigint') return Number(x);
+    if (x instanceof Uint8Array || x instanceof ArrayBuffer || ArrayBuffer.isView(x)) return toHex(x);
+    if (x instanceof Error) return x.message;
+    if (x instanceof Map) return Object.fromEntries(x);
+    if (x instanceof Set) return [...x];
+    return x;
+  }) ?? 'null');
+}
+
+function parseIntish(v, what) {
+  if (typeof v === 'number' && Number.isInteger(v)) return v;
+  if (typeof v === 'string' && /^\s*(0x[0-9a-f]+|\d+)\s*$/i.test(v)) return Number(v.trim());
+  throw new ApiError(`${what} must be an integer, got ${JSON.stringify(v)}`);
+}
+
+function clampInt(v, def, lo, hi, what) {
+  if (v === undefined || v === null) return def;
+  const n = parseIntish(v, what);
+  if (n < lo || n > hi) throw new ApiError(`${what} ${n} out of range (${lo}..${hi})`);
+  return n;
+}
+
+const isPlainObject = (o) => o !== null && typeof o === 'object' && !Array.isArray(o) && Object.getPrototypeOf(o) === Object.prototype;
+
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/;
+function parseName(v, what = 'name') {
+  if (typeof v !== 'string' || !v.trim()) throw new ApiError(`${what} is required`, "a project name such as 'race' (see api.project.list())");
+  const s = v.trim();
+  if (!NAME_RE.test(s)) throw new ApiError(`${what} '${s}' is not a project name (1-64 characters: letters, digits, space, _ . -; starting with a letter or digit)`);
+  return s;
+}
+
+const MAX_PATH = 200;
+/** A project path: relative, '/'-separated, no '.', '..' or empty segments. */
+export function parsePath(v, what = 'path') {
+  if (typeof v !== 'string' || !v.trim()) throw new ApiError(`${what} is required`, "a project path such as 'engine/engine.expr' (see api.files.list())");
+  const s = v.trim().replace(/^\.\//, '');
+  if (s.startsWith('/') || s.includes('\\') || s.split('/').some((x) => !x || x === '.' || x === '..')) {
+    throw new ApiError(`${what} '${v}' is not a project path (relative, '/'-separated, no '.', '..' or empty parts)`, "e.g. 'engine/engine.expr' or 'kindle/src/index.jsx'");
+  }
+  if (s.length > MAX_PATH) throw new ApiError(`${what} is ${s.length} characters (max ${MAX_PATH})`);
+  return s;
+}
+
+const MAX_FILE = 4 * 1024 * 1024;
+const enc = new TextEncoder();
+
+/** What a file record holds → { size, binary }. */
+const sizeOf = (f) => (f.bytes ? { size: f.bytes.length, binary: true } : { size: enc.encode(f.text ?? '').length, binary: false });
+
+function hintFor(msg) {
+  const m = msg.toLowerCase();
+  if (m.includes('indexeddb')) return 'project storage is unavailable: use a normal (not private) Chrome window with site data allowed for this origin, then reload';
+  if (m.includes('engine wasm')) return 'studio/vendor/engine-wasm/ is missing: run tools/studio-vendor/vendor.sh in the container, then reload';
+  return undefined;
+}
+
+// -------------------------------------------------------------- the api ----
+
+/**
+ * createApi({ store, fetchText, fetchBytes, log, engine, now }) → api object.
+ *   store       from store.js openStore(), or an async loader () => store (lazy; may fail)
+ *   fetchText   async (url) => string (skills, templates)
+ *   fetchBytes  async (url) => Uint8Array (project.import({url}), binary template files)
+ *   log         a createLogger() object, or a function (level, msg)
+ *   engine      engine/wasm.js createEngineLoader() (status only until the engine groups are wired)
+ */
+export function createApi({ store, fetchText, fetchBytes, log, engine, now = () => Date.now() } = {}) {
+  const logger = log && typeof log.lines === 'function' ? log : createLogger({ sink: typeof log === 'function' ? log : undefined });
+  const L = (level, msg) => logger.log(level, msg);
+
+  // ---- state
+  let storeObj = typeof store === 'function' ? null : store || null;
+  const storeLoader = typeof store === 'function' ? store : null;
+  let storeError = storeObj || storeLoader ? null : 'no project store was provided';
+  let storeLoading = null;
+  let current = null; // the open project's name
+  let busy = null; // { op, since, progress } (device ops)
+  let lastError = null;
+  let skillIndex = null;
+  const callListeners = new Set();
+
+  async function getStore() {
+    if (storeObj) return storeObj;
+    if (!storeLoader) throw new ApiError(`project storage (IndexedDB) not available: ${storeError}`);
+    if (!storeLoading) {
+      storeLoading = (async () => {
+        try {
+          const s = await storeLoader();
+          storeObj = s; storeError = null;
+          return s;
+        } catch (e) {
+          storeError = errText(e);
+          L('error', `IndexedDB open failed: ${storeError}`);
+          throw new ApiError(`project storage (IndexedDB) not available: ${storeError}`);
+        } finally {
+          storeLoading = null;
+        }
+      })();
+    }
+    return storeLoading;
+  }
+
+  /** The open project's name, or a clear error. */
+  async function openProject() {
+    const s = await getStore();
+    if (!current) throw new ApiError('no project is open', 'api.project.list() shows the projects; api.project.open(name) or api.project.create(name, { template: "race" })');
+    if (!(await s.getProject(current))) { const was = current; current = null; throw new ApiError(`the open project '${was}' no longer exists`, 'api.project.list(), then api.project.open(name)'); }
+    return { s, name: current };
+  }
+
+  function storeErr(e) {
+    if (e instanceof ApiError) return e;
+    if (e?.code === 'EXISTS') return new ApiError(e.message, 'pick another name, or delete the existing one first');
+    if (e?.code === 'NOT_FOUND') return new ApiError(e.message, 'api.project.list() / api.files.list() show what exists');
+    return new ApiError(errText(e));
+  }
+
+  // ---- skills (dingo-cli/web)
+  async function loadSkillIndex(refresh) {
+    if (skillIndex && !refresh) return skillIndex;
+    if (!fetchText) throw new ApiError('no fetchText provided; skills unavailable');
+    let txt;
+    try { txt = await fetchText('./skills/index.json'); } catch (e) {
+      throw new ApiError(`could not load skills/index.json: ${errText(e)}`, 'run `node sync-skills.mjs` in studio/ (in the container) to (re)generate skills/index.json');
+    }
+    try { skillIndex = JSON.parse(txt); } catch (e) { throw new ApiError(`skills/index.json is not valid JSON: ${errText(e)}`); }
+    return skillIndex;
+  }
+
+  function chunk(text, offset, maxChars) {
+    const c = text.slice(offset, offset + maxChars);
+    return { totalChars: text.length, offset, nextOffset: offset + c.length < text.length ? offset + c.length : null, chunk: c };
+  }
+
+  // ---- project helpers
+  function fileRecord(project, path, content) {
+    if (typeof content === 'string') {
+      if (content.length > MAX_FILE) throw new ApiError(`the file is ${content.length} characters (max ${MAX_FILE})`);
+      return { project, path, text: content, modified: now() };
+    }
+    if (isPlainObject(content) && typeof content.base64 === 'string') {
+      let bytes;
+      try { bytes = fromBase64(content.base64); } catch (e) { throw new ApiError(`content.base64: ${errText(e)}`); }
+      if (bytes.length > MAX_FILE) throw new ApiError(`the file is ${bytes.length} bytes (max ${MAX_FILE})`);
+      return { project, path, bytes, modified: now() };
+    }
+    if (isPlainObject(content) && typeof content.text === 'string') return fileRecord(project, path, content.text);
+    throw new ApiError('content must be the file text (a string) or { base64 } for a binary file');
+  }
+
+  // ---- engine, sim, bundle (the engine wasm via engine/project.js and sim/host.js)
+  let sim = null; // the running Sim
+  let simInfo = null; // { project, key, name }
+  let lastPack = null; // { bytes, json, name, project }
+  let builtUi = null; // { web: [{ name, bytes }], watch: Uint8Array|null } from ui.build (S4), via api._setBuiltUi
+  const engineCache = new Map(); // source hash → buildEngine() result
+  const envelopeListeners = new Set(); // api._sim.onEnvelope: survive sim restarts
+
+  async function wasm() {
+    if (!engine) throw new ApiError('engine wasm not available: no engine loader', 'reload the page');
+    try { return await engine.load(); } catch (e) { throw new ApiError(errText(e), e.hint); }
+  }
+
+  const parseDir = (v) => (v === undefined || v === null ? 'engine' : parsePath(v, 'dir'));
+
+  /** The engine's files in the open project → { project, dir, files: { 'engine.expr': text|null, … } }. */
+  async function engineFiles(dir) {
+    const { s, name } = await openProject();
+    const files = {};
+    for (const n of ENGINE_FILES) {
+      const f = await s.getFile(name, `${dir}/${n}`);
+      if (f?.bytes) throw new ApiError(`${dir}/${n} is a binary file`, 'engine files are UTF-8 text');
+      files[n] = f ? f.text ?? '' : null;
+    }
+    return { project: name, dir, files };
+  }
+
+  /** The built engine of the open project (cached by its sources' hash; files.* writes clear the cache). */
+  async function getBuilt(opts = {}) {
+    if (opts !== undefined && !isPlainObject(opts)) throw new ApiError('the options argument must be an object');
+    const dir = parseDir(opts.dir);
+    const limitBytes = opts.limitBytes === undefined ? undefined : clampInt(opts.limitBytes, 0, 0, 1 << 24, 'limitBytes');
+    const codeInRam = opts.codeInRam === undefined ? undefined : !!opts.codeInRam;
+    const mod = await wasm();
+    const { project, files } = await engineFiles(dir);
+    const key = textHash(JSON.stringify([project, dir, limitBytes ?? null, codeInRam ?? null, ...ENGINE_FILES.slice(0, 4).map((n) => files[n])]));
+    let b = engineCache.get(key);
+    if (!b) {
+      try { b = buildEngine(mod, files, { dir, limitBytes, codeInRam }); } catch (e) {
+        if (e instanceof EngineError) throw new ApiError(e.message, e.hint);
+        throw e;
+      }
+      if (engineCache.size > 16) engineCache.clear();
+      engineCache.set(key, b);
+    }
+    b.files = files; // samples.json may differ under the same key
+    return { mod, built: b, project, dir, key };
+  }
+
+  const errorsOf = (ds) => ds.filter((d) => d.severity === 'error');
+  function failedBuild(built, what) {
+    const errs = errorsOf(built.diagnostics);
+    const d = errs[0];
+    return {
+      ok: false,
+      error: `${what}: ${errs.length} error${errs.length === 1 ? '' : 's'}; the first: ${d.rule} ${d.path}${d.span ? `:${d.span.line}:${d.span.col}` : ''} ${d.message}`,
+      hint: d.help ? `help: ${d.help} (every diagnostic is in diagnostics[] and the #diagnostics panel)` : 'see diagnostics[] (and the #diagnostics panel)',
+      diagnostics: built.diagnostics,
+    };
+  }
+  const compiledInfo = (b) => ({ programBytes: b.compiled.programBytes, memory: b.compiled.memory, interfaceHash: b.compiled.interfaceHash, imports: b.compiled.imports });
+
+  /** Packs the open project: the engine + the last UI build (or the placeholder page) → { bytes, json, uiSource, files }. */
+  async function packProject(opts = {}) {
+    const { mod, built, project } = await getBuilt({ dir: opts.dir });
+    if (!built.ok) return { failed: failedBuild(built, 'the engine does not compile') };
+    const name = opts.name === undefined ? project : String(opts.name);
+    if (!name || name.length > 64) throw new ApiError(`a bundle name is 1-64 characters, got ${JSON.stringify(name)}`);
+    const version = clampInt(opts.version, 1, 0, 65535, 'version');
+    let ui = builtUi;
+    const uiSource = ui ? 'build' : 'placeholder';
+    if (!ui) ui = { web: PLACEHOLDER_WEB.map((f) => ({ name: f.name.slice(4), bytes: f.bytes })), watch: null };
+    let files;
+    try { files = engineBundleFiles(mod, built); } catch (e) { throw new ApiError(errText(e), e.hint); }
+    files.push(...ui.web.map((f) => ({ name: `web/${f.name}`, bytes: f.bytes })));
+    if (ui.watch) files.push({ name: 'watch.js', bytes: ui.watch });
+    const p = mod.pack(JSON.stringify({ name, version }), files);
+    try {
+      const json = JSON.parse(p.json());
+      if (!p.ok()) throw new ApiError(`pack: ${json.error}`, 'the bundle files are made from the engine and the UI build: api.engine.check(), api.ui.build()');
+      return { bytes: p.bytes(), json, uiSource, files, built, name, version, project };
+    } finally { p.free(); }
+  }
+
+  async function sha256Hex(bytes) {
+    const d = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return simHex(new Uint8Array(d));
+  }
+
+  function requireSim() {
+    if (!sim) throw new ApiError('the sim is not running', "api.sim.start() first (it packs the project's engine and starts the host)");
+    return sim;
+  }
+  function simErr(e) {
+    if (e instanceof SimError) return new ApiError(e.message, e.hint);
+    return e;
+  }
+  const evaluationOut = (recs) => recs.map(simRecord);
+  function simSummary() {
+    const st = sim.state();
+    return { now: st.now, view: st.view, state: st.state, wake: st.wake };
+  }
+  function stopSim() {
+    if (sim) { sim.free(); sim = null; simInfo = null; }
+  }
+
+  const fileInfo = (f) => ({ path: f.path, ...sizeOf(f), modified: f.modified ?? null });
+  const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+
+  async function projectSummary(s, p) {
+    const fs = await s.listFiles(p.name);
+    return { name: p.name, template: p.template ?? null, files: fs.length, bytes: fs.reduce((n, f) => n + sizeOf(f).size, 0), created: p.created ?? null, modified: p.modified ?? null, opened: p.opened ?? null };
+  }
+
+  async function doOpen(s, name) {
+    const p = await s.getProject(name);
+    if (!p) throw new ApiError(`no project named '${name}'`, 'api.project.list() shows the projects');
+    await s.touchProject(name, { opened: now() });
+    current = name;
+    const fs = (await s.listFiles(name)).map(fileInfo).sort(byPath);
+    L('info', `opened project ${name} (${fs.length} files)`);
+    return { ok: true, name, template: p.template ?? null, files: fs };
+  }
+
+  /** zip entries → project files: drops a manifest, strips one shared top-level folder, decodes UTF-8 text. */
+  function filesFromZip(entries) {
+    let manifest = null;
+    let list = entries.filter((e) => {
+      if (e.name === 'studio-project.json') { try { manifest = JSON.parse(new TextDecoder().decode(e.bytes)); } catch { /* ignore */ } return false; }
+      return !/(^|\/)(__MACOSX|\.DS_Store)(\/|$)/.test(e.name);
+    });
+    // every entry name must be a project path before any folder is stripped
+    // (a '../x' entry must not turn into 'x')
+    for (const e of list) parsePath(e.name, `zip entry '${e.name}'`);
+    const tops = new Set(list.map((e) => e.name.split('/')[0]));
+    if (tops.size === 1 && list.every((e) => e.name.includes('/'))) {
+      const top = [...tops][0] + '/';
+      list = list.map((e) => ({ ...e, name: e.name.slice(top.length) }));
+    }
+    const dec = new TextDecoder('utf-8', { fatal: true });
+    const files = list.map((e) => {
+      const path = parsePath(e.name, `zip entry '${e.name}'`);
+      if (!isBinaryPath(path)) { try { return { path, text: dec.decode(e.bytes) }; } catch { /* not UTF-8: keep the bytes */ } }
+      return { path, bytes: e.bytes };
+    });
+    return { files, manifest };
+  }
+
+  // =================================================================== registry
+  // kind: 'info' (never locked, quiet), 'store' (IndexedDB), 'pure' (no hardware),
+  // 'device' (serialised, adds elapsedMs). available:false = registered, not wired yet.
+  const PATH_ARG = { name: 'path', type: 'string', required: true, description: "a project path, e.g. 'engine/engine.expr', 'kindle/src/index.jsx'" };
+  const DIR_OPT = { name: 'opts.dir', type: 'string', required: false, description: "the engine's directory in the project (default 'engine': engine.expr, state.schema.json, view.schema.json?, event.schema.json?, samples.json?)" };
+  const TARGET_ARG = { name: 'target', type: "'kindle' | 'watch'", required: true, description: 'which client' };
+  const DIAG = '{ rule, severity, path, span: { line, col, offset, end: { line, col, offset } }|null, message, help }';
+
+  const stub = (group, hint) => async () => {
+    throw new ApiError(`not available yet: api.${group}.* is registered but not wired into the studio yet`, hint);
+  };
+  const PREVIEW_HINT = 'previews arrive with milestone S5 (#preview-kindle, #preview-watch are placeholders)';
+  const DEVICE_HINT = 'the Web Bluetooth bundle client arrives with milestone S7; #device-choose stays disabled until then';
+
+  const FUNCTIONS = [
+    // ------------------------------------------------------------- core
+    {
+      name: 'describe', kind: 'info',
+      summary: 'This tool list: every function with its args, return shape and an example; plus the workflow, the groups, the skills and notes. Call it first.',
+      args: [],
+      returns: '{ ok, name, version, summary, workflow: string[], groups: [{ name, summary, functions: string[] }], functions: [{ name, group, available, summary, args: [{name,type,required,description}], returns, example }], skills: [{name, description}], notes: string[] }',
+      example: 'await api.describe()',
+      run: async () => describe(),
+    },
+    {
+      name: 'status', kind: 'info',
+      summary: 'The open project, project storage, the engine wasm, the device link, the op running now and the last error.',
+      args: [],
+      returns: '{ ok, project: string|null, storage: { available, error }, engine: { loaded, loading, error, version, url }, sim: { running, clock, now, name }|{ running: false }, device: { state }, busy: {op, sinceMs, progress}|null, lastError, version }',
+      example: 'await api.status()',
+      run: async () => {
+        if (!storeObj && storeLoader && !storeError) { try { await getStore(); } catch { /* reported below */ } }
+        return {
+          ok: true,
+          project: current,
+          storage: { available: !!storeObj, error: storeError },
+          engine: engine ? engine.status() : { loaded: false, loading: false, error: 'no engine loader', version: null, url: null },
+          sim: sim ? { running: true, clock: sim.clock, now: sim.host.now(), name: simInfo?.name ?? null } : { running: false },
+          device: { state: 'unavailable', note: 'the device group is not wired yet (milestone S7)' },
+          busy: busy ? { op: busy.op, sinceMs: now() - busy.since, progress: busy.progress ?? null } : null,
+          lastError,
+          version: API_VERSION,
+        };
+      },
+    },
+    {
+      name: 'log', kind: 'info',
+      summary: 'Recent app log lines (calls, results, errors), oldest first.',
+      args: [{ name: 'opts.last', type: 'integer', required: false, description: 'how many lines (default 50, max 500)' }],
+      returns: '{ ok, total, lines: string[] }',
+      example: 'await api.log({ last: 100 })',
+      run: async (opts = {}) => {
+        const last = clampInt(opts.last, 50, 1, 500, 'last');
+        return { ok: true, total: logger.total ? logger.total() : null, lines: logger.lines(last) };
+      },
+    },
+    {
+      name: 'skills', kind: 'info',
+      summary: 'List the skills (markdown guides) this page serves. Read studio-api first, then expr-engine before writing an engine.',
+      args: [],
+      returns: '{ ok, skills: [{ name, description, chars, assets? }] }',
+      example: 'await api.skills()',
+      run: async () => {
+        const idx = await loadSkillIndex(true);
+        return { ok: true, skills: idx.map((s) => ({ name: s.name, description: s.description, chars: s.chars, ...(s.assets?.length ? { assets: s.assets } : {}) })) };
+      },
+    },
+    {
+      name: 'skill', kind: 'info',
+      summary: 'Read one skill’s markdown, in chunks: call again with offset = nextOffset until nextOffset is null.',
+      args: [{ name: 'name', type: 'string', required: true, description: 'skill name from api.skills()' },
+        { name: 'opts.offset', type: 'integer', required: false, description: 'character offset (default 0)' },
+        { name: 'opts.maxChars', type: 'integer', required: false, description: 'chunk size (default 12000, min 100, max 100000)' }],
+      returns: '{ ok, name, description, totalChars, offset, nextOffset|null, markdown }',
+      example: "await api.skill('studio-api')",
+      run: async (name, opts = {}) => {
+        if (typeof name !== 'string' || !name) throw new ApiError('name is required', 'see api.skills()');
+        const idx = await loadSkillIndex(false);
+        const s = idx.find((x) => x.name === name || x.dir === name);
+        if (!s) throw new ApiError(`no skill named '${name}'`, `available: ${idx.map((x) => x.name).join(', ')}`);
+        const offset = clampInt(opts.offset, 0, 0, 1e8, 'offset');
+        const maxChars = clampInt(opts.maxChars, 12000, 100, 100000, 'maxChars');
+        let md;
+        try { md = await fetchText('./' + s.path); } catch (e) { throw new ApiError(`could not fetch ${s.path}: ${errText(e)}`, 'run `node sync-skills.mjs` in studio/'); }
+        const c = chunk(md, offset, maxChars);
+        return { ok: true, name: s.name, description: s.description, totalChars: c.totalChars, offset, nextOffset: c.nextOffset, markdown: c.chunk };
+      },
+    },
+
+    // ---------------------------------------------------------- project
+    {
+      name: 'project.list', kind: 'info',
+      summary: 'The projects in this browser (IndexedDB), most recently opened first, and which is open.',
+      args: [],
+      returns: '{ ok, current: string|null, projects: [{ name, template, files, bytes, created, modified, opened }] }',
+      example: 'await api.project.list()',
+      run: async () => {
+        const s = await getStore();
+        const ps = await s.listProjects();
+        const out = [];
+        for (const p of ps) out.push(await projectSummary(s, p));
+        out.sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0) || a.name.localeCompare(b.name));
+        return { ok: true, current, projects: out };
+      },
+    },
+    {
+      name: 'project.create', kind: 'store',
+      summary: `Create a project from a template and open it. 'race' = the Race example (engine/, kindle/src/, watch/src/; read from the vendored example), 'blank' = a minimal engine. Refuses an existing name.`,
+      args: [{ name: 'name', type: 'string', required: true, description: '1-64 characters: letters, digits, space, _ . -' },
+        { name: 'opts.template', type: `'${TEMPLATES.join("' | '")}'`, required: false, description: "default 'blank'" }],
+      returns: '{ ok, name, template, files: [{ path, size, binary, modified }] }',
+      example: "await api.project.create('my-race', { template: 'race' })",
+      run: async (name, opts = {}) => {
+        const n = parseName(name);
+        const template = opts.template ?? 'blank';
+        if (!TEMPLATES.includes(template)) throw new ApiError(`no template named '${template}'`, `templates: ${TEMPLATES.join(', ')}`);
+        const s = await getStore();
+        if (await s.getProject(n)) throw new ApiError(`a project named '${n}' already exists`, `api.project.open('${n}'), or pick another name`);
+        let files;
+        try { files = await templateFiles(template, { fetchText, fetchBytes }); } catch (e) { throw new ApiError(errText(e), e.hint); }
+        const t = now();
+        try {
+          await s.createProject({ name: n, template, created: t, modified: t, opened: t }, files.map((f) => ({ ...f, modified: t })));
+        } catch (e) { throw storeErr(e); }
+        current = n;
+        L('info', `created project ${n} from template ${template} (${files.length} files)`);
+        return { ok: true, name: n, template, files: files.map((f) => fileInfo({ ...f, modified: t })).sort(byPath) };
+      },
+    },
+    {
+      name: 'project.open', kind: 'store',
+      summary: 'Open a project: files.* then work on it. The page shows it.',
+      args: [{ name: 'name', type: 'string', required: true, description: 'a project name from api.project.list()' }],
+      returns: '{ ok, name, template, files: [{ path, size, binary, modified }] }',
+      example: "await api.project.open('my-race')",
+      run: async (name) => doOpen(await getStore(), parseName(name)),
+    },
+    {
+      name: 'project.delete', kind: 'store',
+      summary: 'Delete a project and all its files from this browser. Cannot be undone: export it first if in doubt.',
+      args: [{ name: 'name', type: 'string', required: true, description: 'the project to delete' }],
+      returns: '{ ok, deleted, files, current }',
+      example: "await api.project.delete('scratch')",
+      run: async (name) => {
+        const n = parseName(name);
+        const s = await getStore();
+        let count;
+        try { count = await s.deleteProject(n); } catch (e) { throw storeErr(e); }
+        if (current === n) current = null;
+        L('info', `deleted project ${n} (${count} files)`);
+        return { ok: true, deleted: n, files: count, current };
+      },
+    },
+    {
+      name: 'project.rename', kind: 'store',
+      summary: 'Rename a project (its files move with it). Refuses a name that exists.',
+      args: [{ name: 'name', type: 'string', required: true, description: 'the project to rename' },
+        { name: 'newName', type: 'string', required: true, description: 'its new name' }],
+      returns: '{ ok, from, name, files }',
+      example: "await api.project.rename('my-race', 'race-v2')",
+      run: async (name, newName) => {
+        const from = parseName(name); const to = parseName(newName, 'newName');
+        if (from === to) throw new ApiError('the new name is the same as the old one');
+        const s = await getStore();
+        let count;
+        try { count = await s.renameProject(from, to, now()); } catch (e) { throw storeErr(e); }
+        if (current === from) current = to;
+        L('info', `renamed project ${from} → ${to}`);
+        return { ok: true, from, name: to, files: count };
+      },
+    },
+    {
+      name: 'project.export', kind: 'store',
+      summary: 'The project as a ZIP (stored entries, fixed timestamps: the same files give the same bytes), base64. Holds every file plus studio-project.json ({ name, template, format }).',
+      args: [{ name: 'opts.name', type: 'string', required: false, description: 'which project (default: the open one)' }],
+      returns: '{ ok, name, fileName, files, bytes, zipBase64 }',
+      example: 'await api.project.export()',
+      run: async (opts = {}) => {
+        const s = await getStore();
+        let n;
+        if (opts.name !== undefined) n = parseName(opts.name); else n = (await openProject()).name;
+        const p = await s.getProject(n);
+        if (!p) throw new ApiError(`no project named '${n}'`, 'api.project.list()');
+        const fs = (await s.listFiles(n)).sort(byPath);
+        const entries = [
+          { name: 'studio-project.json', bytes: enc.encode(JSON.stringify({ name: n, template: p.template ?? null, format: 1 }, null, 2) + '\n') },
+          ...fs.map((f) => ({ name: f.path, bytes: f.bytes ?? enc.encode(f.text ?? '') })),
+        ];
+        const zip = zipStore(entries);
+        return { ok: true, name: n, fileName: `${n}.zip`, files: fs.length, bytes: zip.length, zipBase64: toBase64(zip) };
+      },
+    },
+    {
+      name: 'project.import', kind: 'store',
+      summary: 'Create a project from a ZIP (base64, or fetched from a URL the page can reach) and open it. One top-level folder shared by every entry is stripped. Refuses an existing name: pass opts.name.',
+      args: [{ name: 'source', type: '{ zipBase64 } | { url }', required: true, description: 'the archive: base64 text (as project.export gives) or a URL (same origin, or one that allows CORS)' },
+        { name: 'opts.name', type: 'string', required: false, description: "the project's name (default: the archive's studio-project.json name, else the URL's file name)" }],
+      returns: '{ ok, name, template, files: [{ path, size, binary, modified }] }',
+      example: "await api.project.import({ zipBase64: r.zipBase64 }, { name: 'copy' })",
+      run: async (source, opts = {}) => {
+        if (!isPlainObject(source) || (typeof source.zipBase64 !== 'string' && typeof source.url !== 'string')) {
+          throw new ApiError('source must be { zipBase64 } or { url }', 'e.g. api.project.import({ zipBase64: (await api.project.export()).zipBase64 }, { name: "copy" })');
+        }
+        let bytes; let fromUrl = null;
+        if (typeof source.zipBase64 === 'string') {
+          try { bytes = fromBase64(source.zipBase64); } catch (e) { throw new ApiError(`zipBase64: ${errText(e)}`); }
+        } else {
+          if (!fetchBytes) throw new ApiError('this page cannot fetch URLs (no fetchBytes)');
+          fromUrl = source.url;
+          try { bytes = await fetchBytes(source.url); } catch (e) { throw new ApiError(`could not fetch ${source.url}: ${errText(e)}`, 'the URL must be reachable from this page (same origin, or served with CORS)'); }
+        }
+        let entries;
+        try { entries = await unzip(bytes); } catch (e) { throw new ApiError(errText(e), 'pass a ZIP archive (api.project.export() makes one)'); }
+        const { files, manifest } = filesFromZip(entries);
+        if (!files.length) throw new ApiError('the archive holds no files');
+        const urlName = fromUrl ? decodeURIComponent(fromUrl.split(/[?#]/)[0].split('/').pop() || '').replace(/\.zip$/i, '') : null;
+        const raw = opts.name ?? manifest?.name ?? urlName;
+        if (raw === undefined || raw === null || raw === '') throw new ApiError('the archive names no project', 'pass { name } as the second argument');
+        const n = parseName(raw);
+        const s = await getStore();
+        const t = now();
+        const template = typeof manifest?.template === 'string' ? manifest.template : null;
+        try {
+          await s.createProject({ name: n, template, created: t, modified: t, opened: t }, files.map((f) => ({ ...f, modified: t })));
+        } catch (e) {
+          if (e?.code === 'EXISTS') throw new ApiError(e.message, "pass another name: api.project.import(source, { name: 'other' })");
+          throw storeErr(e);
+        }
+        current = n;
+        L('info', `imported project ${n} (${files.length} files)`);
+        return { ok: true, name: n, template, files: files.map((f) => fileInfo({ ...f, modified: t })).sort(byPath) };
+      },
+    },
+
+    // ------------------------------------------------------------ files
+    {
+      name: 'files.list', kind: 'info',
+      summary: "The open project's files (path order). Optionally only those under a prefix.",
+      args: [{ name: 'opts.prefix', type: 'string', required: false, description: "e.g. 'engine/' or 'kindle/src/'" }],
+      returns: '{ ok, project, files: [{ path, size, binary, modified }] }',
+      example: "await api.files.list({ prefix: 'engine/' })",
+      run: async (opts = {}) => {
+        const { s, name } = await openProject();
+        let fs = (await s.listFiles(name)).map(fileInfo).sort(byPath);
+        if (opts.prefix !== undefined) {
+          if (typeof opts.prefix !== 'string') throw new ApiError('prefix must be a string');
+          fs = fs.filter((f) => f.path.startsWith(opts.prefix));
+        }
+        return { ok: true, project: name, files: fs };
+      },
+    },
+    {
+      name: 'files.read', kind: 'info',
+      summary: 'Read a file of the open project, in chunks: call again with offset = nextOffset until nextOffset is null. A binary file comes back as base64 (chunked the same way).',
+      args: [PATH_ARG,
+        { name: 'opts.offset', type: 'integer', required: false, description: 'character offset (default 0)' },
+        { name: 'opts.maxChars', type: 'integer', required: false, description: 'chunk size (default 20000, min 100, max 200000)' }],
+      returns: '{ ok, project, path, binary, size, totalChars, offset, nextOffset|null, text } (binary: base64 instead of text)',
+      example: "await api.files.read('engine/engine.expr')",
+      run: async (path, opts = {}) => {
+        const p = parsePath(path);
+        const { s, name } = await openProject();
+        const f = await s.getFile(name, p);
+        if (!f) throw new ApiError(`no file '${p}' in ${name}`, 'api.files.list() shows the files');
+        const offset = clampInt(opts.offset, 0, 0, 1e9, 'offset');
+        const maxChars = clampInt(opts.maxChars, 20000, 100, 200000, 'maxChars');
+        const { size, binary } = sizeOf(f);
+        const c = chunk(binary ? toBase64(f.bytes) : f.text ?? '', offset, maxChars);
+        return { ok: true, project: name, path: p, binary, size, totalChars: c.totalChars, offset, nextOffset: c.nextOffset, ...(binary ? { base64: c.chunk } : { text: c.chunk }) };
+      },
+    },
+    {
+      name: 'files.write', kind: 'store',
+      summary: 'Create or replace a file of the open project with the whole new content (saved at once to IndexedDB). The page shows it.',
+      args: [PATH_ARG, { name: 'content', type: 'string | { base64 }', required: true, description: 'the full text, or { base64 } for a binary file' }],
+      returns: '{ ok, project, path, size, binary, created }',
+      example: "await api.files.write('engine/engine.expr', text)",
+      run: async (path, content) => {
+        const p = parsePath(path);
+        const { s, name } = await openProject();
+        const rec = fileRecord(name, p, content);
+        let r;
+        try { r = await s.putFile(rec, now()); } catch (e) { throw storeErr(e); }
+        engineCache.clear();
+        return { ok: true, project: name, path: p, ...sizeOf(rec), created: r.created };
+      },
+    },
+    {
+      name: 'files.delete', kind: 'store',
+      summary: 'Delete a file of the open project.',
+      args: [PATH_ARG],
+      returns: '{ ok, project, path }',
+      example: "await api.files.delete('notes.txt')",
+      run: async (path) => {
+        const p = parsePath(path);
+        const { s, name } = await openProject();
+        try { await s.deleteFile(name, p, now()); } catch (e) { throw storeErr(e); }
+        engineCache.clear();
+        return { ok: true, project: name, path: p };
+      },
+    },
+    {
+      name: 'files.rename', kind: 'store',
+      summary: 'Rename (move) a file of the open project. Refuses a path that exists.',
+      args: [PATH_ARG, { name: 'newPath', type: 'string', required: true, description: 'its new path' }],
+      returns: '{ ok, project, from, path }',
+      example: "await api.files.rename('engine/old.expr', 'engine/engine.expr')",
+      run: async (path, newPath) => {
+        const from = parsePath(path); const to = parsePath(newPath, 'newPath');
+        if (from === to) throw new ApiError('the new path is the same as the old one');
+        const { s, name } = await openProject();
+        try { await s.renameFile(name, from, to, now()); } catch (e) { throw storeErr(e); }
+        engineCache.clear();
+        return { ok: true, project: name, from, path: to };
+      },
+    },
+
+    // ----------------------------------------------------------- engine (the engine wasm)
+    {
+      name: 'engine.interface', kind: 'pure',
+      summary: "The engine's interface generated from its schemas as engine/profile does: the inputs (state, event with the built-in gps/wake and your variants, timestamp, gps), the output, the sailing builtins' declarations. Schema errors (E-SCHEMA) come back with the schema file and a span.",
+      args: [DIR_OPT],
+      returns: '{ ok, interface, published: "<dir>/view.schema.json"|"<dir>/state.schema.json", events: string[], diagnostics: [' + DIAG + '] } (ok:false: error, hint, diagnostics)',
+      example: 'await api.engine.interface()',
+      run: async (opts = {}) => {
+        const { built } = await getBuilt(opts);
+        if (!built.iface) return failedBuild(built, 'the schemas do not make an interface');
+        const ev = built.iface.inputs.find((i) => i.name === 'event');
+        const events = (ev?.schema?.oneOf ?? []).map((o) => Object.keys(o.properties ?? {})[0]).filter(Boolean);
+        return { ok: true, interface: built.iface, published: built.view?.from ?? null, events, diagnostics: built.diagnostics.filter((d) => d.path !== `${built.dir}/engine.expr`) };
+      },
+    },
+    {
+      name: 'engine.compile', kind: 'pure',
+      summary: 'Compile engine.expr against the interface (and the schemas into their bitwire descriptors): the program size, its memory needs and the interface hash, or every diagnostic (rule E-*, file, span, message, help). Cached until a file changes. The page marks the spans in the editor.',
+      args: [DIR_OPT,
+        { name: 'opts.limitBytes', type: 'integer', required: false, description: "the engine RAM budget to check against (default: the compiler's, the C6's)" },
+        { name: 'opts.codeInRam', type: 'boolean', required: false, description: 'count the code as copied into RAM (default false: it runs in place from flash)' }],
+      returns: '{ ok, programBytes, memory: { stack_slots, locals, output_slots, slot_bytes, program_bytes, total_bytes }, interfaceHash, imports: string[], diagnostics: [] } | { ok:false, error, hint, diagnostics: [' + DIAG + '] }',
+      example: 'await api.engine.compile()',
+      run: async (opts = {}) => {
+        const { built } = await getBuilt(opts);
+        if (!built.ok) return failedBuild(built, 'the engine does not compile');
+        return { ok: true, ...compiledInfo(built), diagnostics: built.diagnostics };
+      },
+    },
+    {
+      name: 'engine.check', kind: 'pure',
+      summary: "compile + the PROFILE §5 smoke runs (1: state nil, {gps: {}} at 1790000000000, gps []; 2: {wake: {}} 1 s later on run 1's state) + the project's <dir>/samples.json if there is one (lang/SPEC.md §5.3, `chain` honoured), on the VM with the real sailing builtins. A failed run is its R-code (R-NIL, …) with the span in engine.expr and the help. ok only when it compiles and every run completes. Diagnostics go to the #diagnostics panel and the editor.",
+      args: [DIR_OPT],
+      returns: '{ ok, compile: { programBytes, memory, interfaceHash, imports }|null, runs: [{ source: "smoke"|"<dir>/samples.json", run, ok, output?: { state, view?, wake? }, instructions?, stackHigh?, chainedFrom?, error?: "R-…", span?, help? }], samples: "<dir>/samples.json"|null, diagnostics: [' + DIAG + '] } (+ error, hint when not ok)',
+      example: 'await api.engine.check()',
+      run: async (opts = {}) => {
+        const { mod, built, dir } = await getBuilt(opts);
+        if (!built.ok) return { ...failedBuild(built, 'the engine does not compile'), compile: null, runs: [], samples: null };
+        const diagnostics = [...built.diagnostics];
+        const smoke = runSamples(mod, built, JSON.stringify(SMOKE), { source: 'smoke', dir });
+        const runs = [...smoke.runs];
+        diagnostics.push(...smoke.diagnostics);
+        const samplesPath = `${dir}/samples.json`;
+        const samplesText = built.files['samples.json'];
+        if (samplesText != null) {
+          const r = runSamples(mod, built, samplesText, { source: samplesPath, dir });
+          runs.push(...r.runs);
+          diagnostics.push(...r.diagnostics);
+        }
+        const errs = errorsOf(diagnostics);
+        const out = { ok: !errs.length, compile: compiledInfo(built), runs, samples: samplesText != null ? samplesPath : null, diagnostics };
+        if (errs.length) {
+          const d = errs[0];
+          out.error = `${errs.length} run${errs.length === 1 ? '' : 's'} failed; the first: ${d.message}${d.span ? ` at ${d.path}:${d.span.line}:${d.span.col}` : ` (${d.path})`}`;
+          out.hint = d.help ? `help: ${d.help}` : 'see runs[] and diagnostics[]';
+        }
+        return out;
+      },
+    },
+    {
+      name: 'engine.disassemble', kind: 'pure',
+      summary: 'The compiled program as text, one instruction per line (pc: instruction), paged.',
+      args: [DIR_OPT, { name: 'opts.offset', type: 'integer', required: false, description: 'character offset (default 0)' }, { name: 'opts.maxChars', type: 'integer', required: false, description: 'chunk size (default 20000, min 100, max 200000)' }],
+      returns: '{ ok, totalChars, offset, nextOffset|null, text }',
+      example: 'await api.engine.disassemble()',
+      run: async (opts = {}) => {
+        const { mod, built } = await getBuilt(opts);
+        if (!built.ok) return failedBuild(built, 'the engine does not compile');
+        const offset = clampInt(opts.offset, 0, 0, 1e9, 'offset');
+        const maxChars = clampInt(opts.maxChars, 20000, 100, 200000, 'maxChars');
+        const d = JSON.parse(mod.disassemble(built.program));
+        if (!d.ok) throw new ApiError(`disassemble: ${d.error}`);
+        const c = chunk(d.text, offset, maxChars);
+        return { ok: true, totalChars: c.totalChars, offset, nextOffset: c.nextOffset, text: c.chunk };
+      },
+    },
+    {
+      name: 'engine.layout', kind: 'pure',
+      summary: "The device tables the bundle will carry (engine/profile layout): layout.bin's fields (leaf indices, limits), the interface hash, the view/event node maps, the enum strings; the descriptors are compiled from the schemas by the vendored bitwire compiler.",
+      args: [DIR_OPT],
+      returns: '{ ok, layout: { <field>: integer, … }, interfaceHash, viewMap: [{ leaf, span, aux }], eventMap: [...]|null, enums: string[]|null, sizes: { layout, viewMap, eventMap, enums, viewDesc, eventDesc } }',
+      example: 'await api.engine.layout()',
+      run: async (opts = {}) => {
+        const { mod, built } = await getBuilt(opts);
+        if (!built.ok) return failedBuild(built, 'the engine does not compile');
+        let l;
+        try { l = tables(mod, built); } catch (e) { throw new ApiError(errText(e), e.hint); }
+        const len = (b64) => (b64 ? atob(b64).length : null);
+        return {
+          ok: true, layout: l.layout, interfaceHash: l.interface_hash, viewMap: l.view_map, eventMap: l.event_map, enums: l.enums,
+          sizes: { layout: len(l.bytes.layout), viewMap: len(l.bytes.view_map), eventMap: len(l.bytes.event_map), enums: len(l.bytes.enums), viewDesc: built.view.desc.length, eventDesc: built.event ? built.event.desc.length : null },
+        };
+      },
+    },
+    {
+      name: 'engine.builtins', kind: 'pure',
+      summary: "The sailing builtins an engine may call (the host's: distance, bearing, the crossings, angle_diff, …) with their parameters and results, as the compiler takes them. The language's own functions (len, map, filter, min, …) are in the expr-engine skill §7.",
+      args: [],
+      returns: '{ ok, builtins: [{ name, signature, description, params, result, nullable }] }',
+      example: 'await api.engine.builtins()',
+      run: async () => {
+        const mod = await wasm();
+        const list = JSON.parse(mod.builtins());
+        const ty = (s) => (s?.type === 'object' ? `{${Object.keys(s.properties ?? {}).join(', ')}}` : s?.type ?? '?');
+        return {
+          ok: true,
+          builtins: list.map((b) => ({
+            name: b.name,
+            signature: `${b.name}(${b.params.map((p) => `${p.name}${p.optional ? '?' : ''}: ${ty(p.schema)}`).join(', ')}) → ${ty(b.result)}${b.nullable ? ' | nil' : ''}`,
+            description: b.description, params: b.params, result: b.result, nullable: !!b.nullable,
+          })),
+        };
+      },
+    },
+
+    // -------------------------------------------------------------- sim (the real common::Host in wasm)
+    {
+      name: 'sim.runSamples', kind: 'pure',
+      summary: "Run a samples file through the compiled engine on the VM, without the host (lang/SPEC.md §5.3: each run's inputs; `chain` feeds a run the previous output's state). engine.check does this too, after the smoke runs.",
+      args: [DIR_OPT, { name: 'opts.path', type: 'string', required: false, description: "a project file (default '<dir>/samples.json')" }],
+      returns: '{ ok, path, runs: [{ run, ok, output?, instructions?, stackHigh?, chainedFrom?, error?, span?, help? }], diagnostics: [' + DIAG + '] }',
+      example: 'await api.sim.runSamples()',
+      run: async (opts = {}) => {
+        const { mod, built, dir } = await getBuilt(opts);
+        if (!built.ok) return failedBuild(built, 'the engine does not compile');
+        const path = opts.path === undefined ? `${dir}/samples.json` : parsePath(opts.path);
+        const { s, name } = await openProject();
+        const f = await s.getFile(name, path);
+        if (!f) throw new ApiError(`no file '${path}' in ${name}`, 'samples are {"runs": [{"inputs": {state, event, timestamp, gps}, "chain"?: {"state": "output.state"}}]} (skill expr-engine §8)');
+        const r = runSamples(mod, built, f.text ?? '', { source: path, dir });
+        const errs = errorsOf(r.diagnostics);
+        return { ok: !errs.length, ...(errs.length ? { error: errs[0].message, hint: errs[0].help ?? 'see runs[]' } : {}), path, runs: r.runs, diagnostics: r.diagnostics };
+      },
+    },
+    {
+      name: 'sim.start', kind: 'pure',
+      summary: "Start the real host (common::Host in the wasm) on the project's engine, packed as bundle.pack would (with the placeholder page until api.ui.build has run): it evaluates {gps: {}} on a nil state at uptime 0 and publishes; then t0, as the first GPS time does on the C6, sets the device clock (a GPS update without a fix: a second {gps: {}} evaluation). Virtual clock: moves only on advance/gps t/replay. Live: follows the page's clock from t0. Replaces a running sim.",
+      args: [DIR_OPT,
+        { name: 'opts.clock', type: "'virtual' | 'live'", required: false, description: "default 'virtual'" },
+        { name: 'opts.t0', type: 'integer | null', required: false, description: 'device time to set, epoch ms (default 1790000000000; live: default now; null: stay on uptime)' },
+        { name: 'opts.name', type: 'string', required: false, description: "the package name (default: the project's)" }],
+      returns: '{ ok, clock, now, id, name, ui: { web, watch }, uiSource: "build"|"placeholder", state, view, wake, evaluations: [record] }',
+      example: "await api.sim.start({ clock: 'virtual' })",
+      run: async (opts = {}) => {
+        const clock = opts.clock ?? 'virtual';
+        if (clock !== 'virtual' && clock !== 'live') throw new ApiError(`clock must be 'virtual' or 'live', got ${JSON.stringify(clock)}`);
+        const t0 = opts.t0 === null ? null : opts.t0 === undefined ? (clock === 'live' ? now() : 1_790_000_000_000) : clampInt(opts.t0, 0, 0, 2 ** 52, 't0');
+        const p = await packProject({ dir: opts.dir, name: opts.name });
+        if (p.failed) return p.failed;
+        const mod = await wasm();
+        stopSim();
+        try {
+          sim = new Sim({
+            mod, bundle: p.bytes, name: p.name, program: p.built.program, ifaceJson: p.built.ifaceJson,
+            source: p.built.files['engine.expr'], path: `${p.built.dir}/engine.expr`, view: p.built.view.loaded, event: p.built.event?.loaded ?? null, clock, t0,
+            onEnvelope: (bytes, e) => { for (const cb of envelopeListeners) { try { cb(bytes, e); } catch { /* the subscriber's */ } } },
+          });
+        } catch (e) { throw simErr(e); }
+        simInfo = { project: p.project, name: p.name };
+        const st = sim.state();
+        return { ok: true, clock, now: st.now, id: sim.id, name: p.name, ui: st.ui, uiSource: p.uiSource, state: st.state, view: st.view, wake: st.wake, evaluations: evaluationOut(sim.history) };
+      },
+    },
+    {
+      name: 'sim.reset', kind: 'pure',
+      summary: 'Stop and drop the host and its history; the next sim.start begins again from a nil state (and picks up edited files).',
+      args: [],
+      returns: '{ ok, wasRunning }',
+      example: 'await api.sim.reset()',
+      run: async () => { const was = !!sim; stopSim(); return { ok: true, wasRunning: was }; },
+    },
+    {
+      name: 'sim.event', kind: 'pure',
+      summary: "Send one of the engine's own events (event.schema.json) as a client does: bitwire-encoded with the event descriptor, wrapped as HostEvent::Engine for this package, given to the host, which decodes, validates and evaluates it (a refusal says which: Engine = it failed its schema or the evaluation failed). Then any wake the evaluation put in the past fires at once.",
+      args: [{ name: 'event', type: 'object', required: true, description: 'exactly one variant, e.g. { line_stbd: {} } or { bump_seq: { seconds: 300, tapped_at: (await api.sim.state()).now } }' }],
+      returns: '{ ok, accepted, refused?: "Undecodable"|"NotInstalled"|"NotActive"|"Engine", evaluations: [record], now, state, view, wake }; record = { n, t, cause, event, accepted, state, view, wake, published, publishedHex, error?: { code, span, help }, wireOk?, findings? }',
+      example: 'await api.sim.event({ line_stbd: {} })',
+      run: async (event) => {
+        const s = requireSim();
+        if (!isPlainObject(event)) throw new ApiError('event must be an object: exactly one variant', 'e.g. api.sim.event({ line_stbd: {} }); api.engine.interface() lists the events');
+        let r;
+        try { r = s.event(event); } catch (e) { throw simErr(e); }
+        return { ok: true, accepted: r.accepted, ...(r.refused ? { refused: r.refused } : {}), evaluations: evaluationOut(r.evaluations), ...simSummary() };
+      },
+    },
+    {
+      name: 'sim.gps', kind: 'pure',
+      summary: "Feed GPS: an update { t?, lat?, lon?, speed?, heading? } (or { t?, fix: { lat, lon }, velocity: { speed, heading } }) through HostHandle.gps, or NMEA text (RMC sentences) through HostHandle.nmea, as from the receiver. A fix goes on the track (its t is the device time: the host's), then {gps: {fix?, velocity?}} is evaluated. The first GPS time sets the device clock; after that, on the virtual clock a t ahead of the device time moves the clock there first (wakes due on the way fire at their times).",
+      args: [{ name: 'update', type: '{ t?, lat?, lon?, speed?, heading? } | { t?, fix?, velocity? } | string', required: true, description: 'degrees; speed knots over ground, heading degrees true; t epoch ms. A string: NMEA lines' }],
+      returns: '{ ok, updates, evaluations: [record], now, state, view, wake }',
+      example: 'await api.sim.gps({ t: 1790000001500, lat: -33.85, lon: 151.252, speed: 4, heading: 90 })',
+      run: async (update) => {
+        const s = requireSim();
+        let recs; let updates;
+        try {
+          if (typeof update === 'string') { const r = s.nmea(update); recs = r.evaluations; updates = r.updates; } else { recs = s.gps(flatGps(update)); updates = 1; }
+        } catch (e) { throw simErr(e); }
+        return { ok: true, updates, evaluations: evaluationOut(recs), ...simSummary() };
+      },
+    },
+    {
+      name: 'sim.advance', kind: 'pure',
+      summary: 'Move the virtual clock on by ms: a wake falls due exactly at its time and is evaluated then (at once if the engine set one in the past).',
+      args: [{ name: 'ms', type: 'integer', required: true, description: "milliseconds, ≥ 0; or 'wake': to the pending wake" }],
+      returns: '{ ok, now, fired, evaluations: [record], state, view, wake }',
+      example: 'await api.sim.advance(300000)',
+      run: async (ms) => {
+        const s = requireSim();
+        if (s.clock === 'live') throw new ApiError('the live clock moves by itself', 'api.sim.stop() makes it virtual again, or api.sim.start({ clock: "virtual" })');
+        let n;
+        if (ms === 'wake') {
+          const w = s.state().wake;
+          if (w === null) throw new ApiError('no wake is pending', 'api.sim.state().wake is null');
+          n = Math.max(0, w - s.state().now);
+        } else n = clampInt(ms, undefined, 0, 2 ** 52, 'ms');
+        if (n === undefined) throw new ApiError('ms is required', 'e.g. api.sim.advance(1000)');
+        let r;
+        try { r = s.advance(n); } catch (e) { throw simErr(e); }
+        return { ok: true, now: r.now, fired: r.fired, evaluations: evaluationOut(r.evaluations), ...simSummary() };
+      },
+    },
+    {
+      name: 'sim.state', kind: 'pure', quiet: true,
+      summary: "The host now: the clock, the active package and its UI hashes, the engine's state (from the studio's mirror: the host doesn't expose it), the published view (the host's bytes, decoded), the pending wake, the last envelope (hex), a replay in progress, and the W-WIRE/W-HOST findings.",
+      args: [],
+      returns: '{ ok, running, clock, now, active, name, ui: { web, watch }, state, view, viewHex, wake, track, evaluations, envelopeHex, replay, findings: [{ rule, message, n? }], diverged }',
+      example: 'await api.sim.state()',
+      run: async () => {
+        if (!sim) return { ok: true, running: false };
+        return { ok: true, running: true, ...sim.state() };
+      },
+    },
+    {
+      name: 'sim.history', kind: 'pure', quiet: true,
+      summary: 'The evaluations so far, oldest first (the newest 2,000 are kept), paged: each with its time, cause (start/gps/event/wake), event, accepted, state, view, wake, whether it published and the published bytes.',
+      args: [{ name: 'opts.offset', type: 'integer', required: false, description: 'default 0 (the oldest kept)' }, { name: 'opts.limit', type: 'integer', required: false, description: 'default 100, max 2000' }],
+      returns: '{ ok, total, kept, first, offset, nextOffset|null, items: [record] }',
+      example: 'await api.sim.history({ offset: 0, limit: 50 })',
+      run: async (opts = {}) => {
+        const s = requireSim();
+        return { ok: true, ...s.page(clampInt(opts.offset, 0, 0, 1e9, 'offset'), clampInt(opts.limit, 100, 1, 2000, 'limit')) };
+      },
+    },
+    {
+      name: 'sim.replay', kind: 'pure',
+      summary: "Replay a GPS track from a project file through the host, keeping the track's own intervals: NMEA (each RMC sentence, through HostHandle.nmea) or JSON (an array, or one update per line, of { t, lat, lon, speed?, heading? }). Virtual clock: runs to the end (or until) at once, wakes firing in between. Live: feeds the fixes at interval/speed in the background (sim.state().replay; sim.stop() ends it).",
+      args: [{ name: 'opts.path', type: 'string', required: true, description: "a project file, e.g. 'tracks/start.nmea'" },
+        { name: 'opts.format', type: "'nmea' | 'json'", required: false, description: 'default from the extension (.json/.jsonl: json, else nmea)' },
+        { name: 'opts.speed', type: 'number', required: false, description: 'live clock only: replay speed (default 1)' },
+        { name: 'opts.until', type: 'integer', required: false, description: 'stop at this device time (epoch ms)' }],
+      returns: '{ ok, path, format, fixes, evaluations, now, done, total }',
+      example: "await api.sim.replay({ path: 'tracks/start.nmea' })",
+      run: async (opts = {}) => {
+        const s = requireSim();
+        const path = parsePath(opts.path);
+        const { s: st, name } = await openProject();
+        const f = await st.getFile(name, path);
+        if (!f || f.bytes) throw new ApiError(f ? `${path} is binary` : `no file '${path}' in ${name}`, 'a track is a text file: NMEA sentences, or JSON updates { t, lat, lon, speed?, heading? }');
+        const format = opts.format ?? (/\.jsonl?$/i.test(path) ? 'json' : 'nmea');
+        const speed = opts.speed === undefined ? 1 : Number(opts.speed);
+        if (!(speed > 0)) throw new ApiError(`speed must be a number > 0, got ${JSON.stringify(opts.speed)}`);
+        const until = opts.until === undefined ? null : clampInt(opts.until, 0, 0, 2 ** 52, 'until');
+        let updates; let lines = null;
+        if (format === 'nmea') {
+          lines = []; updates = [];
+          for (const line of (f.text ?? '').split(/\r?\n/)) { const u = rmcUpdate(line); if (u) { lines.push(line); updates.push(u); } }
+        } else if (format === 'json') {
+          const text = (f.text ?? '').trim();
+          let items;
+          try { items = text.startsWith('[') ? JSON.parse(text) : text.split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l)); } catch (e) { throw new ApiError(`${path}: not JSON: ${errText(e)}`, 'an array of updates, or one JSON update per line'); }
+          try { updates = items.map(flatGps); } catch (e) { throw simErr(e); }
+        } else throw new ApiError(`format must be 'nmea' or 'json', got ${JSON.stringify(format)}`);
+        if (!updates.length) throw new ApiError(`${path} holds no GPS updates`, format === 'nmea' ? 'RMC sentences ($GPRMC/$GNRMC) with a valid checksum and status A' : '[{ t, lat, lon, speed, heading }, …]');
+        let r;
+        try { r = s.replay(updates, { speed, until, lines }); } catch (e) { throw simErr(e); }
+        return { ok: true, path, format, ...r, total: updates.length };
+      },
+    },
+    {
+      name: 'sim.stop', kind: 'pure',
+      summary: 'Stop a live clock or a replay in progress; the host keeps its state and the clock becomes virtual.',
+      args: [],
+      returns: '{ ok, running }',
+      example: 'await api.sim.stop()',
+      run: async () => { if (sim) sim.stop(); return { ok: true, running: !!sim }; },
+    },
+
+    // ----------------------------------------------------------------- ui
+    {
+      name: 'ui.build', kind: 'pure',
+      summary: "Bundle the open project's clients in the browser (a Web Worker running rollup, Babel and terser over the project's files, as the monorepo's rollup configs do). kindle: kindle/src/index.jsx → index.html (scripts at /pkg/<id>/), bundle-<hash>.js (ES5 UMD), bundle-<hash>.css. watch: watch/src/index.jsx → watch.js (ES2020 IIFE that sets globalThis.__app). Imports: relative ones, 'solid-js' ('/store', '/web'), 'solid-watch', '<name>-wire' or 'engine-wire' (the engine's wire descriptors, from its schemas), and at the monorepo's depth ../../../protocol-js/protocol.js, ../../../client-common/{host,confirm,confirm-place}.js, ../../../wire/js/codec.js (skills kindle-ui, watch-ui). Checks: Kindle parses as ES5 and declares every Solid template; watch has no _tmpl$, sets __app, and mounts on a stub host. Kept as the project's last build: bundle.pack packs it. The same files give the same bytes. The first build loads the toolchain (≈5 MB, a few seconds).",
+      args: [{ name: 'opts.target', type: "'kindle' | 'watch' | 'both'", required: false, description: "default 'both'" },
+        { name: 'opts.name', type: 'string', required: false, description: "the bundle's name (default: the project's): its package id is the Kindle page's /pkg/<id>/ and '<name>-wire' resolves; build with the name you will pack with" }],
+      returns: '{ ok, project, name, packageId, publicPath, sourceSha256, toolchain, ms, targets: { kindle?: { ok, files: [{ name, size, sha256, base64 }], checks: [{ name, ok, message }], ms, stats }, watch?: (same) }, diagnostics: [{ target, severity, rule, file, line, col, message }] } — on a failed build ok:false with error and hint, and the same fields',
+      example: "await api.ui.build({ target: 'both' })",
+      run: async (opts = {}) => {
+        const target = opts.target ?? 'both';
+        if (!['kindle', 'watch', 'both'].includes(target)) throw new ApiError(`target must be 'kindle', 'watch' or 'both', got ${JSON.stringify(target)}`);
+        const { s, name: project } = await openProject();
+        const name = opts.name === undefined ? project : String(opts.name);
+        if (!name || name.length > 64) throw new ApiError(`a bundle name is 1-64 characters, got ${JSON.stringify(name)}`);
+        const files = (await s.listFiles(project)).map((f) => (f.bytes ? { path: f.path, bytes: f.bytes } : { path: f.path, text: f.text ?? '' }));
+        const { defaultToolchain } = await import('./toolchain/index.js');
+        const tc = defaultToolchain();
+        let r;
+        try { r = await tc.build({ project, name, target, files }); } catch (e) {
+          throw new ApiError(`the toolchain failed: ${errText(e)}`, 'api.log({ last: 50 }) and the browser console say why (are studio/lib/ and studio/vendor/ served?); reload the page to restart the worker');
+        }
+        // bundle.pack and sim.start carry the last build (both targets, this or an earlier build)
+        const last = (await tc.getLastBuild(project)) ?? { targets: r.targets };
+        const k = last.targets.kindle; const w = last.targets.watch;
+        builtUi = k?.ok ? { web: k.files.map((f) => ({ name: f.name, bytes: f.bytes })), watch: w?.ok ? w.files.find((f) => f.name === 'watch.js')?.bytes ?? null : null } : null;
+        const targets = {};
+        for (const [t, x] of Object.entries(r.targets)) targets[t] = { ok: x.ok, files: x.files.map((f) => ({ name: f.name, size: f.size, sha256: f.sha256, base64: toBase64(f.bytes) })), checks: x.checks, ms: x.ms, stats: x.stats };
+        const out = { project, name: r.name, packageId: r.packageId, publicPath: r.publicPath, sourceSha256: r.sourceSha256, toolchain: r.toolchain, ms: r.ms, targets, diagnostics: r.diagnostics };
+        if (r.ok) return { ok: true, ...out };
+        const errs = r.diagnostics.filter((d) => d.severity === 'error');
+        const d = errs[0] ?? { rule: 'B-?', message: 'a check failed' };
+        return { ok: false, error: `ui.build: ${errs.length} error${errs.length === 1 ? '' : 's'}; the first: ${d.target ?? ''} ${d.rule} ${d.file ?? ''}${d.line ? `:${d.line}:${d.col ?? 1}` : ''} ${d.message}`, hint: 'every diagnostic is in diagnostics[] and the #build-log panel; fix the file (api.files.write), then api.ui.build() again', ...out };
+      },
+    },
+
+    // ------------------------------------------------------------ preview
+    {
+      name: 'preview.open', kind: 'pure', available: false,
+      summary: 'Show the last build in #preview-kindle or #preview-watch, connected to the sim host.',
+      args: [{ name: 'opts.target', type: "'kindle' | 'watch'", required: true, description: 'which preview' }],
+      returns: '{ ok, target, sid, size }',
+      example: "await api.preview.open({ target: 'kindle' })",
+      run: stub('preview', PREVIEW_HINT),
+    },
+    {
+      name: 'preview.status', kind: 'pure', available: false,
+      summary: 'Both previews: open or not, which build, console errors.',
+      args: [],
+      returns: '{ ok, kindle: { open, sid, errors: string[] }, watch: { open, sid, errors: string[] } }',
+      example: 'await api.preview.status()',
+      run: stub('preview', PREVIEW_HINT),
+    },
+    {
+      name: 'preview.text', kind: 'pure', available: false,
+      summary: 'The visible text of a preview, top to bottom.',
+      args: [TARGET_ARG],
+      returns: '{ ok, target, text }',
+      example: "await api.preview.text('kindle')",
+      run: stub('preview', PREVIEW_HINT),
+    },
+    {
+      name: 'preview.press', kind: 'pure', available: false,
+      summary: 'Press a button in a preview by its text or data-testid; the event it sends goes to the sim host.',
+      args: [TARGET_ARG, { name: 'by', type: '{ text } | { testid }', required: true, description: 'which button' }],
+      returns: '{ ok, target, pressed, events: [...] }',
+      example: "await api.preview.press('kindle', { text: 'Stbd' })",
+      run: stub('preview', PREVIEW_HINT),
+    },
+
+    // ------------------------------------------------------------- bundle
+    {
+      name: 'bundle.pack', kind: 'pure',
+      summary: "Pack the open project into a bundle, as extreme-pack does (the engine wasm's pack): manifest.bin (id, ABI, content and UI hashes; made by pack), engine.bin, layout.bin, view.desc/.map, event.desc/.map, enums.bin, source.json (the engine sources verbatim: never the samples), web/ and watch.js from the last api.ui.build. Until the UIs are built, web/ is a placeholder index.html (uiSource 'placeholder').",
+      args: [DIR_OPT,
+        { name: 'opts.name', type: 'string', required: false, description: "the package name (default: the project's); its id is FNV-1a of the name" },
+        { name: 'opts.version', type: 'integer', required: false, description: 'the manifest version, 0-65535 (default 1)' }],
+      returns: '{ ok, id, name, version, abi, contentHash, ui: { web, watch }, uiSource: "build"|"placeholder", sizes: { bundle, files: [{ name, bytes }] }, sha256, base64 }',
+      example: "await api.bundle.pack({ name: 'race', version: 1 })",
+      run: async (opts = {}) => {
+        const p = await packProject(opts);
+        if (p.failed) return p.failed;
+        lastPack = { bytes: p.bytes, json: p.json, project: p.project };
+        const m = p.json.manifest;
+        return {
+          ok: true, id: m.id, name: m.name, version: m.version, abi: m.abi, contentHash: m.content_hash, ui: m.ui, uiSource: p.uiSource,
+          sizes: { bundle: p.bytes.length, files: p.files.map((f) => ({ name: f.name, bytes: f.bytes.length })) },
+          sha256: await sha256Hex(p.bytes), base64: toBase64(p.bytes),
+        };
+      },
+    },
+    {
+      name: 'bundle.inspect', kind: 'pure',
+      summary: 'What a bundle holds (the engine wasm\'s unpack): the manifest, the files and their sizes, and source.json (the last bundle.pack, or an archive given as base64).',
+      args: [{ name: 'opts.base64', type: 'string', required: false, description: 'an archive (default: the last bundle.pack)' }],
+      returns: '{ ok, manifest: { id, name, version, abi, content_hash, ui, watch_len }, files: [{ name, len }], source: { engine, state, view, event }|null, bytes }',
+      example: 'await api.bundle.inspect()',
+      run: async (opts = {}) => {
+        let bytes;
+        if (opts.base64 !== undefined) {
+          if (typeof opts.base64 !== 'string') throw new ApiError('base64 must be a string');
+          try { bytes = fromBase64(opts.base64); } catch (e) { throw new ApiError(`base64: ${errText(e)}`); }
+        } else if (lastPack) bytes = lastPack.bytes;
+        else throw new ApiError('nothing packed yet', 'api.bundle.pack() first, or pass { base64 }');
+        const mod = await wasm();
+        const u = JSON.parse(mod.unpack(bytes));
+        if (!u.ok) throw new ApiError(`not a bundle: ${u.error}`, 'api.bundle.pack() makes one');
+        let source = null;
+        try { source = u.source ? JSON.parse(u.source) : null; } catch { source = u.source; }
+        return { ok: true, manifest: u.manifest, files: u.files, source, bytes: bytes.length };
+      },
+    },
+
+    // ------------------------------------------------------------- device (Web Bluetooth to the C6)
+    {
+      name: 'device.status', kind: 'info', available: false,
+      summary: 'The BLE link to the C6: state, device name, the chunk size it reported, the last error.',
+      args: [],
+      returns: '{ ok, state, deviceName, chunk, lastError }',
+      example: 'await api.device.status()',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.connect', kind: 'device', available: false,
+      summary: "Connect to the remembered C6 (never opens the chooser: only a person's click on #device-choose does).",
+      args: [],
+      returns: '{ ok, state, deviceName, already }',
+      example: 'await api.device.connect()',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.disconnect', kind: 'device', available: false,
+      summary: 'Disconnect from the C6.',
+      args: [],
+      returns: '{ ok, state }',
+      example: 'await api.device.disconnect()',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.list', kind: 'device', available: false,
+      summary: 'The bundles on the C6: which is active, which boots, free space.',
+      args: [],
+      returns: '{ ok, bundles: [{ id, name, version, len, active, boot, builtin, contentHash }], freeBytes, largestFree }',
+      example: 'await api.device.list()',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.install', kind: 'device', available: false,
+      summary: 'Upload the last bundle.pack to the C6 (resumable; progress in status().busy), commit it, optionally activate it.',
+      args: [{ name: 'opts.activate', type: 'boolean', required: false, description: 'activate after the commit (default false)' }],
+      returns: '{ ok, id, bytes, kbps, committed: { id, contentHash }, activated, elapsedMs }',
+      example: 'await api.device.install({ activate: true })',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.activate', kind: 'device', available: false,
+      summary: 'Make an installed bundle the active one (and the one that boots).',
+      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
+      returns: '{ ok, id }',
+      example: 'await api.device.activate(id)',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.delete', kind: 'device', available: false,
+      summary: 'Delete a bundle from the C6 (Choose cannot be deleted).',
+      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
+      returns: '{ ok, id }',
+      example: 'await api.device.delete(id)',
+      run: stub('device', DEVICE_HINT),
+    },
+    {
+      name: 'device.get', kind: 'device', available: false,
+      summary: 'Download a bundle from the C6 and unpack it (source.json reopens it as a project).',
+      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
+      returns: '{ ok, id, bytes, sha256, manifest, files: [{ name, bytes }] }',
+      example: 'await api.device.get(id)',
+      run: stub('device', DEVICE_HINT),
+    },
+  ];
+
+  const GROUPS = [
+    { name: 'core', summary: 'describe, status, log, skills' },
+    { name: 'project', summary: 'projects in this browser (IndexedDB): list, create from a template, open, delete, rename, export/import as ZIP' },
+    { name: 'files', summary: "the open project's files; writes save at once" },
+    { name: 'engine', summary: 'the interface, compile, check (smoke runs + samples), disassembly, device tables and builtins, on the engine wasm' },
+    { name: 'sim', summary: 'the engine on the real host (common::Host in the wasm): virtual or live clock, events, GPS and NMEA, wakes, replay, history; W-WIRE/W-HOST checks' },
+    { name: 'ui', summary: 'bundle the Kindle and watch clients in the browser (not wired yet)' },
+    { name: 'preview', summary: 'the Kindle and watch previews (not wired yet)' },
+    { name: 'bundle', summary: 'pack the project into a bundle archive (the engine wasm\'s pack), and inspect one' },
+    { name: 'device', summary: 'bundles on the C6 over Web Bluetooth (not wired yet)' },
+  ];
+  const groupOf = (n) => (n.includes('.') ? n.split('.')[0] : 'core');
+
+  async function describe() {
+    let skills = []; const notes = [];
+    try { skills = (await loadSkillIndex(false)).map((s) => ({ name: s.name, description: s.description })); } catch (e) { notes.push(`skills unavailable: ${errText(e)}`); }
+    return {
+      ok: true,
+      name: API_NAME,
+      version: API_VERSION,
+      summary: 'The extremers studio: author a bundle for the C6 (an expr engine with its schemas and samples, a Kindle page and a watch app in Solid JSX), check and run it on the real host in the browser, pack it, and install it on the C6 over Web Bluetooth. Projects live in this browser (IndexedDB). All of it as async functions on window.api.',
+      workflow: [
+        "1. api.status() — is a project open, is storage available, is the engine wasm loaded?",
+        "2. api.skill('studio-api'), then api.skill('expr-engine') before writing an engine (and 'kindle-ui' / 'watch-ui' / 'race-example' as needed). Read each fully (follow nextOffset).",
+        "3. api.project.list(); api.project.create(name, { template: 'race' }) to start from the Race example, or api.project.open(name).",
+        '4. api.files.list() / api.files.read(path) / api.files.write(path, text) — edit engine/engine.expr, the schemas, engine/samples.json, kindle/src/*, watch/src/*.',
+        '5. api.engine.check() — compile + smoke runs + samples; fix every diagnostic (read its help) before going on.',
+        "6. api.sim.start(), then api.sim.event(...), api.sim.gps(...), api.sim.advance(ms) — exercise the engine on the real host; api.sim.history() and api.sim.state() (its findings must stay empty).",
+        "7. api.ui.build({ target: 'both' }), api.preview.open({ target: 'kindle' }), api.preview.text('kindle'), api.preview.press(...).",
+        '8. api.bundle.pack({ name, version }).',
+        "9. api.device.connect() — if it says no device was chosen, ask the person to click 'Choose device…' (#device-choose) once; then api.device.install({ activate: true }) and api.device.list().",
+        '10. On any { ok:false }: read error + hint, then api.status() and api.log({ last: 50 }).',
+      ],
+      groups: GROUPS.map((g) => ({ ...g, functions: FUNCTIONS.filter((f) => groupOf(f.name) === g.name).map((f) => f.name) })),
+      functions: FUNCTIONS.map((f) => ({ name: f.name, group: groupOf(f.name), available: f.available !== false, summary: f.summary, args: f.args.map((a) => ({ name: a.name, type: a.type, required: !!a.required, description: a.description })), returns: f.returns, example: f.example })),
+      skills,
+      notes: [
+        'Every function is async: use `await api.fn(...)` (grouped ones as `await api.project.list()`). None throws; check `ok`. Errors carry `error` and often `hint`.',
+        "Positional args are listed in order; names starting 'opts.' go in one trailing options object, e.g. api.files.read('engine/engine.expr', { offset: 0, maxChars: 4000 }). You may also pass one object with the positional names: api.files.read({ path: 'engine/engine.expr' }).",
+        'Functions with available:false are registered with their final shape but not wired yet: they return { ok:false, error:"not available yet: …", hint } naming the milestone.',
+        'Projects are stored in this browser only (IndexedDB, per origin). api.project.export() gives a ZIP (base64) to keep or move; api.project.import({ zipBase64 }) or ({ url }) brings one in.',
+        'files.write replaces the whole file and saves at once; the page shows the change. The page autosaves what a person types the same way.',
+        'Large results are paged (skill, files.read, engine.disassemble, sim.history): follow nextOffset.',
+        "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose once, then api.device.connect() works. Pairing with the C6 needs its pairing window, opened from the Kindle.",
+        'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
+        "The sim is the real common::Host (HostHandle). The host doesn't expose the engine's state, so the studio mirrors each evaluation with the same program (run_samples) and checks the mirror against the host on every call: W-WIRE (each published envelope's view bytes == wire.encode(VIEW, the plain view) by the vendored JS codec), W-HOST (refusals, wakes fired, the pending wake). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
+        'The wasm host keeps the newest 128 fixes in `gps` (common TRACK_FIXES, RAM); the C6 keeps up to the interface\'s maxItems (20,480) in flash. An engine that looks further back than 128 fixes behaves differently in the sim.',
+        'Envelopes (what a device websocket client receives) from the sim: api._sim.onEnvelope(cb) → cb(bytes: Uint8Array, decoded: { timestamp, active, ui, state }) (survives sim.start/reset); api._sim.current() → the heartbeat envelope (the state now) or null; api._sim.send(hostEventBytes) → what a client sends. The last one is also sim.state().envelopeHex.',
+        'Words: an engine is evaluated once per event; never call it a step or a tick.',
+        ...notes,
+      ],
+    };
+  }
+
+  // ------------------------------------------------------------ wrapper ---- (dingo-cli/web)
+
+  function bindArgs(f, raw) {
+    const positional = f.args.filter((a) => !a.name.startsWith('opts.'));
+    if (raw.length === 1 && isPlainObject(raw[0]) && positional.length && Object.prototype.hasOwnProperty.call(raw[0], positional[0].name)) {
+      const o = raw[0];
+      const out = positional.map((a) => o[a.name]);
+      const rest = {};
+      for (const k of Object.keys(o)) if (!positional.some((a) => a.name === k)) rest[k] = o[k];
+      if (f.args.some((a) => a.name.startsWith('opts.'))) out.push(rest);
+      return out;
+    }
+    // a trailing options object must be an object (or absent)
+    const nPos = positional.length;
+    if (f.args.some((a) => a.name.startsWith('opts.')) && raw.length > nPos && raw[nPos] !== undefined && raw[nPos] !== null && !isPlainObject(raw[nPos])) {
+      throw new ApiError(`the options argument must be an object, got ${JSON.stringify(raw[nPos])}`, `e.g. ${f.example}`);
+    }
+    if (raw.length > nPos && raw[nPos] === null) raw = [...raw.slice(0, nPos), undefined, ...raw.slice(nPos + 1)];
+    return raw;
+  }
+
+  function summarise(r) {
+    if (!r.ok) return `error: ${r.error}`;
+    const s = JSON.stringify(r);
+    return s.length > 160 ? s.slice(0, 157) + '...' : s;
+  }
+
+  function makeFn(f) {
+    return async (...raw) => {
+      const t0 = now();
+      const locked = f.kind === 'device';
+      if (locked && busy) {
+        return { ok: false, error: `busy: ${busy.op} running`, hint: `wait for ${busy.op} to finish (started ${now() - busy.since} ms ago), then retry; api.status().busy shows progress` };
+      }
+      if (locked) busy = { op: f.name, since: t0, progress: null };
+      let r;
+      const quiet = f.quiet || f.kind === 'info';
+      if (!quiet) L('info', `${f.name}(${raw.map(argPreview).join(', ')}) …`);
+      try {
+        const args = bindArgs(f, raw);
+        r = await f.run(...args);
+        if (!r || typeof r !== 'object') r = { ok: false, error: `internal: ${f.name} returned ${JSON.stringify(r)}` };
+      } catch (e) {
+        r = { ok: false, error: errText(e) };
+        const h = e instanceof ApiError ? e.hint : e?.hint;
+        if (h) r.hint = h; else { const h2 = hintFor(errText(e)); if (h2) r.hint = h2; }
+      } finally {
+        if (locked) busy = null;
+      }
+      try { r = toPlain(r); } catch (e) { r = { ok: false, error: `internal: result not serialisable: ${errText(e)}` }; }
+      if (locked || f.kind === 'pure') r.elapsedMs = now() - t0;
+      if (!r.ok) { lastError = `${f.name}: ${r.error}`; L('error', `${f.name} failed after ${now() - t0} ms: ${r.error}`); } else if (!quiet) L('info', `${f.name} ok in ${now() - t0} ms: ${summarise(r)}`);
+      for (const cb of callListeners) { try { cb({ name: f.name, args: raw.map(argPreview), result: r }); } catch { /* ignore */ } }
+      return r;
+    };
+  }
+
+  function argPreview(a) {
+    if (typeof a === 'string') return a.length > 40 ? JSON.stringify(a.slice(0, 37) + '...') : JSON.stringify(a);
+    if (a && typeof a === 'object') { const s = JSON.stringify(a); return s && s.length > 60 ? s.slice(0, 57) + '...' : s; }
+    return String(a);
+  }
+
+  // api.describe(), api.project.list(), …: one level of groups.
+  const api = {};
+  for (const f of FUNCTIONS) {
+    const fn = makeFn(f);
+    const [g, n] = f.name.includes('.') ? f.name.split('.') : [null, f.name];
+    if (g) { if (!api[g]) api[g] = {}; api[g][n] = fn; } else api[n] = fn;
+  }
+
+  // Non-enumerable extras for the page itself (not part of the agent surface).
+  Object.defineProperty(api, '_onCall', { value: (cb) => { callListeners.add(cb); return () => callListeners.delete(cb); } });
+  Object.defineProperty(api, '_registry', { value: FUNCTIONS });
+  Object.defineProperty(api, '_current', { value: () => current });
+  // The sim's envelopes for the previews (S5): what a device websocket client gets, and what it sends.
+  Object.defineProperty(api, '_sim', {
+    value: {
+      onEnvelope: (cb) => { envelopeListeners.add(cb); return () => envelopeListeners.delete(cb); },
+      current: () => (sim ? sim.current() : null),
+      send: (bytes) => {
+        if (!sim) return { ok: false, error: 'the sim is not running' };
+        try { const r = sim.hostEvent(bytes); return { ok: true, accepted: r.accepted, refused: r.refused ?? null, evaluations: evaluationOut(r.evaluations) }; } catch (e) { return { ok: false, error: errText(e) }; }
+      },
+      running: () => !!sim,
+    },
+  });
+  // ui.build (S4) hands its output here, so bundle.pack and sim.start carry the real pages:
+  // { web: [{ name (without 'web/'), bytes }], watch: Uint8Array|null }, or null for the placeholder.
+  Object.defineProperty(api, '_setBuiltUi', { value: (ui) => { builtUi = ui ?? null; } });
+  return api;
+}
+
+/**
+ * Wrap the api so calling an unknown function returns a clear error instead of
+ * "api.foo is not a function" — at the top level and inside each group.
+ * Thenable/JSON/symbol probes stay undefined. (dingo-cli/web, extended to groups)
+ */
+export function withUnknownGuard(api) {
+  const passthrough = new Set(['then', 'toJSON', 'constructor', 'valueOf', 'toString', 'inspect', 'nodeType', '$$typeof', 'asymmetricMatch']);
+  const groups = new Map(); // one guarded proxy per group, so api.project === api.project
+  const guard = (target, prefix) => new Proxy(target, {
+    get(t, p, r) {
+      if (typeof p === 'symbol' || passthrough.has(p)) return Reflect.get(t, p, r);
+      if (p in t) {
+        const v = Reflect.get(t, p, r);
+        if (v && typeof v === 'object' && !prefix) {
+          if (!groups.has(p)) groups.set(p, guard(v, `${p}.`));
+          return groups.get(p);
+        }
+        return v;
+      }
+      const have = Object.keys(t).map((k) => (t[k] && typeof t[k] === 'object' ? `${prefix}${k}.*` : `${prefix}${k}`));
+      return async () => ({ ok: false, error: `api.${prefix}${p} does not exist`, hint: `call api.describe() for the function list: ${have.join(', ')}` });
+    },
+  });
+  return guard(api, '');
+}

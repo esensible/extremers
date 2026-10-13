@@ -1,0 +1,201 @@
+{
+ "ctx": {
+  "width": 198,
+  "height": 242
+ },
+ "steps": [
+  {
+   "localMs": 1001000,
+   "stateHex": "e8dfc1a28c349885eff5080102030405060708090a0b0c0d0e0f100100"
+  },
+  {
+   "localMs": 1002000,
+   "stateHex": "d0e7c1a28c349885eff5080102030405060708090a0b0c0d0e0f1009249a99999999991940"
+  },
+  {
+   "localMs": 1003000,
+   "stateHex": "b8efc1a28c349885eff5080102030405060708090a0b0c0d0e0f1009289a99999999991940"
+  },
+  {
+   "localMs": 1004000,
+   "stateHex": "a0f7c1a28c349885eff5080102030405060708090a0b0c0d0e0f10092c9a99999999991940"
+  },
+  {
+   "localMs": 1005000,
+   "stateHex": "88ffc1a28c349885eff5080102030405060708090a0b0c0d0e0f100f3c80928dc598689a99999999991940"
+  },
+  {
+   "localMs": 1006000,
+   "dispatch": {
+    "tag": 36,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1007000,
+   "dispatch": {
+    "tag": 42,
+    "name": "press"
+   }
+  },
+  {
+   "wait": 60000
+  },
+  {
+   "localMs": 1068000,
+   "stateHex": "a0ebc5a28c34938984c2060102030405060708090a0b0c0d0e0f100100"
+  },
+  {
+   "localMs": 1069000,
+   "stateHex": "02ffff"
+  },
+  {
+   "localMs": 1070000,
+   "dispatch": {
+    "tag": 25,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1071000,
+   "dispatch": {
+    "tag": 34,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1072000,
+   "stateHex": "c08ac6a28c349885eff5080102030405060708090a0b0c0d0e0f100f29a0c5b0c598680000000000001640"
+  },
+  {
+   "wait": 20000
+  },
+  {
+   "localMs": 1093000,
+   "dispatch": {
+    "tag": 62,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1094000,
+   "dispatch": {
+    "tag": 74,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1095000,
+   "stateHex": "98bec7a28c349885eff5080102030405060708090a0b0c0d0e0f100f2de0eeb7c598680000000000001640"
+  },
+  {
+   "localMs": 1096000,
+   "dispatch": {
+    "tag": 65,
+    "name": "press"
+   }
+  },
+  {
+   "wait": 6000
+  },
+  {
+   "localMs": 1103000,
+   "dispatch": {
+    "tag": 65,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1104000,
+   "dispatch": {
+    "tag": 74,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1105000,
+   "stateHex": "a88cc8a28c349885eff5080102030405060708090a0b0c0d0e0f10153df0c8b4c59868b08ab4c598680000000000001640"
+  },
+  {
+   "wait": 297300
+  },
+  {
+   "localMs": 1403300,
+   "stateHex": "e4a6daa28c349885eff5080102030405060708090a0b0c0d0e0f10176ef0c8b4c598689a999999999928400000000000a06f40"
+  },
+  {
+   "wait": 61000
+  },
+  {
+   "localMs": 1465300,
+   "dispatch": {
+    "tag": 92,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1466300,
+   "dispatch": {
+    "tag": 95,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1467300,
+   "dispatch": {
+    "tag": 95,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1468300,
+   "stateHex": "cca2dea28c349885eff5080102030405060708090a0b0c0d0e0f1009209a99999999991940"
+  },
+  {
+   "localMs": 1469300,
+   "dispatch": {
+    "tag": 119,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1470300,
+   "dispatch": {
+    "tag": 122,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1471300,
+   "stateHex": "84badea28c349885eff5080102030405060708090a0b0c0d0e0f100f25a8fec3c598680000000000001640"
+  },
+  {
+   "wait": 56600
+  },
+  {
+   "localMs": 1528900,
+   "stateHex": "84fce1a28c349885eff5080102030405060708090a0b0c0d0e0f100706a8fec3c59868"
+  },
+  {
+   "localMs": 1529900,
+   "dispatch": {
+    "tag": 3,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1530900,
+   "dispatch": {
+    "tag": 6,
+    "name": "press"
+   }
+  },
+  {
+   "localMs": 1531900,
+   "dispatch": {
+    "tag": 6,
+    "name": "press"
+   }
+  }
+ ]
+}

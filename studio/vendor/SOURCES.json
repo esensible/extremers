@@ -1,0 +1,339 @@
+{
+  "source_sha": "3313702",
+  "toolchain": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "wasm-bindgen": "wasm-bindgen 0.2.129",
+    "wasm-opt": "wasm-opt version 133 (version_133)",
+    "node": "v20.20.2"
+  },
+  "files": {
+    "engine-wasm/engine_wasm.d.ts": {
+      "sha256": "0408ede83d941fb4038300977d629f02d9261da689ce891fa4a74e28e798e0f8",
+      "from": "engine/wasm (wasm-bindgen --target web)"
+    },
+    "engine-wasm/engine_wasm.js": {
+      "sha256": "ef197bd2d4a0f07f64c596616ff8cfa0434b79095453d1f242cb10428470874c",
+      "from": "engine/wasm (wasm-bindgen --target web)"
+    },
+    "engine-wasm/engine_wasm_bg.wasm": {
+      "sha256": "17f814b4fbd5c567382a6e706f4d06958942b45129f460f22ba29f4258fec7e9",
+      "from": "engine/wasm (wasm-bindgen --target web)"
+    },
+    "engine-wasm/engine_wasm_bg.wasm.d.ts": {
+      "sha256": "93539bf055f660b873a34f49e65a8841f607ab72adf8445c681d806c64f7266a",
+      "from": "engine/wasm (wasm-bindgen --target web)"
+    },
+    "examples/race/client-js/src/api.js": {
+      "sha256": "028a38962943681de6e2d64a8408bcb421b61bbdae192d87f9a05257857da3ca",
+      "from": "extreme-race/client-js/src/api.js"
+    },
+    "examples/race/client-js/src/assets/pissing.svg": {
+      "sha256": "e7a986876c33870f47f239c3d6773170dba174de9cc00bb7b2734f9a96359706",
+      "from": "extreme-race/client-js/src/assets/pissing.svg"
+    },
+    "examples/race/client-js/src/common.jsx": {
+      "sha256": "682f99fd1de30618f75ca755d6fbee08ef6b805dbb3ff63f189bfce7e97219f3",
+      "from": "extreme-race/client-js/src/common.jsx"
+    },
+    "examples/race/client-js/src/confirm.jsx": {
+      "sha256": "35a3d3819829f50f612b040e3e94ad7e2a33482dfe9d6cb9f6869ea8c0632a49",
+      "from": "extreme-race/client-js/src/confirm.jsx"
+    },
+    "examples/race/client-js/src/idle.jsx": {
+      "sha256": "8958365292df6eb6393ebc059e4e54e122206b019a30ae10b6602865635ce5e2",
+      "from": "extreme-race/client-js/src/idle.jsx"
+    },
+    "examples/race/client-js/src/index.jsx": {
+      "sha256": "9c506fe07d4e50a16f99be92262d5f5a0a7e2058f1e2536fcba61c6f3a3a1242",
+      "from": "extreme-race/client-js/src/index.jsx"
+    },
+    "examples/race/client-js/src/race.jsx": {
+      "sha256": "4eb38acc19af8796f38fd3af3f661643e7ec6fa3188d06019a62f44e92f2118f",
+      "from": "extreme-race/client-js/src/race.jsx"
+    },
+    "examples/race/client-js/src/sequence.jsx": {
+      "sha256": "5bb28894d2556b4486091982efe997924ab13e6e8e02fe9147ce5693c9f38506",
+      "from": "extreme-race/client-js/src/sequence.jsx"
+    },
+    "examples/race/client-js/src/style.css": {
+      "sha256": "ef23ebfd1ff1261e7265c0a1bff3ef5c1b167d92bf9637cd34df1a1c66b7d1b8",
+      "from": "extreme-race/client-js/src/style.css"
+    },
+    "examples/race/client-js/src/touch.js": {
+      "sha256": "e0c62679ff7a2cf6eacae1f865f98bbc60d774ed50344dd9a77287df4369b231",
+      "from": "extreme-race/client-js/src/touch.js"
+    },
+    "examples/race/engine/engine.expr": {
+      "sha256": "4fc7c1cf56d16f14104fb287ad053ef5c9f74e35d9eaa1b5aae5deaa04942eb0",
+      "from": "engine/race/engine.expr"
+    },
+    "examples/race/engine/event.desc": {
+      "sha256": "2a0df21e73210cf0b250d0b542158e08d5d5d7f44a0b136b2c5caac647057895",
+      "from": "engine/race/event.desc"
+    },
+    "examples/race/engine/event.schema.json": {
+      "sha256": "64b822f7a9d0af9cec2efbc98ba829780ccffac1a09ae3e3fb190d10c1e04a9f",
+      "from": "engine/race/event.schema.json"
+    },
+    "examples/race/engine/interface.json": {
+      "sha256": "539603139c4b220a20ca593c7b293639e78597c35cb474a145a8c0c5c65ea0e2",
+      "from": "engine/race/interface.json"
+    },
+    "examples/race/engine/samples.json": {
+      "sha256": "4fd1b11a33a69d87c13b0f68aee8bc0dc1350978a467e17deb4de0b3bd2f3049",
+      "from": "engine/race/samples.json"
+    },
+    "examples/race/engine/state.schema.json": {
+      "sha256": "f90b0746f1f70975544b761f3b1f9b64dfc12779e804490221c9f840efb70ea0",
+      "from": "engine/race/state.schema.json"
+    },
+    "examples/race/engine/view.desc": {
+      "sha256": "9ae42ce062b4b296cf2f1aefc1ce9bcb8acba5b75fc5e56d8ee62ac89c115d89",
+      "from": "engine/race/view.desc"
+    },
+    "examples/race/engine/view.schema.json": {
+      "sha256": "08d07b54983407f2764bdea2dec38ea43b79430264ac9d05abbf0573f7377d64",
+      "from": "engine/race/view.schema.json"
+    },
+    "examples/race/watch-js/fixtures/log.jsonl": {
+      "sha256": "fcb661f4208da593c970a3bbf16b2f8d90369a2a513e168052cf89898fa4db13",
+      "from": "extreme-race/watch-js/fixtures/log.jsonl"
+    },
+    "examples/race/watch-js/fixtures/script.json": {
+      "sha256": "62646fdec470a5fe6bd50a1ee3078636b2dac4f08b9444e5b5ffe3c113b1323b",
+      "from": "extreme-race/watch-js/fixtures/script.json"
+    },
+    "examples/race/watch-js/src/api.js": {
+      "sha256": "d14f8814c388cf35e676fee429c0ff85b5fd5b7bfbb748c7673168a7e2b0fa3c",
+      "from": "extreme-race/watch-js/src/api.js"
+    },
+    "examples/race/watch-js/src/common.jsx": {
+      "sha256": "5c977fbc71f84299e9d736e6058d6a4a133a863bd537cb93b8c3e912d7a8f681",
+      "from": "extreme-race/watch-js/src/common.jsx"
+    },
+    "examples/race/watch-js/src/confirm.jsx": {
+      "sha256": "9eff932f23e75560d07915fc12938578dd9870b267105ab3bcb9a68dc94060b9",
+      "from": "extreme-race/watch-js/src/confirm.jsx"
+    },
+    "examples/race/watch-js/src/haptics.jsx": {
+      "sha256": "fabd4955c131298a648dfeb63a8e667566fd797c688bec7f352c8b806126a666",
+      "from": "extreme-race/watch-js/src/haptics.jsx"
+    },
+    "examples/race/watch-js/src/idle.jsx": {
+      "sha256": "42a63dfc1cd6d993df781173ec51c72ae7212da23a02998d88224ffbb098e973",
+      "from": "extreme-race/watch-js/src/idle.jsx"
+    },
+    "examples/race/watch-js/src/index.jsx": {
+      "sha256": "94591ef2e302478d4c235ac6ed5ceba397b2f62131a97f51c99d4360a0e8dc51",
+      "from": "extreme-race/watch-js/src/index.jsx"
+    },
+    "examples/race/watch-js/src/race.jsx": {
+      "sha256": "7815ca29514233db3938a97868d857f9f3bfb9ae11186aea99c98d1baa09478b",
+      "from": "extreme-race/watch-js/src/race.jsx"
+    },
+    "examples/race/watch-js/src/sequence.jsx": {
+      "sha256": "5d7b6bff2a0ccb402bc1432a7cf129c65f38e4d717e78147f52280d7ae139356",
+      "from": "extreme-race/watch-js/src/sequence.jsx"
+    },
+    "examples/race/watch-js/src/style.jsx": {
+      "sha256": "580d8d6c990eb8b6edab71490d0e84b8cdc3c82061eb574e893c69a9fe1a9275",
+      "from": "extreme-race/watch-js/src/style.jsx"
+    },
+    "fixtures/race.bundle": {
+      "sha256": "481e77797c5d1df5078d32cdc228a6f37e107a307a29ecb2c8e376e5673e6659",
+      "from": "target/packages/race.bundle"
+    },
+    "fixtures/race.layout.json": {
+      "sha256": "56b2044701a100d5c5ec28159dc8e75d71a6fa959da257ad704f04e19d9f3c2b",
+      "from": "engine/wasm/fixtures/race.layout.json"
+    },
+    "fixtures/race.pack/engine.bin": {
+      "sha256": "eb298ef7dbe14b96342005c0ad503c2a2ee73738fe901bb9a6bf6620807c4466",
+      "from": "target/packages/race/engine.bin"
+    },
+    "fixtures/race.pack/event.desc": {
+      "sha256": "2a0df21e73210cf0b250d0b542158e08d5d5d7f44a0b136b2c5caac647057895",
+      "from": "target/packages/race/event.desc"
+    },
+    "fixtures/race.pack/event.map": {
+      "sha256": "b99df6b734f4db094cd19198ab856cb56fa26e65e922fd85aebe7404f06d84c7",
+      "from": "target/packages/race/event.map"
+    },
+    "fixtures/race.pack/layout.bin": {
+      "sha256": "e2730ec08d1ab03782c4781ba94c2d0281dbded26a09f2fdfd1f12b0d2326f40",
+      "from": "target/packages/race/layout.bin"
+    },
+    "fixtures/race.pack/manifest.bin": {
+      "sha256": "a45fb653ca7ccc126182a40fc084cc899a6ad49ecd89a251fea4de94c5345baa",
+      "from": "target/packages/race/manifest.bin"
+    },
+    "fixtures/race.pack/source.json": {
+      "sha256": "7136645a574f65bde008d05c23cebc343ab43b5883e48dadf29bf47fe5e93b80",
+      "from": "target/packages/race/source.json"
+    },
+    "fixtures/race.pack/view.desc": {
+      "sha256": "9ae42ce062b4b296cf2f1aefc1ce9bcb8acba5b75fc5e56d8ee62ac89c115d89",
+      "from": "target/packages/race/view.desc"
+    },
+    "fixtures/race.pack/view.map": {
+      "sha256": "532b8a6df74dbbcdaec41dab8b4bf677959087cf9553098652faa345d31c7a45",
+      "from": "target/packages/race/view.map"
+    },
+    "fixtures/race.pack/watch.js": {
+      "sha256": "44fc88afbfe28663ea2cf63a8e59aada4495a27c0d3dc59eaf68409f8a4aaa33",
+      "from": "target/packages/race/watch.js"
+    },
+    "fixtures/race.pack/web/bundle-e1510e35.css": {
+      "sha256": "6bd3a5c8da9d2c76cfbbb93241334bbb288f703dfecd775c0b9aaea655446173",
+      "from": "target/packages/race/web/bundle-e1510e35.css"
+    },
+    "fixtures/race.pack/web/bundle-e1510e35.js": {
+      "sha256": "329e60e5e80986cb30adbbf1410a42656c3a16ff84dc1436fff8a4401ac698bb",
+      "from": "target/packages/race/web/bundle-e1510e35.js"
+    },
+    "fixtures/race.pack/web/index.html": {
+      "sha256": "e71c513f48e25c546b5b5a3e6f85ab197aa2c40974f43789dd5778d5f5afcd1b",
+      "from": "target/packages/race/web/index.html"
+    },
+    "fixtures/race.samples.expected.json": {
+      "sha256": "3319e08b19bef1e4132bbd048357056f9a5a723a5d441bbd19a8b403c99a3d72",
+      "from": "engine/wasm/fixtures/race.samples.expected.json"
+    },
+    "runtimes/client-common/confirm-place.js": {
+      "sha256": "bb485b1a17cdacf4b77e79902db9c7f786d8edeb3b3ad57a8dab9ebd1c5bf54a",
+      "from": "client-common/confirm-place.js"
+    },
+    "runtimes/client-common/confirm.js": {
+      "sha256": "37d63ad4870d2b024e02ec06cd6d24bad5f9fbcd6e4f5a795ef0cc399d8baf60",
+      "from": "client-common/confirm.js"
+    },
+    "runtimes/client-common/host.js": {
+      "sha256": "01c8562bff7e721b499054efda0affe8b3172a05fcaf605c14e76434f94a9be4",
+      "from": "client-common/host.js"
+    },
+    "runtimes/protocol-js/protocol.js": {
+      "sha256": "578bf69faf8d790bfb04f69b631d790974293ce81f8e7a56ba41a5060362b760",
+      "from": "protocol-js/protocol.js"
+    },
+    "runtimes/solid-watch/js/index.js": {
+      "sha256": "13b973283456faac06947dd1fce16f6df135743f129790461ef85c40ad83d07a",
+      "from": "solid-watch/js/index.js"
+    },
+    "runtimes/solid-watch/js/renderer.js": {
+      "sha256": "81c211159b5f7a31b32a865cbba0e69fa226644b9d65dfc9dc90d018c815ad6b",
+      "from": "solid-watch/js/renderer.js"
+    },
+    "runtimes/solid-watch/test/driver.js": {
+      "sha256": "e1780aa73a3eda892f4241b0582e2961762b7b13751600f4db94fa02c8ad5d4b",
+      "from": "solid-watch/test/driver.js"
+    },
+    "runtimes/wire/js/codec.esm.js": {
+      "sha256": "0d3ada1a25baa11cac3a40cec3d54b684bb44f35e9bc9a712c2bd774098b3fb2",
+      "from": "wire/js/codec.js (as an ES module)"
+    },
+    "runtimes/wire/js/codec.js": {
+      "sha256": "96b02a1055704a97f2e620ffb07e6717a28646db9359cef541ed7f5b82d9827c",
+      "from": "wire/js/codec.js"
+    },
+    "runtimes/wire/js/compile.esm.js": {
+      "sha256": "fa2e15760785f71264444c87f67964af70817ce010c0dabf1d08fb929e9d666a",
+      "from": "wire/js/compile.js (as an ES module)"
+    },
+    "runtimes/wire/js/compile.js": {
+      "sha256": "2873af5002da828b3612389a6c3f20022bcc1cce1ff01ab8d578c11949f4c178",
+      "from": "wire/js/compile.js"
+    },
+    "runtimes/wire/js/rollup.js": {
+      "sha256": "f042c0425ecc45d8895ef8074a1e3ae626a33eca2a5a489fde7ffb6ba4b540fc",
+      "from": "wire/js/rollup.js"
+    },
+    "watch-host/browser/dom-host.js": {
+      "sha256": "096484d3c91bc25c422630243eba9d3217cf4d84fbeea9b95294e3b509d4a5ea",
+      "from": "solid-watch/browser/dom-host.js"
+    },
+    "watch-host/browser/props.js": {
+      "sha256": "1c179daecd92675888b65aee50731420430b2e0998f26ff9695998207ef3d163",
+      "from": "solid-watch/browser/props.js"
+    },
+    "watch-host/browser/shadow.js": {
+      "sha256": "8f3705988166cfeb4663085811c366f70038a64bc77c858a13d765d0e975542b",
+      "from": "solid-watch/browser/shadow.js"
+    },
+    "watch-host/browser/text-layout.js": {
+      "sha256": "dae93e75c3044e41996aa8eed7fc188dbc4974e8cf23fb079d00615b724b2c10",
+      "from": "solid-watch/browser/text-layout.js"
+    },
+    "watch-host/extremers-props.js": {
+      "sha256": "b2a4e9368e2c7d4a297abe538bbdfaf03d9a096ff14ba39b5cf54fc83e4ecdd9",
+      "from": "watch-js/generated/extremers-props.js"
+    },
+    "watch-host/extremers.schema.json": {
+      "sha256": "d1a86eee90c42ea05072e8dd970d0c8b1454512f0d266f131948cee4f43b2603",
+      "from": "watch-js/extremers.schema.json"
+    },
+    "watch-host/fonts/Inter-roman.ttf": {
+      "sha256": "459fb40d1d555bc6cbc944de94a8c400fdb5126fc325753dfa027d5555583bbd",
+      "from": "solid-watch/fonts/Inter-roman.ttf"
+    },
+    "watch-host/fonts/LICENSE-Inter.txt": {
+      "sha256": "4d7d9c95e7d7f2f0ebf76d5e0b344826b74e903a34028ee18ab54bb639e45906",
+      "from": "solid-watch/fonts/LICENSE-Inter.txt"
+    },
+    "watch-host/js/schema-merge.js": {
+      "sha256": "7e5c7bbd715d27212fdfdc3832e05ab44199e2fd98f1f5cab54f306116097ba9",
+      "from": "solid-watch/js/schema-merge.js"
+    },
+    "watch-host/yoga-layout/binaries/yoga-wasm-base64-esm.js": {
+      "sha256": "2cfeda49ae87f57bcd4a5fe433940edefc531a69bd0f83e32759fb5837df205c",
+      "from": "solid-watch/node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js"
+    },
+    "watch-host/yoga-layout/src/generated/YGEnums.d.ts": {
+      "sha256": "e0c394ad75777f77b761a10d69c0c9f9dd7afb04c910758dcb0a50bcaae08527",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/generated/YGEnums.d.ts"
+    },
+    "watch-host/yoga-layout/src/generated/YGEnums.js": {
+      "sha256": "f9cdfa4247cf5954c0323c2edcb0190320014251afb5197d9935c1dc3e2d0fc6",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/generated/YGEnums.js"
+    },
+    "watch-host/yoga-layout/src/generated/YGEnums.js.map": {
+      "sha256": "81f214d6ee82b91986211dbd895a11cfae591ec8f4b9df643a1385c018669bec",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/generated/YGEnums.js.map"
+    },
+    "watch-host/yoga-layout/src/index.d.ts": {
+      "sha256": "753b64b831aa731751b352e7bc9ef4d95b8c25df769dd629f8ec6a84478a85c7",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/index.d.ts"
+    },
+    "watch-host/yoga-layout/src/index.js": {
+      "sha256": "0c89ff0c01ee90b081b369119f972d72f71eb8882263d94ef0824500817d5de1",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/index.js"
+    },
+    "watch-host/yoga-layout/src/index.js.map": {
+      "sha256": "47b9a274b7c2dd5d18f9134c389c0acc919dce80e9d9536b8875ce9ed09aa3bc",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/index.js.map"
+    },
+    "watch-host/yoga-layout/src/load.d.ts": {
+      "sha256": "66c5d8e45c122a72a672582e9ce01e4b71217e6309ba70bf990c00f305661716",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/load.d.ts"
+    },
+    "watch-host/yoga-layout/src/load.js": {
+      "sha256": "87c293f7926ccaabbd1026c3dce86326fa9ce02e9b216781b84b6431825b5df4",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/load.js"
+    },
+    "watch-host/yoga-layout/src/load.js.map": {
+      "sha256": "4ce0f9ea380a553bc0d9f15b11567ec6e4fbbd247e8d853569b53bcb23b9e403",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/load.js.map"
+    },
+    "watch-host/yoga-layout/src/wrapAssembly.d.ts": {
+      "sha256": "5c187cdbece8ad89247f507b3f6b04aad849d4b3fd8108289e19e9d452714882",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/wrapAssembly.d.ts"
+    },
+    "watch-host/yoga-layout/src/wrapAssembly.js": {
+      "sha256": "b9615fdf7bc03e9014a25f478dd3004e231f28c11968b6e5668aee5cb390ff19",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/wrapAssembly.js"
+    },
+    "watch-host/yoga-layout/src/wrapAssembly.js.map": {
+      "sha256": "2979248f95f0854f364c8bbc1998705fd19f4347d374e0f92ed9d5f2ae950944",
+      "from": "solid-watch/node_modules/yoga-layout/dist/src/wrapAssembly.js.map"
+    }
+  }
+}

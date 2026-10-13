@@ -1,0 +1,152 @@
+{
+  "bytes": {
+    "enums": null,
+    "event_map": "BwAAAP//BwAAAA0AAQAAAAwAAQAAAAAAAwAAAAEAAQAAAAIAAQAAAA4AAQAAAA==",
+    "layout": "AQAmAB4AAQAAABMAFAAQACQAJQAAABMACgAdABMACgAXABgAHAAaABsAGQAdAB8AHgAjAAQAAwABAAIAAAAAUCUAEAAAAAAAd8Gh5b9W9zc=",
+    "view_map": "DQAAAP//DQAAAP//BgAAAAYAAQAAAAQAAgAAAAUAAQAAAAcAAgAAAAgAAQAAAP//AwAAAAMAAQAAAAIAAQAAAAAAAQAAAAkAAQAAAAEAAQAAAA=="
+  },
+  "enums": null,
+  "event_map": [
+    {
+      "aux": 0,
+      "leaf": 65535,
+      "span": 7
+    },
+    {
+      "aux": 0,
+      "leaf": 13,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 12,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 0,
+      "span": 3
+    },
+    {
+      "aux": 0,
+      "leaf": 1,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 2,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 14,
+      "span": 1
+    }
+  ],
+  "interface_hash": "77c1a1e5bf56f737",
+  "layout": {
+    "ev_gps": 23,
+    "ev_gps_fix": 24,
+    "ev_gps_fix_alt": 25,
+    "ev_gps_fix_lat": 26,
+    "ev_gps_fix_lon": 27,
+    "ev_gps_fix_t": 28,
+    "ev_gps_velocity": 29,
+    "ev_gps_velocity_heading": 30,
+    "ev_gps_velocity_speed": 31,
+    "ev_wake": 35,
+    "event_leaves": 16,
+    "event_max_bytes": 16,
+    "fix_alt": 0,
+    "fix_lat": 1,
+    "fix_leaves": 4,
+    "fix_lon": 2,
+    "fix_t": 3,
+    "gps_max_items": 20480,
+    "in_event": 20,
+    "in_gps": 37,
+    "in_state": 0,
+    "in_timestamp": 36,
+    "input_count": 38,
+    "list_count": 1,
+    "out_state": 0,
+    "out_view": 19,
+    "out_wake": 29,
+    "output_count": 30,
+    "pub_base": 19,
+    "pub_leaves": 10,
+    "pub_max_bytes": 37,
+    "state_free_strings": 0,
+    "state_leaves": 19,
+    "version": 1,
+    "view_leaves": 10
+  },
+  "ok": true,
+  "view_map": [
+    {
+      "aux": 0,
+      "leaf": 65535,
+      "span": 13
+    },
+    {
+      "aux": 0,
+      "leaf": 65535,
+      "span": 6
+    },
+    {
+      "aux": 0,
+      "leaf": 6,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 4,
+      "span": 2
+    },
+    {
+      "aux": 0,
+      "leaf": 5,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 7,
+      "span": 2
+    },
+    {
+      "aux": 0,
+      "leaf": 8,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 65535,
+      "span": 3
+    },
+    {
+      "aux": 0,
+      "leaf": 3,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 2,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 0,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 9,
+      "span": 1
+    },
+    {
+      "aux": 0,
+      "leaf": 1,
+      "span": 1
+    }
+  ]
+}

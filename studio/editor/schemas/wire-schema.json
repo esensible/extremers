@@ -1,0 +1,743 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "inmemory://studio/schemas/wire-schema.json",
+  "title": "An engine schema",
+  "description": "state.schema.json, view.schema.json and event.schema.json: the JSON Schema subset the compiler accepts (lang/compiler/src/schema.rs, lang/SPEC.md §3.2, wire/SPEC.md §2). The editor's checks are a guide; langc is the judge.",
+  "$ref": "#/definitions/schema",
+  "definitions": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "integer, number, string, boolean, object or array. Optional beside oneOf (then \"object\") and enum/const (then \"string\").",
+          "type": "string",
+          "enum": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array"
+          ]
+        },
+        "format": {
+          "description": "integer: int64 (the default), int32, int16, int8, uint32, uint16, uint8. number: double (the default) or float.",
+          "type": "string"
+        },
+        "properties": {
+          "description": "An object's fields. A field not listed in required is optional (absent, never null).",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "patternErrorMessage": "a field name must be writable in an expression: letters, digits and _, not starting with a digit"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/schema"
+          }
+        },
+        "required": {
+          "description": "The fields that are always present.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "items": {
+          "description": "An array's item schema. Items can't be lists, nor have variants (oneOf), yet.",
+          "$ref": "#/definitions/schema"
+        },
+        "oneOf": {
+          "description": "Variants: exactly one is present. Each alternative names one variant: {\"properties\": {\"<name>\": {\"type\": \"object\", …}}, \"required\": [\"<name>\"]}.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/definitions/alternative"
+          }
+        },
+        "enum": {
+          "description": "A string that is one of these values.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "const": {
+          "description": "A string that is always this value.",
+          "type": "string"
+        },
+        "maxLength": {
+          "description": "Required on a string: its maximum length in characters (at most 16,383).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16383
+        },
+        "maxItems": {
+          "description": "Required on an array: its maximum length (at most 65,535).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "exclusiveMinimum": {
+          "type": "number"
+        },
+        "exclusiveMaximum": {
+          "type": "number"
+        },
+        "additionalProperties": {
+          "description": "Absent or false: records have a fixed set of fields.",
+          "const": false,
+          "errorMessage": "`additionalProperties` must be absent or false: records have a fixed set of fields"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "$comment": {
+          "type": "string"
+        },
+        "examples": {
+          "type": "array"
+        },
+        "default": {},
+        "deprecated": {
+          "type": "boolean"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "writeOnly": {
+          "type": "boolean"
+        },
+        "multipleOf": {
+          "type": "number"
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "contentMediaType": {
+          "type": "string"
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uniqueItems": {
+          "type": "boolean"
+        },
+        "contains": {},
+        "minContains": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxContains": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minProperties": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxProperties": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependentRequired": {
+          "type": "object"
+        },
+        "propertyNames": {},
+        "unevaluatedProperties": {},
+        "$ref": {
+          "not": {},
+          "errorMessage": "`$ref` isn't implemented yet: write the schema out"
+        },
+        "anyOf": {
+          "not": {},
+          "errorMessage": "`anyOf` isn't in the wire subset: use oneOf variants, or leave a field out of required"
+        },
+        "allOf": {
+          "not": {},
+          "errorMessage": "`allOf` isn't in the wire subset"
+        },
+        "not": {
+          "not": {},
+          "errorMessage": "`not` isn't in the wire subset"
+        },
+        "if": {
+          "not": {},
+          "errorMessage": "`if` isn't in the wire subset"
+        },
+        "nullable": {
+          "not": {},
+          "errorMessage": "`nullable` belongs on the input, beside `schema`; inside a record, leave the field out of `required`"
+        },
+        "contentEncoding": {
+          "not": {},
+          "errorMessage": "byte strings aren't supported"
+        },
+        "$schema": {
+          "not": {},
+          "errorMessage": "`$schema` isn't one of the keywords the compiler accepts: leave it out"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "oneOf"
+                  ]
+                },
+                {
+                  "required": [
+                    "enum"
+                  ]
+                },
+                {
+                  "required": [
+                    "const"
+                  ]
+                }
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "type"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "oneOf"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "object",
+                "errorMessage": "a schema with `oneOf` is a record of variants: its `type`, if given, must be \"object\""
+              },
+              "format": {
+                "$ref": "#/definitions/notBesideOneOf"
+              },
+              "items": {
+                "$ref": "#/definitions/notBesideOneOf"
+              },
+              "enum": {
+                "$ref": "#/definitions/notBesideOneOf"
+              },
+              "const": {
+                "$ref": "#/definitions/notBesideOneOf"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "enum"
+                ]
+              },
+              {
+                "required": [
+                  "const"
+                ]
+              }
+            ],
+            "not": {
+              "required": [
+                "oneOf"
+              ]
+            }
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "string",
+                "errorMessage": "an enum's `type`, if given, must be \"string\""
+              },
+              "format": {
+                "$ref": "#/definitions/notOnEnum"
+              },
+              "items": {
+                "$ref": "#/definitions/notOnEnum"
+              },
+              "properties": {
+                "$ref": "#/definitions/notOnEnum"
+              },
+              "required": {
+                "$ref": "#/definitions/notOnEnum"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "enum",
+              "const"
+            ]
+          },
+          "then": {
+            "properties": {
+              "const": {
+                "$ref": "#/definitions/enumOrConst"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/integer"
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "int64",
+                  "int32",
+                  "int16",
+                  "int8",
+                  "uint32",
+                  "uint16",
+                  "uint8"
+                ],
+                "errorMessage": "an integer's format is int64 (the default), int32, int16, int8, uint32, uint16 or uint8; uint64 can exceed int64"
+              },
+              "minimum": {
+                "type": "integer"
+              },
+              "maximum": {
+                "type": "integer"
+              },
+              "exclusiveMinimum": {
+                "type": "integer"
+              },
+              "exclusiveMaximum": {
+                "type": "integer"
+              },
+              "properties": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "required": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "items": {
+                "$ref": "#/definitions/onlyArray"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/number"
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "double",
+                  "float"
+                ],
+                "errorMessage": "a number's format is double (the default) or float"
+              },
+              "properties": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "required": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "items": {
+                "$ref": "#/definitions/onlyArray"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/string"
+          },
+          "then": {
+            "required": [
+              "maxLength"
+            ],
+            "properties": {
+              "properties": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "required": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "items": {
+                "$ref": "#/definitions/onlyArray"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/boolean"
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "$ref": "#/definitions/onlyScalar"
+              },
+              "properties": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "required": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "items": {
+                "$ref": "#/definitions/onlyArray"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/object"
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "$ref": "#/definitions/onlyScalar"
+              },
+              "items": {
+                "$ref": "#/definitions/onlyArray"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "$ref": "#/definitions/isType/array"
+          },
+          "then": {
+            "required": [
+              "items",
+              "maxItems"
+            ],
+            "properties": {
+              "format": {
+                "$ref": "#/definitions/onlyScalar"
+              },
+              "properties": {
+                "$ref": "#/definitions/onlyObject"
+              },
+              "required": {
+                "$ref": "#/definitions/onlyObject"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "alternative": {
+      "description": "One variant: {\"properties\": {\"<name>\": {\"type\": \"object\", …}}, \"required\": [\"<name>\"]}.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object",
+          "errorMessage": "every alternative is a record that names its variant"
+        },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "errorMessage": "an alternative has exactly one property, the variant's name",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "patternErrorMessage": "a variant name must be writable in an expression: letters, digits and _, not starting with a digit"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/variant"
+          }
+        },
+        "required": {
+          "description": "The variant's name, and only it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "$comment": {
+          "type": "string"
+        },
+        "examples": {
+          "type": "array"
+        },
+        "default": {},
+        "deprecated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "properties",
+        "required"
+      ],
+      "additionalProperties": false
+    },
+    "variant": {
+      "description": "A variant's record: an object schema (it may have variants of its own).",
+      "allOf": [
+        {
+          "$ref": "#/definitions/schema"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "object",
+              "errorMessage": "a variant must be an object schema (a record): put the value in a field"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "enum"
+                ]
+              },
+              {
+                "required": [
+                  "const"
+                ]
+              }
+            ]
+          },
+          "errorMessage": "a variant must be an object schema (a record), not an enum"
+        }
+      ]
+    },
+    "isType": {
+      "integer": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "integer"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      },
+      "number": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "number"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      },
+      "string": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "string"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      },
+      "boolean": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "boolean"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      },
+      "object": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "object"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      },
+      "array": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "array"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "oneOf"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            },
+            {
+              "required": [
+                "const"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "onlyObject": {
+      "not": {},
+      "errorMessage": "only an object schema (or one with oneOf) has this"
+    },
+    "onlyArray": {
+      "not": {},
+      "errorMessage": "only an array schema has `items`"
+    },
+    "onlyScalar": {
+      "not": {},
+      "errorMessage": "only an integer, number or string schema has `format`"
+    },
+    "notBesideOneOf": {
+      "not": {},
+      "errorMessage": "this isn't allowed beside `oneOf`"
+    },
+    "notOnEnum": {
+      "not": {},
+      "errorMessage": "this isn't allowed on an enum"
+    },
+    "enumOrConst": {
+      "not": {},
+      "errorMessage": "use `enum` or `const`, not both"
+    }
+  }
+}

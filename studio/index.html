@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extremers Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Tokens from dingo-cli/web/index.html. */
+  :root {
+    --ground: #EEF0EC; --surface: #FFFFFF; --raised: #FAFBF8;
+    --ink: #15191E; --ink-2: #34404D; --muted: #5A626B;
+    --line: #D5DAD3; --line-2: #E4E8E2; --control: #C9CFC7;
+    --accent: #C2410C; --accent-hover: #9A3412;
+    --info: #1E5BB8; --info-ink: #1E4F9C; --info-bg: #E3ECF9;
+    --danger: #A3201A; --danger-bg: #FDF5F4; --danger-line: #E3B3AE;
+    --warn: #8A5300; --warn-bg: #FFF8EC; --warn-line: #E9C38A;
+    --code-bg: #FFFFFF; --code-fg: #15191E;
+    --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --f-head: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+    --f-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.4 var(--f-body); display: flex; flex-direction: column; }
+  [hidden] { display: none !important; }
+  .mono, code, textarea { font-family: var(--f-mono); }
+  .eb { font: 600 12px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; }
+  .c-danger { color: var(--danger); }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 8px; font: 600 14px var(--f-body); border: 1px solid var(--control); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.pri { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+  .btn.pri:hover { background: var(--accent-hover); }
+  .btn.danger { color: var(--danger); border-color: var(--danger-line); }
+  .btn.danger.solid { background: var(--danger); color: #FFFFFF; }
+  .btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  select, input[type=text], input:not([type]) { font: 500 14px var(--f-body); min-height: 32px; border-radius: 8px; border: 1px solid var(--control); padding: 0 8px; background: var(--surface); color: var(--ink); min-width: 0; }
+  :focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+
+  /* header */
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--raised); }
+  .brand { font: 700 22px var(--f-head); }
+  .top label { display: flex; align-items: center; gap: 6px; }
+  #status { flex: 1 1 260px; font-size: 14px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+  #status.err { color: var(--danger); }
+  .projbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .projbar .grp { display: flex; align-items: center; gap: 6px; padding-right: 10px; border-right: 1px solid var(--line-2); }
+  .projbar .grp:last-child { border-right: 0; }
+  .confirm { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--danger-line); background: var(--danger-bg); border-radius: 8px; }
+
+  /* the IDE */
+  .ide { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; }
+  @media (max-width: 1000px) { .ide { grid-template-columns: 200px minmax(0, 1fr); } .previews { display: none; } }
+  @media (max-width: 640px) { .ide { grid-template-columns: minmax(0, 1fr); } #files-pane { max-height: 200px; } }
+  .pane { min-height: 0; overflow: auto; background: var(--surface); }
+  #files-pane { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  #files-pane.drag { outline: 2px dashed var(--info); outline-offset: -4px; }
+  .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
+  #files { flex: 1; padding: 4px 0; }
+  .row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 10px; border: 0; background: none; text-align: left; font: 14px var(--f-mono); color: var(--ink); cursor: pointer; }
+  .row:hover { background: var(--raised); }
+  .row.dir { color: var(--muted); cursor: default; }
+  .row[aria-selected="true"] { background: var(--info-bg); color: var(--info-ink); }
+  .row .sz { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .file-tools { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line-2); }
+  .file-tools .r { display: flex; gap: 6px; }
+  .file-tools input { flex: 1; font-family: var(--f-mono); font-size: 13px; }
+
+  .center { display: grid; grid-template-rows: auto minmax(0, 1fr) auto minmax(140px, 32%); min-height: 0; min-width: 0; }
+  #editor-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--raised); }
+  .tab { display: flex; align-items: center; gap: 4px; padding: 0 4px 0 12px; border: 0; border-right: 1px solid var(--line-2); background: none; font: 13px var(--f-mono); color: var(--muted); cursor: pointer; white-space: nowrap; min-height: 34px; }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
+  .tab .x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 6px; font-size: 13px; }
+  .tab .dirty { color: var(--accent); }
+  #editors { position: relative; min-height: 0; background: var(--code-bg); }
+  /* Monaco (editor.js) fills #editors; its host carries the shown file's id, #editor-<path>. */
+  #editors .monaco-host { position: absolute; inset: 0; }
+  #editors .empty { position: absolute; inset: 0; padding: 24px; color: var(--muted); }
+  #cursor { display: flex; gap: 14px; padding: 4px 12px; font: 12px var(--f-mono); color: var(--muted); border-top: 1px solid var(--line-2); background: var(--raised); }
+  .bottom { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--line); background: var(--surface); }
+  .bottom-tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line-2); background: var(--raised); }
+  .bottom-tabs button { border: 0; background: none; padding: 6px 10px; font: 600 13px var(--f-body); color: var(--muted); cursor: pointer; }
+  .bottom-tabs button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
+  .panel { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 13px; }
+  #log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 0; }
+  .build-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .build-target { margin: 0 0 10px; }
+  .build-target h3 { margin: 0 0 4px; font: 700 15px var(--f-head); display: flex; gap: 8px; align-items: baseline; }
+  .build-target .ok { color: #1F7A3A; } .build-target .bad { color: var(--danger); }
+  .build-target table { border-collapse: collapse; font: 12px var(--f-mono); }
+  .build-target td { padding: 1px 12px 1px 0; vertical-align: top; }
+  .build-target ul { margin: 2px 0; padding-left: 18px; }
+  .build-diag { font: 12px var(--f-mono); }
+  .build-diag.error { color: var(--danger); } .build-diag.warning { color: var(--warn); }
+  /* Diagnostics and the sim (S3) */
+  .diag { display: flex; flex-wrap: wrap; gap: 2px 10px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 4px 2px; font: 12px var(--f-mono); color: var(--ink); cursor: pointer; }
+  .diag:hover { background: var(--raised); }
+  .diag .rule { font-weight: 600; } .diag.error .rule { color: var(--danger); } .diag.warning .rule { color: var(--warn); }
+  .diag .where { color: var(--info-ink); } .diag .help { flex-basis: 100%; color: var(--muted); padding-left: 2ch; }
+  #engine-state.ok { color: #1F7A3A; } #engine-state.bad { color: var(--danger); }
+  .runs { font: 12px var(--f-mono); margin-top: 6px; } .runs .bad { color: var(--danger); }
+  .sim-bar { flex-wrap: wrap; }
+  .sim-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .sim-grid { grid-template-columns: minmax(0, 1fr); } }
+  .sim-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
+  .sim-row input { font-family: var(--f-mono); font-size: 12px; }
+  .sim-json { margin: 2px 0 8px; font: 12px/1.4 var(--f-mono); white-space: pre-wrap; background: var(--raised); border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 8px; max-height: 260px; overflow: auto; }
+  #sim-timeline { font: 12px var(--f-mono); max-height: 240px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; }
+  .tl { display: grid; grid-template-columns: 4ch 12ch 6ch minmax(0, 1fr) 2ch; gap: 6px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 2px 6px; font: inherit; color: var(--ink); cursor: pointer; }
+  .tl:hover, .tl[aria-selected="true"] { background: var(--info-bg); }
+  .tl .bad { color: var(--danger); } .tl .pub { color: var(--accent); }
+  .finding { color: var(--warn); font: 12px var(--f-mono); }
+
+  .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+  .previews h2 { margin: 0; font: 700 16px var(--f-head); }
+  #preview-kindle { width: 100%; aspect-ratio: 3 / 4; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
+  #preview-watch { width: 198px; height: 242px; border-radius: 36px; background: #000000; color: #8A8F96; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; padding: 20px; align-self: center; }
+</style>
+</head>
+<body>
+  <header class="top">
+    <span class="brand">Studio</span>
+    <label class="eb" for="project-select">Project <select id="project-select" data-testid="project-select"><option value="">— none —</option></select></label>
+    <span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span>
+    <button type="button" class="btn" id="device-choose" data-testid="device-choose" disabled title="Choosing a C6 over Web Bluetooth arrives with milestone S7">Choose device…</button>
+  </header>
+
+  <div class="projbar" id="project-actions">
+    <div class="grp">
+      <input id="project-new-name" placeholder="new project name" aria-label="New project name" size="16">
+      <select id="project-new-template" aria-label="Template"><option value="race">race</option><option value="blank">blank</option></select>
+      <button type="button" class="btn pri" id="project-create">Create</button>
+    </div>
+    <div class="grp">
+      <input id="project-rename-name" placeholder="rename to" aria-label="Rename the open project to" size="12">
+      <button type="button" class="btn" id="project-rename">Rename</button>
+    </div>
+    <div class="grp">
+      <button type="button" class="btn" id="project-export">Export ZIP</button>
+      <input id="project-import-url" placeholder="import from URL (or drop a .zip on the files)" aria-label="Import a project ZIP from a URL" size="26">
+      <input id="project-import-name" placeholder="as name (optional)" aria-label="Name for the imported project" size="12">
+      <button type="button" class="btn" id="project-import">Import</button>
+    </div>
+    <div class="grp">
+      <button type="button" class="btn danger" id="project-delete">Delete project…</button>
+      <span class="confirm" id="project-delete-confirm" hidden><span id="project-delete-text"></span>
+        <button type="button" class="btn danger solid" id="project-delete-yes">Delete</button>
+        <button type="button" class="btn" id="project-delete-no">Cancel</button></span>
+    </div>
+  </div>
+
+  <main class="ide">
+    <aside class="pane" id="files-pane" aria-label="Files">
+      <div class="pane-head"><span class="eb">Files</span><span class="hint" id="files-count"></span></div>
+      <div id="files" role="tree" aria-label="Project files" data-testid="files"></div>
+      <div class="file-tools">
+        <div class="r"><input id="file-new-path" placeholder="new file path" aria-label="New file path"><button type="button" class="btn" id="file-new">New</button></div>
+        <div class="r"><input id="file-path" placeholder="selected file" aria-label="Selected file path (edit to rename)"><button type="button" class="btn" id="file-rename">Rename</button></div>
+        <div class="r"><button type="button" class="btn danger" id="file-delete">Delete file…</button>
+          <span class="confirm" id="file-delete-confirm" hidden><button type="button" class="btn danger solid" id="file-delete-yes">Delete</button><button type="button" class="btn" id="file-delete-no">Cancel</button></span></div>
+      </div>
+    </aside>
+
+    <section class="center" aria-label="Editor">
+      <div id="editor-tabs" role="tablist" aria-label="Open files"></div>
+      <div id="editors"><div class="empty" id="editors-empty">Open a file on the left.</div></div>
+      <div id="cursor" data-testid="cursor"><span id="cursor-pos">—</span><span id="cursor-lang"></span><span id="cursor-save"></span></div>
+      <div class="bottom">
+        <div class="bottom-tabs" role="tablist" aria-label="Panels">
+          <button type="button" role="tab" id="tab-diagnostics" data-panel="diagnostics" aria-selected="true">Diagnostics</button>
+          <button type="button" role="tab" id="tab-sim" data-panel="sim" aria-selected="false">Sim</button>
+          <button type="button" role="tab" id="tab-build-log" data-panel="build-log" aria-selected="false">Build log</button>
+          <button type="button" role="tab" id="tab-device" data-panel="device" aria-selected="false">Device</button>
+          <button type="button" role="tab" id="tab-log" data-panel="log-panel" aria-selected="false">Log</button>
+        </div>
+        <div class="panel" id="diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-testid="diagnostics">
+          <div class="build-bar">
+            <button type="button" class="btn pri" id="engine-check" data-testid="engine-check">Check</button>
+            <span class="hint" id="engine-state" data-testid="engine-state" aria-live="polite">not checked yet: Check runs api.engine.check() (compile + smoke runs + samples)</span>
+          </div>
+          <div id="diag-rows" data-testid="diag-rows"></div>
+          <div id="check-runs" data-testid="check-runs"></div>
+        </div>
+        <div class="panel" id="sim" role="tabpanel" aria-labelledby="tab-sim" data-testid="sim" hidden>
+          <div class="build-bar sim-bar">
+            <select id="sim-clock" aria-label="Clock"><option value="virtual">virtual clock</option><option value="live">live clock</option></select>
+            <button type="button" class="btn pri" id="sim-start" data-testid="sim-start">Start</button>
+            <button type="button" class="btn" id="sim-reset" data-testid="sim-reset">Reset</button>
+            <button type="button" class="btn" id="sim-stop" data-testid="sim-stop" title="Stop a live clock or a replay">Stop</button>
+            <button type="button" class="btn" id="sim-adv-1s" data-testid="sim-adv-1s">+1 s</button>
+            <button type="button" class="btn" id="sim-adv-10s" data-testid="sim-adv-10s">+10 s</button>
+            <button type="button" class="btn" id="sim-adv-wake" data-testid="sim-adv-wake">To next wake</button>
+            <span class="hint" id="sim-status" data-testid="sim-status" aria-live="polite">not running</span>
+          </div>
+          <div class="sim-grid">
+            <div>
+              <div class="eb">Events</div>
+              <div id="sim-events" data-testid="sim-events"><p class="hint">Start the sim: one button per event of event.schema.json.</p></div>
+              <div class="eb">GPS fix</div>
+              <div class="sim-row">
+                <input id="sim-gps-lat" aria-label="Latitude" placeholder="lat" size="9" value="-33.85">
+                <input id="sim-gps-lon" aria-label="Longitude" placeholder="lon" size="9" value="151.252">
+                <input id="sim-gps-speed" aria-label="Speed, knots" placeholder="kn" size="4" value="4">
+                <input id="sim-gps-heading" aria-label="Heading, degrees true" placeholder="hdg" size="4" value="90">
+                <button type="button" class="btn" id="sim-gps-send" data-testid="sim-gps-send">Send fix</button>
+              </div>
+              <div id="sim-findings" data-testid="sim-findings"></div>
+              <div class="eb">Timeline</div>
+              <div id="sim-timeline" data-testid="sim-timeline"></div>
+            </div>
+            <div>
+              <div class="eb" id="sim-view-title">View</div>
+              <pre id="sim-view" class="sim-json" data-testid="sim-view">—</pre>
+              <div class="eb">State</div>
+              <pre id="sim-state" class="sim-json" data-testid="sim-state">—</pre>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="build-log" role="tabpanel" aria-labelledby="tab-build-log" data-testid="build-log" hidden>
+          <div class="build-bar">
+            <select id="build-target" aria-label="Build target"><option value="both">Kindle + watch</option><option value="kindle">Kindle</option><option value="watch">watch</option></select>
+            <button type="button" class="btn pri" id="build-run" data-testid="build-run">Build</button>
+            <span class="hint" id="build-state" aria-live="polite"></span>
+          </div>
+          <div id="build-result"><p class="hint">Bundles the project's kindle/src and watch/src in the browser (api.ui.build). The first build loads the toolchain: a few seconds.</p></div>
+        </div>
+        <div class="panel" id="device" role="tabpanel" aria-labelledby="tab-device" hidden><p class="hint">Bundles on the C6 over Web Bluetooth — milestone S7.</p></div>
+        <div class="panel" id="log-panel" role="tabpanel" aria-labelledby="tab-log" hidden><pre id="log" data-testid="log"></pre></div>
+      </div>
+    </section>
+
+    <aside class="pane previews" aria-label="Previews">
+      <h2>Kindle</h2>
+      <iframe id="preview-kindle" title="Kindle preview" data-testid="preview-kindle" srcdoc="&lt;p style='font:14px system-ui;color:#5A626B;padding:16px'&gt;The Kindle preview arrives with milestone S5.&lt;/p&gt;"></iframe>
+      <h2>Watch</h2>
+      <div id="preview-watch" data-testid="preview-watch">The watch preview arrives with milestone S5.</div>
+    </aside>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
