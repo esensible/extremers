@@ -5248,6 +5248,831 @@
       ]
     },
     {
+      "name": "indexing a window: get, first, last and len, from either end, reversed, held and filtered",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "h": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "r": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "u": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "10",
+                "kind": "int"
+              },
+              "b": {
+                "int": "50",
+                "kind": "int"
+              },
+              "c": {
+                "int": "10",
+                "kind": "int"
+              },
+              "d": {
+                "int": "30",
+                "kind": "int"
+              },
+              "e": {
+                "int": "40",
+                "kind": "int"
+              },
+              "f": {
+                "int": "20",
+                "kind": "int"
+              },
+              "g": {
+                "int": "10",
+                "kind": "int"
+              },
+              "h": {
+                "int": "20",
+                "kind": "int"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "r": {
+                "int": "4",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "50",
+                "kind": "int"
+              },
+              "u": {
+                "int": "8",
+                "kind": "int"
+              },
+              "v": {
+                "int": "20",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "50",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "20",
+                "kind": "int"
+              },
+              "b": {
+                "int": "40",
+                "kind": "int"
+              },
+              "c": {
+                "int": "20",
+                "kind": "int"
+              },
+              "d": {
+                "int": "10",
+                "kind": "int"
+              },
+              "e": {
+                "int": "10",
+                "kind": "int"
+              },
+              "f": {
+                "int": "10",
+                "kind": "int"
+              },
+              "g": {
+                "int": "50",
+                "kind": "int"
+              },
+              "h": {
+                "int": "20",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "r": {
+                "int": "3",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "50",
+                "kind": "int"
+              },
+              "u": {
+                "int": "1",
+                "kind": "int"
+              },
+              "v": {
+                "int": "50",
+                "kind": "int"
+              },
+              "w": {
+                "int": "40",
+                "kind": "int"
+              },
+              "x": {
+                "int": "20",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "20",
+                "kind": "int"
+              },
+              "b": {
+                "int": "40",
+                "kind": "int"
+              },
+              "c": {
+                "int": "50",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "50",
+                "kind": "int"
+              },
+              "f": {
+                "int": "50",
+                "kind": "int"
+              },
+              "g": {
+                "int": "30",
+                "kind": "int"
+              },
+              "h": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "5",
+                "kind": "int"
+              },
+              "r": {
+                "int": "5",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "20",
+                "kind": "int"
+              },
+              "u": {
+                "int": "7",
+                "kind": "int"
+              },
+              "v": {
+                "int": "40",
+                "kind": "int"
+              },
+              "w": {
+                "int": "40",
+                "kind": "int"
+              },
+              "x": {
+                "int": "20",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "30",
+                "kind": "int"
+              },
+              "h": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "5",
+                "kind": "int"
+              },
+              "r": {
+                "int": "5",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "20",
+                "kind": "int"
+              },
+              "u": {
+                "int": "4",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "h": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "r": {
+                "int": "1",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "30",
+                "kind": "int"
+              },
+              "u": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "50",
+                "kind": "int"
+              },
+              "b": {
+                "int": "20",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "30",
+                "kind": "int"
+              },
+              "e": {
+                "int": "50",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "h": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "r": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "u": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "v": {
+                "int": "40",
+                "kind": "int"
+              },
+              "w": {
+                "int": "20",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "50",
+                "kind": "int"
+              },
+              "b": {
+                "int": "60",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "10",
+                "kind": "int"
+              },
+              "e": {
+                "int": "60",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "50",
+                "kind": "int"
+              },
+              "h": {
+                "int": "50",
+                "kind": "int"
+              },
+              "n": {
+                "int": "1",
+                "kind": "int"
+              },
+              "r": {
+                "int": "5",
+                "kind": "int"
+              },
+              "s": {
+                "int": "30",
+                "kind": "int"
+              },
+              "t": {
+                "int": "10",
+                "kind": "int"
+              },
+              "u": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "v": {
+                "int": "30",
+                "kind": "int"
+              },
+              "w": {
+                "int": "20",
+                "kind": "int"
+              },
+              "x": {
+                "int": "40",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "indexing a window: out of range fails",
+      "results": [
+        {
+          "error": "index out of range: 0 (array length is 0) (1:10)"
+        },
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "20",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:10)"
+        },
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: -1 (array length is 3) (1:10)"
+        },
+        {
+          "ok": {
+            "int": "40",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:10)"
+        }
+      ]
+    },
+    {
+      "name": "indexing a reversed window: out of range fails",
+      "results": [
+        {
+          "error": "index out of range: 0 (array length is 0) (1:17)"
+        },
+        {
+          "ok": {
+            "int": "45",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "15",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "15",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 4 (array length is 4) (1:17)"
+        },
+        {
+          "error": "index out of range: -1 (array length is 4) (1:17)"
+        },
+        {
+          "ok": {
+            "int": "25",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "13",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "indexing a window inside a map over it",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "m": {
+                "int": "0",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [
+                  {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "int": "0",
+                "kind": "int"
+              },
+              "n": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [
+                  {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3ff8000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "bits": "400c000000000000",
+                "kind": "float"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [
+                  {
+                    "bits": "4004000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "bff0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "401e000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "401e000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "401e000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "401e000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "bits": "4028000000000000",
+                "kind": "float"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
       "name": "reverse: a list, a window, a map",
       "results": [
         {

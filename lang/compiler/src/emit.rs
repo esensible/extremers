@@ -940,6 +940,10 @@ impl Emitter<'_> {
                 return self.finish(mark, end_jumps);
             }
         }
+        // Through windows and reverses only: the items are still addressable.
+        if collect.is_none() && self.direct(&pipe, sink, f, e) {
+            return self.finish(mark, end_jumps);
+        }
 
         // How many items have reached the sink: only where a position is read.
         let pos = if matches!(sink, Sink::FindIndex | Sink::FindLastIndex | Sink::At | Sink::Get | Sink::Reduce) {
@@ -1242,6 +1246,265 @@ impl Emitter<'_> {
             }
             _ => false,
         }
+    }
+
+    /// `len`, `first`, `last`, `xs[k]` and `get` over a list or a range
+    /// seen only through windows (slices, `take`) and `reverse`s: every
+    /// item is still where it was in the source, so the window is worked
+    /// out as a span `[lo, hi)` of the source's positions (by the rules a
+    /// loop over it applies: a negative bound counts from the end, and each
+    /// bound is clamped to the items there are), and the item is read where
+    /// it lies. No loop: the same few instructions whatever the length.
+    /// Whether `sink` over `pipe` is one of them (its result is then on the
+    /// stack).
+    fn direct(&mut self, pipe: &Pipeline, sink: Sink, f: Option<&TExpr>, e: &TExpr) -> bool {
+        if !matches!(sink, Sink::Len | Sink::First | Sink::Last | Sink::At | Sink::Get)
+            || matches!(pipe.item, Ty::Never)
+            || !pipe.stages.iter().all(|s| matches!(s, Stage::Window(_) | Stage::Reverse(_)))
+        {
+            return false;
+        }
+        let Some(pre) = pipe.pre else { return false };
+        let range = match pipe.source {
+            Source::List(_) => false,
+            Source::Range(_) => true,
+            _ => return false,
+        };
+        // A window's bounds, each in a local (and whether it may be
+        // negative); `None` for a `reverse`.
+        enum Cut {
+            Slice(Option<(u16, bool)>, Option<(u16, bool)>),
+            Take(u16),
+        }
+        // Every window's bounds, innermost first, before anything else (as
+        // the loop evaluates them).
+        let mut cuts = Vec::new();
+        for s in &pipe.stages {
+            let st = s.node();
+            match (s, &st.kind) {
+                (Stage::Reverse(_), _) => cuts.push(None),
+                (Stage::Window(_), TKind::Slice { lo, hi, .. }) => {
+                    let bound = |m: &mut Self, b: &Option<Box<TExpr>>| {
+                        b.as_ref().map(|b| {
+                            m.emit(b);
+                            (m.store_new(1), may_be_negative(b))
+                        })
+                    };
+                    let lo = bound(self, lo);
+                    let hi = bound(self, hi);
+                    cuts.push(Some(Cut::Slice(lo, hi)));
+                }
+                (Stage::Window(_), TKind::Take { k, .. }) => {
+                    // A negative count fails (R-ARG), as in expr.
+                    self.emit(k);
+                    let n = self.store_new(1);
+                    self.op(Op::Load(n));
+                    self.op(Op::PushInt(0));
+                    self.op_at(Op::Lt, st);
+                    let ok = self.jump(Op::JumpIfFalse, st);
+                    self.spans.push((self.pc(), st.span.start, st.span.end));
+                    self.op(Op::Error(3));
+                    let here = self.pc();
+                    self.patch(ok, here);
+                    cuts.push(Some(Cut::Take(n)));
+                }
+                _ => unreachable!("stage {:?}", st.kind),
+            }
+        }
+        // The span: the whole source, then each window of what's left.
+        let (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
+        self.op(Op::PushInt(0));
+        self.op(Op::Store(lo));
+        if range {
+            self.op(Op::Load(pre + 1));
+        } else {
+            self.op(Op::Load(pre));
+            self.op_at(Op::ListLen, e);
+        }
+        self.op(Op::Store(hi));
+        let count = |me: &mut Self| {
+            me.op(Op::Load(hi));
+            me.op(Op::Load(lo));
+            me.op(Op::Sub);
+            me.op(Op::Store(m));
+        };
+        // A bound on top of the stack, counted from the end if negative.
+        let from_end = |me: &mut Self| {
+            me.op(Op::Dup);
+            me.op(Op::PushInt(0));
+            me.op(Op::Lt);
+            let pos = me.jump_plain(Op::JumpIfFalse);
+            me.op(Op::Load(m));
+            me.op(Op::Add);
+            let here = me.pc();
+            me.patch(pos, here);
+        };
+        // Whether the items reach the end of the window so far backwards:
+        // its first item is then the source's at `hi - 1`.
+        let mut rev = false;
+        for cut in cuts {
+            let Some(cut) = cut else {
+                rev = !rev;
+                continue;
+            };
+            count(self);
+            // The window as offsets `[a, b)` into the span (`a` absent: 0).
+            let (a, b) = match cut {
+                Cut::Slice(a, b) => {
+                    // b: from the end, clamped to [0, m]; absent, m.
+                    let b = match b {
+                        Some((t, neg)) => {
+                            self.op(Op::Load(t));
+                            if neg {
+                                from_end(self);
+                                self.op(Op::PushInt(0));
+                                self.op(Op::Call(bytecode::Builtin::Max, 2));
+                            }
+                            self.op(Op::Load(m));
+                            self.op(Op::Call(bytecode::Builtin::Min, 2));
+                            Some(self.store_new(1))
+                        }
+                        None => None,
+                    };
+                    // a: from the end, at least 0, at most b.
+                    let a = a.map(|(t, neg)| {
+                        self.op(Op::Load(t));
+                        if neg {
+                            from_end(self);
+                            self.op(Op::PushInt(0));
+                            self.op(Op::Call(bytecode::Builtin::Max, 2));
+                        }
+                        self.op(Op::Load(b.unwrap_or(m)));
+                        self.op(Op::Call(bytecode::Builtin::Min, 2));
+                        self.store_new(1)
+                    });
+                    (a, b)
+                }
+                Cut::Take(k) => {
+                    self.op(Op::Load(k));
+                    self.op(Op::Load(m));
+                    self.op(Op::Call(bytecode::Builtin::Min, 2));
+                    (None, Some(self.store_new(1)))
+                }
+            };
+            // Forwards: [lo + a, lo + b). Backwards: [hi - b, hi - a).
+            let (near, far, op) = if rev { (hi, lo, Op::Sub) } else { (lo, hi, Op::Add) };
+            if let Some(b) = b {
+                self.op(Op::Load(near));
+                self.op(Op::Load(b));
+                self.op(op);
+                self.op(Op::Store(far));
+            }
+            if let Some(a) = a {
+                self.op(Op::Load(near));
+                self.op(Op::Load(a));
+                self.op(op);
+                self.op(Op::Store(near));
+            }
+        }
+        if sink == Sink::Len {
+            self.op(Op::Load(hi));
+            self.op(Op::Load(lo));
+            self.op(Op::Sub);
+            return true;
+        }
+
+        // The position `k` within the window (a negative index counts from
+        // its end), then whether it is inside: `xs[k]` fails if not (R-INDEX),
+        // the others give nil.
+        count(self);
+        let k = self.alloc(1);
+        let may_neg = match sink {
+            Sink::First => {
+                self.op(Op::PushInt(0));
+                false
+            }
+            Sink::Last => {
+                self.op(Op::Load(m));
+                self.op(Op::PushInt(1));
+                self.op(Op::Sub);
+                true
+            }
+            _ => {
+                let f = f.unwrap();
+                self.emit(f);
+                let neg = may_be_negative(f);
+                if neg {
+                    from_end(self);
+                }
+                neg
+            }
+        };
+        self.op(Op::Store(k));
+        let out = leaves(&e.ty);
+        let mut ends = Vec::new();
+        let outside = |me: &mut Self, ends: &mut Vec<usize>| {
+            if sink == Sink::At {
+                me.spans.push((me.pc(), e.span.start, e.span.end));
+                me.op(Op::Error(2)); // R-INDEX
+            } else {
+                me.push_nils(out);
+                ends.push(me.jump_plain(Op::Jump));
+                me.depth -= out;
+            }
+        };
+        if may_neg {
+            self.op(Op::Load(k));
+            self.op(Op::PushInt(0));
+            self.op(Op::Lt);
+            let inside = self.jump_plain(Op::JumpIfFalse);
+            outside(self, &mut ends);
+            let here = self.pc();
+            self.patch(inside, here);
+        }
+        // `last`'s position is always below the count.
+        let below = if sink == Sink::Last {
+            None
+        } else {
+            self.op(Op::Load(k));
+            self.op(Op::Load(m));
+            self.op(Op::Lt);
+            Some(self.jump_plain(Op::JumpIfFalse))
+        };
+        // The source's position: `lo + k`, or backwards `hi - 1 - k`.
+        if rev {
+            self.op(Op::Load(hi));
+            self.op(Op::PushInt(1));
+            self.op(Op::Sub);
+            self.op(Op::Load(k));
+            self.op(Op::Sub);
+        } else {
+            self.op(Op::Load(lo));
+            self.op(Op::Load(k));
+            self.op(Op::Add);
+        }
+        self.op(Op::Store(k));
+        let p = if range {
+            // A range's item: its start plus the position.
+            self.op(Op::Load(pre));
+            self.op(Op::Load(k));
+            self.op(Op::Add);
+            self.op(Op::Store(k));
+            Place { root: Root::Local(k), off: 0 }
+        } else {
+            Place { root: Root::Item { h: pre, i: k }, off: 0 }
+        };
+        self.load_as(p, &pipe.item, &e.ty);
+        if let Some(below) = below {
+            ends.push(self.jump_plain(Op::Jump));
+            self.depth -= out;
+            let here = self.pc();
+            self.patch(below, here);
+            outside(self, &mut ends);
+            // That path ended (or jumped to the end with its nils); the
+            // others arrive at the end with the result.
+            self.depth += out;
+        }
+        let here = self.pc();
+        for j in ends {
+            self.patch(j, here);
+        }
+        true
     }
 
     fn new_level(&mut self) -> usize {

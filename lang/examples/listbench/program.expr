@@ -1,0 +1,3 @@
+let w = gps[-61:];
+let m = sum(map(w[1:], distance(w[#index], #)));
+{state: {evals: min((state?.evals ?? 0) + 1, 1000000000)}, view: {m: m, n: len(w)}}

@@ -1,0 +1,552 @@
+{
+  "builtins": [
+    {
+      "description": "metres between two positions (haversine, earth radius 6,371,000 m)",
+      "name": "distance",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    },
+    {
+      "description": "initial bearing from a to b, degrees true, 0 <= x < 360",
+      "name": "bearing",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    },
+    {
+      "description": "where two courses cross: the crossing within range (metres, default 200 km) of pos1, or nil",
+      "name": "courses_cross",
+      "nullable": true,
+      "params": [
+        {
+          "name": "pos1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading1",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "pos2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading2",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "where the great circles through a1-a2 and b1-b2 cross: the crossing within range of a1, or nil",
+      "name": "lines_cross",
+      "nullable": true,
+      "params": [
+        {
+          "name": "a1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "a2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "where a course crosses the great circle through a-b: the crossing within range of pos, or nil",
+      "name": "course_crosses_line",
+      "nullable": true,
+      "params": [
+        {
+          "name": "pos",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "heading a minus heading b, degrees, wrapped to -180..180 (positive: a is clockwise of b); extreme-race's simple_diff, in degrees",
+      "name": "angle_diff",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "name": "state",
+      "nullable": true,
+      "schema": {
+        "properties": {
+          "evals": {
+            "format": "int32",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evals"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "event",
+      "schema": {
+        "oneOf": [
+          {
+            "properties": {
+              "gps": {
+                "properties": {
+                  "fix": {
+                    "properties": {
+                      "alt": {
+                        "type": "number"
+                      },
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lon": {
+                        "type": "number"
+                      },
+                      "t": {
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "t",
+                      "lat",
+                      "lon"
+                    ],
+                    "type": "object"
+                  },
+                  "velocity": {
+                    "properties": {
+                      "heading": {
+                        "type": "number"
+                      },
+                      "speed": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "speed",
+                      "heading"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "gps"
+            ]
+          },
+          {
+            "properties": {
+              "wake": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "wake"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "timestamp",
+      "schema": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    {
+      "name": "gps",
+      "schema": {
+        "items": {
+          "properties": {
+            "alt": {
+              "type": "number"
+            },
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            },
+            "t": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "t",
+            "lat",
+            "lon"
+          ],
+          "type": "object"
+        },
+        "maxItems": 20480,
+        "type": "array"
+      }
+    }
+  ],
+  "output": {
+    "properties": {
+      "state": {
+        "properties": {
+          "evals": {
+            "format": "int32",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evals"
+        ],
+        "type": "object"
+      },
+      "view": {
+        "properties": {
+          "m": {
+            "type": "number"
+          },
+          "n": {
+            "format": "int32",
+            "maximum": 61,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "m",
+          "n"
+        ],
+        "type": "object"
+      },
+      "wake": {
+        "description": "when the host next delivers the `wake` event: epoch ms on the device clock; absent, no timer",
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "state",
+      "view"
+    ],
+    "type": "object"
+  }
+}
