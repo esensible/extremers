@@ -1,29 +1,140 @@
 {
   "description": "Race's state: what the next evaluation needs, and what the view shows on an evaluation that carries no fix (bump, tap, wake). Clients receive the view (view.schema.json), not this. Times are epoch ms on the device clock; positions degrees; speeds knots; headings degrees true.",
   "type": "object",
-  "required": ["phase", "line"],
+  "required": [
+    "phase",
+    "line"
+  ],
   "properties": {
     "phase": {
       "description": "Where the race is: exactly one of idle, countdown (to the gun) and racing (since the gun)",
       "oneOf": [
-        {"properties": {"idle": {"type": "object"}}, "required": ["idle"]},
-        {"properties": {"countdown": {"type": "object", "required": ["gun"], "properties": {"gun": {"description": "the start", "type": "integer", "format": "int64"}}}}, "required": ["countdown"]},
-        {"properties": {"racing": {"type": "object", "required": ["gun"], "properties": {"gun": {"description": "the start", "type": "integer", "format": "int64"}}}}, "required": ["racing"]}
+        {
+          "properties": {
+            "idle": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "idle"
+          ]
+        },
+        {
+          "properties": {
+            "countdown": {
+              "type": "object",
+              "required": [
+                "gun"
+              ],
+              "properties": {
+                "gun": {
+                  "description": "the start",
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": [
+            "countdown"
+          ]
+        },
+        {
+          "properties": {
+            "racing": {
+              "type": "object",
+              "required": [
+                "gun"
+              ],
+              "properties": {
+                "gun": {
+                  "description": "the start",
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": [
+            "racing"
+          ]
+        }
       ]
     },
     "line": {
       "description": "The start line, as far as it has been set; kept while racing",
       "type": "object",
       "properties": {
-        "stbd": {"description": "the starboard end: the fix where it was set", "type": "object", "required": ["t", "lat", "lon"],
-                 "properties": {"t": {"type": "integer", "format": "int64"}, "lat": {"type": "number"}, "lon": {"type": "number"}, "alt": {"type": "number"}}},
-        "port": {"description": "the port end: the fix where it was set", "type": "object", "required": ["t", "lat", "lon"],
-                 "properties": {"t": {"type": "integer", "format": "int64"}, "lat": {"type": "number"}, "lon": {"type": "number"}, "alt": {"type": "number"}}},
-        "crossing": {"description": "when the boat reaches the line on its course, as of the last GPS update before the gun with a fix, a velocity and both ends set; absent until the first",
-                     "type": "integer", "format": "int64"}
+        "stbd": {
+          "description": "the starboard end: the fix where it was set",
+          "type": "object",
+          "required": [
+            "t",
+            "lat",
+            "lon"
+          ],
+          "properties": {
+            "t": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            },
+            "alt": {
+              "type": "number"
+            }
+          }
+        },
+        "port": {
+          "description": "the port end: the fix where it was set",
+          "type": "object",
+          "required": [
+            "t",
+            "lat",
+            "lon"
+          ],
+          "properties": {
+            "t": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            },
+            "alt": {
+              "type": "number"
+            }
+          }
+        },
+        "crossing": {
+          "description": "when the boat reaches the line on its course, as of the last GPS update before the gun with a fix, a velocity and both ends set; absent until the first",
+          "type": "integer",
+          "format": "int64"
+        }
       }
     },
-    "velocity": {"description": "speed over ground and course, as of the last GPS update that had them; absent until the first",
-                 "type": "object", "required": ["speed", "heading"], "properties": {"speed": {"type": "number"}, "heading": {"type": "number"}}}
+    "velocity": {
+      "description": "speed over ground and course, as of the last GPS update that had them; absent until the first",
+      "type": "object",
+      "required": [
+        "speed",
+        "heading"
+      ],
+      "properties": {
+        "speed": {
+          "type": "number"
+        },
+        "heading": {
+          "type": "number"
+        }
+      }
+    }
   }
 }

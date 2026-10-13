@@ -1,5 +1,5 @@
 {
-  "source_sha": "41c6046",
+  "source_sha": "f572888",
   "toolchain": {
     "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "wasm-bindgen": "wasm-bindgen 0.2.129",
@@ -16,7 +16,7 @@
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm": {
-      "sha256": "ae4b24c68e6e27e9a09e3ef3c1a665f61596b8f2d9820509046997ff9b5740f7",
+      "sha256": "c7b945f3ecfacc21ed2887ed4dd99edaac6ce2544896325d3b03cb993d55fd88",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm.d.ts": {
@@ -72,7 +72,7 @@
       "from": "engine/race/event.desc"
     },
     "examples/race/engine/event.schema.json": {
-      "sha256": "64b822f7a9d0af9cec2efbc98ba829780ccffac1a09ae3e3fb190d10c1e04a9f",
+      "sha256": "7f84cc92b24d5a952aaa13454a7c24b83c4649dca4004a72b7f862f3f4775715",
       "from": "engine/race/event.schema.json"
     },
     "examples/race/engine/interface.json": {
@@ -84,7 +84,7 @@
       "from": "engine/race/samples.json"
     },
     "examples/race/engine/state.schema.json": {
-      "sha256": "f90b0746f1f70975544b761f3b1f9b64dfc12779e804490221c9f840efb70ea0",
+      "sha256": "c1cc1866920ed69b804bc2117a6bf9b4170efc2351e6d0f56e1428ddef8491ef",
       "from": "engine/race/state.schema.json"
     },
     "examples/race/engine/view.desc": {
@@ -92,7 +92,7 @@
       "from": "engine/race/view.desc"
     },
     "examples/race/engine/view.schema.json": {
-      "sha256": "08d07b54983407f2764bdea2dec38ea43b79430264ac9d05abbf0573f7377d64",
+      "sha256": "5a87fd9ec036f50fc1545305c018254681dd78e6a00ff48f0a01a5b9ba2636a3",
       "from": "engine/race/view.schema.json"
     },
     "examples/race/watch-js/fixtures/log.jsonl": {
@@ -140,7 +140,7 @@
       "from": "extreme-race/watch-js/src/style.jsx"
     },
     "fixtures/race.bundle": {
-      "sha256": "9579adab4fd2791e73c565d4d0713f8d9c17db4268c17ab5f1241179c01f6fb0",
+      "sha256": "49924408429f1f9574d13cb475b421f235639b5d0ccde08c455823c05f033f9f",
       "from": "target/packages/race.bundle"
     },
     "fixtures/race.layout.json": {
@@ -168,7 +168,7 @@
       "from": "target/packages/race/manifest.bin"
     },
     "fixtures/race.pack/source.json": {
-      "sha256": "7136645a574f65bde008d05c23cebc343ab43b5883e48dadf29bf47fe5e93b80",
+      "sha256": "217372e49c188cb70356fc7cf2308ea90639d91fc5f8bcaae317a60ecfa3daa7",
       "from": "target/packages/race/source.json"
     },
     "fixtures/race.pack/view.desc": {
@@ -248,7 +248,7 @@
       "from": "wire/js/rollup.js"
     },
     "watch-host/browser/dom-host.js": {
-      "sha256": "096484d3c91bc25c422630243eba9d3217cf4d84fbeea9b95294e3b509d4a5ea",
+      "sha256": "d521aaada8e5042fad79946f0389c07492ef7391abe1e23f3dcadb6c3d5d1407",
       "from": "solid-watch/browser/dom-host.js"
     },
     "watch-host/browser/props.js": {

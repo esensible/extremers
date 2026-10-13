@@ -16,6 +16,7 @@ import { createApi, createLogger, withUnknownGuard, parsePath } from '../api.js'
 import { openStore } from '../store.js';
 import { zipStore, unzip, toBase64, fromBase64, crc32 } from '../zip.js';
 import { racePath } from '../templates.js';
+import { prettyJson } from '../json.js';
 import { createEngineLoader } from '../engine/wasm.js';
 import { createFakeIndexedDB } from './fake-indexeddb.mjs';
 
@@ -335,6 +336,41 @@ test('files.read pages text and binary; files.write takes { base64 }', async () 
   fail(await api.files.write('y.bin', { base64: 'not base64!' }), /base64/);
 });
 
+test('files.write: a .json file is stored pretty when it parses (formatted: true); verbatim when it does not (formatted: false)', async () => {
+  const { api } = await world();
+  okr(await api.project.create('j'));
+  // minified, as an agent's JSON.stringify(v) gives it; an int64 past 2^53 and 1.0 kept as written
+  const w = okr(await api.files.write('engine/samples.json', '{"runs":[{"inputs":{"state":null,"timestamp":9007199254740993,"x":1.0,"e":[],"o":{}}}]}'));
+  assert.equal(w.formatted, true);
+  const pretty = '{\n  "runs": [\n    {\n      "inputs": {\n        "state": null,\n        "timestamp": 9007199254740993,\n        "x": 1.0,\n        "e": [],\n        "o": {}\n      }\n    }\n  ]\n}\n';
+  assert.equal(okr(await api.files.read('engine/samples.json')).text, pretty);
+  assert.equal(w.size, pretty.length, 'the size is the stored text\'s');
+  // already pretty: stored as is
+  assert.equal(okr(await api.files.write('engine/samples.json', pretty)).formatted, true);
+  assert.equal(okr(await api.files.read('engine/samples.json')).text, pretty);
+  // half-edited: kept verbatim, not lost
+  const half = '{\n  "runs": [\n    {"inputs": \n';
+  const h = okr(await api.files.write('engine/samples.json', half));
+  assert.equal(h.formatted, false);
+  assert.equal(typeof h.jsonError, 'string');
+  assert.equal(okr(await api.files.read('engine/samples.json')).text, half);
+  // not .json: verbatim, no formatted field
+  const t = okr(await api.files.write('notes.txt', '{"a":1}'));
+  assert.equal(t.formatted, undefined);
+  assert.equal(okr(await api.files.read('notes.txt')).text, '{"a":1}');
+  // the blank template's JSON is pretty too
+  assert.equal(okr(await api.files.read('engine/state.schema.json')).text, prettyJson(okr(await api.files.read('engine/state.schema.json')).text).text);
+  // project.import stores its .json files pretty
+  const zip = zipStore([{ name: 'a/engine/x.json', bytes: new TextEncoder().encode('{"b":[1,2]}') }, { name: 'a/bad.json', bytes: new TextEncoder().encode('{"b":') }]);
+  okr(await api.project.import({ zipBase64: toBase64(zip) }, { name: 'imp' }));
+  assert.equal(okr(await api.files.read('engine/x.json')).text, '{\n  "b": [\n    1,\n    2\n  ]\n}\n');
+  assert.equal(okr(await api.files.read('bad.json')).text, '{"b":', 'an import that does not parse is kept as is');
+  // describe() says so
+  const d = okr(await api.describe()).functions.find((f) => f.name === 'files.write');
+  assert.match(d.summary, /pretty-printed/);
+  assert.match(d.returns, /formatted/);
+});
+
 test('the race template: a clear error while vendor/ is absent (nothing created); mapped paths when present', async () => {
   const a = await world();
   const r = fail(await a.api.project.create('race', { template: 'race' }), /Race example is not vendored/);
@@ -390,6 +426,14 @@ test('the race template from the real studio/vendor/ (when generated): the monor
     const text = okr(await api.files.read(p, { maxChars: 200000 })).text;
     assert.equal(text, all[vend], p);
     if (existsSync(join(repo, mono))) assert.equal(text, readFileSync(join(repo, mono), 'utf8'), `${p} vs the monorepo's ${mono}`);
+  }
+  // the JSON files: the vendored ones pretty-printed (only the whitespace differs: the same value)
+  for (const n of ['state.schema.json', 'view.schema.json', 'event.schema.json', 'samples.json']) {
+    const text = okr(await api.files.read(`engine/${n}`, { maxChars: 200000 })).text;
+    const vend = all[`examples/race/engine/${n}`];
+    assert.equal(text, prettyJson(vend).text, n);
+    assert.deepEqual(JSON.parse(text), JSON.parse(vend), n);
+    assert.equal(text.replace(/\s+/g, ''), vend.replace(/\s+/g, ''), `${n}: only whitespace changes`);
   }
 });
 

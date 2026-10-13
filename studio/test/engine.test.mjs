@@ -149,14 +149,17 @@ test('schema errors are E-SCHEMA with the schema file and a span', { skip }, asy
   assert.ok(r.diagnostics[0].span.line >= 1);
   // outside the bitwire subset: the JSON pointer's position
   const view = vendorText('examples/race/engine/view.schema.json');
-  const bad = view.replace('"speed": {"description"', '"speed": {"format": "int16", "description"');
+  // the stored text is pretty-printed, so the member's opening brace ends its line
+  const bad = view.replace('"speed": {', '"speed": {"format": "int16",');
   assert.notEqual(bad, view);
   ok(assert, await api.files.write('engine/view.schema.json', bad));
   r = notOk(assert, await api.engine.compile());
   const d = r.diagnostics.find((x) => x.path === 'engine/view.schema.json');
   assert.equal(d.rule, 'E-SCHEMA');
   assert.match(d.message, /speed/);
-  assert.ok(d.span && bad.slice(d.span.offset, d.span.end.offset).length > 0, JSON.stringify(d));
+  // the span is in the stored text (files.write stores a .json file pretty)
+  const stored = ok(assert, await api.files.read('engine/view.schema.json', { maxChars: 200000 })).text;
+  assert.ok(d.span && stored.slice(d.span.offset, d.span.end.offset).length > 0, JSON.stringify(d));
   // the profile's rule: an author's event can't be named like a built-in one
   ok(assert, await api.files.write('engine/view.schema.json', view));
   ok(assert, await api.files.write('engine/event.schema.json', '{"oneOf": [{"properties": {"wake": {"type": "object"}}, "required": ["wake"]}]}\n'));

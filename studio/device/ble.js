@@ -30,12 +30,12 @@ export const LIST_REQUEST = Uint8Array.of(0x04, 0x00);
 // studio-api skill quotes them.
 export const HINTS = {
   NO_BLUETOOTH: 'Web Bluetooth is not available here: open the studio in desktop Chrome on http://localhost:5190 (Web Bluetooth needs Chrome and a secure origin)',
-  CHOOSE: "ask the person to click 'Choose device…' (#device-choose, top right of the studio) and pick 'nacra' in Chrome's list: Chrome opens its Bluetooth chooser only from a person's click. After that api.device.connect() works from script, also after a reload",
+  CHOOSE: "ask the person, in order: (1) if this Mac is not paired with the box yet, on the Kindle Choose → Settings → Pair watch (opens the box's pairing window for 2 minutes; named for the watch, it pairs any device, one per window); (2) click 'Choose the box…' (#device-choose, top right of the studio): Chrome's popup ('… wants to pair') only asks which device this page may talk to: pick 'nacra'; (3) accept macOS's pairing prompt that follows, if one comes. Chrome opens its chooser only from a person's click, and each browser origin must choose the box once even if the Mac is already paired. After that api.device.connect() works from script without prompts, also after a reload",
   FLAGS: 'for a remembered device without the chooser, chrome://flags/#enable-web-bluetooth-new-permissions-backend must be Enabled (then relaunch Chrome)',
-  PAIR: "the box serves bundles only to a computer it has bonded with. Ask the person to open its pairing window (the Kindle's Settings → Pair watch, or dev-pairing firmware: 120 s after boot), then api.device.connect() again and confirm macOS's pairing prompt. If this computer was paired before the box lost its bond (provision, Forget all), it must first forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu)",
-  STALE: "this computer probably holds an old pairing with 'nacra' that the box no longer has: forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu), open the box's pairing window (Kindle: Settings → Pair watch), then api.device.connect() and confirm the pairing prompt. If the box is not found at all, turn the Mac's Bluetooth off and on",
-  RANGE: "the box was not seen advertising: is it powered and within range? If it is, turn the Mac's Bluetooth off and on (that cleared a discovery stall before), then api.device.connect()",
-  NOT_GRANTED: "Chrome has not granted this page the bundle service on 'nacra' (it was picked before the service existed): ask the person to click 'Choose device…' (#device-choose) and pick it again",
+  PAIR: "the box serves bundles only to a computer it has bonded with. Ask the person to open its pairing window: on the Kindle, Choose → Settings → Pair watch (2 minutes; named for the watch, it pairs any device, one device per window), or dev-pairing firmware: 120 s after boot; then api.device.connect() again, and the person accepts macOS's pairing prompt. If this computer was paired before the box lost its bond (provision, Forget all), it must first forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu)",
+  STALE: "this computer probably holds an old pairing with 'nacra' that the box no longer has: forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu), open the box's pairing window (Kindle: Choose → Settings → Pair watch), then api.device.connect() and accept macOS's pairing prompt. If the box is not found at all, turn the Mac's Bluetooth off and on",
+  RANGE: "the box was not seen advertising: is it powered and within range? It also stops advertising while both of its connection slots are taken: the watch plus another studio tab or window holding the link (disconnect there first: its Device panel's Disconnect, or close it). If it is free, this page may remember a different box (an earlier 'nacra'), whose advertisement Chrome waits for: ask the person to click 'Choose another box…' (#device-choose) and pick 'nacra'. Otherwise turn the Mac's Bluetooth off and on (that cleared a discovery stall before), then api.device.connect()",
+  NOT_GRANTED: "Chrome has not granted this page the bundle service on 'nacra' (it was picked before the service existed): ask the person to click 'Choose another box…' (#device-choose) and pick 'nacra' again",
   NOT_CONNECTED: 'api.device.connect() first (api.device.status() shows the link)',
 };
 
@@ -313,7 +313,8 @@ export function createLink({
   }
 
   /**
-   * The person's click on "Choose device…": Chrome's chooser, then connect.
+   * The person's click on "Choose the box…" (or "Choose another box…"):
+   * Chrome's chooser, then connect.
    * requestDevice is called before anything is awaited (a click's user
    * activation lasts about 5 s).
    */
@@ -326,7 +327,7 @@ export function createLink({
     try { dev = await picking; } catch (e) {
       const why = errText(e);
       const err = /cancel/i.test(why)
-        ? new LinkError(`the chooser was closed without picking a device (${why})`, 'CANCELLED', "click 'Choose device…' again and pick 'nacra' (the box must be powered and in range)")
+        ? new LinkError(`the chooser was closed without picking a device (${why})`, 'CANCELLED', "click 'Choose the box…' (#device-choose) again and pick 'nacra' in Chrome's list (the box must be powered and in range)")
         : /gesture|activation/i.test(why)
           ? new LinkError(`Chrome would not open the chooser: ${why}`, 'NEEDS_CLICK', HINTS.CHOOSE)
           : new LinkError(`the chooser failed: ${why}`, 'CHOOSER_FAILED', HINTS.CHOOSE);

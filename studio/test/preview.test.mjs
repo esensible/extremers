@@ -15,7 +15,7 @@ import { createApi } from '../api.js';
 import { installFileFetch, runtime, raceFiles, VENDOR, STUDIO } from './toolchain-node.mjs';
 import { CACHE, SID_RE, newSid, mimeOf, routePreview, rewriteIndexHtml, sessionFiles, sessionBase, shimPath, scopePathOf, reloadNoticeHtml } from '../preview/rewrite.js';
 import { KindlePreview, parseKindleSize } from '../preview/kindle.js';
-import { bootWatchRealm, treeText, treeButtons, parseWatchSize, WATCH_SIZES } from '../preview/watch.js';
+import { bootWatchRealm, treeText, treeButtons, parseWatchSize, WATCH_SIZES, WatchPreview } from '../preview/watch.js';
 import { ownPackage, packageId } from '../vendor/runtimes/client-common/host.js';
 import { decodeHostEvent, encodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
 import wire from '../vendor/runtimes/wire/js/codec.esm.js';
@@ -415,6 +415,39 @@ test('the watch realm: Race watch.js boots in a fresh realm, shows the envelope,
   assert.equal(he.tag, 'Engine');
   assert.equal(he.value.package, RACE_ID);
   assert.deepEqual(wire.decode(EVENT, Uint8Array.from(he.value.bytes)), { line_stbd: {} });
+});
+
+test('the watch preview: buttons by text only (no testID on the watch), hidden ones skipped, a confirm by { text: "" }; events carry the host\'s evaluation records', () => {
+  const src = new TextDecoder().decode(BUILD.targets.watch.files.find((f) => f.name === 'watch.js').bytes);
+  const realm = vm.runInContext('globalThis', vm.createContext({}));
+  const h = treeHost();
+  const app = bootWatchRealm({ realm, hostApi: h.api, src });
+  app.mount(1, { width: 198, height: 242 });
+  const VIEW = wire.load(compiler.compile(JSON.parse(readFileSync(join(VENDOR, 'examples/race/engine/view.schema.json'), 'utf8'))));
+  const state = Array.from(wire.encode(VIEW, { phase: { idle: {} }, line: { stbd: false, port: false }, speed: 3.25 }));
+  app.onState(new realm.Uint8Array(encodeEnvelope({ timestamp: 1_790_000_000_000, active: RACE_ID, ui: { web: [1, 2, 3, 4, 5, 6, 7, 8], watch: [0, 0, 0, 0, 0, 0, 0, 0] }, state })));
+  // the sim host's answer to a HostEvent, as api._sim.send gives it
+  const records = [{ n: 2, t: 1_790_000_000_500, cause: 'event', event: { bump_seq: { seconds: 300, tapped_at: 1_790_000_000_000 } }, accepted: true, state: {}, view: {}, wake: null, published: true, publishedHex: '00' }];
+  const sim = { onEnvelope: () => () => {}, send: () => ({ ok: true, accepted: true, refused: null, evaluations: records }) };
+  const wp = new WatchPreview({ host: {}, sim, win: {} });
+  Object.assign(wp, { host: { tree: h.tree, els: new Map(), _guard: (fn) => fn() }, app, loaded: true });
+  h.api.send = (bytes) => wp.send(bytes); // the bundle's send(bytes) → the preview → the sim
+
+  const textless = () => treeButtons(h.tree).filter((b) => b.text === '');
+  assert.equal(textless().length, 1, 'the exit square only: both confirms are display="none"');
+  const exit = textless()[0].tag;
+  assert.throws(() => wp.press({ testid: 'go' }), (e) => /the watch has no testID/.test(e.message) && /\{ text: '' \}/.test(e.hint) && /"Port"/.test(e.hint));
+  assert.throws(() => wp.press({ selector: 'button' }), /Kindle page/);
+  wp.press({ text: '5' }); // opens the view's confirm: nothing sent yet
+  assert.equal(wp.events.length, 0);
+  assert.equal(textless().length, 2);
+  assert.notEqual(textless()[0].tag, exit, "the view's confirm comes first");
+  const r = wp.press({ text: '' });
+  assert.equal(r.pressed, '');
+  assert.equal(wp.events.length, 1);
+  assert.deepEqual(wp.events[0].evaluations, records, "the records, as sim.event's");
+  assert.equal(wp.events[0].accepted, true);
+  assert.equal(textless().length, 1, 'the confirm hid itself');
 });
 
 test('the watch realm: clear errors for a bundle that throws or sets no __app', () => {

@@ -21,7 +21,7 @@
 //   const ed = createEditor(document.getElementById('editors'), { tabsEl, onSave, onBlur, onCloseTab, onCursor });
 //   await ed.ready;                      // Monaco loaded (rejects with the reason if it can't load)
 //   await ed.open(path, text, language?, { readOnly? });
-//   ed.getText(path); ed.setText(path, text); ed.isDirty(path); ed.markSaved(path, version)
+//   ed.getText(path); ed.setText(path, text); ed.reformat(path, text); ed.isDirty(path); ed.markSaved(path, version)
 //   ed.setMarkers(path, [{ startLine, startCol, endLine, endCol, message, severity, rule }]); ed.reveal(path, span)
 
 import { EXPR, THEME, exprConfiguration, exprMonarch, studioTheme, withJsx, languageFor, modelUri, schemaFor, SCHEMAS, toMonacoMarker } from './editor/lang.js';
@@ -305,6 +305,32 @@ export function createEditor(mountEl, opts = {}) {
       }
       f.saved = f.model.getAlternativeVersionId();
       renderTabs();
+    },
+
+    /**
+     * Reformat a file's text (app.js: a .json file, on open and on save): an
+     * edit, so it can be undone, of only the part between the common prefix
+     * and suffix (the cursor outside it stays put); unlike setText the file
+     * stays as dirty as it was, and no onChange fires. → whether it changed.
+     */
+    reformat(path, text) {
+      const f = need(path);
+      const old = f.model.getValue();
+      if (old === text) return false;
+      let a = 0;
+      while (a < old.length && a < text.length && old[a] === text[a]) a++;
+      let b = 0;
+      while (b < old.length - a && b < text.length - a && old[old.length - 1 - b] === text[text.length - 1 - b]) b++;
+      const start = f.model.getPositionAt(a);
+      const end = f.model.getPositionAt(old.length - b);
+      quiet = true;
+      try {
+        f.model.pushStackElement();
+        f.model.pushEditOperations([], [{ range: { startLineNumber: start.lineNumber, startColumn: start.column, endLineNumber: end.lineNumber, endColumn: end.column }, text: text.slice(a, text.length - b) }], () => null);
+        f.model.pushStackElement();
+      } finally { quiet = false; }
+      renderTabs();
+      return true;
     },
 
     /** cb(path) after each edit of path; returns an unsubscribe function. */

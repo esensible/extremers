@@ -61,7 +61,14 @@ The project's settings are a file at its root, `studio.json`:
 project's: its package id (FNV-1a of it) is where the Kindle page loads from
 (`/pkg/<id>/`), and the clients import its wire module as `'<name>-wire'`. The
 Race template sets `race` whatever you call the project (its clients import
-`'race-wire'`); `blank` sets the project's name. `api.ui.build()`,
+`'race-wire'`); `blank` sets the project's name. Starting from the Race
+template under another bundle name takes three edits, not one:
+`api.project.settings({ name: 'mark' })`, then in both `kindle/src/api.js`
+and `watch/src/api.js` the import from `'race-wire'` (to `'engine-wire'`,
+which resolves under any name, or `'mark-wire'`), and in `watch/src/api.js`
+`packageId("race")` → `packageId("mark")` (else the watch ignores the host's
+envelopes and sends its events to package `race`). `project.settings` lists
+each such line still naming another bundle in `warnings`. `api.ui.build()`,
 `api.sim.start()` and `api.bundle.pack()` use it when no `{ name }` is given;
 `api.project.settings()` reads it, `api.project.settings({ name, version })`
 writes it (as does `files.write('studio.json', …)`). `bundle.pack` and
@@ -81,7 +88,10 @@ again (or pack with that name). A project without the file uses its own name.
   checks again by itself shortly after an engine file is saved.
 - `api.sim.start()` packs the engine and starts the real host (`common::Host`):
   the host evaluates `{gps: {}}` on a nil state, then the device clock is set
-  to `t0`. Two clocks:
+  to `t0`. That first evaluation (`cause: 'start'`) reports `t: 0` on
+  purpose: the host starts the engine at uptime 0, before any device time
+  exists, as the C6 does at boot before its first GPS time; the next one
+  (`cause: 'gps'`) is `t0` setting the clock, at `t0`. Two clocks:
   - **live** (the default; `t0` defaults to now): the device clock runs with
     the page's, wakes fire by themselves on wall time, `advance` is refused.
     This is the box's behaviour: use it with the previews (a person watching
@@ -127,7 +137,10 @@ again (or pack with that name). A project without the file uses its own name.
    `api.project.open(name)`. `api.project.settings()`: the bundle's name and
    version (`studio.json`, above).
 4. `api.files.list()`, `api.files.read(path)`, `api.files.write(path, text)`:
-   `files.write` replaces the whole file. The page shows the change.
+   `files.write` replaces the whole file. The page shows the change. A
+   `.json` file is stored pretty-printed when it parses (`formatted: true`;
+   only whitespace changes) and as given when it does not
+   (`formatted: false`, `jsonError`): read it back for the stored text.
 5. `api.engine.check()` — compile, the smoke runs and `engine/samples.json`
    (chained). Fix every diagnostic from its `help` before going on.
 6. `api.sim.start({ clock: 'virtual' })`, then `api.sim.gps({ t, lat, lon, speed, heading })`,
@@ -138,12 +151,33 @@ again (or pack with that name). A project without the file uses its own name.
 7. `api.ui.build({ target: 'both' })` (under the settings' name; a failed
    build keeps the last good one, and says so in `kept`),
    `api.preview.open({ target: 'kindle' })`, `api.preview.text('kindle')`,
-   `api.preview.press('kindle', { text: 'Stbd' })`.
+   `api.preview.press('kindle', { text: 'Stbd' })`. A press returns the
+   `events` the page sent, each with the host's answer and its
+   `evaluations` as records like `sim.event`'s. On the watch a button is
+   found by its text only (`{ text: '' }`: the first with no text, such as a
+   confirm); watch nodes have no `testID` (skill watch-ui).
 8. `api.bundle.pack()` (the settings' name and version; the version is an
    integer 0-65535; `{ name, version }` override them), `api.bundle.inspect()`.
 9. `api.device.connect()`, `api.device.install({ activate: true })`,
    `api.device.list()` ("The box", below).
 10. On any `{ ok:false }`: `error` + `hint`, then `api.status()` and `api.log({ last: 50 })`.
+
+## Driving it from a browser harness
+
+- **Keep the studio tab visible** (in front, in a window that is not
+  minimised). Chrome throttles a hidden tab's timers: at most once a second,
+  and after a few minutes hidden about once a minute. The live sim clock,
+  the previews' countdowns and the confirm windows (5 s) run on those
+  timers, so in a hidden tab a confirm expires before a later call reaches
+  it. Press a confirm in the call straight after the press that opened it,
+  e.g. `await api.preview.press('watch', { text: 'Start' }); await api.preview.press('watch', { text: '' })`
+  in one script.
+- **Page long outputs.** A `ui.build` result carries each file as base64,
+  `sim.history` and `files.read` can be long, and a harness may cut a long
+  tool output short. Return only what you need (`r.ok`, `r.error`,
+  `r.diagnostics`, `r.targets.watch.checks`), and follow `nextOffset` for
+  the paged calls (`skill`, `files.read`, `engine.disassemble`,
+  `sim.history`).
 
 ## The box (`device.*`)
 
@@ -194,20 +228,35 @@ fake of the box; it has not yet run against the hardware itself.
 
 ## What only a person can do
 
-- **Choose the box.** Chrome opens the Bluetooth chooser only from a
-  person's click. `api.device.connect()` never opens it; when it answers
-  `no remembered 'nacra'`, ask the person to click **Choose device…**
-  (`#device-choose`, top right) once and pick `nacra`
-  (`api.device.status().remembered` says whether that is needed). After that
-  `connect()` works from script, also after a reload *(getDevices() and
-  connect without the chooser verified 2026-10-13 with the development page)*.
+- **Connect a computer to the box.** What the person does, in order (the
+  Device panel's `#device-howto` says the same):
+  1. On the Kindle, **Choose → Settings → Pair watch**: it opens the box's
+     pairing window for 2 minutes. The button is named for the watch but
+     pairs any device, one device per window. (Not needed when this Mac is
+     already paired with the box.)
+  2. Click **Choose the box…** (`#device-choose`, top right). Chrome's popup
+     says "localhost:5190 wants to pair": that is only Chrome asking which
+     device this page may talk to. Pick `nacra`.
+  3. macOS then asks to pair with `nacra`: accept. That is the Bluetooth
+     pairing itself.
+  4. From then on the page remembers the box: `api.device.connect()` (or
+     the header's **Connect**) connects without prompts, also after a
+     reload *(getDevices() and connect without the chooser verified
+     2026-10-13 with the development page)*.
+
+  Chrome opens its chooser only from a person's click; `api.device.connect()`
+  never opens it, and answers `no remembered 'nacra'` until 2. is done
+  (`api.device.status().remembered` says whether it is needed). Each
+  browser origin must choose the box once, even if the Mac is already
+  paired with it. A page that remembers a *different* box (an earlier
+  `nacra`) waits for that one's advertisement and answers not in range:
+  ask the person to click **Choose another box…** and pick `nacra` again.
 - **Pair** *(verified 2026-10-13 with the development page; the Mac in use
   is bonded already)*. The box serves bundles only on a link encrypted with
   a bond it holds. A computer pairs only while the box's pairing window is
-  open: on the Kindle, Choose's **Settings → Pair watch** (120 s; the same
-  window pairs any device), or, with `dev-pairing` firmware, the 120 s after
-  the box boots. Ask the person to open it, then `api.device.connect()` and
-  ask them to confirm macOS's pairing prompt. A refusal answers
+  open (1. above), or, with `dev-pairing` firmware, the 120 s after the
+  box boots. Ask the person to open it, then `api.device.connect()` and ask
+  them to accept macOS's pairing prompt. A refusal answers
   `not bonded with 'nacra'`, with all of this in its hint; on a Mac, Chrome
   reports every refusal as "GATT operation failed for unknown reason".
 - **A stale pairing.** A Mac that paired before the box lost its bond
@@ -229,10 +278,10 @@ fake of the box; it has not yet run against the hardware itself.
 
 Stable ids: `#project-select`, `#status` (the last result as text,
 `aria-live`); the header's box: `#device-state` (`nacra · connected`,
-`nacra · disconnected`, `nacra · busy: install 42%`, `no device chosen`),
+`nacra · disconnected`, `nacra · busy: install 42%`, `no box chosen`),
 `#device-head-connect` / `#device-head-disconnect` (shown when they apply)
-and `#device-choose`, the chooser: **Choose device…** until Chrome
-remembers the box for this page, then a quiet **Re-choose…**; `#files` (one button per file,
+and `#device-choose`, the chooser: **Choose the box…** until Chrome
+remembers the box for this page, then a quiet **Choose another box…**; `#files` (one button per file,
 `data-path`); editor tabs `#editor-tab-<path>`, one per open file, and the
 editor `#editor-<path>`: Monaco shows one file at a time, so only the file
 shown has an `#editor-<path>` (find open files by their tabs; use
@@ -246,10 +295,13 @@ shown has an `#editor-<path>` (find open files by their tabs; use
 `button.tl` per evaluation, `data-n`), `#sim-view`, `#sim-state`,
 `#sim-findings`. In `#device`: `#device-connect`, `#device-disconnect`,
 `#device-list`, `#device-install` with `#device-install-activate`,
-`#device-status` (the link as text), `#device-progress`, `#device-bundles`
+`#device-status` (the link as text), `#device-howto` (how to connect, as above;
+open until the page remembers a box), `#device-progress`, `#device-bundles`
 (a table: one row per bundle with `data-id` and `data-name`, buttons
 `#device-activate-<id>`, `#device-delete-<id>`, `#device-get-<id>`; an
-inline confirm `#device-confirm-yes` / `#device-confirm-no`), `#device-log`.
+inline confirm `#device-confirm-yes` / `#device-confirm-no`; under it
+`#device-space`, and `#device-stale` once the box changed since the list),
+`#device-log`.
 Previews `#preview-kindle`, `#preview-watch`. No modals, no `alert`, no
 native pickers: Chrome's Bluetooth chooser, from `#device-choose`, is the
 one native dialog.

@@ -53,8 +53,10 @@ test('connect(): no remembered device → never the chooser; the hint asks for t
   const { dev, bluetooth } = setup({ remembered: false });
   const e = await rejects(dev.connect(), /no remembered 'nacra'/);
   assert.equal(e.code, 'NEEDS_CHOOSER');
-  assert.match(e.hint, /Choose device…/);
+  assert.match(e.hint, /Choose the box…/);
   assert.match(e.hint, /#device-choose/);
+  assert.match(e.hint, /Choose → Settings → Pair watch/);
+  assert.match(e.hint, /each browser origin must choose the box once/);
   assert.equal(bluetooth.requestDeviceCalls.length, 0);
   assert.equal(dev.status().state, 'disconnected');
   assert.match(dev.status().lastError, /no remembered/);
@@ -107,6 +109,9 @@ test('the box not advertising → not in range, with the Bluetooth off/on hint',
   const e = await rejects(dev.connect(), /advertisement/);
   assert.equal(e.code, 'NOT_IN_RANGE');
   assert.match(e.hint, /powered and within range/);
+  assert.match(e.hint, /both of its connection slots are taken: the watch plus another studio tab or window/);
+  assert.match(e.hint, /a different box/);
+  assert.match(e.hint, /Choose another box…/);
   assert.match(e.hint, /Bluetooth off and on/);
 });
 
@@ -174,7 +179,7 @@ test('a page picked before the service existed → pick again', async () => {
   const { dev, device } = setup();
   device.serviceNotGranted = true;
   const e = await rejects(dev.connect(), /not granted/);
-  assert.match(e.hint, /Choose device…/);
+  assert.match(e.hint, /Choose another box…/);
 });
 
 test('an unexpected drop reconnects by itself', async () => {

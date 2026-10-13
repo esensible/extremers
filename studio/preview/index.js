@@ -63,7 +63,7 @@ export function createController({ api, getLastBuild, kindle, watch, worker }) {
     throw err(`target must be 'kindle' or 'watch', got ${JSON.stringify(target)}`, "e.g. api.preview.text('kindle')");
   };
   const byOf = (by) => {
-    if (!by || typeof by !== 'object' || (by.text === undefined && by.testid === undefined && by.selector === undefined)) throw err("say which button: { text }, { testid } or (Kindle) { selector }; { text: '' } is the first button with no text (a confirm)", "e.g. api.preview.press('kindle', { text: 'Stbd' })");
+    if (!by || typeof by !== 'object' || (by.text === undefined && by.testid === undefined && by.selector === undefined)) throw err("say which button: { text }, or on the Kindle { testid } or { selector }; { text: '' } is the first button with no text (a confirm)", "e.g. api.preview.press('kindle', { text: 'Stbd' })");
     if (by.text !== undefined && typeof by.text !== 'string') throw err('text must be a string');
     return by;
   };
@@ -146,9 +146,27 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
   const controller = createController({ api, getLastBuild, kindle, watch, worker });
 
   // ---- Kindle: fit the page's CSS px into the pane (only a changed fit is written)
+  // The room in height: the pane's visible height (less its padding) less the
+  // rest of the Kindle panel (its head, status line and log, fixed heights),
+  // so the whole Kindle panel shows without scrolling; the watch is below.
+  // None of it depends on the viewport's own height, so a fit cannot feed back.
   const fitted = { key: null, frame: null };
-  const fitKindle = () => applyKindleFit($('preview-kindle-viewport'), $('preview-kindle-frame'), kindle.size, fitted);
-  if (typeof ResizeObserver !== 'undefined' && $('preview-kindle-viewport')) new ResizeObserver(fitKindle).observe($('preview-kindle-viewport'));
+  const kindleRoom = () => {
+    const vp = $('preview-kindle-viewport');
+    const sec = $('preview-kindle');
+    const pane = vp?.closest?.('.previews');
+    if (!vp || !sec || !pane || typeof getComputedStyle !== 'function') return Infinity;
+    const cs = getComputedStyle(pane);
+    const room = pane.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - (sec.offsetHeight - vp.offsetHeight);
+    return Number.isFinite(room) ? Math.max(120, room) : Infinity; // .pv-viewport's min-height
+  };
+  const fitKindle = () => applyKindleFit($('preview-kindle-viewport'), $('preview-kindle-frame'), kindle.size, fitted, { maxHeight: kindleRoom() });
+  if (typeof ResizeObserver !== 'undefined' && $('preview-kindle-viewport')) {
+    const ro = new ResizeObserver(fitKindle);
+    ro.observe($('preview-kindle-viewport')); // the width
+    const pane = $('preview-kindle-viewport').closest?.('.previews');
+    if (pane) ro.observe(pane); // the window's height
+  }
 
   function renderKindle() {
     fitKindle();

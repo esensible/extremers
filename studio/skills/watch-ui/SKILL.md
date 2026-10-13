@@ -47,8 +47,31 @@ createApp(App, { onState: (s) => setSpeed(s.speed) });
 - **Raw text only inside `<text>`.** A non-empty string outside one throws;
   nested `<text>` is a styled span. `minScale < 1` shrinks a single line to
   fit; text that still doesn't fit gets an ellipsis.
+- **Colours** (`background`, `borderColor`, `color`): `"#RRGGBB"`
+  / `"#RRGGBBAA"`, or a token of the watch's palette (solid-watch's core
+  schema plus the extremers fragment, `watch-js/extremers.schema.json`):
+  `white` `#FFFFFF`, `black` `#000000`, `transparent`, `accent` `#FF9F0A`
+  (the Race confirm button), `button` `#333333` (Race's buttons:
+  `background="button"`; an outlined one `background={null}` `borderWidth={1}`
+  `borderColor="button"`), `caption` `#999999` (small grey labels). Text is
+  `white` unless set.
+- **Only the schema's props.** A node takes exactly the props listed here
+  (layout, `background`/`borderColor`/`borderRadius`/`opacity`, the text
+  style on `<text>`, `onPress`/`disabled` on `<button>`,
+  `pattern`/`trigger` on `<haptic>`). There is **no `testID`, `id`, `key`
+  or `accessibilityLabel`**: the hosts refuse an unknown prop and the app
+  stops rendering, so `ui.build`'s `app` check fails with
+  `<button> has no prop testID`.
 - **`button`:** `onPress` (the event name is the prop without `on`:
   `press`); `disabled`. Asking for a second tap is the app's own UI (Race's `confirm.jsx`).
+  In the preview, `api.preview.press('watch', { text: 'Start' })` presses a
+  button by its text; a button with no text, such as Race's round `accent`
+  confirm, is `{ text: '' }`: the first shown button with no text, in tree
+  order (a `display="none"` one is skipped; in Race a view's confirm comes
+  before the exit square, which has no text either, and the exit's own
+  confirm after it). The confirm is open
+  for 5 s (`CONFIRM_TIMEOUT`), so press it straight after the button that
+  opened it.
 - **`haptic`:** plays `pattern` (watchOS `WKHapticType` names, e.g.
   `"notification"`) each commit where `trigger` changed; the first value doesn't play.
 
@@ -117,9 +140,15 @@ output has no templates, so any `_tmpl$` left fails the build, `B-TMPL`). The
 output is `watch.js`; the same files give the same bytes.
 
 **Checks:** `tmpl-guard` (above) and `app`: `watch.js` is evaluated with a
-stub `globalThis` and a stub host; it must set `globalThis.__app`, and
-`__app.mount(1, { width: 198, height: 242 })` must run without throwing
-(`B-APP` otherwise; the bundle is still returned). Other diagnostics:
+stub `globalThis` and a stub host that refuses node types and props the
+schema lacks (as the watch and the preview do); it must set
+`globalThis.__app`, `__app.mount(1, { width: 198, height: 242 })` must run
+without throwing, and so must `__app.onState(envelope)` with one state: the
+running sim's current envelope when it runs this project under this name,
+else the sim's start envelope from a host of its own (the check's message
+says which, or why there was none: an engine that does not compile). So a
+node that only appears once a state arrives is checked too (`B-APP`
+otherwise, with the error the app threw; the bundle is still returned). Other diagnostics:
 `B-ENTRY`, `B-SYNTAX` (line/column), `B-WIRE`, `B-ROLLUP`, warnings `B-WARN`.
 
 The Race watch app built this way replays solid-watch's golden script to the

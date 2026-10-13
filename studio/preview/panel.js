@@ -36,31 +36,41 @@ export function setClass(el, cls, on) {
   return true;
 }
 
-/** The Kindle page's fit in a viewport `width` CSS px wide: { scale, height } (never enlarged). */
-export function kindleFit(width, size) {
-  const scale = Math.min(1, Math.max(0, width) / size.width);
+/**
+ * The Kindle page's fit in a viewport `width` CSS px wide and at most
+ * `maxHeight` CSS px tall: { scale, height } (never enlarged). The scale is
+ * the smaller of the width's and the height's, so a short window shows the
+ * whole page, smaller, instead of a page cut off below the fold.
+ */
+export function kindleFit(width, size, maxHeight = Infinity) {
+  const byHeight = Number.isFinite(maxHeight) ? Math.max(0, maxHeight) / size.height : Infinity;
+  const scale = Math.min(1, Math.max(0, width) / size.width, byHeight);
   return { scale, height: Math.ceil(size.height * scale) };
 }
 
 /**
  * Fits the Kindle iframe into its viewport: the frame at the page's CSS size,
- * scaled; the viewport as tall as the scaled page. Writes only a changed fit
- * (`last` keeps the one applied: { key }). → whether it wrote.
+ * scaled; the viewport as tall as the scaled page. `maxHeight` is the room
+ * the viewport has (preview/index.js: the pane's visible height less the rest
+ * of the Kindle panel); a page fitted by height is centred in the width.
+ * Writes only a changed fit (`last` keeps the one applied: { key }). →
+ * whether it wrote.
  */
-export function applyKindleFit(vp, frame, size, last) {
+export function applyKindleFit(vp, frame, size, last, { maxHeight = Infinity } = {}) {
   if (!vp) return false;
   if (!frame || !size) {
     last.key = null;
     return setStyle(vp, 'height', '');
   }
-  const { scale, height } = kindleFit(vp.clientWidth, size);
-  const key = `${size.width}x${size.height}@${scale}`;
+  const { scale, height } = kindleFit(vp.clientWidth, size, maxHeight);
+  const left = Math.max(0, Math.floor((vp.clientWidth - size.width * scale) / 2));
+  const key = `${size.width}x${size.height}@${scale}+${left}`;
   if (last.key === key && frame === last.frame) return false;
   last.key = key; last.frame = frame;
   setStyle(frame, 'width', `${size.width}px`);
   setStyle(frame, 'height', `${size.height}px`);
   setStyle(frame, 'transformOrigin', '0 0');
-  setStyle(frame, 'transform', `scale(${scale})`);
+  setStyle(frame, 'transform', left ? `translateX(${left}px) scale(${scale})` : `scale(${scale})`);
   setStyle(vp, 'height', `${height}px`);
   return true;
 }

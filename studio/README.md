@@ -132,11 +132,25 @@ the editor, and on Cmd/Ctrl-S; the tab's dot means unsaved. Tabs are
 `#editor-<path>` of the file shown. `window.__editor` is the editor's API
 (`open, close, rename, getText, setText, onChange, isDirty, setMarkers,
 clearMarkers, markers, reveal, activePath, tabs, onActiveChange, cursor,
-layout`); markers are `{startLine, startCol, endLine, endCol, message,
+layout, reformat`); markers are `{startLine, startCol, endLine, endCol, message,
 severity: 'error'|'warning'|'info', rule}` (1-based), and
 `diagnosticToMarker` in `editor/lang.js` makes one from a compiler diagnostic.
 A rename moves the text to a new model (Monaco's URIs are fixed), so its undo
 history is lost.
+
+JSON is pretty wherever a person sees it (`json.js`): 2-space indent, one
+member or element per line, `"key": value`, `{}`/`[]` when empty, a trailing
+newline — only the whitespace changes (strings, numbers such as an int64 past
+2^53, and the key order stay exactly as written). `api.files.write` stores a
+`.json` file that way when it parses (`formatted: true`) and stores text that
+does not parse as given (`formatted: false`, `jsonError`), so a half-edited
+file is never lost; the templates (the Race example's hand-wrapped schemas and
+samples too) and `project.import` store it the same way. The editor
+reformats a `.json` file on open (then saves it) and on every save but the
+autosave while typing, as one undoable edit (`reformat`), only when it parses.
+A Race project's `source.json` in its bundle therefore holds the pretty
+schemas: the bundle's bytes are not `fixtures/race.bundle`'s (the engine, the
+tables and the descriptors are; that test packs the vendored texts).
 
 ## The previews
 
@@ -180,8 +194,10 @@ Cases: 41 mm 176×215, 45 mm 198×242, 49 mm 205×251 (pt).
 
 A successful `ui.build` reopens an open preview on the new build (a new
 session). `api.preview.press(target, { text } | { testid } | { selector })`
-clicks like a finger (`{ text: '' }`: the first button with no text, such as
-Race's confirm; `{ selector }` is a CSS selector, Kindle only).
+clicks like a finger (`{ text: '' }`: the first shown button with no text,
+such as Race's confirm; `{ testid }` (data-testid) and `{ selector }` (CSS)
+are Kindle only: watch nodes have no id prop) and returns the events the
+page sent, each with the host's evaluations as `sim.event` records.
 
 ## The box
 
@@ -212,10 +228,17 @@ the wait timers are cleared; a drop resumes instead of failing; the pairing
 attempts are 6, 2 s apart (a person has to confirm the prompt). The link
 follows `dingo-cli/web/ble.js` `createBridge`.
 
-What a person does, once: click **Choose device…** and pick `nacra`; for the
-first connection of a computer, open the box's pairing window (Kindle:
-Settings → Pair watch, 120 s; or `dev-pairing` firmware, 120 s after boot) and
-confirm macOS's prompt. `chrome://flags/#enable-web-bluetooth-new-permissions-backend`
+What a person does, once, in order (the Device panel says the same):
+(1) for the first connection of a computer, on the Kindle Choose → Settings →
+Pair watch opens the box's 2-minute pairing window (named for the watch, it
+pairs any device, one per window; or `dev-pairing` firmware, 120 s after
+boot); (2) click **Choose the box…**: Chrome's popup ("localhost:5190 wants to
+pair") only asks which device the page may talk to: pick `nacra`; (3) macOS
+then asks to pair: accept; (4) from then on the box is remembered and Connect
+needs no prompts. Each browser origin chooses the box once, even if the Mac is
+already paired; a page that remembers a different box waits for that one's
+advertisement and must choose again (**Choose another box…**).
+`chrome://flags/#enable-web-bluetooth-new-permissions-backend`
 must be Enabled for `getDevices()`. A Mac that holds an old pairing the box no
 longer has (the link drops while connecting) must forget `nacra` in System
 Settings → Bluetooth (sometimes listed only in the menu-bar Bluetooth menu);

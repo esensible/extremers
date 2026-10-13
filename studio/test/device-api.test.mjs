@@ -90,7 +90,7 @@ test('status, connect without the chooser, list, disconnect — through the api'
 test('no remembered device: connect refuses with the chooser hint; the page\'s _device.choose opens it', async () => {
   const { api, bluetooth, device } = world({ remembered: false });
   const r = notOk(assert, await api.device.connect(), /no remembered 'nacra'/);
-  assert.match(r.hint, /Choose device…/);
+  assert.match(r.hint, /Choose the box…/);
   assert.equal(bluetooth.requestDeviceCalls.length, 0);
   bluetooth.chooserResult = device;
   const calls = [];

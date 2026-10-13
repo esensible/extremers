@@ -41,12 +41,15 @@ export function bootWatchRealm({ realm, hostApi, src }) {
   return app;
 }
 
-/** The text of a shadow tree (ShadowTree): each laid-out text leaf's runs, in tree order. */
+/** Drawn: a laid-out node that is not display="none" (nothing under one is drawn either). */
+const shown = (tree, n) => tree._hasLayout(n) && n.props?.display !== 'none';
+
+/** The text of a shadow tree (ShadowTree): each shown text leaf's runs, in tree order. */
 export function treeText(tree) {
   const out = [];
   const walk = (n) => {
     for (const c of n.children) {
-      if (!tree._hasLayout(c)) continue;
+      if (!shown(tree, c)) continue;
       if (c.type === 'text') { const s = tree.runs(c).map((r) => r.text).join(''); if (s.trim()) out.push(s); } else walk(c);
     }
   };
@@ -54,14 +57,14 @@ export function treeText(tree) {
   return out;
 }
 
-/** The buttons of a shadow tree: [{ tag, text, disabled, onPress, testid }] in tree order. */
+/** The buttons a finger can reach in a shadow tree (shown ones): [{ tag, text, disabled, onPress }] in tree order. */
 export function treeButtons(tree) {
   const out = [];
   const textOf = (n) => (n.type === 'text' ? tree.runs(n).map((r) => r.text).join('') : n.children.map(textOf).join(' '));
   const walk = (n) => {
     for (const c of n.children) {
-      if (!tree._hasLayout(c)) continue;
-      if (c.type === 'button') out.push({ tag: c.tag, text: textOf(c).replace(/\s+/g, ' ').trim(), disabled: !!c.props.disabled, onPress: !!c.props.onPress, testid: c.props.testID ?? c.props.testid ?? null });
+      if (!shown(tree, c)) continue;
+      if (c.type === 'button') out.push({ tag: c.tag, text: textOf(c).replace(/\s+/g, ' ').trim(), disabled: !!c.props.disabled, onPress: !!c.props.onPress });
       walk(c);
     }
   };
@@ -157,7 +160,7 @@ export class WatchPreview {
   send(bytes) {
     const b = Uint8Array.from(bytes);
     const r = this.sim.send(b);
-    const rec = { at: Date.now(), bytes: hex(b), ...(r.ok ? { accepted: r.accepted, refused: r.refused, evaluations: r.evaluations.length } : { error: r.error }) };
+    const rec = { at: Date.now(), bytes: hex(b), ...(r.ok ? { accepted: r.accepted, refused: r.refused, evaluations: r.evaluations } : { error: r.error }) };
     this.push(this.events, rec);
     this.log(r.ok ? `watch → host ${rec.bytes}: ${r.accepted ? `accepted, ${r.evaluations.length} evaluation(s)` : `refused (${r.refused})`}` : `watch → host ${rec.bytes}: ${r.error}`, r.ok && r.accepted ? 'info' : 'warn');
     this.onChange();
@@ -211,11 +214,15 @@ export class WatchPreview {
     const bs = treeButtons(this.host.tree);
     const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
     let b;
-    if (by.selector !== undefined) throw Object.assign(new Error('{ selector } is for the Kindle page; the watch takes { text } or { testid }'), { hint: "{ text: '' } presses the first button with no text (a confirm)" });
+    const now = () => `buttons now: ${bs.length ? bs.map((x) => JSON.stringify(x.text)).join(', ') : '(none)'}`;
+    if (by.selector !== undefined) throw Object.assign(new Error('{ selector } is for the Kindle page; the watch takes { text }'), { hint: `{ text: '' } presses the first button with no text (a confirm); ${now()}` });
+    // solid-watch's nodes have no id prop (a testID is an unknown prop: the
+    // hosts refuse it and the bundle stops rendering), so the watch's buttons
+    // are found by their text
+    if (by.testid !== undefined) throw Object.assign(new Error("the watch has no testID: a solid-watch node takes only its schema's props (a testID makes the watch bundle fail), so watch buttons are pressed by { text }"), { hint: `{ text: 'Start' }; { text: '' } presses the first button with no text (a confirm); ${now()}` });
     const want = norm(by.text);
-    if (by.testid !== undefined) b = bs.find((x) => x.testid === String(by.testid));
-    else b = bs.find((x) => x.text === want && x.onPress && !x.disabled) ?? bs.find((x) => x.text === want) ?? (want ? bs.find((x) => x.text.includes(want)) : undefined);
-    if (!b) throw Object.assign(new Error(`no button ${by.testid !== undefined ? `with testID '${by.testid}'` : `with the text '${by.text}'`} on the watch`), { hint: `buttons now: ${bs.length ? bs.map((x) => JSON.stringify(x.text)).join(', ') : '(none)'}; api.preview.text('watch')` });
+    b = bs.find((x) => x.text === want && x.onPress && !x.disabled) ?? bs.find((x) => x.text === want) ?? (want ? bs.find((x) => x.text.includes(want)) : undefined);
+    if (!b) throw Object.assign(new Error(`no button with the text '${by.text}' on the watch`), { hint: `${now()}; api.preview.text('watch')` });
     if (b.disabled) throw Object.assign(new Error(`the watch button '${b.text}' is disabled`), { hint: "api.preview.text('watch')" });
     const before = this.events.length;
     const el = this.host.els.get(b.tag);

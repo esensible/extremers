@@ -544,6 +544,12 @@ let next = (
 
 An odometer, a mark to sail to, and an alarm clock. It compiles (`ok: needs 1296 bytes …`).
 
+It is here to show the idioms together, not as a spec: an app asked for
+under another name (even "Mark") is designed from what the person asked
+for. Take the parts that fit (the odometer, the one-off alarm, the ETA
+guard), and write the state, view and events the request needs; do not
+copy this whole engine and its schemas and call the task done.
+
 `state.schema.json`:
 
 ```json

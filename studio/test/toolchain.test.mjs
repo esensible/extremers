@@ -255,6 +255,47 @@ test('watch: an entry that never calls createApp fails the app check (B-APP); CS
   assert.deepEqual(errors(c).map((d) => d.rule), ['B-CSS']);
 });
 
+test('watch: the app check refuses props and node types the schema lacks, at mount and in the state it delivers (B-APP)', async () => {
+  // a testID on a node that is drawn from the start: mount fails
+  const atMount = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp('import { createApp } from "solid-watch";\ncreateApp(() => <view><button testID="go" onPress={() => {}} /></view>);\n') });
+  assert.equal(atMount.ok, false);
+  const [d] = errors(atMount);
+  assert.equal(d.rule, 'B-APP');
+  assert.match(d.message, /^__app\.mount\(1, \{"width":198,"height":242\}\) threw: <button> has no prop testID: a watch node takes only its schema's props \(skill watch-ui\)$/);
+  // an unknown node type
+  const node = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp('import { createApp } from "solid-watch";\ncreateApp(() => <div />);\n') });
+  assert.match(errors(node)[0].message, /threw: unknown node type <div> \(the watch has <view>, <text>, <scroll>, <button>, <haptic>\)/);
+  // drawn only once a state arrives: mount passes; the delivered state finds it
+  const src = 'import { createSignal, Show } from "solid-js";\nimport { createApp } from "solid-watch";\nconst [n, setN] = createSignal(0);\ncreateApp(() => <view><Show when={n() > 0}><button testID="go" onPress={() => {}}><text>Go</text></button></Show></view>, { onState(b) { setN(b.length); } });\n';
+  const none = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp(src) });
+  assert.deepEqual(errors(none), []);
+  assert.match(none.checks.find((c) => c.name === 'app').message, /mount ran on a stub host \(\d+ nodes\); no state was delivered$/);
+  const why = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp(src), envelope: { bytes: null, from: 'no sim envelope: the engine does not compile' } });
+  assert.match(why.checks.find((c) => c.name === 'app').message, /no state was delivered \(no sim envelope: the engine does not compile\)$/);
+  const late = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp(src), envelope: { bytes: new Uint8Array([1, 2, 3]), from: "the sim's start envelope" } });
+  assert.equal(late.ok, false);
+  assert.equal(errors(late)[0].rule, 'B-APP');
+  assert.equal(errors(late)[0].message, "__app.onState(the sim's start envelope) threw: <button> has no prop testID: a watch node takes only its schema's props (skill watch-ui)");
+  // the same app without the testID takes the state
+  const fine = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp(src.replace(' testID="go"', '')), envelope: { bytes: new Uint8Array([1, 2, 3]), from: "the sim's start envelope" } });
+  assert.deepEqual(errors(fine), []);
+  assert.match(fine.checks.find((c) => c.name === 'app').message, /then onState\(the sim's start envelope\) \(\d+ nodes\)$/);
+});
+
+test('watch: Race takes a Race envelope in the app check; build() hands the envelope to the watch target only', async () => {
+  const VIEW = wire.load(compiler.compile(JSON.parse(readFileSync(join(VENDOR, 'examples/race/engine/view.schema.json'), 'utf8'))));
+  const state = Array.from(wire.encode(VIEW, { phase: { idle: {} }, line: { stbd: true, port: false }, speed: 3.25 }));
+  const bytes = new Uint8Array(encodeEnvelope({ timestamp: 1_790_000_000_000, active: RACE_ID, ui: { web: [1, 2, 3, 4, 5, 6, 7, 8], watch: [0, 0, 0, 0, 0, 0, 0, 0] }, state }));
+  const r = await build({ target: 'both', name: 'race', files: raceFiles(), runtime: RT, cache: memCache(), envelope: { bytes, from: 'a Race envelope' } });
+  assert.deepEqual(r.diagnostics, []);
+  const app = r.targets.watch.checks.find((c) => c.name === 'app');
+  assert.match(app.message, /then onState\(a Race envelope\)/);
+  const before = Number(/mount ran on a stub host \((\d+) nodes\)/.exec(app.message)[1]);
+  const after = Number(/onState\(a Race envelope\) \((\d+) nodes\)/.exec(app.message)[1]);
+  assert.ok(after > before, `the idle screen drew more nodes: ${app.message}`);
+  assert.deepEqual(r.targets.kindle.checks.map((c) => c.name), ['es5', 'templates']);
+});
+
 test('images import as data URIs', async () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
   const r = await buildTarget({ target: 'watch', name: 'x', runtime: RT, files: watchApp('import { createApp } from "solid-watch";\nimport img from "./a.svg";\nglobalThis.img = img;\ncreateApp(() => null);\n', [{ path: 'watch/src/a.svg', bytes: new TextEncoder().encode(svg) }]) });

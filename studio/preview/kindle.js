@@ -258,7 +258,7 @@ export class KindlePreview {
       case 'hostEvent': {
         const bytes = new Uint8Array(d.bytes);
         const r = this.sim.send(bytes);
-        const rec = { at: Date.now(), bytes: hex(bytes), ...(r.ok ? { accepted: r.accepted, refused: r.refused, evaluations: r.evaluations.length } : { error: r.error }) };
+        const rec = { at: Date.now(), bytes: hex(bytes), ...(r.ok ? { accepted: r.accepted, refused: r.refused, evaluations: r.evaluations } : { error: r.error }) };
         this.push(this.events, rec);
         this.log(r.ok ? `page → host ${rec.bytes}: ${r.accepted ? `accepted, ${r.evaluations.length} evaluation(s)` : `refused (${r.refused})`}` : `page → host ${rec.bytes}: ${r.error}`, r.ok && r.accepted ? 'info' : 'warn');
         this.onChange();

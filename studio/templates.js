@@ -17,6 +17,11 @@
 // '<name>-wire' module the clients import) and the manifest's version.
 // Race's clients import 'race-wire', so its bundle is 'race' whatever the
 // project is called; a blank project's bundle is the project's name.
+//
+// Every .json file is stored pretty-printed (json.js), as api.files.write
+// stores it.
+
+import { storedText } from './json.js';
 
 export const TEMPLATES = ['race', 'blank'];
 
@@ -134,5 +139,10 @@ export async function templateFiles(name, io, { project = name } = {}) {
     err.hint = `templates: ${TEMPLATES.join(', ')}`;
     throw err;
   }
-  return [...files.filter((f) => f.path !== SETTINGS_PATH), { path: SETTINGS_PATH, text: settingsText(templateSettings(name, project)) }];
+  // .json files pretty, as api.files.write stores them (json.js; the Race
+  // example's schemas and samples are hand-wrapped in the monorepo)
+  return [
+    ...files.filter((f) => f.path !== SETTINGS_PATH).map((f) => (typeof f.text === 'string' ? { ...f, text: storedText(f.path, f.text) } : f)),
+    { path: SETTINGS_PATH, text: settingsText(templateSettings(name, project)) },
+  ];
 }

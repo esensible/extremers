@@ -260,7 +260,9 @@ export function deviceStatusText(s) {
     case 'connected': t = `Connected to ${who}${s.bonded ? ' (bonded)' : ''}`; break;
     case 'connecting': t = `Connecting to ${who}…`; break;
     case 'busy': t = `${who}: ${s.op}${s.progress && s.op !== 'connect' && s.op !== 'choose' ? ` — ${deviceProgressText(s.progress)}` : '…'}`; break;
-    default: t = s.deviceName ? `Disconnected from ${who}` : "Not connected: click 'Choose device…' once, then Connect";
+    default: t = s.deviceName ? `Disconnected from ${who}`
+      : s.remembered ? 'Not connected: this page remembers the box; Connect connects without prompts'
+        : "Not connected: this page has not chosen the box yet. Start on the Kindle (Choose → Settings → Pair watch), then click 'Choose the box…' at the top right (in full below)";
   }
   if (s.chunk) t += ` · chunk ${s.chunk} B${s.window ? `, window ${s.window} B` : ''}`;
   if (s.lastError && s.state !== 'connected' && s.state !== 'busy') t += ` — ${s.lastError}${s.hint ? ` (${s.hint})` : ''}`;
@@ -270,18 +272,23 @@ export function deviceStatusText(s) {
 /**
  * The header's device group from api.device.status():
  *   text        'nacra · connected' | 'nacra · disconnected' | 'nacra · connecting…' |
- *               'nacra · busy: install 42%' | 'no device chosen' | …
+ *               'nacra · busy: install 42%' | 'no box chosen' | …
  *   tone        'ok' | 'busy' | 'idle' | 'err' (the text's colour)
  *   choose      the chooser button (#device-choose): { label, prominent } — prominent
- *               ('Choose device…') only when Chrome remembers no box for this page;
- *               otherwise a quiet 'Re-choose…' (another box, or the same one again)
+ *               ('Choose the box…') only when Chrome remembers no box for this page;
+ *               otherwise a quiet 'Choose another box…' (a different box, or the
+ *               same one again: a page that remembers an earlier box waits for
+ *               that one's advertisement)
  *   connect     show Connect (a remembered box, not connected)
  *   disconnect  show Disconnect (connected or connecting)
  *   disabled    the buttons are disabled (a device call is running)
  */
+export const CHOOSE_LABEL = 'Choose the box…';
+export const CHOOSE_AGAIN_LABEL = 'Choose another box…';
+
 export function deviceHead(s) {
-  if (!s) return { text: '', tone: 'idle', choose: { label: 'Choose device…', prominent: true }, connect: false, disconnect: false, disabled: false };
-  if (!s.bluetooth) return { text: 'no Web Bluetooth', tone: 'err', choose: { label: 'Choose device…', prominent: true }, connect: false, disconnect: false, disabled: true };
+  if (!s) return { text: '', tone: 'idle', choose: { label: CHOOSE_LABEL, prominent: true }, connect: false, disconnect: false, disabled: false };
+  if (!s.bluetooth) return { text: 'no Web Bluetooth', tone: 'err', choose: { label: CHOOSE_LABEL, prominent: true }, connect: false, disconnect: false, disabled: true };
   const who = s.deviceName ?? 'nacra';
   const remembered = s.remembered === true || !!s.deviceName;
   const busy = s.state === 'busy';
@@ -292,10 +299,10 @@ export function deviceHead(s) {
   } else if (s.state === 'connected') { text = `${who} · connected`; tone = 'ok'; }
   else if (s.state === 'connecting') { text = `${who} · connecting…`; tone = 'busy'; }
   else if (remembered) { text = `${who} · disconnected`; tone = s.lastError ? 'err' : 'idle'; }
-  else { text = 'no device chosen'; tone = s.lastError ? 'err' : 'idle'; }
+  else { text = 'no box chosen'; tone = s.lastError ? 'err' : 'idle'; }
   return {
     text, tone,
-    choose: remembered ? { label: 'Re-choose…', prominent: false } : { label: 'Choose device…', prominent: true },
+    choose: remembered ? { label: CHOOSE_AGAIN_LABEL, prominent: false } : { label: CHOOSE_LABEL, prominent: true },
     connect: remembered && s.state === 'disconnected',
     disconnect: s.state === 'connected' || s.state === 'connecting',
     disabled: busy,
@@ -308,7 +315,7 @@ export function deviceHead(s) {
  * whose action waits for its inline confirm (confirm: { id, act }) shows
  * device-confirm-yes / device-confirm-no instead.
  */
-export function deviceRowsHtml(list, confirm = null) {
+export function deviceRowsHtml(list, confirm = null, stale = false) {
   if (!list) return '<p class="hint">List shows the bundles on the box.</p>';
   const rows = list.bundles.map((b) => {
     const flags = [b.active && 'active', b.boot && 'boots', b.builtin && 'built in'].filter(Boolean).join(', ');
@@ -324,5 +331,20 @@ export function deviceRowsHtml(list, confirm = null) {
     return `<tr data-id="${b.id}" data-name="${esc(b.name)}"><td>${esc(b.name)}</td><td class="mono">${b.id}</td><td>${b.version}</td><td>${fmtBytes(b.len)}</td><td class="mono" title="ui.web ${esc(b.ui.web)}, ui.watch ${esc(b.ui.watch)}">${esc(b.contentHash)}</td><td>${esc(flags)}</td><td class="acts">${acts}</td></tr>`;
   }).join('');
   return `<table class="dev-table"><thead><tr><th>name</th><th>id</th><th>v</th><th>bytes</th><th>content hash</th><th>flags</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-<p class="hint" id="device-space">${fmtBytes(list.free)} free; the largest bundle that fits: ${fmtBytes(list.largestFree)}</p>`;
+<p class="hint" id="device-space">${fmtBytes(list.free)} free; the largest bundle that fits: ${fmtBytes(list.largestFree)}</p>${stale ? '\n<p class="hint c-danger" id="device-stale">The box changed since this list: List again.</p>' : ''}`;
+}
+
+/**
+ * The bundles table's state { list, stale } after a device call (the page's
+ * call listener; every call, the page's or an agent's): a list replaces it;
+ * an install, activate or delete marks a shown list stale (the page never
+ * lists again by itself: that would take the box from an agent); a disconnect
+ * clears it. → the same object when nothing changed.
+ */
+export function deviceTableAfter(t, name, r) {
+  if (!r?.ok || !name.startsWith('device.')) return t;
+  if (name === 'device.list') return { list: r, stale: false };
+  if (['device.install', 'device.activate', 'device.delete'].includes(name)) return t.list && !t.stale ? { ...t, stale: true } : t;
+  if (name === 'device.disconnect') return t.list ? { list: null, stale: false } : t;
+  return t;
 }

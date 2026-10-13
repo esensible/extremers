@@ -1,13 +1,65 @@
 {
   "description": "Race's own events, which clients send: exactly one of these. The host adds its built-in gps and wake.",
   "oneOf": [
-    {"properties": {"line_stbd": {"description": "set the starboard end where the boat is", "type": "object"}}, "required": ["line_stbd"]},
-    {"properties": {"line_port": {"description": "set the port end where the boat is", "type": "object"}}, "required": ["line_port"]},
-    {"properties": {"bump_seq": {"description": "not counting down: the gun `seconds` from the tap. Counting down: > 0 moves the gun earlier, < 0 later, 0 rounds the time left (from the tap) down to a whole minute",
-                                 "type": "object", "required": ["seconds", "tapped_at"],
-                                 "properties": {"seconds": {"type": "integer", "format": "int32"},
-                                                "tapped_at": {"description": "when the tap happened, on the device clock", "type": "integer", "format": "int64", "minimum": 0}}}},
-     "required": ["bump_seq"]},
-    {"properties": {"race_finish": {"description": "finish the race, or abort the countdown", "type": "object"}}, "required": ["race_finish"]}
+    {
+      "properties": {
+        "line_stbd": {
+          "description": "set the starboard end where the boat is",
+          "type": "object"
+        }
+      },
+      "required": [
+        "line_stbd"
+      ]
+    },
+    {
+      "properties": {
+        "line_port": {
+          "description": "set the port end where the boat is",
+          "type": "object"
+        }
+      },
+      "required": [
+        "line_port"
+      ]
+    },
+    {
+      "properties": {
+        "bump_seq": {
+          "description": "not counting down: the gun `seconds` from the tap. Counting down: > 0 moves the gun earlier, < 0 later, 0 rounds the time left (from the tap) down to a whole minute",
+          "type": "object",
+          "required": [
+            "seconds",
+            "tapped_at"
+          ],
+          "properties": {
+            "seconds": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "tapped_at": {
+              "description": "when the tap happened, on the device clock",
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "required": [
+        "bump_seq"
+      ]
+    },
+    {
+      "properties": {
+        "race_finish": {
+          "description": "finish the race, or abort the countdown",
+          "type": "object"
+        }
+      },
+      "required": [
+        "race_finish"
+      ]
+    }
   ]
 }

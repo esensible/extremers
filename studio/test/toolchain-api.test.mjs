@@ -120,8 +120,17 @@ test('a Race project under another name builds, packs and runs as the bundle "ra
   const { api } = world;
   const c = ok(assert, await api.project.create('demo', { template: 'race' }));
   assert.deepEqual(c.settings, { name: 'race', version: 1, file: 'studio.json' });
+  // renaming the bundle: the lines of the Race sources that still name 'race'
+  const renamed = ok(assert, await api.project.settings({ name: 'mark' }));
+  assert.deepEqual(renamed.warnings.map((w) => w.split(':').slice(0, 2).join(':')), ['kindle/src/api.js:21', 'watch/src/api.js:24', 'watch/src/api.js:26']);
+  assert.match(renamed.warnings[0], /imports 'race-wire', but the bundle is 'mark': import from 'engine-wire' \(any name\) or 'mark-wire'/);
+  assert.match(renamed.warnings[2], /packageId\("race"\), but the bundle is 'mark': packageId\("mark"\)/);
+  assert.equal(ok(assert, await api.project.settings({ name: 'race' })).warnings, undefined);
   const b = ok(assert, await api.ui.build({ target: 'both' }));
   assert.equal(b.name, 'race');
+  // the watch app check delivered a state: no sim runs, so the start envelope of a host of its own
+  assert.match(b.targets.watch.checks.find((x) => x.name === 'app').message, /then onState\(the sim's start envelope\) \(\d+ nodes\)$/);
+  assert.equal(ok(assert, await api.sim.state()).running, false, 'that host is not the sim');
   const p = ok(assert, await api.bundle.pack());
   assert.deepEqual([p.name, p.uiSource], ['race', 'build']);
   assert.ok(p.sizes.files.some((f) => f.name === 'watch.js'));
@@ -132,6 +141,10 @@ test('a Race project under another name builds, packs and runs as the bundle "ra
   const r = ok(assert, await api.sim.advance('wake'));
   assert.deepEqual(r.state.phase, { racing: { gun: now + 60_000 } });
   assert.deepEqual(ok(assert, await api.sim.state()).state.phase, { racing: { gun: now + 60_000 } });
+  // with the sim running this project under this name, the app check takes its current envelope (the racing screen)
+  const w = ok(assert, await api.ui.build({ target: 'watch' }));
+  assert.match(w.targets.watch.checks.find((x) => x.name === 'app').message, /then onState\(the running sim's current envelope\)/);
+  assert.deepEqual(ok(assert, await api.sim.state()).state.phase, { racing: { gun: now + 60_000 } }, 'the sim goes on as it was');
   // a build under another name: pack and sim refuse it rather than carry a page for another package
   await api.ui.build({ target: 'watch', name: 'other' }); // ok or not ('race-wire' does not resolve under 'other'): the last build is now 'other''s
   assert.equal((await getLastBuild('demo')).name, 'other');

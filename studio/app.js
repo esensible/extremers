@@ -11,8 +11,9 @@ import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
 import { toBase64, fromBase64 } from './zip.js';
-import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml } from './ui.js';
+import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml, deviceTableAfter } from './ui.js';
 import { createEditor } from './editor.js';
+import { isJsonPath, prettyJson } from './json.js';
 import { mountPanels } from './panels.js';
 import { mountPreviews } from './preview/index.js';
 import { getLastBuild } from './toolchain/index.js';
@@ -223,7 +224,8 @@ $('file-delete-yes').onclick = async () => { const p = selected; cancelFileDelet
 // Monaco (editor.js): one model per open file, tabs #editor-tab-<path>, the
 // shown file's editor #editor-<path>. Each file is autosaved through
 // api.files.write 500 ms after the last edit, on leaving the editor, and on
-// Cmd/Ctrl-S.
+// Cmd/Ctrl-S. A .json file is shown pretty (json.js): on open, and on every
+// save but the one while typing, when its text parses.
 
 const editor = createEditor($('editors'), {
   tabsEl: $('editor-tabs'),
@@ -271,19 +273,36 @@ async function openFile(path, { focus = true, show = true } = {}) {
       return;
     }
     // the path is the callback's argument: it follows a rename
-    editor.onChange(path, (p) => { clearTimeout(b.timer); b.timer = setTimeout(() => flush(p), 500); renderCursor(); });
+    editor.onChange(path, (p) => { clearTimeout(b.timer); b.timer = setTimeout(() => flush(p, { typing: true }), 500); renderCursor(); });
+    // a .json file shows (and is stored) pretty: reformatted as an undoable
+    // edit, then saved (json.js; text that does not parse is left alone)
+    if (!r.binary && isJsonPath(path)) {
+      const j = prettyJson(r.text);
+      if (j.ok && j.changed && editor.reformat(path, j.text)) flush(path);
+    }
   } else {
     await editor.ready.catch(() => {});
     if (editor.has(path)) editor.show(path, focus);
   }
 }
 
-/** Save a file if it changed; resolves when saved (or on failure, with the status line saying so). */
-async function flush(path) {
+/**
+ * Save a file if it changed; resolves when saved (or on failure, with the
+ * status line saying so). A .json file is first reformatted in the editor
+ * (json.js) when its text parses, except for the autosave while typing
+ * (typing: the text is not moved under the cursor; files.write stores it
+ * pretty anyway, and the next save, blur or close shows it so).
+ */
+async function flush(path, { typing = false } = {}) {
   const b = buffers.get(path);
   if (!b || b.binary) return;
   clearTimeout(b.timer);
   if (b.saving) await b.saving;
+  if (!editor.has(path)) return;
+  if (!typing && isJsonPath(path)) {
+    const j = prettyJson(editor.getText(path));
+    if (j.ok && j.changed) editor.reformat(path, j.text);
+  }
   if (!editor.isDirty(path)) return;
   const version = editor.version(path);
   const text = editor.getText(path);
@@ -422,7 +441,7 @@ window.__previews = previews;
 // agent's. After an agent's install/activate/delete the table is marked stale
 // rather than listed again, so the page never takes the device from an agent.
 
-let deviceList = null; // the last device.list result
+let deviceTable = { list: null, stale: false }; // the last device.list result, and whether the box changed since (ui.js deviceTableAfter)
 let deviceConfirm = null; // { id, act } waiting for its inline confirm
 let deviceConfirmTimer;
 let deviceUrl = null;
@@ -434,16 +453,21 @@ function renderDevice(s) {
 }
 
 // The header: the box's state, Connect/Disconnect, and the chooser
-// (#device-choose: 'Choose device…' until Chrome remembers the box for this
-// page, then a quiet 'Re-choose…'). Driven by the controller's onChange (no
-// polling); the text is set in place, so the header never re-lays out
-// beyond the text's own width.
+// (#device-choose: 'Choose the box…' until Chrome remembers the box for this
+// page, then a quiet 'Choose another box…'). Driven by the controller's
+// onChange (no polling); the text is set in place, so the header never
+// re-lays out beyond the text's own width. The Device panel's how-to
+// (#device-howto) is open until the page remembers a box, then folded; a
+// person's own toggle stands until that changes.
 let headShown = null;
+let howtoFor = null;
 function renderDeviceHead(s) {
   const h = deviceHead(s);
   const key = JSON.stringify(h);
   if (key === headShown) return;
   headShown = key;
+  const howto = $('device-howto');
+  if (howto && s?.bluetooth && howtoFor !== h.choose.prominent) { howtoFor = h.choose.prominent; howto.open = h.choose.prominent; }
   const st = $('device-state');
   st.textContent = h.text;
   st.dataset.tone = h.tone;
@@ -456,7 +480,7 @@ function renderDeviceHead(s) {
   $('device-head-disconnect').hidden = !h.disconnect;
   $('device-head-connect').disabled = $('device-head-disconnect').disabled = h.disabled;
 }
-function renderDeviceRows() { $('device-bundles').innerHTML = deviceRowsHtml(deviceList, deviceConfirm); }
+function renderDeviceRows() { $('device-bundles').innerHTML = deviceRowsHtml(deviceTable.list, deviceConfirm, deviceTable.stale); }
 function renderDeviceLog() { $('device-log').textContent = logger.lines(500).filter((l) => /\bdevice[.:]/.test(l)).slice(-200).join('\n'); }
 logger.onLine((line) => { if (/\bdevice[.:]/.test(line)) renderDeviceLog(); });
 
@@ -507,12 +531,15 @@ $('device-bundles').addEventListener('click', async (e) => {
   }
 });
 
+// The table follows every device call through deviceTableAfter (ui.js): the
+// "List again" notice is part of what renderDeviceRows draws, so an inline
+// confirm's redraw keeps it.
 api._onCall(({ name, result: r }) => {
-  if (!name.startsWith('device.')) return;
-  if (name === 'device.list' && r.ok) { deviceList = r; deviceConfirm = null; renderDeviceRows(); }
-  else if (r.ok && ['device.install', 'device.activate', 'device.delete'].includes(name) && deviceList) {
-    $('device-space').textContent = 'The box changed since this list: List again.';
-  } else if (name === 'device.disconnect' && r.ok) { deviceList = null; renderDeviceRows(); }
+  const next = deviceTableAfter(deviceTable, name, r);
+  if (next === deviceTable) return;
+  deviceTable = next;
+  if (name === 'device.list') deviceConfirm = null;
+  renderDeviceRows();
 });
 
 // ---------------------------------------------------------------- selftest ----

@@ -14,6 +14,7 @@
 
 import { zipStore, unzip, toBase64, fromBase64 } from './zip.js';
 import { templateFiles, isBinaryPath, TEMPLATES, SETTINGS_PATH, settingsText } from './templates.js';
+import { isJsonPath, prettyJson, storedText } from './json.js';
 import { FILES as ENGINE_FILES, SMOKE, EngineError, buildEngine, runSamples, tables, engineBundleFiles, textHash, PLACEHOLDER_WEB } from './engine/project.js';
 import { Sim, SimError, flatGps, record as simRecord, hex as simHex } from './sim/host.js';
 import { rmcUpdate } from './sim/nmea.js';
@@ -296,6 +297,25 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     return { ...parseSettings(f.text ?? ''), file: SETTINGS_PATH };
   }
 
+  /**
+   * Lines of the clients' sources that name another bundle than `name`: an
+   * import of '<other>-wire' and a packageId("<other>") (the Race template's
+   * 'race-wire' and packageId("race")) → ['watch/src/api.js:26: packageId("race") …', …].
+   */
+  async function bundleNameWarnings(s, project, name) {
+    const out = [];
+    for (const f of await s.listFiles(project)) {
+      if (f.bytes || !/^(kindle|watch)\/src\/.*\.(m?js|jsx)$/.test(f.path)) continue;
+      (f.text ?? '').split('\n').forEach((line, i) => {
+        const wire = /from\s*["']([^"']+)-wire["']/.exec(line);
+        if (wire && wire[1] !== 'engine' && wire[1] !== name) out.push(`${f.path}:${i + 1}: imports '${wire[1]}-wire', but the bundle is '${name}': import from 'engine-wire' (any name) or '${name}-wire'`);
+        const id = /packageId\(\s*["']([^"']+)["']\s*\)/.exec(line);
+        if (id && id[1] !== name) out.push(`${f.path}:${i + 1}: packageId(${JSON.stringify(id[1])}), but the bundle is '${name}': packageId(${JSON.stringify(name)}), or the client ignores the host's envelopes and sends its events to another package`);
+      });
+    }
+    return out;
+  }
+
   /** readSettings for a summary: never throws (a broken studio.json is reported in it). */
   async function settingsSummary(s, project) {
     try { return await readSettings(s, project); } catch (e) { return { name: null, version: null, file: SETTINGS_PATH, error: errText(e) }; }
@@ -388,6 +408,27 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     if (sim) { sim.free(); sim = null; simInfo = null; }
   }
 
+  /**
+   * The state ui.build's watch app check delivers after mount, as the
+   * toolchain takes it: { bytes, from }, or { bytes: null, from: why not }.
+   * The running sim's current envelope when it runs this project under
+   * `name`; else the start envelope of a host of its own (virtual clock,
+   * started as sim.start starts one, then freed: the running sim and the
+   * previews see nothing of it).
+   */
+  async function startEnvelope(project, name) {
+    if (sim && simInfo?.project === project && simInfo.name === name) return { bytes: sim.current(), from: "the running sim's current envelope" };
+    let s = null;
+    try {
+      const p = await packProject({ name });
+      if (p.failed) return { bytes: null, from: `no sim envelope: ${p.failed.error}` };
+      s = new Sim({ mod: await wasm(), bundle: p.bytes, name: p.name, program: p.built.program, ifaceJson: p.built.ifaceJson, source: p.built.files['engine.expr'], path: `${p.built.dir}/engine.expr`, view: p.built.view.loaded, event: p.built.event?.loaded ?? null, clock: 'virtual' });
+      return { bytes: s.current(), from: "the sim's start envelope" };
+    } catch (e) {
+      return { bytes: null, from: `no sim envelope: ${errText(e)}` };
+    } finally { if (s) s.free(); }
+  }
+
   const fileInfo = (f) => ({ path: f.path, ...sizeOf(f), modified: f.modified ?? null });
   const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
@@ -424,7 +465,8 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     const dec = new TextDecoder('utf-8', { fatal: true });
     const files = list.map((e) => {
       const path = parsePath(e.name, `zip entry '${e.name}'`);
-      if (!isBinaryPath(path)) { try { return { path, text: dec.decode(e.bytes) }; } catch { /* not UTF-8: keep the bytes */ } }
+      // a .json file is stored pretty when it parses, as files.write stores it (json.js)
+      if (!isBinaryPath(path)) { try { return { path, text: storedText(path, dec.decode(e.bytes)) }; } catch { /* not UTF-8: keep the bytes */ } }
       return { path, bytes: e.bytes };
     });
     return { files, manifest };
@@ -554,7 +596,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'project.create', kind: 'store',
-      summary: `Create a project from a template and open it. 'race' = the Race example (engine/, kindle/src/, watch/src/; read from the vendored example), 'blank' = a minimal engine. Each writes ${SETTINGS_PATH}, the project's settings: the bundle's name ('race' for the Race template, whose clients import 'race-wire'; the project's name for 'blank') and version 1. Refuses an existing name.`,
+      summary: `Create a project from a template and open it. 'race' = the Race example (engine/, kindle/src/, watch/src/; read from the vendored example), 'blank' = a minimal engine. Each writes ${SETTINGS_PATH}, the project's settings: the bundle's name ('race' for the Race template, whose clients import 'race-wire' and whose watch says packageId("race"): another name means project.settings({ name }) and editing those lines in kindle/src/api.js and watch/src/api.js, as project.settings says; the project's name for 'blank') and version 1. Refuses an existing name.`,
       args: [{ name: 'name', type: 'string', required: true, description: '1-64 characters: letters, digits, space, _ . -' },
         { name: 'opts.template', type: `'${TEMPLATES.join("' | '")}'`, required: false, description: "default 'blank'" }],
       returns: '{ ok, name, template, settings: { name, version, file }, files: [{ path, size, binary, modified }] }',
@@ -587,10 +629,10 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'project.settings', kind: 'store',
-      summary: `The open project's settings, kept in ${SETTINGS_PATH} at its root (a file like any other: it exports with the project): the bundle's name (its package id; the Kindle page's /pkg/<id>/; the '<name>-wire' module its clients import) and the manifest's version. ui.build, sim.start and bundle.pack use them unless given { name } / { version }. With no options it reads them; with name and/or version it writes ${SETTINGS_PATH}. A project without the file uses its own name and version 1 (file: null).`,
-      args: [{ name: 'opts.name', type: 'string', required: false, description: "the bundle's name, 1-64 characters (the Race template's is 'race': its clients import 'race-wire')" },
+      summary: `The open project's settings, kept in ${SETTINGS_PATH} at its root (a file like any other: it exports with the project): the bundle's name (its package id; the Kindle page's /pkg/<id>/; the '<name>-wire' module its clients import) and the manifest's version. ui.build, sim.start and bundle.pack use them unless given { name } / { version }. With no options it reads them; with name and/or version it writes ${SETTINGS_PATH}. A project without the file uses its own name and version 1 (file: null). A project made from the Race template names its bundle in its sources too: renaming it, change 'race-wire' in kindle/src/api.js and watch/src/api.js (to 'engine-wire', which any name resolves, or '<name>-wire') and watch/src/api.js's packageId("race") to packageId('<name>'), or the build fails to resolve 'race-wire' and the watch ignores the host's envelopes (and sends its events to package 'race'); warnings[] names each such line left.`,
+      args: [{ name: 'opts.name', type: 'string', required: false, description: "the bundle's name, 1-64 characters (the Race template's is 'race': its clients import 'race-wire' and the watch's api.js says packageId(\"race\"): edit both when renaming)" },
         { name: 'opts.version', type: 'integer', required: false, description: "the manifest's version, 0-65535" }],
-      returns: `{ ok, project, name, version, file: '${SETTINGS_PATH}'|null, changed }`,
+      returns: `{ ok, project, name, version, file: '${SETTINGS_PATH}'|null, changed, warnings?: string[] }`,
       example: "await api.project.settings({ name: 'race', version: 2 })",
       run: async (opts = {}) => {
         const { s, name: project } = await openProject();
@@ -607,7 +649,8 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         try { await s.putFile({ project, path: SETTINGS_PATH, text: settingsText(next), modified: now() }, now()); } catch (e) { throw storeErr(e); }
         const changed = next.name !== cur.name || next.version !== cur.version || cur.file === null;
         if (changed) L('info', `${project}: bundle ${next.name} v${next.version} (${SETTINGS_PATH})`);
-        return { ok: true, project, ...next, file: SETTINGS_PATH, changed };
+        const warnings = await bundleNameWarnings(s, project, next.name);
+        return { ok: true, project, ...next, file: SETTINGS_PATH, changed, ...(warnings.length ? { warnings } : {}) };
       },
     },
     {
@@ -670,7 +713,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'project.import', kind: 'store',
-      summary: 'Create a project from a ZIP (base64, or fetched from a URL the page can reach) and open it. One top-level folder shared by every entry is stripped. Refuses an existing name: pass opts.name.',
+      summary: 'Create a project from a ZIP (base64, or fetched from a URL the page can reach) and open it. One top-level folder shared by every entry is stripped. Its .json files are stored pretty-printed when they parse (as files.write stores them). Refuses an existing name: pass opts.name.',
       args: [{ name: 'source', type: '{ zipBase64 } | { url }', required: true, description: 'the archive: base64 text (as project.export gives) or a URL (same origin, or one that allows CORS)' },
         { name: 'opts.name', type: 'string', required: false, description: "the project's name (default: the archive's studio-project.json name, else the URL's file name)" }],
       returns: '{ ok, name, template, files: [{ path, size, binary, modified }] }',
@@ -750,18 +793,23 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'files.write', kind: 'store',
-      summary: 'Create or replace a file of the open project with the whole new content (saved at once to IndexedDB). The page shows it.',
+      summary: 'Create or replace a file of the open project with the whole new content (saved at once to IndexedDB). The page shows it. A .json file is stored pretty-printed (2-space indent, one member per line, a trailing newline; strings, numbers and key order exactly as written) when its text parses: formatted: true. Text that does not parse is stored as given (a half-edited file is not lost): formatted: false, with jsonError. Read the file back for the stored text.',
       args: [PATH_ARG, { name: 'content', type: 'string | { base64 }', required: true, description: 'the full text, or { base64 } for a binary file' }],
-      returns: '{ ok, project, path, size, binary, created }',
+      returns: '{ ok, project, path, size, binary, created, formatted? (.json text only), jsonError? }',
       example: "await api.files.write('engine/engine.expr', text)",
       run: async (path, content) => {
         const p = parsePath(path);
         const { s, name } = await openProject();
         const rec = fileRecord(name, p, content);
+        let fmt = {};
+        if (typeof rec.text === 'string' && isJsonPath(p)) {
+          const j = prettyJson(rec.text);
+          if (j.ok) { rec.text = j.text; fmt = { formatted: true }; } else fmt = { formatted: false, jsonError: j.error };
+        }
         let r;
         try { r = await s.putFile(rec, now()); } catch (e) { throw storeErr(e); }
         engineCache.clear();
-        return { ok: true, project: name, path: p, ...sizeOf(rec), created: r.created };
+        return { ok: true, project: name, path: p, ...sizeOf(rec), created: r.created, ...fmt };
       },
     },
     {
@@ -935,7 +983,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         { name: 'opts.clock', type: "'live' | 'virtual'", required: false, description: "default 'live'; 'virtual' for a scripted run (sim.advance moves it)" },
         { name: 'opts.t0', type: 'integer | null', required: false, description: 'device time to set, epoch ms (live: default now; virtual: default 1790000000000; null: stay on uptime)' },
         { name: 'opts.name', type: 'string', required: false, description: `the package name (default: ${SETTINGS_PATH}'s; refused when the last ui.build was for another name)` }],
-      returns: '{ ok, clock, now, id, name, ui: { web, watch }, uiSource: "build"|"placeholder", uiNotes?: string[], state, view, wake, evaluations: [record], errors?: [{ n, t, cause, code, at, help }] }',
+      returns: '{ ok, clock, now, id, name, ui: { web, watch }, uiSource: "build"|"placeholder", uiNotes?: string[], state, view, wake, evaluations: [record], errors?: [{ n, t, cause, code, at, help }] } — evaluations[0] (cause "start") reports t: 0 on purpose: the host starts the engine at uptime 0, before any device time exists (as the C6 does at boot, before its first GPS time); evaluations[1] (cause "gps") is t0 setting the clock, at t0 (with t0: null there is none)',
       example: "await api.sim.start() // live; a scripted run: await api.sim.start({ clock: 'virtual' })",
       run: async (opts = {}) => {
         const clock = opts.clock ?? 'live';
@@ -1085,7 +1133,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // ----------------------------------------------------------------- ui
     {
       name: 'ui.build', kind: 'pure',
-      summary: "Bundle the open project's clients in the browser (a Web Worker running rollup, Babel and terser over the project's files, as the monorepo's rollup configs do). kindle: kindle/src/index.jsx → index.html (scripts at /pkg/<id>/), bundle-<hash>.js (ES5 UMD), bundle-<hash>.css. watch: watch/src/index.jsx → watch.js (ES2020 IIFE that sets globalThis.__app). Imports: relative ones, 'solid-js' ('/store', '/web'), 'solid-watch', '<name>-wire' or 'engine-wire' (the engine's wire descriptors, from its schemas), and at the monorepo's depth ../../../protocol-js/protocol.js, ../../../client-common/{host,confirm,confirm-place}.js, ../../../wire/js/codec.js (skills kindle-ui, watch-ui). Checks: Kindle parses as ES5 and declares every Solid template; watch has no _tmpl$, sets __app, and mounts on a stub host. Kept as the project's last build (per target; a failed build keeps the last good one, which bundle.pack, sim.start and the previews go on using: kept[] says so): bundle.pack packs it. The same files give the same bytes. The first build loads the toolchain (≈5 MB, a few seconds).",
+      summary: "Bundle the open project's clients in the browser (a Web Worker running rollup, Babel and terser over the project's files, as the monorepo's rollup configs do). kindle: kindle/src/index.jsx → index.html (scripts at /pkg/<id>/), bundle-<hash>.js (ES5 UMD), bundle-<hash>.css. watch: watch/src/index.jsx → watch.js (ES2020 IIFE that sets globalThis.__app). Imports: relative ones, 'solid-js' ('/store', '/web'), 'solid-watch', '<name>-wire' or 'engine-wire' (the engine's wire descriptors, from its schemas), and at the monorepo's depth ../../../protocol-js/protocol.js, ../../../client-common/{host,confirm,confirm-place}.js, ../../../wire/js/codec.js (skills kindle-ui, watch-ui). Checks: Kindle parses as ES5 and declares every Solid template; watch has no _tmpl$, sets __app, mounts on a stub host that refuses node types and props the watch's schema lacks (as the watch and the preview do), then takes one state: the running sim's current envelope when it runs this project under this name, else the sim's start envelope from a host of its own (the check's message says which, or why none). Kept as the project's last build (per target; a failed build keeps the last good one, which bundle.pack, sim.start and the previews go on using: kept[] says so): bundle.pack packs it. The same files give the same bytes. The first build loads the toolchain (≈5 MB, a few seconds).",
       args: [{ name: 'opts.target', type: "'kindle' | 'watch' | 'both'", required: false, description: "default 'both'" },
         { name: 'opts.name', type: 'string', required: false, description: `the bundle's name (default: ${SETTINGS_PATH}'s, api.project.settings()): its package id is the Kindle page's /pkg/<id>/ and '<name>-wire' resolves; bundle.pack refuses a build made under another name` }],
       returns: '{ ok, project, name, packageId, publicPath, sourceSha256, toolchain, ms, targets: { kindle?: { ok, files: [{ name, size, sha256, base64 }], checks: [{ name, ok, message }], ms, stats }, watch?: (same) }, diagnostics: [{ target, severity, rule, file, line, col, message }] } — on a failed build ok:false with error and hint, the same fields, and kept: { <target>: { at, sourceSha256 } } for each failed target whose last good build is kept',
@@ -1098,8 +1146,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         const files = (await s.listFiles(project)).map((f) => (f.bytes ? { path: f.path, bytes: f.bytes } : { path: f.path, text: f.text ?? '' }));
         const { defaultToolchain } = await import('./toolchain/index.js');
         const tc = defaultToolchain();
+        const envelope = target === 'kindle' ? null : await startEnvelope(project, name);
         let r;
-        try { r = await tc.build({ project, name, target, files }); } catch (e) {
+        try { r = await tc.build({ project, name, target, files, envelope }); } catch (e) {
           throw new ApiError(`the toolchain failed: ${errText(e)}`, 'api.log({ last: 50 }) and the browser console say why (are studio/lib/ and studio/vendor/ served?); reload the page to restart the worker');
         }
         const targets = {};
@@ -1135,7 +1184,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
       name: 'preview.status', kind: 'pure', quiet: true,
       summary: "Both previews: open, loaded, which build, envelopes delivered, the events they sent (and the host's answer), console lines and errors (the Kindle page's console.error and uncaught errors; the watch bundle's errors), served == built for the Kindle files, and the service worker's state ('active', or 'unavailable' with why: the watch preview still works).",
       args: [],
-      returns: "{ ok, kindle: { open, loaded, sid, sessionUrl, size, build, socketOpen, envelopes, events: [{ at, bytes, accepted, refused, evaluations }|{ at, bytes, error }], served: { checked, identical, mismatches }|null, errors: string[], console: string[], note }, watch: { open, loaded, size, build, envelopes, commits, events, haptics, errors, console }, serviceWorker: 'active'|'unavailable'|'failed'|…, serviceWorkerError, sim: { running } }",
+      returns: "{ ok, kindle: { open, loaded, sid, sessionUrl, size, build, socketOpen, envelopes, events: [{ at, bytes, accepted, refused, evaluations: [record] }|{ at, bytes, error }], served: { checked, identical, mismatches }|null, errors: string[], console: string[], note }, watch: { open, loaded, size, build, envelopes, commits, events, haptics, errors, console }, serviceWorker: 'active'|'unavailable'|'failed'|…, serviceWorkerError, sim: { running } }",
       example: 'await api.preview.status()',
       run: async () => preview().status(),
     },
@@ -1149,9 +1198,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'preview.press', kind: 'pure',
-      summary: "Press a button in a preview, as a finger would: the first button whose text is `text` (else contains it; { text: '' } = the first button with no text, e.g. a confirm), the element with that data-testid (Kindle) / testID (watch), or (Kindle) the first visible match of a CSS selector, e.g. 'button.confirm'. The event the page sends goes to the sim host; the result lists the events sent within ~300 ms with the host's answer (accepted, refused, evaluations).",
-      args: [TARGET_ARG, { name: 'by', type: '{ text } | { testid } | { selector }', required: true, description: 'which button (selector: Kindle only)' }],
-      returns: '{ ok, target, pressed, events: [{ at, bytes, accepted, refused, evaluations }], note? }',
+      summary: "Press a button in a preview, as a finger would: the first button whose text is `text` (else contains it; { text: '' } = the first button with no text, e.g. a confirm), or on the Kindle the element with that data-testid or the first visible match of a CSS selector, e.g. 'button.confirm'. The watch's buttons are found by their text only: solid-watch nodes have no testID (an unknown prop: the watch bundle fails on it, and ui.build's app check says so). The event the page sends goes to the sim host; the result lists the events sent within ~300 ms with the host's answer: accepted, refused, and the evaluations it made, as records like sim.event's.",
+      args: [TARGET_ARG, { name: 'by', type: '{ text } | { testid } | { selector }', required: true, description: 'which button (testid, selector: Kindle only)' }],
+      returns: '{ ok, target, pressed, events: [{ at, bytes, accepted, refused, evaluations: [record] } | { at, bytes, error }], note? } (record: as sim.event\'s)',
       example: "await api.preview.press('kindle', { text: 'Stbd' })",
       run: async (target, by) => preview().press(target, by),
     },
@@ -1218,7 +1267,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'device.connect', kind: 'device',
-      summary: "Connect to the box this page was given before (navigator.bluetooth.getDevices(); after a reload it waits for the box's advertisement first) and subscribe to its bundle service. Never opens Chrome's chooser: when the page has never been given the box it says so, and a person must click 'Choose device…' (#device-choose) once. A first connection pairs: the box's pairing window must be open (Kindle: Settings → Pair watch) and the person confirms macOS's prompt. A dropped link reconnects by itself (3 tries).",
+      summary: "Connect to the box this page was given before (navigator.bluetooth.getDevices(); after a reload it waits for the box's advertisement first) and subscribe to its bundle service. Never opens Chrome's chooser: when the page has never been given the box it says so, and a person must click 'Choose the box…' (#device-choose) once per browser origin, even if the Mac is already paired; a page that remembers a different box waits for that one's advertisement, and the person clicks 'Choose another box…'. A first connection pairs: the box's pairing window must be open (Kindle: Choose → Settings → Pair watch, 2 minutes, any device) and the person accepts macOS's pairing prompt. A dropped link reconnects by itself (3 tries).",
       args: [],
       returns: "{ ok, state: 'connected', deviceName, already, bonded }",
       example: 'await api.device.connect()',
@@ -1314,7 +1363,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         "6. api.sim.start({ clock: 'virtual' }), then api.sim.event(...), api.sim.gps(...), api.sim.advance(ms) — a scripted run of the engine on the real host; api.sim.history() and api.sim.state() (its findings must stay empty). api.sim.start() (the live clock, the default) for the previews: time runs as on the box.",
         "7. api.ui.build({ target: 'both' }), api.preview.open({ target: 'kindle' }), api.preview.text('kindle'), api.preview.press(...).",
         '8. api.bundle.pack() (the name and version from the settings; it refuses a UI build made under another name).',
-        "9. api.device.connect() — if it says no device was chosen, ask the person to click 'Choose device…' (#device-choose) once; then api.device.install({ activate: true }) and api.device.list().",
+        "9. api.device.connect() — if it says no box was chosen, ask the person to follow the Device panel's how-to (Kindle: Choose → Settings → Pair watch; 'Choose the box…' (#device-choose) and pick 'nacra'; accept macOS's pairing prompt); then api.device.install({ activate: true }) and api.device.list().",
         '10. On any { ok:false }: read error + hint, then api.status() and api.log({ last: 50 }).',
       ],
       groups: GROUPS.map((g) => ({ ...g, functions: FUNCTIONS.filter((f) => groupOf(f.name) === g.name).map((f) => f.name) })),
@@ -1327,7 +1376,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         'Projects are stored in this browser only (IndexedDB, per origin). api.project.export() gives a ZIP (base64) to keep or move; api.project.import({ zipBase64 }) or ({ url }) brings one in.',
         'files.write replaces the whole file and saves at once; the page shows the change. The page autosaves what a person types the same way.',
         'Large results are paged (skill, files.read, engine.disassemble, sim.history): follow nextOffset.',
-        "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose once, then api.device.connect() works, also after a reload. The first connection pairs: the box's pairing window must be open (the Kindle's Settings → Pair watch) and the person confirms macOS's prompt; a refusal's hint says what the person must do (pairing window, forgetting 'nacra' in macOS Bluetooth settings, chrome://flags). One device call at a time: another one meanwhile answers busy.",
+        "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose ('Choose the box…') once per browser origin, even if the Mac is already paired, then api.device.connect() works, also after a reload; a page that remembers a different box must choose again ('Choose another box…'). The first connection pairs: the box's pairing window must be open (the Kindle's Choose → Settings → Pair watch: 2 minutes, any device, one per window) and the person accepts macOS's pairing prompt; a refusal's hint says what the person must do (pairing window, forgetting 'nacra' in macOS Bluetooth settings, chrome://flags). One device call at a time: another one meanwhile answers busy.",
         'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
         "The sim is the real common::Host (HostHandle). Each evaluation it makes is in its log (cause, accepted, the R-code, instruction and span of a failure, the state, view and wake after it): that log is the history, and sim.state().state is the engine's own state (the leaves the host keeps, decoded with the state schema). A rejected evaluation is in the result's errors[] (sim.gps, sim.advance, sim.event): the input still happened (a fix stays on the track), the state did not change. Checked on every call: W-WIRE (each envelope is one logged evaluation whose view changed; its bytes are the log's, and the vendored JS codec decodes and re-encodes them unchanged), W-HOST (the call's answer agrees with the log: wakes fired, an event accepted or refused; envelopes stamped with the evaluation's time; the pending wake is the last evaluation's). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
         "The sim's `gps` holds the newest 20,480 fixes, as the C6's track ring does (its maxItems); the C6 drops its oldest 128 at a time once full (a flash sector), the sim one at a time. The wasm keeps 24 bytes a fix, as they arrive (480 KB when full).",

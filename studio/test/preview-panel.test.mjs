@@ -112,6 +112,27 @@ test('the Kindle fit: written once per change, never for the same width; the fra
   for (const el of [vp, frame, frame2]) assert.equal(el.counts.nodes, 0, 'the fit never touches nodes');
 });
 
+test('the Kindle fit in a short window: scaled to the height too, centred in the width; still written once per change', () => {
+  const size = { width: 600, height: 800 };
+  assert.deepEqual(kindleFit(317, size, 300), { scale: 300 / 800, height: 300 }, 'the height is the tighter fit');
+  assert.deepEqual(kindleFit(317, size, 1000), { scale: 317 / 600, height: Math.ceil(800 * 317 / 600) }, 'the width is the tighter fit');
+  assert.deepEqual(kindleFit(900, size, 2000), { scale: 1, height: 800 }, 'never enlarged');
+  const vp = fakeEl({ clientWidth: 317 });
+  const frame = fakeEl();
+  const last = { key: null, frame: null };
+  assert.equal(applyKindleFit(vp, frame, size, last, { maxHeight: 300 }), true);
+  assert.equal(vp.style.height, '300px');
+  // 600 × 0.375 = 225 px wide in 317: 46 px either side
+  assert.equal(frame.style.transform, `translateX(46px) scale(${300 / 800})`);
+  const writes = vp.counts.style + frame.counts.style;
+  for (let k = 0; k < 100; k++) assert.equal(applyKindleFit(vp, frame, size, last, { maxHeight: 300 }), false);
+  assert.equal(vp.counts.style + frame.counts.style, writes);
+  // the window grows taller: one refit, back to the width's fit
+  assert.equal(applyKindleFit(vp, frame, size, last, { maxHeight: 1000 }), true);
+  assert.equal(frame.style.transform, `scale(${317 / 600})`);
+  assert.equal(vp.style.height, '423px');
+});
+
 test('throttle: at most one call per window, the last of a burst at its end; timers called on their global', async () => {
   let calls = 0; let t = 0; const timers = [];
   const g = {};

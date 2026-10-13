@@ -124,6 +124,11 @@
   /* the #device panel (S7) */
   .dev-bar { flex-wrap: wrap; }
   .dev-line { margin: 2px 0 6px; overflow-wrap: anywhere; }
+  .dev-howto { margin: 2px 0 8px; color: var(--ink-2); }
+  .dev-howto summary { cursor: pointer; font-weight: 600; }
+  .dev-howto ol { margin: 4px 0; padding-left: 22px; }
+  .dev-howto li { margin: 2px 0; }
+  .dev-howto p { margin: 4px 0; color: var(--muted); }
   .dev-table { border-collapse: collapse; width: 100%; font-size: 13px; }
   .dev-table th, .dev-table td { border-bottom: 1px solid var(--line-2); padding: 3px 8px 3px 0; text-align: left; font-variant-numeric: tabular-nums; vertical-align: middle; }
   .dev-table .acts { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -160,10 +165,10 @@
     <label class="eb" for="project-select">Project <select id="project-select" data-testid="project-select"><option value="">— none —</option></select></label>
     <span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span>
     <span class="dev-head" id="device-head" data-testid="device-head">
-      <span class="dev-state" id="device-state" data-testid="device-state" role="status" aria-live="polite" data-tone="idle">no device chosen</span>
+      <span class="dev-state" id="device-state" data-testid="device-state" role="status" aria-live="polite" data-tone="idle">no box chosen</span>
       <button type="button" class="btn" id="device-head-connect" data-testid="device-head-connect" hidden>Connect</button>
       <button type="button" class="btn" id="device-head-disconnect" data-testid="device-head-disconnect" hidden>Disconnect</button>
-      <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome's Bluetooth chooser: pick 'nacra' (the box). Needed once; then api.device.connect() works from script">Choose device…</button>
+      <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome asks which device this page may talk to: pick 'nacra'. A first time, open the box's pairing window first (Kindle: Choose → Settings → Pair watch) and accept macOS's pairing prompt after. Once per browser origin; then the box connects without prompts (the Device panel says how)">Choose the box…</button>
     </span>
   </header>
 
@@ -275,6 +280,16 @@
             <label class="hint"><input type="checkbox" id="device-install-activate" data-testid="device-install-activate" checked> activate after</label>
           </div>
           <div id="device-status" class="dev-line" data-testid="device-status" aria-live="polite">—</div>
+          <details id="device-howto" class="dev-howto" data-testid="device-howto" open>
+            <summary>Connecting this computer to the box</summary>
+            <ol>
+              <li>On the Kindle: <b>Choose → Settings → Pair watch</b>. That opens the box's pairing window for 2 minutes. It is named for the watch but pairs any device, one device per window. (Skip this if this Mac is already paired with the box.)</li>
+              <li>Click <b>Choose the box…</b> (top right). Chrome's popup ("localhost:5190 wants to pair") only asks which device this page may talk to: pick <code>nacra</code>.</li>
+              <li>macOS then asks to pair with <code>nacra</code>: accept. This is the Bluetooth pairing itself.</li>
+              <li>From then on this page remembers the box: <b>Connect</b> connects without prompts, also after a reload.</li>
+            </ol>
+            <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. A page that remembers a different box (an earlier <code>nacra</code>) waits for that one: click <b>Choose another box…</b> and pick <code>nacra</code> again.</p>
+          </details>
           <div id="device-progress" class="dev-line hint" data-testid="device-progress" aria-live="polite"></div>
           <div id="device-bundles" data-testid="device-bundles"><p class="hint">List shows the bundles on the box.</p></div>
           <div id="device-download" class="dev-line"></div>

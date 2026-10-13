@@ -84,6 +84,18 @@ export function domMeasurer(lineHeightRatio) {
   };
 }
 
+/**
+ * The error a bundle's call threw, as the page should report it. Solid
+ * passes an Error on, but wraps anything else as Error("Unknown error",
+ * { cause }). An Error the host throws into a bundle evaluated in another
+ * realm (an iframe) is not an `instanceof Error` there, so Solid wraps it
+ * too: report the host's own error (e.g. "<button> has no prop testID").
+ */
+export function hostError(e) {
+  const c = e && e.message === "Unknown error" ? e.cause : undefined;
+  return c && typeof c === "object" && typeof c.message === "string" ? c : e;
+}
+
 export class DomHost {
   /**
    * el: the element to draw into (the watch screen).
@@ -169,7 +181,7 @@ export class DomHost {
     try {
       fn();
     } catch (e) {
-      this.onEvent("error", { error: e });
+      this.onEvent("error", { error: hostError(e) });
     }
   }
 

@@ -4,7 +4,8 @@
 //
 //   import { getLastBuild } from './toolchain/index.js';
 //   const tc = defaultToolchain();
-//   const r = await tc.build({ project: 'race', name: 'race', target: 'both', files });
+//   const r = await tc.build({ project: 'race', name: 'race', target: 'both', files, envelope });
+//   (envelope: optional { bytes, from }, the state the watch app check delivers after mount)
 //   const last = await getLastBuild('race');
 //
 // build() → core.build()'s result:
@@ -107,11 +108,11 @@ export function createToolchain({ worker, db, now = () => Date.now() } = {}) {
 
   return {
     /** Build in the worker; records the result as the project's last build. */
-    async build({ project, name, target = 'both', files }) {
+    async build({ project, name, target = 'both', files, envelope = null }) {
       if (state.building) throw new Error(`a build is running (${state.building.project}, ${state.building.target}); wait for it`);
       state.building = { project, target, since: now() };
       try {
-        const r = await request('build', { target, name, files });
+        const r = await request('build', { target, name, files, envelope });
         await record(project, r, target);
         state.lastMs = r.ms; state.lastError = null; state.builds++;
         return r;

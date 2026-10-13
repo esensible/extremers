@@ -36,7 +36,10 @@
 //                      check_templates_declared: a Solid template called but never declared)
 //   watch   tmpl-guard no `_tmpl$` at all (solid-watch's tmplGuard; universal output has none)
 //           app        evaluated with a stub globalThis and host, it sets
-//                      globalThis.__app, and __app.mount() runs
+//                      globalThis.__app, __app.mount() runs, then
+//                      __app.onState(envelope) when the caller gives one (the
+//                      sim's start envelope); the stub refuses node types and
+//                      props the watch's schema does not have, as the hosts do
 //
 // Diagnostics: { target, severity: 'error'|'warning', rule, file, line, col, message }
 //   file: a project path ('kindle/src/api.js'), a runtime path ('/protocol-js/protocol.js'),
@@ -55,6 +58,9 @@ import html from '../lib/plugin-html.js';
 import { parse as acornParse } from '../lib/acorn.js';
 import wireCompiler from '../vendor/runtimes/wire/js/compile.esm.js';
 import { packageId } from '../vendor/runtimes/client-common/host.js';
+import { schema as WATCH_CORE } from '../vendor/watch-host/browser/props.js';
+import { fragment as WATCH_EXTREMERS } from '../vendor/watch-host/extremers-props.js';
+import { mergeSchema } from '../vendor/watch-host/js/schema-merge.js';
 import { sha256Hex, sourceSha256 } from './hash.js';
 
 /** Changes whenever the toolchain would make different bytes (the transform cache's key). */
@@ -400,12 +406,39 @@ export function checkTemplates(name, code) {
   return { check: { name: 'templates', ok: false, message }, diag: { rule: 'B-TMPL', file: `web/${name}`, ...where(code, '_tmpl$'), message } };
 }
 
-/** Evaluated with a stub globalThis and host, the watch bundle sets globalThis.__app, and mount() runs. */
-export function checkApp(code, ctx = { width: 198, height: 242 }) {
+/** The node types and props a watch host knows: solid-watch's core schema plus the extremers fragment (the preview's and the watch's). */
+const WATCH_SCHEMA = mergeSchema(WATCH_CORE, WATCH_EXTREMERS);
+
+/** An error as thrown into a bundle: Solid wraps a non-Error as "Unknown error" with the thrown value as its cause. */
+const errorText = (e) => {
+  const c = e?.message === 'Unknown error' ? e.cause : undefined;
+  const x = c !== undefined && c !== null ? c : e;
+  return x?.message ?? String(x);
+};
+
+/**
+ * Evaluated with a stub globalThis and host, the watch bundle sets
+ * globalThis.__app, mount() runs, then onState(envelope) when one is given
+ * (the sim's start envelope: the state a first screen gets). The stub host
+ * refuses what the watch's hosts refuse: a node type or a prop solid-watch's
+ * schema (plus the extremers fragment) does not have, raw text outside
+ * <text>'s own "text".
+ */
+export function checkApp(code, ctx = { width: 198, height: 242 }, { envelope = null, envelopeFrom = null } = {}) {
   let tag = 1;
+  const types = new Map();
   const host = {
-    createNode: () => ++tag, createText: () => ++tag, setProp() {}, insert() {}, remove() {}, commit() {},
-    setTimer() {}, clearTimer() {}, send() {}, release() {},
+    createNode(type) {
+      if (!WATCH_SCHEMA.nodes[type]) throw new Error(`unknown node type <${type}> (the watch has ${Object.keys(WATCH_SCHEMA.nodes).map((t) => `<${t}>`).join(', ')})`);
+      types.set(++tag, type); return tag;
+    },
+    createText() { types.set(++tag, '#text'); return tag; },
+    setProp(t, key) {
+      const type = types.get(t);
+      if (type === '#text') { if (key !== 'text') throw new Error(`raw text only takes "text", got ${key}`); return; }
+      if (type && !WATCH_SCHEMA.nodes[type].props[key]) throw new Error(`<${type}> has no prop ${key}: a watch node takes only its schema's props (skill watch-ui)`);
+    },
+    insert() {}, remove() {}, commit() {}, setTimer() {}, clearTimer() {}, send() {}, release() {}, log() {},
   };
   const g = { __host: host };
   g.globalThis = g;
@@ -414,11 +447,15 @@ export function checkApp(code, ctx = { width: 198, height: 242 }) {
     // free names resolve on the stub first (globalThis, and the timers the
     // renderer installs on it), then on this realm (Math, Date, …)
     new Function('__g', `with (__g) {\n${code}\n}`)(g);
-  } catch (e) { return bad(`evaluating watch.js threw: ${e?.message ?? e}`); }
+  } catch (e) { return bad(`evaluating watch.js threw: ${errorText(e)}`); }
   const app = g.__app;
   if (!app || typeof app.mount !== 'function') return bad('watch.js does not set globalThis.__app (call createApp(Root, { onState }) from "solid-watch" in the entry module)');
-  try { app.mount(1, ctx); } catch (e) { return bad(`__app.mount(1, ${JSON.stringify(ctx)}) threw: ${e?.message ?? e}`); }
-  return { check: { name: 'app', ok: true, message: `watch.js sets globalThis.__app; mount ran on a stub host (${tag - 1} nodes)` } };
+  try { app.mount(1, ctx); } catch (e) { return bad(`__app.mount(1, ${JSON.stringify(ctx)}) threw: ${errorText(e)}`); }
+  const mounted = tag - 1;
+  if (!envelope) return { check: { name: 'app', ok: true, message: `watch.js sets globalThis.__app; mount ran on a stub host (${mounted} nodes); no state was delivered${envelopeFrom ? ` (${envelopeFrom})` : ''}` } };
+  const from = envelopeFrom ?? 'an envelope';
+  try { app.onState(Uint8Array.from(envelope)); } catch (e) { return bad(`__app.onState(${from}) threw: ${errorText(e)}`); }
+  return { check: { name: 'app', ok: true, message: `watch.js sets globalThis.__app; mount ran on a stub host (${mounted} nodes), then onState(${from}) (${tag - 1} nodes)` } };
 }
 
 // -------------------------------------------------------------- build ----
@@ -431,10 +468,12 @@ export function checkApp(code, ctx = { width: 198, height: 242 }) {
  *   runtime  loadRuntime()'s result
  *   cache    optional { get(key) → string|undefined, set(key, string) } for transformed runtime modules
  *   input    optional project path of the entry (default <target dir>/src/index.jsx, else index.js)
+ *   envelope optional watch: { bytes, from } the app check delivers after mount (from: what it is, for the
+ *            messages); { bytes: null, from: why } says why there is none
  * → { target, ok, files: [{ name, size, sha256, bytes: Uint8Array }], checks, diagnostics, ms, stats, name, packageId, publicPath }
  *   Kindle files: index.html, bundle-<hash>.js, bundle-<hash>.css (the package's web/); watch: watch.js
  */
-export async function buildTarget({ target, name, files, runtime, cache = null, input, now = () => Date.now() }) {
+export async function buildTarget({ target, name, files, runtime, cache = null, input, envelope = null, now = () => Date.now() }) {
   const t0 = now();
   if (!TARGETS.includes(target)) throw new Error(`target must be one of ${TARGETS.join(', ')}, got ${JSON.stringify(target)}`);
   const project = new Map(files.map((f) => [f.path, f.text ?? f.bytes]));
@@ -506,7 +545,7 @@ export async function buildTarget({ target, name, files, runtime, cache = null, 
     for (const c of output.filter((o) => o.type === 'chunk')) { run(checkEs5(c.fileName, c.code)); run(checkTemplates(c.fileName, c.code)); }
   } else {
     checks.push({ name: 'tmpl-guard', ok: true, message: 'watch.js has no _tmpl$' });
-    run(checkApp(output[0].code));
+    run(checkApp(output[0].code, undefined, { envelope: envelope?.bytes ?? null, envelopeFrom: envelope?.from ?? null }));
   }
   out.ok = !diagnostics.some((d) => d.severity === 'error');
   out.ms = now() - t0;
@@ -518,13 +557,13 @@ export async function buildTarget({ target, name, files, runtime, cache = null, 
  *   { ok, name, packageId, publicPath, sourceSha256, targets: { kindle?, watch? }, diagnostics, ms, toolchain }
  * A target that fails still reports its diagnostics; the other is built regardless.
  */
-export async function build({ target = 'both', name, files, runtime, cache, input, now = () => Date.now() }) {
+export async function build({ target = 'both', name, files, runtime, cache, input, envelope = null, now = () => Date.now() }) {
   const t0 = now();
   if (target !== 'both' && !TARGETS.includes(target)) throw new Error(`target must be 'kindle', 'watch' or 'both', got ${JSON.stringify(target)}`);
   if (typeof name !== 'string' || !name) throw new Error('name (the bundle\'s name) is required');
   const which = target === 'both' ? TARGETS : [target];
   const targets = {};
-  for (const t of which) targets[t] = await buildTarget({ target: t, name, files, runtime, cache, input: which.length === 1 ? input : undefined, now });
+  for (const t of which) targets[t] = await buildTarget({ target: t, name, files, runtime, cache, input: which.length === 1 ? input : undefined, envelope: t === 'watch' ? envelope : null, now });
   const diagnostics = Object.values(targets).flatMap((r) => r.diagnostics);
   const id = packageId(name);
   return { ok: Object.values(targets).every((r) => r.ok), name, packageId: id, publicPath: `/pkg/${id}/`, sourceSha256: await sourceSha256(files), targets, diagnostics, ms: now() - t0, toolchain: TOOLCHAIN_VERSION };

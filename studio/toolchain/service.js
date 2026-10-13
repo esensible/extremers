@@ -4,7 +4,7 @@
 // one, in the toolchain database.
 //
 //   const handle = createService({ readText, db });
-//   await handle('build', { target, name, files }) → core.build()'s result
+//   await handle('build', { target, name, files, envelope? }) → core.build()'s result
 //   await handle('version') → { toolchain, libs }
 
 import { build, loadRuntime, TOOLCHAIN_VERSION, LIBS } from './core.js';
@@ -31,7 +31,7 @@ export function createService({ readText, db = null } = {}) {
     if (op === 'build') {
       if (!runtime) runtime = await loadRuntime(readText);
       if (db && !pruned) { pruned = true; try { await db.prune(TOOLCHAIN_VERSION); } catch { /* only a cache */ } }
-      return build({ target: args.target, name: args.name, files: args.files, input: args.input, runtime, cache });
+      return build({ target: args.target, name: args.name, files: args.files, input: args.input, envelope: args.envelope ?? null, runtime, cache });
     }
     throw new Error(`unknown toolchain request '${op}'`);
   };
