@@ -927,11 +927,13 @@ impl Host {
         let evaluated = engine.evaluate(memory, track, now, event)?;
         let took = began.elapsed().as_micros();
         let stats = engine.stats();
+        let vm_us = engine.vm_micros();
         debug!(
-            "engine {}: {} instructions in {} us, stack high {}, {}",
+            "engine {}: {} instructions in {} us ({} us in the VM), stack high {}, {}",
             active.name(),
             stats.steps,
             took,
+            vm_us,
             stats.stack_high,
             if evaluated.changed { "view changed" } else { "view unchanged" }
         );

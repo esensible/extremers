@@ -243,6 +243,9 @@ pub struct VmEngine {
     view_len: usize,
     wake: Option<i64>,
     stats: Stats,
+    /// Microseconds the last evaluation spent in the VM proper (`vm::run`);
+    /// the rest of its time is input and output handling.
+    vm_us: u32,
     /// Evaluations so far, accepted or not (the first included).
     evaluations: u32,
     /// The last evaluation's outcome.
@@ -315,6 +318,7 @@ impl VmEngine {
             view_len: 0,
             wake: None,
             stats: Stats::default(),
+            vm_us: 0,
             evaluations: 0,
             last: None,
         })
@@ -335,6 +339,11 @@ impl VmEngine {
     /// deepest the value stack went.
     pub fn stats(&self) -> Stats {
         self.stats
+    }
+
+    /// Microseconds the last evaluation spent in the VM proper.
+    pub fn vm_micros(&self) -> u32 {
+        self.vm_us
     }
 
     /// The state the last accepted evaluation left, as the program's leaves
@@ -442,7 +451,10 @@ impl VmEngine {
             all[s.list as usize] = saved_lists[k].as_ref().map(|x| x as &dyn ListInput<'static>);
         }
         let lists = &all[..l.list_count as usize];
-        let stats = match vm::run(&self.program, &self.linked, inputs, lists, output, stack, locals) {
+        let began = embassy_time::Instant::now();
+        let ran = vm::run(&self.program, &self.linked, inputs, lists, output, stack, locals);
+        self.vm_us = began.elapsed().as_micros() as u32;
+        let stats = match ran {
             Ok(stats) => stats,
             Err(f) => {
                 error!(
