@@ -1,5 +1,5 @@
-//! Persistent settings in the `settings` flash partition, and where GPS
-//! tracks will go (the inactive app slot, see [`TrackSlot`]).
+//! Persistent settings in the `settings` flash partition, and where bundles
+//! and GPS tracks go (the inactive app slot, see [`DataSlot`]).
 //!
 //! Layers, bottom up:
 //!   `esp-storage`        the C6's internal SPI flash as a `NorFlash` (4-byte
@@ -35,7 +35,10 @@ use core::ops::Range;
 
 use common::{
     ble_settings::{BondRecord, GattClientRecord},
-    config::MAX_BLE_BONDS,
+    config::{
+        DATA_BUNDLES_LEN, DATA_BUNDLES_OFFSET, DATA_SLOT_USED, DATA_TRACKS_LEN, DATA_TRACKS_OFFSET,
+        MAX_BLE_BONDS,
+    },
 };
 use defmt::{info, warn};
 use embassy_embedded_hal::adapter::BlockingAsync;
@@ -83,6 +86,12 @@ const FLASH_PAGE: u32 = 256;
 /// frames per write to none. The bytes written are the same; only the calls
 /// differ. Erases cannot be split below a sector.
 pub struct PagedFlash(FlashStorage<'static>);
+
+impl PagedFlash {
+    pub fn new(flash: FlashStorage<'static>) -> Self {
+        PagedFlash(flash)
+    }
+}
 
 impl embedded_storage::nor_flash::ErrorType for PagedFlash {
     type Error = <FlashStorage<'static> as embedded_storage::nor_flash::ErrorType>::Error;
@@ -243,7 +252,7 @@ pub async fn init(flash: FLASH<'static>) -> bool {
                 otadata = Some(p.offset()..p.offset() + p.len());
             }
         }
-        locate_track_slot(&table, &mut flash);
+        locate_data_slot(&table, &mut flash);
         match found {
             Some(r) => (r, otadata),
             None => {
@@ -267,27 +276,25 @@ pub async fn init(flash: FLASH<'static>) -> bool {
     true
 }
 
-/// Where GPS tracks are to be kept: the app slot the running firmware was
-/// NOT booted from.
+/// Where bundles and GPS tracks are kept: the app slot the running firmware
+/// was NOT booted from.
 ///
 /// The flash has two app slots, `ota_0` and `ota_1` (partitions.csv), and
-/// no separate tracks partition. One slot holds the running firmware; the
-/// other is free space until the next update. The scheme (none of it is
-/// implemented yet):
+/// no separate data partitions (the firmware is too big for a 1 MiB slot).
+/// One slot holds the running firmware; the other holds, from its start
+/// (common/src/config.rs):
 ///
-/// - while sailing, track points are appended to the inactive slot;
-/// - they are downloaded over BLE, after which the slot may be erased;
-/// - an OTA update erases the inactive slot and writes the new firmware
-///   into it, then selects it in `otadata`.
+///   +0x00000  bundles, 512 KiB (`DATA_BUNDLES_*`)
+///   +0x80000  tracks, 640 KiB (`DATA_TRACKS_*`; `common::track::FlashTrack`)
+///   +0x120000 spare, to the slot's end
 ///
-/// So an update requires the tracks to have been downloaded first, and once
-/// tracks have been written over the previous firmware image there is no
-/// rollback to it: the inactive slot never holds a bootable fallback.
-///
-/// Nothing in this crate writes or erases the slot yet; this only reports
-/// where it is.
+/// Both are read in place through the flash MMU (src/xip.rs). A firmware
+/// update (OTA, later) writes the new image over the slot and so wipes
+/// both, by choice: bundles are installed again and tracks start afresh,
+/// and afterwards the data lives in the other slot. The inactive slot never
+/// holds a bootable fallback once data is written to it.
 #[derive(Clone, Copy)]
-pub struct TrackSlot {
+pub struct DataSlot {
     /// The running slot's subtype: 0x10 + n for `ota_n`.
     pub booted_subtype: u8,
     /// The inactive slot's subtype.
@@ -298,13 +305,27 @@ pub struct TrackSlot {
     pub len: u32,
 }
 
-static TRACK_SLOT: embassy_sync::once_lock::OnceLock<TrackSlot> =
+impl DataSlot {
+    /// The bundles region, as flash offsets.
+    pub fn bundles(&self) -> Range<u32> {
+        let start = self.offset + DATA_BUNDLES_OFFSET;
+        start..start + DATA_BUNDLES_LEN
+    }
+
+    /// The tracks region, as flash offsets.
+    pub fn tracks(&self) -> Range<u32> {
+        let start = self.offset + DATA_TRACKS_OFFSET;
+        start..start + DATA_TRACKS_LEN
+    }
+}
+
+static DATA_SLOT: embassy_sync::once_lock::OnceLock<DataSlot> =
     embassy_sync::once_lock::OnceLock::new();
 
 /// The inactive app slot, as found by [`init`]; `None` if it could not be
-/// determined (logged at boot).
-pub fn track_slot() -> Option<TrackSlot> {
-    TRACK_SLOT.try_get().copied()
+/// determined or is too small for the regions (logged at boot).
+pub fn data_slot() -> Option<DataSlot> {
+    DATA_SLOT.try_get().copied()
 }
 
 /// App partition subtypes `ota_0`..`ota_15` are 0x10..=0x1F; 0x00 is
@@ -314,14 +335,14 @@ const OTA_SUBTYPES: core::ops::RangeInclusive<u8> = 0x10..=0x1F;
 const OTADATA_SUBTYPE: u8 = 0x00;
 
 /// Finds the running slot and the other OTA app slot, logs both, and keeps
-/// the inactive one for [`track_slot`]. Reads only.
+/// the inactive one for [`data_slot`]. Reads only.
 ///
 /// The running slot comes from `booted_partition()`, which reads the MMU
 /// entry that maps the start of the app's flash address space: that is
 /// the slot actually executing, whatever `otadata` says. `otadata`'s
 /// selection is logged next to it as a cross-check (all-0xFF `otadata`
 /// selects nothing, and the bootloader then boots `ota_0`).
-fn locate_track_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashStorage<'static>) {
+fn locate_data_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashStorage<'static>) {
     let booted = match table.booted_partition() {
         Ok(Some(p)) => p,
         Ok(None) => {
@@ -337,7 +358,7 @@ fn locate_track_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashSt
     let is_ota_app = |p: &partitions::PartitionEntry| p.raw_type() == 0 && OTA_SUBTYPES.contains(&p.raw_subtype());
     if !is_ota_app(&booted) {
         warn!(
-            "storage: running from {=str} (subtype {=u8:#04x}), not an OTA slot; no track slot",
+            "storage: running from {=str} (subtype {=u8:#04x}), not an OTA slot; no data slot",
             booted.label_as_str(),
             booted.raw_subtype()
         );
@@ -364,17 +385,25 @@ fn locate_track_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashSt
     }
 
     let Some(slot) = inactive.filter(|_| ota_slots == 2) else {
-        warn!("storage: {=usize} OTA app slots, expected 2; no track slot", ota_slots);
+        warn!("storage: {=usize} OTA app slots, expected 2; no data slot", ota_slots);
         return;
     };
     info!(
-        "storage: running app slot {=str}; inactive slot {=str} at {=u32:#08x}, {=u32} bytes (reserved for tracks, untouched)",
+        "storage: running app slot {=str}; inactive slot {=str} at {=u32:#08x}, {=u32} bytes: the data slot",
         booted.label_as_str(),
         slot.label_as_str(),
         slot.offset(),
         slot.len()
     );
-    let _ = TRACK_SLOT.init(TrackSlot {
+    // whole MMU pages, room for both regions
+    if slot.offset() % 0x1_0000 != 0 || slot.len() < DATA_SLOT_USED {
+        warn!(
+            "storage: data slot not 64 KiB aligned or under {=u32} bytes; no data slot",
+            DATA_SLOT_USED
+        );
+        return;
+    }
+    let _ = DATA_SLOT.init(DataSlot {
         booted_subtype: booted.raw_subtype(),
         subtype: slot.raw_subtype(),
         offset: slot.offset(),

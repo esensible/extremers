@@ -30,7 +30,7 @@ use crate::{
     fmt::Dbg,
     nmea::GpsUpdate,
     package::Package,
-    track::RamTrack,
+    track::{RamTrack, Track, TrackFix, TrackLog},
 };
 
 /// The packages a host can run: the built-in Choose (if installed) and the
@@ -184,9 +184,40 @@ struct Active {
     timer: Option<u64>,
     /// The engine's buffers, lent to every call.
     memory: &'static mut EngineMemory,
-    /// `gps`: every fix since boot (the newest [`TRACK_FIXES`]), whichever
-    /// package is active.
-    track: RamTrack<TRACK_FIXES>,
+    /// `gps`: every fix since boot, whichever package is active.
+    track: HostTrack,
+}
+
+/// The host's track: the target's (in flash on the C6), or the newest
+/// [`TRACK_FIXES`] in RAM.
+enum HostTrack {
+    Ram(RamTrack<TRACK_FIXES>),
+    Given(&'static mut (dyn TrackLog + Send)),
+}
+
+impl Track for HostTrack {
+    fn len(&self) -> u32 {
+        match self {
+            HostTrack::Ram(t) => t.len(),
+            HostTrack::Given(t) => t.len(),
+        }
+    }
+
+    fn get(&self, i: u32) -> Option<TrackFix> {
+        match self {
+            HostTrack::Ram(t) => t.get(i),
+            HostTrack::Given(t) => t.get(i),
+        }
+    }
+}
+
+impl TrackLog for HostTrack {
+    fn append(&mut self, now: i64, lat: f64, lon: f64) -> i64 {
+        match self {
+            HostTrack::Ram(t) => t.append(now, lat, lon),
+            HostTrack::Given(t) => t.append(now, lat, lon),
+        }
+    }
 }
 
 impl Active {
@@ -227,8 +258,18 @@ pub struct Host {
 
 impl Host {
     /// A host running `registry`, starting with its boot package
-    /// ([`Registry::boot_package`]); its engines run in `memory`.
+    /// ([`Registry::boot_package`]); its engines run in `memory`, with a
+    /// track in RAM.
     pub fn new(registry: Registry, memory: &'static mut EngineMemory) -> Self {
+        Self::with(registry, memory, HostTrack::Ram(RamTrack::new()))
+    }
+
+    /// [`new`](Self::new), with `track` as the engines' `gps`.
+    pub fn with_track(registry: Registry, memory: &'static mut EngineMemory, track: &'static mut (dyn TrackLog + Send)) -> Self {
+        Self::with(registry, memory, HostTrack::Given(track))
+    }
+
+    fn with(registry: Registry, memory: &'static mut EngineMemory, track: HostTrack) -> Self {
         let boot = registry.boot_package();
         let host = Host {
             active: Mutex::new(Active {
@@ -236,7 +277,7 @@ impl Host {
                 engine: None,
                 timer: None,
                 memory,
-                track: RamTrack::new(),
+                track,
             }),
             registry: BlockingMutex::new(RefCell::new(registry)),
             tick_offset: AtomicU64::new(0),
@@ -408,6 +449,12 @@ impl Host {
     pub async fn current_state(&self) -> StateMessage {
         let active = self.active.lock().await;
         self.capture(&active)
+    }
+
+    /// When the active engine's `wake` is due (device clock, epoch ms): what
+    /// the timer task was last told to wait for; `None` without one.
+    pub async fn wake(&self) -> Option<u64> {
+        self.active.lock().await.timer
     }
 
     /// Subscribes to changes. Subscribe before reading

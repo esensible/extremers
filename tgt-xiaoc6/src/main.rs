@@ -35,6 +35,8 @@ mod network_tasks;
 mod selftest;
 #[allow(dead_code)] // shared with src/bin/{provision,dump}.rs; each uses a subset
 mod storage;
+#[allow(dead_code)] // shared with src/bin/dump.rs
+mod xip;
 
 use crate::network_tasks::{
     access_point_config, choose_access_point_credentials, dhcp_task, dns_task, net_task,
@@ -44,7 +46,7 @@ use common::{
     ble::{BondStore, CONNECTIONS_MAX, Diagnostics, serve_ble},
     ble_settings::{BondRecord, GattClientRecord, static_random_address},
     config::{
-        AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
+        AP_IP, AP_PREFIX_LEN, GPS_BAUD, GPS_MAX_ITEMS, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
         SOCKET_BUFFER_SIZE,
     },
     engine::{EngineMemory, LIMITS},
@@ -52,7 +54,10 @@ use common::{
     nmea::AsyncReader,
     package::Package,
     tasks::{read_gps, serve_http},
+    track::FlashTrack,
 };
+use esp_hal::peripherals::FLASH;
+use esp_storage::FlashStorage;
 
 /// The engines' buffers (common::engine), static: not the heap, not the
 /// main stack.
@@ -126,10 +131,17 @@ async fn main(spawner: Spawner) -> ! {
     let _rf_antenna_select = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
     defmt::info!("rf switch: powered (GPIO3 low), onboard antenna (GPIO14 low)");
 
+    // A second handle on the flash, for the data slot (xip.rs): its own
+    // FlashStorage, over flash disjoint from the settings partition's.
+    // SAFETY: esp-storage runs every operation in its own critical section,
+    // so the two never interleave; neither assumes it is the only writer of
+    // anything outside its own region.
+    let data_flash = unsafe { peripherals.FLASH.clone_unchecked() };
     // Settings partition (read only here; see storage.rs), then the access
     // point's credentials from it, or the compiled-in defaults.
     storage::init(peripherals.FLASH).await;
     choose_access_point_credentials().await;
+    let track = flash_track(data_flash);
 
     memory::log("before the host");
     let engine_memory = ENGINE_MEMORY.take();
@@ -138,11 +150,12 @@ async fn main(spawner: Spawner) -> ! {
     let apps = load(dev_bundle::path(), dev_bundle::BYTES, engine_memory);
     #[cfg(not(feature = "dev-race"))]
     let apps: Option<Package> = None;
+    let registry = Registry::new(choose, apps.as_slice());
     static HOST: StaticCell<Host> = StaticCell::new();
-    let runtime: &'static Host = HOST.init(Host::new(
-        Registry::new(choose, apps.as_slice()),
-        engine_memory,
-    ));
+    let runtime: &'static Host = HOST.init(match track {
+        Some(track) => Host::with_track(registry, engine_memory, track),
+        None => Host::new(registry, engine_memory),
+    });
     memory::log("host up");
 
     // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
@@ -224,6 +237,62 @@ async fn main(spawner: Spawner) -> ! {
         Timer::after(Duration::from_millis(100)).await;
         led.toggle();
     }
+}
+
+type Tracks = FlashTrack<xip::XipFlash>;
+
+/// The engines' `gps` in the data slot's tracks region (common::track,
+/// xip.rs), read in place: maps the slot, checks that reads in place see
+/// what the flash holds, and opens the ring (a new run from its head).
+/// `None` (logged) if any of that fails: the host then keeps the track in
+/// RAM, gone at a reboot.
+fn flash_track(flash: FLASH<'static>) -> Option<&'static mut Tracks> {
+    let fallback = "track: in RAM instead (lost at a reboot)";
+    let Some(slot) = storage::data_slot() else {
+        defmt::warn!("track: no data slot; {=str}", fallback);
+        return None;
+    };
+    if !xip::map(&slot) {
+        defmt::warn!("{=str}", fallback);
+        return None;
+    }
+    let Some(mut region) = xip::XipFlash::new(FlashStorage::new(flash), slot.tracks()) else {
+        defmt::warn!("track: tracks region not mapped; {=str}", fallback);
+        return None;
+    };
+    if !region.self_check(&slot) {
+        defmt::warn!("{=str}", fallback);
+        return None;
+    }
+    let started = esp_hal::time::Instant::now();
+    let track = match FlashTrack::open(region, GPS_MAX_ITEMS) {
+        Ok(track) => track,
+        Err(e) => {
+            defmt::error!("track: opening the ring failed: {:?}; {=str}", defmt::Debug2Format(&e), fallback);
+            return None;
+        }
+    };
+    let us = started.elapsed().as_micros();
+    let scan = track.boot_scan();
+    defmt::info!(
+        "track: flash {=u32:#08x}..{=u32:#08x}, {=u32} records; scan {:?} in {=u64} us: head {=u32}, oldest {=u32}, {=u32} held{=str}; this boot's run starts at {=u32}",
+        slot.tracks().start,
+        slot.tracks().end,
+        track.capacity(),
+        defmt::Debug2Format(&scan.kind),
+        us,
+        scan.head,
+        scan.oldest,
+        scan.held,
+        match scan.keep {
+            Some(0) => "; the head's sector erased",
+            Some(_) => "; the head's sector rewritten up to the head",
+            None => "",
+        },
+        track.run_start()
+    );
+    static TRACK: StaticCell<Tracks> = StaticCell::new();
+    Some(TRACK.init(track))
 }
 
 /// The bundle `bytes` (in flash), validated, timed; `None` (logged) if it

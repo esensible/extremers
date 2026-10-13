@@ -29,8 +29,9 @@ members = [
 # inherited `license`. bundle/ (the bundle archive and device tables) is its
 # own workspace for now too; common and tools/package depend on it by path.
 # tgt-pico still runs the wasm3 host that is gone, and is left as it was
-# (it doesn't build).
-exclude = ["wire", "lang", "engine", "bundle", "tgt-pico"]
+# (it doesn't build). vendor/ holds patched crates.io crates
+# ([patch.crates-io]), built only for the targets that use them.
+exclude = ["wire", "lang", "engine", "bundle", "tgt-pico", "vendor"]
 
 [workspace.package]
 edition = "2024"
@@ -110,6 +111,11 @@ debug = 2
 [patch.crates-io]
 trouble-host = { path = "/Users/sensible-1/src/trouble/host" }
 trouble-host-macros = { path = "/Users/sensible-1/src/trouble/host-macros" }
+# esp-storage 0.10.0 with its flash-MMU mapping API public (vendor/esp-storage,
+# src/mmu.rs says what changed), for the C6's execute-in-place reads of the
+# data slot (tgt-xiaoc6/src/xip.rs). Vendored in the repo, so it builds
+# anywhere the repo is. Drop it when an esp-storage release exposes that API.
+esp-storage = { path = "vendor/esp-storage" }
 
 # The esp-radio blobs require optimization to work correctly, even in debug builds
 [profile.dev.package.esp-radio]

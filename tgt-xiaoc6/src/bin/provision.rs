@@ -79,7 +79,7 @@ async fn main(_spawner: Spawner) -> ! {
     // Blank otadata so the bootloader's choice is ota_0 by rule, not by
     // leftover bytes (storage::blank_otadata). Only when running from
     // ota_0: anywhere else, blanking it would switch the next boot.
-    match storage::track_slot() {
+    match storage::data_slot() {
         Some(t) if t.booted_subtype == 0x10 => {
             if storage::blank_otadata().await {
                 info!("provision: otadata blanked (bootloader boots ota_0)");

@@ -1,16 +1,17 @@
-//! dump -- print what the `settings` partition holds. Read-only.
+//! dump -- print what the `settings` partition holds, and where the data
+//! slot's regions and the GPS track's ring are. Read-only.
 //!
 //!     cargo run --release --bin dump
 //!
 //! Flashing it replaces the app (flash the app again afterwards); the
-//! settings partition is untouched by either flash. The password itself is
-//! never printed, only its length; of BLE bonds only the count and the
-//! devices' identity addresses, never their keys.
+//! settings partition and the data slot are untouched by either flash. The
+//! password itself is never printed, only its length; of BLE bonds only the
+//! count and the devices' identity addresses, never their keys.
 
 #![no_std]
 #![no_main]
 
-use common::ble_settings::AddrText;
+use common::{ble_settings::AddrText, track};
 use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
@@ -24,6 +25,9 @@ use esp_hal::timer::timg::TimerGroup;
 #[allow(dead_code)] // shared with the app; each binary uses a subset
 #[path = "../storage.rs"]
 mod storage;
+#[allow(dead_code)] // shared with the app
+#[path = "../xip.rs"]
+mod xip;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -70,8 +74,59 @@ async fn main(_spawner: Spawner) -> ! {
             }
         }
     }
+    dump_track();
     info!("dump: done");
     loop {
         Timer::after(Duration::from_secs(60)).await;
+    }
+}
+
+/// The data slot's regions, and the track ring as the app's boot scan
+/// finds it (`common::track::scan`: reads only; the app would also make the
+/// head's sector free, `keep`) with its newest records.
+fn dump_track() {
+    let Some(slot) = storage::data_slot() else {
+        warn!("dump: no data slot (see the storage lines above)");
+        return;
+    };
+    let (b, t) = (slot.bundles(), slot.tracks());
+    info!(
+        "dump: data slot {=u32:#08x}+{=u32:#x}: bundles {=u32:#08x}..{=u32:#08x}, tracks {=u32:#08x}..{=u32:#08x}, spare from {=u32:#08x}",
+        slot.offset,
+        slot.len,
+        b.start,
+        b.end,
+        t.start,
+        t.end,
+        t.end
+    );
+    if !xip::map(&slot) {
+        return;
+    }
+    let Some(bytes) = xip::tracks_bytes(&slot) else {
+        warn!("dump: tracks region not mapped");
+        return;
+    };
+    let scan = track::scan(bytes);
+    info!(
+        "dump: track: {:?}, head {=u32} (the next boot's run starts here), oldest {=u32}, {=u32} of {=usize} records held, keep {:?}",
+        defmt::Debug2Format(&scan.kind),
+        scan.head,
+        scan.oldest,
+        scan.held,
+        bytes.len() / track::RECORD_LEN,
+        scan.keep
+    );
+    for back in 0..3 {
+        if let Some(f) = scan.newest(bytes, back) {
+            info!(
+                "dump: track: newest-{=u32}: t {=i64}, lat {=f64}, lon {=f64}, alt {:?}",
+                back,
+                f.t,
+                f.lat,
+                f.lon,
+                f.alt
+            );
+        }
     }
 }

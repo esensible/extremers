@@ -12,9 +12,9 @@ pub mod layout;
 use compiler::diag::Diag;
 use serde_json::{Value as Json, json};
 
-/// The most fixes `gps` holds: the `tracks` flash partition (0x1C0000
-/// bytes) in 32-byte records.
-pub const GPS_MAX_ITEMS: u32 = 0x1C_0000 / 32;
+/// The most fixes `gps` holds: the tracks region of the C6's data slot
+/// (0xA0000 bytes, PROFILE §3) in 32-byte records -- 5.7 h at 1 Hz.
+pub const GPS_MAX_ITEMS: u32 = 0xA_0000 / 32;
 
 /// The host's own events, as variants: a GPS update and the timer's wake.
 pub fn builtin_events() -> [(&'static str, Json); 2] {
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn the_gps_bound_fills_the_tracks_partition() {
-        assert_eq!(GPS_MAX_ITEMS, 57_344);
+    fn the_gps_bound_fills_the_tracks_region() {
+        assert_eq!(GPS_MAX_ITEMS, 20_480);
     }
 }

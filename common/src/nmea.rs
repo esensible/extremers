@@ -379,21 +379,31 @@ where
             }
         };
 
-        if !gnrmc.is_valid_fix() {
-            continue;
+        if let Some(update) = gnrmc.update() {
+            return update;
+        }
+    }
+}
+
+impl GNRMC {
+    /// The update this sentence reports; `None` unless it is a valid fix
+    /// ([`is_valid_fix`](Self::is_valid_fix)).
+    pub fn update(&self) -> Option<GpsUpdate> {
+        if !self.is_valid_fix() {
+            return None;
         }
 
-        let timestamp = if let (Some(time), Some(date)) = (gnrmc.utc_time, gnrmc.date) {
+        let timestamp = if let (Some(time), Some(date)) = (self.utc_time, self.date) {
             Some(time as u64 + date as u64 * 24 * 60 * 60_000)
         } else {
             None
         };
 
         let fix = if let (Some(latitude), Some(ns), Some(longitude), Some(ew)) = (
-            gnrmc.latitude,
-            gnrmc.ns_indicator,
-            gnrmc.longitude,
-            gnrmc.ew_indicator,
+            self.latitude,
+            self.ns_indicator,
+            self.longitude,
+            self.ew_indicator,
         ) {
             Some(Fix {
                 lat: if ns == 'S' { -latitude } else { latitude },
@@ -404,18 +414,18 @@ where
         };
 
         let velocity = if let (Some(speed), Some(heading)) =
-            (gnrmc.speed_over_ground, gnrmc.course_over_ground)
+            (self.speed_over_ground, self.course_over_ground)
         {
             Some(Velocity { speed, heading })
         } else {
             None
         };
 
-        return GpsUpdate {
+        Some(GpsUpdate {
             timestamp,
             fix,
             velocity,
-        };
+        })
     }
 }
 

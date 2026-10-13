@@ -47,7 +47,7 @@ The platform tooling generates the interface (`lang/SPEC.md` §1.1) from the aut
 | `state` | `state.schema.json` | yes | The last accepted state, or `nil` until an evaluation has been accepted. |
 | `event` | the built-in events plus `event.schema.json` | no | The event being handled (below). |
 | `timestamp` | `{"type": "integer", "format": "int64"}` | no | Device time of the event, in epoch ms. |
-| `gps` | `{"type": "array", "maxItems": 61440, "items": Fix}` | no | Every fix of the run, oldest first. |
+| `gps` | `{"type": "array", "maxItems": 20480, "items": Fix}` | no | Every fix of the run (since the device booted), oldest first. 20,480 is the C6's tracks region in 32-byte records (§3): 5.7 h at 1 Hz. |
 
 **Events.** The engine is evaluated once for each event, as soon as it arrives. Events are asynchronous: GPS updates come at whatever rate the receiver gives them (or not at all), and client events whenever a client sends one. `event` is a set of variants: exactly one of these fields is present.
 - **`gps`**, built in: a GPS update, `{fix?: Fix, velocity?: Velocity}`. `fix` is also the last item of `gps`. `Velocity` is `{speed, heading}`: speed over ground (kn) and course (degrees true, 0 ≤ x < 360).
@@ -92,7 +92,7 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 - Every `t` is at or before `timestamp`.
 - The length is **snapshotted** for each evaluation. The host never rewrites any fix below that length during the evaluation.
 
-**Time windows.** A filter such as `filter(gps, .t > timestamp - 10000)` has a bound of 61,440 whenever it is held, because the schema can't express the gap between fixes. When a window has to be held, slice by count instead: `gps[-11:]`. A window that only flows into an aggregate, such as `sum`, `count` or `last`, is free.
+**Time windows.** A filter such as `filter(gps, .t > timestamp - 10000)` has a bound of 20,480 whenever it is held, because the schema can't express the gap between fixes. When a window has to be held, slice by count instead: `gps[-11:]`. A window that only flows into an aggregate, such as `sum`, `count` or `last`, is free.
 
 ---
 
@@ -122,11 +122,12 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 So engine RAM is `size(State) + size(Output) + size(Event) + arena + 16 × (max_stack + locals)`, where `size(Output) = size(State) + size(View) + 16`, plus the code if it's copied from flash.
 
 **The `gps` accessor.**
-- Fixes live as plain 32-byte records in the inactive OTA slot (`TrackSlot`, `tgt-xiaoc6/src/storage.rs`): `t` i64, then `lat`, `lon` and `alt` as f64. An `alt` of NaN means absent.
-- The host serves `gps` as an `Input::Reader`. It synthesises the layout image (`lang/SPEC.md` §7.3) on demand:
-  - the u16 length comes from the snapshot;
-  - each `Fix` slot is 33 bytes, with `alt`'s presence byte computed from NaN.
+- Fixes live as plain 32-byte records, little endian, no headers: `t` i64, then `lat`, `lon` and `alt` as f64. An `alt` of NaN means absent. A record is free when its `t` bytes are all 0xFF.
+- On the C6 they are in the **tracks region** of the data slot, the OTA app slot the firmware was not booted from (`DataSlot`, `tgt-xiaoc6/src/storage.rs`): 640 KiB at slot + 0x80000, after the 512 KiB bundles region. It is read in place through the flash MMU (`tgt-xiaoc6/src/xip.rs`).
+- The records form a ring (`common/src/track.rs`, `FlashTrack`): each fix is appended at the head; when a sector fills, the next one is erased, so the oldest fixes go 128 at a time and appending never stops. At boot the head is found again and a new run starts there: `gps` holds only the fixes appended since boot, the older ones stay in the ring for a later download.
+- The host serves `gps` to the VM as a `ListInput` (`GpsList`): the length is the run's (at most `maxItems`), fixed for the evaluation, and each item's `t`, `lat`, `lon` and `alt` leaves are read from the record on demand (`alt` is nil for NaN).
 - Nothing is copied into RAM.
+- A firmware update written into the data slot wipes the track (and the bundles), by the owner's choice.
 
 **Limits passed to the compiler and VM (D4, provisional until measured on the C6):**
 - arena limit: 8 KiB;
@@ -201,5 +202,5 @@ These are on top of the language corpus (`lang/SPEC.md` §9):
 ## 7. Open decisions
 
 - **D4 Limits.** The arena limit, the instruction budget and the builtin costs need measuring on the C6.
-- **D6 A full GPS log.** Does the host stop appending, or start a new run?
+- **D6 A full GPS log.** *Resolved:* the track is a sliding ring that never stops appending (the oldest sector is erased as the head reaches it), and a new run starts at every boot, so `gps` is the fixes since boot. A firmware update may wipe the slot the ring lives in.
 - **D11 VMG.** VMG is `speed × cos(angle_diff(heading, bearing))`, and nothing gives a cosine. The options are a sailing-level builtin, such as `vmg(speed, heading, bearing)`, or `cos` in degrees.

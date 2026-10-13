@@ -127,7 +127,7 @@ fn race_validates() {
     let l = Layout::parse(layout).unwrap();
     assert_eq!(l.to_bytes().as_slice(), layout.as_slice());
     assert_eq!((l.input_count, l.output_count, l.in_event, l.out_view, l.out_wake, l.ev_gps, l.ev_wake), (38, 30, 20, 19, 29, 23, 35));
-    assert_eq!((l.fix_alt, l.fix_lat, l.fix_lon, l.fix_t, l.gps_max_items), (0, 1, 2, 3, 57_344));
+    assert_eq!((l.fix_alt, l.fix_lat, l.fix_lon, l.fix_t, l.gps_max_items), (0, 1, 2, 3, 20_480));
 }
 
 /// One evaluation's input, as the host gets it.

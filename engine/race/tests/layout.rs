@@ -83,7 +83,7 @@ fn the_layout() {
         ("fix_lat", 1),
         ("fix_lon", 2),
         ("fix_alt", 0),
-        ("gps_max_items", 57_344),
+        ("gps_max_items", 20_480),
         // the phase's index and gun, the line's bits, three optional fields:
         // one bit byte, 10 + 10 + 8 + 8 bytes
         ("pub_max_bytes", 37),

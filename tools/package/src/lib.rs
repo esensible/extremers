@@ -5,8 +5,9 @@
 //! - `manifest.bin`: its [`Manifest`] (postcard), `abi` [`ABI`] with an
 //!   engine, [`NO_ENGINE`] without (Choose);
 //! - with an engine (an engine directory, `engine/race` style:
-//!   `engine.expr`, `state.schema.json`, optional `view.schema.json`,
-//!   `event.schema.json` and `samples.json`; engine/PROFILE.md):
+//!   `engine.expr`, `state.schema.json`, optional `view.schema.json` and
+//!   `event.schema.json`; engine/PROFILE.md — `samples.json` tests the
+//!   engine and isn't packaged):
 //!   - `engine.bin`: the program, compiled by `lang/compiler` against the
 //!     interface `engine/profile` generates from the schemas;
 //!   - `layout.bin`, `view.map`, `event.map`, `enums.bin`: the host's
@@ -16,8 +17,9 @@
 //!     `event.desc`: the author's `event.schema.json`'s, if there is one.
 //!     Both compiled by `wire/js` (a node call, [`compile_schema`]);
 //!   - `source.json`: the engine sources verbatim, `{engine, state, view,
-//!     event, samples?}` (`view`/`event` null when absent), for the studio
-//!     to reopen; the device ignores it;
+//!     event}` (`view`/`event` null when absent), pretty-printed, for the
+//!     studio to reopen; the device ignores it. The samples are not in it:
+//!     they test the engine rather than being part of it;
 //! - `web/`: its Kindle page (`client-js/`, built with npm): the host
 //!   serves its index.html at `/` while the package is active, and its
 //!   files at `/pkg/<id>/` (Choose's id is 0), where index.html points;
@@ -71,12 +73,57 @@ pub struct Spec {
 
 impl Spec {
     pub fn id(&self) -> PackageId {
-        if self.engine.is_none() {
-            extreme_protocol::CHOOSE
-        } else {
-            package_id(self.name)
+        id(self.name, self.engine.is_some())
+    }
+}
+
+/// A package's id: [`package_id`] of its name with an engine, Choose's
+/// without (the one package without an engine).
+pub fn id(name: &str, engine: bool) -> PackageId {
+    if engine { package_id(name) } else { extreme_protocol::CHOOSE }
+}
+
+/// The manifest of the package `name` `version` made of `program` (`None`
+/// without an engine), the Kindle page `web` ((name, contents) in name
+/// order, names without `web/`) and the watch bundle `watch` (empty if
+/// none): its id, ABI, content hash and UI hashes (module docs).
+pub fn manifest(name: &str, version: u16, program: Option<&[u8]>, web: &[(String, Vec<u8>)], watch: &[u8]) -> Result<Manifest, String> {
+    Ok(Manifest {
+        id: id(name, program.is_some()),
+        name: Name::try_from(name).map_err(|_| format!("{name}: name longer than 16 bytes"))?,
+        version,
+        abi: if program.is_some() { ABI } else { NO_ENGINE },
+        content_hash: content_hash(program.unwrap_or(&[]), web, watch),
+        ui: UiHashes {
+            web: web_hash(web),
+            watch: watch_hash(watch),
+        },
+        watch_len: u32::try_from(watch.len()).map_err(|_| format!("{name}: watch.js over 4 GiB"))?,
+    })
+}
+
+/// The bundle of `files` ((path, contents)): [`bundle::archive::write`],
+/// which sorts them. `Err` where `write` would panic: a name twice, a name
+/// over 65,535 bytes, more than 65,535 files, or a file over 4 GiB.
+pub fn archive(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    let mut names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+    names.sort_unstable();
+    if let Some(w) = names.windows(2).find(|w| w[0] == w[1]) {
+        return Err(format!("{}: a file name given twice", w[0]));
+    }
+    if files.len() > u16::MAX as usize {
+        return Err(format!("{} files: at most 65,535", files.len()));
+    }
+    for (name, contents) in files {
+        if name.len() > u16::MAX as usize {
+            return Err(format!("{}…: a name over 65,535 bytes", &name[..name.floor_char_boundary(32)]));
+        }
+        if u32::try_from(contents.len()).is_err() {
+            return Err(format!("{name}: over 4 GiB"));
         }
     }
+    let refs: Vec<(&str, &[u8])> = files.iter().map(|(n, c)| (n.as_str(), c.as_slice())).collect();
+    Ok(bundle::archive::write(&refs))
 }
 
 /// The app packages, in Choose's order.
@@ -244,19 +291,8 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
         Some(dist) => fs::read(dist.join("watch.js")).map_err(|e| format!("{}: watch-js/dist/watch.js: {e}", spec.name))?,
         None => Vec::new(),
     };
-    let program: &[u8] = engine.as_ref().map_or(&[], |e| &e.program);
-    let manifest = Manifest {
-        id: spec.id(),
-        name: Name::try_from(spec.name).map_err(|_| format!("{}: name longer than 16 bytes", spec.name))?,
-        version: spec.version,
-        abi: if engine.is_some() { ABI } else { NO_ENGINE },
-        content_hash: content_hash(program, &web, &watch),
-        ui: UiHashes {
-            web: web_hash(&web),
-            watch: watch_hash(&watch),
-        },
-        watch_len: u32::try_from(watch.len()).map_err(|_| format!("{}: watch.js over 4 GiB", spec.name))?,
-    };
+    let program = engine.as_ref().map(|e| e.program.as_slice());
+    let manifest = manifest(spec.name, spec.version, program, &web, &watch)?;
     Ok(Built {
         spec: *spec,
         manifest,
@@ -300,12 +336,11 @@ pub fn inputs(root: &Path, spec: &Spec) -> Vec<PathBuf> {
 }
 
 /// An engine directory's files (module docs); all but the first two optional.
-const ENGINE_FILES: [&str; 5] = [
+const ENGINE_FILES: [&str; 4] = [
     "engine.expr",
     "state.schema.json",
     "view.schema.json",
     "event.schema.json",
-    "samples.json",
 ];
 
 /// Compiles the engine in `dir` and makes its tables (module docs).
@@ -327,7 +362,6 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
     let state_src = read("state.schema.json")?.ok_or_else(|| missing("state.schema.json"))?;
     let view_src = read("view.schema.json")?;
     let event_src = read("event.schema.json")?;
-    let samples_src = read("samples.json")?;
     let state = parse("state.schema.json", &state_src)?;
     let view = view_src.as_deref().map(|s| parse("view.schema.json", s)).transpose()?;
     let event = event_src.as_deref().map(|s| parse("event.schema.json", s)).transpose()?;
@@ -351,15 +385,15 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
     let tables = engine_profile::layout::tables(&interface, &compiled.bytes, &view_desc, event_desc.as_deref())
         .map_err(|e| format!("{}: {e}", dir.display()))?;
 
-    let mut source_json = json!({
+    // Pretty-printed: it's for people and agents to reopen, not for the device.
+    // The samples stay a project file: they test the engine, they aren't part
+    // of it.
+    let source_json = json!({
         "engine": source,
         "state": state_src,
         "view": view_src,
         "event": event_src,
     });
-    if let Some(samples) = samples_src {
-        source_json["samples"] = Json::String(samples);
-    }
     let event = match (event_desc, tables.event_map) {
         (Some(desc), Some(map)) => Some((desc, map)),
         (None, None) => None,
@@ -373,7 +407,7 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
         view_map: tables.view_map,
         event,
         enums: tables.enums,
-        source: serde_json::to_vec(&source_json).unwrap(),
+        source: serde_json::to_vec_pretty(&source_json).unwrap(),
     })
 }
 

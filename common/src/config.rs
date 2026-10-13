@@ -40,8 +40,33 @@ pub const HTTP_PORT: u16 = 80;
 /// Baud rate of the GPS UART.
 pub const GPS_BAUD: u32 = 9600;
 /// Fixes the RAM track keeps (`track::RamTrack`, 24 B each): the newest,
-/// for the engines' `gps`. Until the track is in flash.
+/// for the engines' `gps` on a host without a flash track (`tgt-std`, the
+/// tests).
 pub const TRACK_FIXES: usize = 128;
+
+// The C6's data slot: the OTA app slot the running firmware was not booted
+// from (tgt-xiaoc6/src/storage.rs, `DataSlot`). Offsets from the slot's
+// start; both regions are whole 64 KiB MMU pages. A firmware update written
+// into the slot wipes both, by choice: they are installed and recorded
+// again afterwards.
+
+/// Where the bundles region starts in the data slot.
+pub const DATA_BUNDLES_OFFSET: u32 = 0;
+/// The bundles region's size: 512 KiB, four or five bundles.
+pub const DATA_BUNDLES_LEN: u32 = 0x8_0000;
+/// Where the tracks region starts in the data slot, right after the bundles.
+pub const DATA_TRACKS_OFFSET: u32 = DATA_BUNDLES_OFFSET + DATA_BUNDLES_LEN;
+/// The tracks region's size: 640 KiB of 32-byte fixes (`track::FlashTrack`)
+/// = 20,480, 5.7 h at 1 Hz.
+pub const DATA_TRACKS_LEN: u32 = 0xA_0000;
+/// The data slot's bytes in use; the rest of the slot is spare.
+pub const DATA_SLOT_USED: u32 = DATA_TRACKS_OFFSET + DATA_TRACKS_LEN;
+/// The most fixes an engine's `gps` holds: the tracks region in records.
+/// Equal to `engine_profile::GPS_MAX_ITEMS`, the `maxItems` every engine is
+/// compiled against (engine/PROFILE.md §2).
+pub const GPS_MAX_ITEMS: u32 = DATA_TRACKS_LEN / crate::track::RECORD_LEN as u32;
+
+const _: () = assert!(DATA_TRACKS_OFFSET % 0x1_0000 == 0 && DATA_SLOT_USED % 0x1_0000 == 0);
 
 /// Maximum number of simultaneous HTTP connections, websockets included.
 pub const MAX_WEB_SOCKETS: usize = 4;
