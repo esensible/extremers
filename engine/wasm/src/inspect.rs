@@ -8,10 +8,10 @@
 //! its fields). Its hash must be the program's, so the leaves are read with
 //! the type they were compiled against.
 
-use common::package::Package;
-use compiler::types::Ty;
+use common::{engine::SavedList, package::Package};
+use compiler::types::{Ty, unopt};
 use serde_json::{Map, Value as Json, json};
-use vm::Value;
+use vm::{ListInput, ListRef, Value};
 
 /// How to read one package's state leaves.
 pub struct Decoder {
@@ -50,10 +50,12 @@ impl Decoder {
         Ok(Decoder { state, program })
     }
 
-    /// `leaves` (the state's, as `VmEngine::state` gives them) as plain JSON.
-    pub fn state(&self, leaves: &[Value]) -> Json {
+    /// `leaves` (the state's, as `VmEngine::state` gives them) as plain JSON,
+    /// a list's items read from `list` (`VmEngine::state_list`) by the id
+    /// its leaf holds.
+    pub fn state<'m>(&self, leaves: &[Value], list: &dyn Fn(u16) -> Option<SavedList<'m>>) -> Json {
         let mut it = leaves.iter();
-        plain(&mut it, &self.state)
+        plain(&mut it, &self.state, list)
     }
 
     /// The source bytes (`engine.expr`) of the instruction at `pc`.
@@ -64,13 +66,14 @@ impl Decoder {
 
 /// Leaves of type `t` as plain JSON, as `compiler::plain` gives a run's
 /// output: records as objects with their absent (nil) fields left out, ints
-/// and floats as numbers, a list (only its handle) as null.
-fn plain<'v>(leaves: &mut impl Iterator<Item = &'v Value<'v>>, t: &Ty) -> Json {
+/// and floats as numbers, a list as an array of its items (read through
+/// `list`; null if it can't be).
+fn plain<'v, 'm>(leaves: &mut impl Iterator<Item = &'v Value<'v>>, t: &Ty, list: &dyn Fn(u16) -> Option<SavedList<'m>>) -> Json {
     match t {
         Ty::Rec(fields, _) => {
             let mut out = Map::new();
             for (k, ft) in fields {
-                let v = plain(leaves, ft);
+                let v = plain(leaves, ft, list);
                 if !v.is_null() {
                     out.insert(k.clone(), v);
                 }
@@ -79,8 +82,15 @@ fn plain<'v>(leaves: &mut impl Iterator<Item = &'v Value<'v>>, t: &Ty) -> Json {
         }
         Ty::Opt(inner) if matches!(**inner, Ty::Rec(..)) => {
             let present = !matches!(leaves.next(), None | Some(Value::Nil));
-            let v = plain(leaves, inner);
+            let v = plain(leaves, inner, list);
             if present { v } else { Json::Null }
+        }
+        _ if matches!(unopt(t), Ty::List(..)) => {
+            let Ty::List(item, _) = unopt(t) else { unreachable!() };
+            let Some(Value::List(ListRef::Input(id))) = leaves.next() else { return Json::Null };
+            let Some(saved) = list(*id) else { return Json::Null };
+            let n = ListInput::len(&saved) as usize;
+            Json::Array((0..n).map(|i| plain(&mut saved.item(i).iter(), item, list)).collect())
         }
         _ => match leaves.next() {
             Some(Value::Bool(b)) => json!(b),

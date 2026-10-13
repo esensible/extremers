@@ -106,7 +106,7 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 **Client events** are validated against the event schema first: ranges, enums, string lengths and list lengths. An event that fails is dropped with a log line, and the engine isn't evaluated.
 
 **A completed evaluation** (`vm::run` returns `Ok`):
-- The output's `state` becomes the new `state`: the host takes it from the output buffer into its state buffer.
+- The output's `state` becomes the new `state`: the host takes it from the output buffer into its state buffer. A list in the state is one leaf there, a handle to its items (state lists, below), which the host copies out.
 - The output's `wake` sets the timer, or clears it when absent (§2).
 - The output's `view`, or the new `state` when the engine has no view, goes to clients. If it is byte-identical to what they last received, it isn't republished.
 
@@ -119,10 +119,20 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 **Memory on the C6.** The host holds one set of buffers for the active engine, sized once (`EngineMemory`, `common/src/engine.rs`), nothing allocated:
 - the state's leaves (128 slots), the input leaves (192: state, event, timestamp and the `gps` handle) and the output leaves (128: `{state, view?, wake?}`, being built);
 - the VM's stack (128 slots) and locals (256);
+- the state lists' items (1,024 slots, 16 KiB, for at most 4 lists; below);
 - the load scratch (8 KiB of code at most), used while a bundle is loaded;
 - two 256-byte buffers for the published value as bitwire (the last one, and the one being encoded).
 
 The program runs in place from the bundle in flash. An engine whose compiled needs exceed any of these (`compiler::Memory`; `engine/profile`'s layout) is refused when its bundle is installed (`OverLimit`, BLE.md "Errors"), so an installed engine always fits.
+
+**State lists.** A list in the state (`samples` in Tune: the last 30 s of velocity samples) is an input list of the `state` input, like `gps` (`lang/SPEC.md` D15). In the output it is a handle: to items in the evaluation's locals when the program built the list, or to the input list it passed through. The next evaluation clears the locals, so the host keeps the items elsewhere:
+- Each state list has a region in `EngineMemory::state_lists`, room for `maxItems × item leaves` slots, the regions one after another in the order of `layout.bin`'s list table. The bundle is refused (`OverLimit`) when they don't fit in 1,024 slots together, or there are more than 4.
+- After an accepted evaluation, and only then (a rejected one keeps the last state and its lists), the host follows each list's handle in the output's `state` and copies its items into the list's region: from the locals, from `gps`, or from another state list's region (a list passed from one field to another; regions are copied before they are overwritten, and lists passed round in a cycle are turned round slot by slot). It checks first that the items fit the region and are of the list's leaves, and that their strings point into the bundle (`Rejected::Output` otherwise). A nil handle (the list sits in an optional record that is nil) is kept as an absent list.
+- The next evaluation reads each state list from its region (`SavedList`, a `ListInput`), with the length the last evaluation left; the state's leaf for the list holds its input handle.
+- A new version of the engine with the same interface keeps the lists with the rest of the state.
+- Nothing is kept across a reboot: the state lists live in RAM, like the state.
+
+`layout.bin` (`engine/profile`'s `tables`) names the state lists in a table after its 80-byte fixed part, version 2: `count u16, gps_list u16`, then per list `{list u16, leaf u16, max_items u16, item_leaves u16}` (the program's list id, its handle's leaf in the `state` input, the input list's bound and item leaves; `gps_list` is `gps`'s list id). An engine without state lists has a version 1 layout, the fixed part alone, with `gps` list 0. The install check refuses a table that isn't the program's (`STATE_LIST`), and the profile refuses an output state list that could hold more items than the next evaluation's input list.
 
 **The `gps` accessor.**
 - Fixes live as plain 32-byte records, little endian, no headers: `t` i64, then `lat`, `lon` and `alt` as f64. An `alt` of NaN means absent. A record is free when its `t` bytes are all 0xFF.

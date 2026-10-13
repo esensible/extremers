@@ -3,13 +3,21 @@
 //! zero padding to 72, then the interface hash; leaves are absolute (input
 //! leaves for `in_*`/`ev_*`, output leaves for `out_*`/`pub_*`, a fix's own
 //! for `fix_*`), [`NONE`] for none. `engine/profile` writes it.
+//!
+//! Version 2 appends the list table, for an engine with lists in its state
+//! ([`StateLists`]): `count u16, gps_list u16`, then `count` entries
+//! `{list u16, leaf u16, max_items u16, item_leaves u16}`. Version 1 is
+//! the fixed part alone: no state lists, `gps` list 0.
 
 /// No leaf.
 pub const NONE: u16 = 0xFFFF;
-/// The version this crate reads.
-pub const VERSION: u16 = 1;
-/// `layout.bin`'s size.
+/// The newest version this crate reads (it reads 1 too).
+pub const VERSION: u16 = 2;
+/// `layout.bin`'s fixed part.
 pub const BYTES: usize = 80;
+/// The list table's header and each entry.
+pub const LISTS_HEADER_BYTES: usize = 4;
+pub const LIST_ENTRY_BYTES: usize = 8;
 const HASH_AT: usize = 72;
 const FIELDS: usize = 35;
 
@@ -25,12 +33,94 @@ pub(crate) const FIELD_NAMES: [&str; FIELDS] = [
 /// Why bytes aren't a layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
-    /// Not [`BYTES`] long.
+    /// Not [`BYTES`] long (version 1), or not the fixed part and the list
+    /// table its count says (version 2).
     Size,
     /// Another version.
     Version,
     /// The padding isn't zero.
     Padding,
+    /// A version 2 table without a state list.
+    Lists,
+}
+
+/// One list in the state, from the list table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateList {
+    /// The program's list id.
+    pub list: u16,
+    /// Its handle's leaf in the `state` input (absolute); the output's is
+    /// as far into the output's `state`.
+    pub leaf: u16,
+    /// The input list's bound, and the leaves of an item.
+    pub max_items: u16,
+    pub item_leaves: u16,
+}
+
+impl StateList {
+    /// The slots its items take, at most.
+    pub fn slots(&self) -> u32 {
+        self.max_items as u32 * self.item_leaves as u32
+    }
+}
+
+/// `layout.bin`'s list table, read in place: `gps`'s list id and the
+/// lists in the state, in table order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateLists<'a> {
+    pub gps_list: u16,
+    /// The entries' bytes.
+    entries: &'a [u8],
+}
+
+impl<'a> StateLists<'a> {
+    /// The table of `b`, a layout [`Layout::parse`] accepted.
+    pub fn parse(b: &'a [u8]) -> Result<StateLists<'a>, Error> {
+        let Some(table) = b.get(BYTES..).filter(|t| !t.is_empty()) else {
+            return Ok(StateLists { gps_list: 0, entries: &[] });
+        };
+        let at = |i: usize| table.get(i..i + 2).map(|x| u16::from_le_bytes([x[0], x[1]])).ok_or(Error::Size);
+        let (count, gps_list) = (at(0)? as usize, at(2)?);
+        if table.len() != LISTS_HEADER_BYTES + count * LIST_ENTRY_BYTES {
+            return Err(Error::Size);
+        }
+        Ok(StateLists { gps_list, entries: &table[LISTS_HEADER_BYTES..] })
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len() / LIST_ENTRY_BYTES
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Entry `k`.
+    pub fn get(&self, k: usize) -> Option<StateList> {
+        let e = self.entries.get(k * LIST_ENTRY_BYTES..(k + 1) * LIST_ENTRY_BYTES)?;
+        let at = |i: usize| u16::from_le_bytes([e[i], e[i + 1]]);
+        Some(StateList { list: at(0), leaf: at(2), max_items: at(4), item_leaves: at(6) })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = StateList> + '_ {
+        (0..self.len()).filter_map(|k| self.get(k))
+    }
+
+    /// The entry of list id `list`, and its place in the table.
+    pub fn of_list(&self, list: u16) -> Option<(usize, StateList)> {
+        self.iter().enumerate().find(|(_, l)| l.list == list)
+    }
+
+    /// Where entry `k`'s items start in a host's buffer that holds every
+    /// state list's at its most, in table order.
+    pub fn offset(&self, k: usize) -> u32 {
+        self.iter().take(k).map(|l| l.slots()).sum()
+    }
+
+    /// The slots every state list takes at its most.
+    pub fn slots(&self) -> u32 {
+        self.iter().map(|l| l.slots()).sum()
+    }
 }
 
 /// A parsed `layout.bin`.
@@ -41,7 +131,7 @@ pub struct Layout {
     pub input_count: u16,
     /// The program's output leaves.
     pub output_count: u16,
-    /// The program's input lists (1: `gps`).
+    /// The program's input lists: `gps` and the state's ([`StateLists`]).
     pub list_count: u16,
     /// The `state` input's presence leaf; its fields follow.
     pub in_state: u16,
@@ -91,19 +181,26 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// The fixed part of `b`, a whole `layout.bin` (its list table is
+    /// checked for size here, read by [`StateLists::parse`]).
     pub fn parse(b: &[u8]) -> Result<Layout, Error> {
-        if b.len() != BYTES {
+        if b.len() < BYTES {
             return Err(Error::Size);
         }
         let f: [u16; FIELDS] = core::array::from_fn(|i| u16::from_le_bytes([b[2 * i], b[2 * i + 1]]));
-        if f[0] != VERSION {
-            return Err(Error::Version);
+        match f[0] {
+            1 if b.len() != BYTES => return Err(Error::Size),
+            1 => {}
+            2 if b.len() == BYTES => return Err(Error::Size),
+            2 if StateLists::parse(b)?.is_empty() => return Err(Error::Lists),
+            2 => {}
+            _ => return Err(Error::Version),
         }
         if b[2 * FIELDS..HASH_AT].iter().any(|&x| x != 0) {
             return Err(Error::Padding);
         }
         let mut interface_hash = [0; 8];
-        interface_hash.copy_from_slice(&b[HASH_AT..]);
+        interface_hash.copy_from_slice(&b[HASH_AT..BYTES]);
         let [
             version,
             input_count,
@@ -222,7 +319,7 @@ impl Layout {
         ]
     }
 
-    /// `layout.bin`'s bytes.
+    /// `layout.bin`'s fixed part's bytes (all of a version 1 layout).
     pub fn to_bytes(&self) -> [u8; BYTES] {
         let mut b = [0; BYTES];
         for (i, v) in self.fields().iter().enumerate() {

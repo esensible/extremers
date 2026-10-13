@@ -1021,3 +1021,112 @@ fn bundle_requests_only_over_ble() {
     assert_eq!(list.last(), Some(&BundleResponse::ListEnd { count: 3, free_bytes: 0, largest_free: 0 }));
     assert_eq!(ask1(&host, C0, begin_of(RACE, race_bytes())), err(BEGIN, BundleError::NotFound, 0));
 }
+
+// ---- a list in the state: Tune ----
+
+const TUNE: PackageId = package_id("tune");
+
+/// Tune's bundle (a list in its state: the last 30 s of velocity samples),
+/// built from lang/examples/tune: its program, and its state and view
+/// schemas the example's interface's; a stub for a page.
+fn tune_bytes() -> &'static [u8] {
+    static BYTES: OnceLock<&'static [u8]> = OnceLock::new();
+    BYTES.get_or_init(|| {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let dir = root.join("lang/examples/tune");
+        let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap();
+        let iface: Json = serde_json::from_str(&read("interface.json")).unwrap();
+        let pretty = |j: &Json| serde_json::to_string_pretty(j).unwrap();
+        let sources = extreme_pack::Sources {
+            engine: read("program.expr"),
+            state: pretty(&iface["inputs"][0]["schema"]),
+            view: Some(pretty(&iface["output"]["properties"]["view"])),
+            event: None,
+        };
+        let engine = extreme_pack::engine_from_sources(&root, &dir, &sources).unwrap_or_else(|e| panic!("{e}"));
+        let web = vec![("index.html".into(), b"<!doctype html><title>tune</title>".to_vec())];
+        let manifest = extreme_pack::manifest("tune", 1, Some(&engine.program), &web, &[]).unwrap();
+        let built = extreme_pack::Built {
+            spec: extreme_pack::Spec { name: "tune", version: 1, dir: "lang/examples/tune", engine: None },
+            manifest,
+            engine: Some(engine),
+            web,
+            watch: Vec::new(),
+        };
+        Box::leak(built.bundle().into_boxed_slice())
+    })
+}
+
+fn tune() -> Package {
+    load(tune_bytes())
+}
+
+/// Tune's view (`{heading_dev, speed, speed_dev}`), decoded.
+fn tune_view(host: &Host) -> V {
+    let s = state(host);
+    assert_eq!(s.active, TUNE, "{} active", s.name);
+    let desc = Descriptor::load(tune().archive.file("view.desc").unwrap()).unwrap();
+    json::decode(&desc, &json::shadow(&desc), &s.view).unwrap()
+}
+
+/// The samples the engine keeps: each item's (t, speed, heading). The
+/// state's leaves are its fields in name order (`heading_dev`, `samples`,
+/// …), an item's too (`heading`, `speed`, `t`).
+fn samples(engine: &VmEngine, memory: &EngineMemory) -> Vec<(i64, f64, f64)> {
+    let leaves = engine.state(memory).unwrap();
+    let vm::Value::List(vm::ListRef::Input(id)) = leaves[1] else { panic!("the samples' leaf holds {:?}", leaves[1]) };
+    let list = engine.state_list(memory, id).unwrap();
+    (0..vm::ListInput::len(&list) as usize)
+        .map(|i| match list.item(i) {
+            [vm::Value::Float(h), vm::Value::Float(s), vm::Value::Int(t)] => (*t, *s, *h),
+            other => panic!("item {i}: {other:?}"),
+        })
+        .collect()
+}
+
+/// GPS updates with velocities (and a fix, which Tune ignores): each goes
+/// on the samples, which the host keeps between evaluations outside the
+/// evaluation's memory; the view is the newest speed's.
+#[test]
+fn a_list_in_the_state_is_kept_between_evaluations() {
+    let host = Host::new(Registry::new(Some(choose()), &[tune()]), memory());
+    assert_eq!(state(&host).active, TUNE);
+    let velocities = [(10.0, 90.0), (11.0, 92.0), (9.0, 88.0), (12.0, 91.0), (13.0, 93.0)];
+    for (i, v) in velocities.iter().enumerate() {
+        // a sample a millisecond after the last at least (one at the same
+        // time is dropped)
+        std::thread::sleep(core::time::Duration::from_millis(2));
+        gps(&host, (i == 0).then_some((-33.85, 151.25)), Some(*v));
+    }
+    assert!(matches!(field(&tune_view(&host), "speed"), Some(V::F(s)) if *s == 13.0));
+    let kept = block_on(host.inspect(|_, engine, memory| samples(engine.unwrap(), memory)));
+    assert_eq!(kept.iter().map(|&(_, s, h)| (s, h)).collect::<Vec<_>>(), velocities);
+    assert!(kept.windows(2).all(|w| w[0].0 < w[1].0), "{kept:?}");
+    // an update without a velocity passes the samples through as they are
+    gps(&host, Some((-33.85, 151.26)), None);
+    assert_eq!(block_on(host.inspect(|_, engine, memory| samples(engine.unwrap(), memory))), kept);
+    std::thread::sleep(core::time::Duration::from_millis(2));
+    gps(&host, None, Some((14.0, 94.0)));
+    assert_eq!(block_on(host.inspect(|_, engine, memory| samples(engine.unwrap(), memory))).len(), 6);
+}
+
+/// A new version with the same interface takes over the samples; the next
+/// evaluation adds to them.
+#[test]
+fn a_replacement_keeps_the_samples() {
+    let memory = memory();
+    let track = RamTrack::<4>::new();
+    let t0 = 1_790_000_000_000;
+    let mut e = VmEngine::start(&tune(), t0, memory, &track).unwrap();
+    for (k, v) in [(10.0, 90.0), (11.0, 92.0), (9.0, 88.0)].into_iter().enumerate() {
+        let event = Event::Gps { fix: None, velocity: Some(v) };
+        e.evaluate(memory, &track, t0 + 5_000 * k as i64, event).unwrap();
+    }
+    let before = samples(&e, memory);
+    assert_eq!(before.len(), 3);
+    let e = VmEngine::resume(e, &tune(), t0 + 12_000, memory, &track).unwrap();
+    assert_eq!(samples(&e, memory), before, "kept");
+    let mut e = e;
+    e.evaluate(memory, &track, t0 + 15_000, Event::Gps { fix: None, velocity: Some((12.0, 91.0)) }).unwrap();
+    assert_eq!(samples(&e, memory).len(), 4);
+}

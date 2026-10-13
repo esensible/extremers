@@ -22,6 +22,6 @@ pub mod store;
 pub mod validate;
 
 pub use archive::Archive;
-pub use layout::Layout;
+pub use layout::{Layout, StateList, StateLists};
 pub use map::{Enums, EventSink, Map, ViewSource};
 pub use validate::{Invalid, Limits, Validated, validate};

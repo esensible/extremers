@@ -5,7 +5,7 @@
 //! and the engine must fit the host's buffers.
 
 use crate::archive::Archive;
-use crate::layout::{self, Layout, NONE};
+use crate::layout::{self, Layout, NONE, StateLists};
 use crate::map::{Enums, Map};
 use bitwire::{Descriptor, Node, Op};
 use bytecode::{Check, Kind, Program};
@@ -39,8 +39,8 @@ pub mod reason {
     pub const LAYOUT: u8 = 5;
     /// The program's and the layout's interface hashes differ.
     pub const HASH: u8 = 6;
-    /// The program's leaf or list counts aren't the layout's, or it has
-    /// other lists than `gps`.
+    /// The program's leaf or list counts aren't the layout's, or its lists
+    /// aren't `gps` and the list table's.
     pub const COUNTS: u8 = 7;
     /// A layout leaf is out of range or of the wrong kind; detail: the
     /// field's index in `layout.bin`.
@@ -63,6 +63,11 @@ pub mod reason {
     /// A node the host doesn't support: a tagged union or a byte string, or
     /// in an event a list or a free string; detail as for [`MAP`].
     pub const UNSUPPORTED: u8 = 15;
+    /// A state list in the list table isn't the program's: its id is
+    /// `gps`'s or another entry's, its leaf isn't a list handle in the
+    /// state, or its bound or item leaves aren't the program's; detail: the
+    /// entry.
+    pub const STATE_LIST: u8 = 16;
 }
 
 /// [`Invalid::OverLimit`] codes: which of [`Limits`] is exceeded.
@@ -75,6 +80,10 @@ pub mod limit {
     pub const STATE_LEAVES: u8 = 6;
     pub const IMPORTS: u8 = 7;
     pub const PUB_BYTES: u8 = 8;
+    /// The state lists' items at their most, slots.
+    pub const STATE_LIST_SLOTS: u8 = 9;
+    /// The state lists.
+    pub const STATE_LISTS: u8 = 10;
 }
 
 /// [`reason::MISSING`] details.
@@ -109,6 +118,11 @@ pub struct Limits {
     pub imports: u16,
     /// The largest encoded view (a host's `STATE_MAX`).
     pub pub_bytes: u16,
+    /// Lists in the state, and the slots their items take at their most
+    /// (each list `max_items × item_leaves`): where the host keeps them
+    /// between evaluations.
+    pub state_lists: u16,
+    pub state_list_slots: u32,
 }
 
 /// A descriptor and its map.
@@ -124,6 +138,8 @@ pub struct Engine<'a> {
     /// Loaded (parsed and validated by `vm::load`).
     pub program: Program<'a>,
     pub layout: Layout,
+    /// `layout.bin`'s list table: `gps`'s id and the lists in the state.
+    pub state_lists: StateLists<'a>,
     pub view: Codec<'a>,
     pub event: Option<Codec<'a>>,
     pub enums: Option<Enums<'a>>,
@@ -171,7 +187,9 @@ pub fn validate<'a>(archive: &Archive<'a>, limits: &Limits, scratch: &mut [u16])
 
 fn engine<'a>(archive: &Archive<'a>, engine_bin: &'a [u8], limits: &Limits, scratch: &mut [u16]) -> Result<Engine<'a>, Invalid> {
     let need = |name: &str, f: u32| archive.file(name).ok_or(why(reason::MISSING, f));
-    let layout = Layout::parse(need("layout.bin", file::LAYOUT)?).map_err(|e| why(reason::LAYOUT, e as u32))?;
+    let layout_bin = need("layout.bin", file::LAYOUT)?;
+    let layout = Layout::parse(layout_bin).map_err(|e| why(reason::LAYOUT, e as u32))?;
+    let state_lists = StateLists::parse(layout_bin).map_err(|e| why(reason::LAYOUT, e as u32))?;
     let load_err = |e: bytecode::LoadError| why(reason::PROGRAM, load_code(e));
     let p = Program::parse(engine_bin).map_err(load_err)?;
     let over = |which| Err(Invalid::OverLimit { which });
@@ -199,17 +217,29 @@ fn engine<'a>(archive: &Archive<'a>, engine_bin: &'a [u8], limits: &Limits, scra
     if layout.pub_max_bytes > limits.pub_bytes {
         return over(limit::PUB_BYTES);
     }
+    if state_lists.len() > limits.state_lists as usize {
+        return over(limit::STATE_LISTS);
+    }
+    if state_lists.slots() > limits.state_list_slots {
+        return over(limit::STATE_LIST_SLOTS);
+    }
     let program = vm::load(engine_bin, scratch, &vm::Limits { max_stack: limits.max_stack, max_locals: limits.max_locals }).map_err(load_err)?;
     if program.interface_hash != layout.interface_hash {
         return Err(why(reason::HASH, 0));
     }
-    if program.input_count != layout.input_count || program.output_count != layout.output_count || program.list_count != layout.list_count || layout.list_count != 1 {
+    if program.input_count != layout.input_count
+        || program.output_count != layout.output_count
+        || program.list_count != layout.list_count
+        || layout.list_count as usize != 1 + state_lists.len()
+        || state_lists.gps_list >= layout.list_count
+    {
         return Err(why(reason::COUNTS, 0));
     }
     if layout.state_free_strings != 0 {
         return Err(why(reason::STATE_STRINGS, layout.state_free_strings as u32));
     }
-    leaves(&program, &layout)?;
+    leaves(&program, &layout, state_lists.gps_list)?;
+    lists(&program, &layout, &state_lists)?;
 
     let enums = archive.file("enums.bin").map(Enums::parse).transpose().map_err(|_| why(reason::ENUMS, 0))?;
     let codec = |desc: &'a [u8], map: &'a [u8], d: u32| -> Result<Codec<'a>, Invalid> {
@@ -228,7 +258,30 @@ fn engine<'a>(archive: &Archive<'a>, engine_bin: &'a [u8], limits: &Limits, scra
         }
         _ => return Err(why(reason::MISSING, file::EVENT)),
     };
-    Ok(Engine { program, layout, view, event, enums })
+    Ok(Engine { program, layout, state_lists, view, event, enums })
+}
+
+/// The list table: each state list a list of the program's other than
+/// `gps` (each once: with `list_count` 1 + entries, every list is named),
+/// its handle a list leaf within the state (the output's, at the same
+/// place in the output's state, is one too: `leaves` checked the two
+/// states alike), its bound and item leaves the program's.
+fn lists(p: &Program, l: &Layout, t: &StateLists) -> Result<(), Invalid> {
+    for (k, s) in t.iter().enumerate() {
+        let bad = Err(why(reason::STATE_LIST, k as u32));
+        let named_before = t.iter().take(k).any(|o| o.list == s.list || o.leaf == s.leaf);
+        if s.list >= p.list_count || s.list == t.gps_list || named_before {
+            return bad;
+        }
+        let in_state = s.leaf > l.in_state && (s.leaf as u32) < l.in_state as u32 + 1 + l.state_leaves as u32;
+        if !in_state || p.input(s.leaf).kind != Kind::List {
+            return bad;
+        }
+        if p.list(s.list) != (s.max_items, s.item_leaves) {
+            return bad;
+        }
+    }
+    Ok(())
 }
 
 /// A load error as a detail: its variant (1…), and an offset or index in
@@ -259,7 +312,7 @@ fn is(c: &Check, kind: Kind, nullable: bool) -> bool {
 
 /// Every leaf the layout names: in range, and of the kind the host gives
 /// it (inputs) or takes from it (outputs).
-fn leaves(p: &Program, l: &Layout) -> Result<(), Invalid> {
+fn leaves(p: &Program, l: &Layout, gps_list: u16) -> Result<(), Invalid> {
     // the field's index in layout.bin, for the detail
     let field = |name: &str| layout::FIELD_NAMES.iter().position(|n| *n == name).unwrap_or(0) as u32;
     let bad = |name: &str| Err(why(reason::LEAF, field(name)));
@@ -308,7 +361,7 @@ fn leaves(p: &Program, l: &Layout) -> Result<(), Invalid> {
         return bad("in_gps");
     }
     // A fix in `gps`, as the host's list serves it.
-    let (max, item_leaves) = p.list(0);
+    let (max, item_leaves) = p.list(gps_list);
     if max != l.gps_max_items {
         return bad("gps_max_items");
     }
@@ -318,7 +371,7 @@ fn leaves(p: &Program, l: &Layout) -> Result<(), Invalid> {
     for (name, leaf, kind, nullable) in
         [("fix_t", l.fix_t, Kind::Int, false), ("fix_lat", l.fix_lat, Kind::Float, false), ("fix_lon", l.fix_lon, Kind::Float, false), ("fix_alt", l.fix_alt, Kind::Float, true)]
     {
-        if leaf >= item_leaves || !is(&p.list_item_check(0, leaf), kind, nullable) {
+        if leaf >= item_leaves || !is(&p.list_item_check(gps_list, leaf), kind, nullable) {
             return bad(name);
         }
     }

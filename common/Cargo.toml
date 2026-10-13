@@ -75,3 +75,6 @@ bundle = { package = "extreme-bundle", path = "../bundle", features = ["std"] }
 log = { workspace = true, features = ["std"] }
 # views and events as JSON, through wire/rust's test adapter (host/tests.rs)
 serde_json = { workspace = true }
+# a bundle with a list in its state, built in the tests from
+# lang/examples/tune (host/tests.rs)
+extreme-pack = { path = "../tools/package" }

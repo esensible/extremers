@@ -357,7 +357,7 @@ idle for 60 s: dropped`); its connection's next request or write gets
 | 3 | `Length` | `Begin` of 0 bytes; a write past the length, or a non-last write not a multiple of 4, or without a whole offset; `Commit` before every byte is in (`detail` = bytes so far); `Get` from past the end (`detail` = the archive's length) |
 | 4 | `Hash` | the bytes' SHA-256 is not `Begin`'s |
 | 5 | `Invalid` | the bundle does not validate: `detail` = `reason \| reason_detail << 8` (`bundle/src/validate.rs` `reason`, the reason's own detail truncated to 24 bits); `2 \| 2 << 8`: the manifest's `content_hash` is not the files' (3: `ui.web`, 4: `ui.watch`) |
-| 6 | `OverLimit` | the engine needs more than the box has: `detail` = `validate::limit` (1 code bytes, 2 stack, 3 locals, 4 inputs, 5 outputs, 6 state leaves, 7 imports, 8 view bytes) |
+| 6 | `OverLimit` | the engine needs more than the box has: `detail` = `validate::limit` (1 code bytes, 2 stack, 3 locals, 4 inputs, 5 outputs, 6 state leaves, 7 imports, 8 view bytes, 9 state list slots, 10 state lists) |
 | 7 | `NoSpace` | no run of free sectors holds it (`ListEnd.largest_free` says what does) |
 | 8 | `Full` | the box holds 7 bundles besides Choose: delete one |
 | 9 | `NotFound` | no bundle with that id (also: a host without a store) |

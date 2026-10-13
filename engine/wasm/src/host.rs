@@ -427,7 +427,7 @@ impl HostHandle {
                 };
                 let decoder = decoders.entry(package.id).or_insert_with(|| Decoder::of(&package));
                 let decoder = decoder.as_ref().map_err(|e| format!("{}: {e}", package.name))?;
-                Ok(engine.state(memory).map_or(Json::Null, |leaves| decoder.state(leaves)))
+                Ok(engine.state(memory).map_or(Json::Null, |leaves| decoder.state(leaves, &|id| engine.state_list(memory, id))))
             }))
         });
         ok_or_error(result.map(|state| json!({"ok": true, "state": state})))
@@ -527,7 +527,7 @@ fn observe(r: &Running, out: &mut Out, cause: &Cause) {
         }
         let decoder = decoders.entry(package.id).or_insert_with(|| Decoder::of(&package));
         let state = match (decoder.as_ref(), engine.state(memory)) {
-            (Ok(d), Some(leaves)) => d.state(leaves),
+            (Ok(d), Some(leaves)) => d.state(leaves, &|id| engine.state_list(memory, id)),
             _ => Json::Null,
         };
         let after = json!({

@@ -17,7 +17,7 @@ const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 const T0: i64 = 1_790_000_000_000;
 
 /// The device's limits (the plan's A8).
-const LIMITS: Limits = Limits { code_bytes: 8192, max_stack: 128, max_locals: 256, inputs: 192, outputs: 128, state_leaves: 128, imports: 8, pub_bytes: 256 };
+const LIMITS: Limits = Limits { code_bytes: 8192, max_stack: 128, max_locals: 256, inputs: 192, outputs: 128, state_leaves: 128, imports: 8, pub_bytes: 256, state_lists: 4, state_list_slots: 1024 };
 
 const WATCH: &[u8] = b"globalThis.__app = {};";
 
@@ -331,7 +331,13 @@ fn corrupt_bundles_are_refused() {
     let at = |name: &str| 2 * field(name);
 
     // the layout
-    assert_eq!(check(&with(&files, "layout.bin", |b| set_u16(b, 0, 2)), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Version as u32));
+    assert_eq!(check(&with(&files, "layout.bin", |b| set_u16(b, 0, 3)), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Version as u32));
+    // version 2 without its list table; with an empty one
+    assert_eq!(check(&with(&files, "layout.bin", |b| set_u16(b, 0, 2)), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Size as u32));
+    let empty_table = |b: Vec<u8>| set_u16([b, vec![0; 4]].concat(), 0, 2);
+    assert_eq!(check(&with(&files, "layout.bin", empty_table), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Lists as u32));
+    // version 1 with bytes after it
+    assert_eq!(check(&with(&files, "layout.bin", |b| Some([b, vec![0; 4]].concat())), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Size as u32));
     assert_eq!(check(&with(&files, "layout.bin", |b| Some(b[..79].to_vec())), &LIMITS), refused(reason::LAYOUT, bundle::layout::Error::Size as u32));
     // ev_gps on a float leaf (the fix's lat)
     assert_eq!(check(&with(&files, "layout.bin", |b| set_u16(b, at("ev_gps"), 26)), &LIMITS), refused(reason::LEAF, field("ev_gps") as u32));

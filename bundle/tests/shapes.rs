@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use vm::{ListInput, Value};
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-const LIMITS: Limits = Limits { code_bytes: 8192, max_stack: 128, max_locals: 256, inputs: 192, outputs: 128, state_leaves: 128, imports: 8, pub_bytes: 256 };
+const LIMITS: Limits = Limits { code_bytes: 8192, max_stack: 128, max_locals: 256, inputs: 192, outputs: 128, state_leaves: 128, imports: 8, pub_bytes: 256, state_lists: 4, state_list_slots: 1024 };
 
 const PROGRAM: &str = r#"
 let s = state ?? {mode: "a"};

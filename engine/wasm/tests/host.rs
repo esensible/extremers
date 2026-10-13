@@ -413,6 +413,66 @@ fn the_track_is_the_devices() {
     assert_eq!(fixes, (0..9).collect::<Vec<_>>());
 }
 
+/// Tune's bundle (a list in its state: the last 30 s of velocity samples),
+/// built from lang/examples/tune: its program, and its state and view
+/// schemas the example's interface's; a stub for a page.
+fn tune() -> Vec<u8> {
+    let root = std::path::PathBuf::from(ROOT);
+    let dir = root.join("lang/examples/tune");
+    let read = |f: &str| fs::read_to_string(dir.join(f)).unwrap();
+    let iface: Json = serde_json::from_str(&read("interface.json")).unwrap();
+    let pretty = |j: &Json| serde_json::to_string_pretty(j).unwrap();
+    let sources = extreme_pack::Sources {
+        engine: read("program.expr"),
+        state: pretty(&iface["inputs"][0]["schema"]),
+        view: Some(pretty(&iface["output"]["properties"]["view"])),
+        event: None,
+    };
+    let e = extreme_pack::engine_from_sources(&root, &dir, &sources).unwrap_or_else(|e| panic!("{e}"));
+    let files = vec![
+        ("engine.bin".to_string(), e.program),
+        ("layout.bin".into(), e.layout),
+        ("view.desc".into(), e.view_desc),
+        ("view.map".into(), e.view_map),
+        ("source.json".into(), e.source),
+        ("web/index.html".into(), b"<!doctype html><title>tune</title>".to_vec()),
+    ];
+    engine_wasm::pack_files(r#"{"name": "tune", "version": 1}"#, files).unwrap().1
+}
+
+/// extreme-tune's `test_multiple_samples` on the virtual clock: the state's
+/// samples, kept by the host between evaluations, are in `state_json` and
+/// the log; after 35 s the deviations are extreme-tune's.
+#[test]
+fn a_list_in_the_state_is_shown() {
+    let mut h = HostHandle::from_bytes(vec![tune()], Some(choose()));
+    assert_eq!(parse(&h.loaded())[1]["ok"], true, "{}", h.loaded());
+    log(&mut h);
+    assert_eq!(state_json(&mut h)["samples"], json!([]));
+    let samples = [(0, 10.0, 90.0), (5_000, 11.0, 92.0), (15_000, 9.0, 88.0), (25_000, 12.0, 91.0), (35_000, 13.0, 93.0)];
+    let mut at = 0;
+    for (t, speed, heading) in samples {
+        if t == 0 {
+            gps(&mut h, json!({"t": T0, "speed": speed, "heading": heading}));
+        } else {
+            advance(&mut h, (t - at) as f64);
+            gps(&mut h, json!({"speed": speed, "heading": heading}));
+        }
+        at = t;
+    }
+    let s = state_json(&mut h);
+    let want: Vec<Json> = samples.iter().map(|&(t, speed, heading)| json!({"t": T0 + t, "speed": speed, "heading": heading})).collect();
+    assert_eq!(s["samples"], Json::Array(want));
+    let (speed_dev, heading_dev) = (s["speed_dev"].as_f64().unwrap(), s["heading_dev"].as_f64().unwrap());
+    println!("speed {} speed_dev {speed_dev} heading_dev {heading_dev}", s["speed"]);
+    assert!((speed_dev - (13.0 - 32.0 / 3.0)).abs() < 1e-9, "{s}");
+    assert!((heading_dev - 8.0 / 3.0).abs() < 1e-9, "{s}");
+    // the log's state is the same
+    let entries = log(&mut h);
+    assert_eq!(entries.last().unwrap()["state"], s);
+    assert_eq!(entries.len(), samples.len());
+}
+
 /// Two hosts keep their own clocks.
 #[test]
 fn hosts_keep_their_own_time() {

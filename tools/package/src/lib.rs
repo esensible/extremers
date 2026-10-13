@@ -322,8 +322,19 @@ const ENGINE_FILES: [&str; 4] = [
     "event.schema.json",
 ];
 
+/// An engine's sources, as an engine directory holds them (module docs).
+#[derive(Clone, Debug)]
+pub struct Sources {
+    /// `engine.expr`.
+    pub engine: String,
+    /// `state.schema.json`, and the optional `view.schema.json` and
+    /// `event.schema.json`, verbatim.
+    pub state: String,
+    pub view: Option<String>,
+    pub event: Option<String>,
+}
+
 /// Compiles the engine in `dir` and makes its tables (module docs).
-///
 fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
     let read = |name: &str| -> Result<Option<String>, String> {
         let path = dir.join(name);
@@ -333,14 +344,24 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
             Err(e) => Err(format!("{}: {e}", path.display())),
         }
     };
+    let missing = |name: &str| format!("{}: missing", dir.join(name).display());
+    let sources = Sources {
+        engine: read("engine.expr")?.ok_or_else(|| missing("engine.expr"))?,
+        state: read("state.schema.json")?.ok_or_else(|| missing("state.schema.json"))?,
+        view: read("view.schema.json")?,
+        event: read("event.schema.json")?,
+    };
+    engine_from_sources(root, dir, &sources)
+}
+
+/// Compiles an engine from its sources and makes its tables (module docs);
+/// `dir` names its files in messages.
+pub fn engine_from_sources(root: &Path, dir: &Path, sources: &Sources) -> Result<Engine, String> {
     let parse = |name: &str, src: &str| -> Result<Json, String> {
         serde_json::from_str(src).map_err(|e| format!("{}: {e}", dir.join(name).display()))
     };
-    let missing = |name: &str| format!("{}: missing", dir.join(name).display());
-    let source = read("engine.expr")?.ok_or_else(|| missing("engine.expr"))?;
-    let state_src = read("state.schema.json")?.ok_or_else(|| missing("state.schema.json"))?;
-    let view_src = read("view.schema.json")?;
-    let event_src = read("event.schema.json")?;
+    let source = sources.engine.clone();
+    let (state_src, view_src, event_src) = (sources.state.clone(), sources.view.clone(), sources.event.clone());
     let state = parse("state.schema.json", &state_src)?;
     let view = view_src.as_deref().map(|s| parse("view.schema.json", s)).transpose()?;
     let event = event_src.as_deref().map(|s| parse("event.schema.json", s)).transpose()?;
@@ -355,10 +376,13 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
         .map_err(|d| rendered("engine.expr", &source, d))?;
 
     // the published value is the view, or the state when there is none
-    let published = if view.is_some() { "view.schema.json" } else { "state.schema.json" };
-    let view_desc = compile_schema(root, &dir.join(published))?;
-    let event_desc = match event {
-        Some(_) => Some(compile_schema(root, &dir.join("event.schema.json"))?),
+    let (published, published_src) = match &view_src {
+        Some(v) => ("view.schema.json", v),
+        None => ("state.schema.json", &state_src),
+    };
+    let view_desc = compile_schema_text(root, &dir.join(published), published_src)?;
+    let event_desc = match &event_src {
+        Some(e) => Some(compile_schema_text(root, &dir.join("event.schema.json"), e)?),
         None => None,
     };
     let tables = engine_profile::layout::tables(&interface, &compiled.bytes, &view_desc, event_desc.as_deref())
@@ -381,7 +405,7 @@ fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
     Ok(Engine {
         program: compiled.bytes,
         memory: compiled.memory,
-        layout: tables.layout.to_vec(),
+        layout: tables.layout,
         view_desc,
         view_map: tables.view_map,
         event,
@@ -405,6 +429,34 @@ pub fn compile_schema(root: &Path, schema: &Path) -> Result<Vec<u8>, String> {
             schema.display(),
             String::from_utf8_lossy(&out.stderr).trim_end()
         ));
+    }
+    Ok(out.stdout)
+}
+
+/// [`compile_schema`] of a schema's text, `schema` naming it in messages
+/// (the script reads it from its stdin).
+pub fn compile_schema_text(root: &Path, schema: &Path, text: &str) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    let script = root.join("wire/js/scripts/compile-schema.js");
+    let mut child = Command::new("node")
+        .arg(&script)
+        .arg("/dev/stdin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("node (needed to compile {}): {e}", schema.display()))?;
+    let written = child.stdin.take().map(|mut stdin| stdin.write_all(text.as_bytes()));
+    let out = child.wait_with_output().map_err(|e| format!("node (compiling {}): {e}", schema.display()))?;
+    if !out.status.success() {
+        return Err(format!(
+            "compiling {}: {}",
+            schema.display(),
+            String::from_utf8_lossy(&out.stderr).trim_end()
+        ));
+    }
+    if let Some(Err(e)) = written {
+        return Err(format!("compiling {}: writing it to node: {e}", schema.display()));
     }
     Ok(out.stdout)
 }

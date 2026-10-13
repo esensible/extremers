@@ -4,7 +4,13 @@
 //!
 //! - `layout.bin`: where the host's inputs and outputs are among the
 //!   program's leaves ([`LAYOUT_BYTES`] bytes, u16 little-endian fields,
-//!   absolute leaf numbers, [`NONE`] for none).
+//!   absolute leaf numbers, [`NONE`] for none). With lists in the state
+//!   (version 2) the list table follows: `count u16, gps_list u16`, then
+//!   per state list `{list u16, leaf u16, max_items u16, item_leaves u16}`
+//!   ([`LIST_ENTRY_BYTES`]): the program's list id, its handle's leaf in
+//!   the `state` input (absolute), and the input list's bound and item
+//!   leaves; `gps_list` is `gps`'s list id. Without state lists the layout
+//!   is version 1, the fixed part alone, `gps` list 0.
 //! - `view.map`, `event.map`: one entry per descriptor node, pre-order, that
 //!   ties the node to its leaf, so a bitwire `Source`/`Sink` can follow the
 //!   walk with a cursor: `node_count u32`, then per node `{leaf u16, span
@@ -30,10 +36,17 @@ use serde_json::Value as Json;
 
 /// No leaf.
 pub const NONE: u16 = 0xFFFF;
-/// `layout.bin`'s version.
-pub const LAYOUT_VERSION: u16 = 1;
-/// `layout.bin`'s size: 35 fields, padding to 72, the interface hash.
+/// `layout.bin`'s version with a list table (state lists); one without
+/// state lists is [`LAYOUT_V1`].
+pub const LAYOUT_VERSION: u16 = 2;
+/// The version of a layout without state lists: the fixed part alone.
+pub const LAYOUT_V1: u16 = 1;
+/// `layout.bin`'s fixed part: 35 fields, padding to 72, the interface hash.
 pub const LAYOUT_BYTES: usize = 80;
+/// The list table's header (`count`, `gps_list`).
+pub const LISTS_HEADER_BYTES: usize = 4;
+/// Bytes per list table entry.
+pub const LIST_ENTRY_BYTES: usize = 8;
 /// Bytes per map entry.
 pub const MAP_ENTRY_BYTES: usize = 6;
 
@@ -53,7 +66,9 @@ pub const HASH_AT: usize = 72;
 /// A bundle's device tables.
 #[derive(Clone, Debug)]
 pub struct Tables {
-    pub layout: [u8; LAYOUT_BYTES],
+    /// `layout.bin`: the fixed part ([`LAYOUT_BYTES`]), then the list table
+    /// when there are state lists.
+    pub layout: Vec<u8>,
     pub view_map: Vec<u8>,
     /// With author events.
     pub event_map: Option<Vec<u8>>,
@@ -61,9 +76,48 @@ pub struct Tables {
     pub enums: Option<Vec<u8>>,
 }
 
-/// `layout.bin`'s fields by name, in [`FIELDS`] order.
-pub fn layout_fields(layout: &[u8; LAYOUT_BYTES]) -> Vec<(&'static str, u16)> {
+/// A list in the state, as the list table has it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateList {
+    /// The program's list id.
+    pub list: u16,
+    /// Its handle's leaf in the `state` input (absolute).
+    pub leaf: u16,
+    pub max_items: u16,
+    pub item_leaves: u16,
+}
+
+/// `layout.bin`'s fixed fields by name, in [`FIELDS`] order (`layout` at
+/// least [`LAYOUT_BYTES`] long).
+pub fn layout_fields(layout: &[u8]) -> Vec<(&'static str, u16)> {
     FIELDS.iter().enumerate().map(|(i, n)| (*n, u16::from_le_bytes([layout[2 * i], layout[2 * i + 1]]))).collect()
+}
+
+/// `layout.bin`'s list table: `gps`'s list id and the state lists (list 0
+/// and none for a version 1 layout). `None` if the table is cut short.
+pub fn layout_lists(layout: &[u8]) -> Option<(u16, Vec<StateList>)> {
+    let table = layout.get(LAYOUT_BYTES..)?;
+    if table.is_empty() {
+        return Some((0, Vec::new()));
+    }
+    let at = |i: usize| table.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let (count, gps) = (at(0)? as usize, at(2)?);
+    let lists = (0..count)
+        .map(|k| {
+            let e = LISTS_HEADER_BYTES + k * LIST_ENTRY_BYTES;
+            Some(StateList { list: at(e)?, leaf: at(e + 2)?, max_items: at(e + 4)?, item_leaves: at(e + 6)? })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((gps, lists))
+}
+
+/// The type at the field path `path` inside `t` (through optional records).
+fn at_path<'t>(mut t: &'t Ty, path: &[String]) -> Option<&'t Ty> {
+    for k in path {
+        let Ty::Rec(fields, _) = compiler::types::unopt(t) else { return None };
+        t = fields.get(k)?;
+    }
+    Some(t)
 }
 
 /// The tables for an engine: `interface` as the compiler took it, `program`
@@ -94,10 +148,37 @@ pub fn tables(interface: &Json, program: &[u8], view_desc: &[u8], event_desc: Op
     let at = |t: &Ty, path: &[&str]| leaf_offset(t, path).ok_or_else(|| format!("no `{}`", path.join(".")));
     let out = |path: &str| at(&iface.output, &[path]);
     let ev = |path: &[&str]| at(&event.ty, path).map(|l| event.base + l);
-    if iface.lists.len() != 1 || iface.lists[0].input != iface.inputs.iter().position(|i| i.name == "gps").unwrap() || !iface.lists[0].path.is_empty() {
-        return Err("the one input list is `gps`".into());
+    let as_u16 = |what: &str, v: u64| u16::try_from(v).map_err(|_| format!("{what} is {v}, more than a u16"));
+
+    // The input lists: `gps`, and the lists in the state.
+    let position = |name: &str| iface.inputs.iter().position(|i| i.name == name).unwrap();
+    let (gps_input, state_input) = (position("gps"), position("state"));
+    let mut gps_list = None;
+    let mut state_lists = Vec::new();
+    for (id, l) in iface.lists.iter().enumerate() {
+        let id = id as u16;
+        let name = if l.path.is_empty() { iface.inputs[l.input].name.clone() } else { format!("{}.{}", iface.inputs[l.input].name, l.path.join(".")) };
+        if l.input == gps_input && l.path.is_empty() {
+            gps_list = Some(id);
+        } else if l.input == state_input {
+            // The output's list must fit the input's: the host keeps it for
+            // the next evaluation's input.
+            let Some(Ty::List(_, out_max)) = at_path(out_state, &l.path).map(compiler::types::unopt) else {
+                return Err(format!("`{name}` isn't a list in the output's `state`"));
+            };
+            if *out_max > l.max {
+                return Err(format!("the output's `{name}` holds up to {out_max} items, the input's up to {}: the next evaluation couldn't take it", l.max));
+            }
+            if matches!(compiler::types::unopt(&l.item), Ty::List(..)) {
+                return Err(format!("`{name}`: lists in list items aren't supported"));
+            }
+            state_lists.push(StateList { list: id, leaf: l.leaf, max_items: as_u16(&format!("`{name}` maxItems"), l.max as u64)?, item_leaves: leaves(&l.item) });
+        } else {
+            return Err(format!("`{name}`: the host gives only `gps` and lists in the state"));
+        }
     }
-    let fix = &iface.lists[0].item;
+    let gps_list = gps_list.ok_or("the interface has no `gps` list")?;
+    let fix = &iface.lists[gps_list as usize].item;
     let fix_at = |k: &str| at(fix, &[k]);
 
     let mut w = Walker { names: None, entries: Vec::new(), enums: Vec::new(), path: Vec::new() };
@@ -111,12 +192,10 @@ pub fn tables(interface: &Json, program: &[u8], view_desc: &[u8], event_desc: Op
             (Some(m), max)
         }
     };
-    let as_u16 = |what: &str, v: u64| u16::try_from(v).map_err(|_| format!("{what} is {v}, more than a u16"));
-
     let out_view = view.map(|_| out("view")).transpose()?;
     let pub_base = out_view.map_or_else(|| out("state"), Ok)?;
     let fields: [u16; 35] = [
-        LAYOUT_VERSION,
+        if state_lists.is_empty() { LAYOUT_V1 } else { LAYOUT_VERSION },
         p.input_count,
         p.output_count,
         p.list_count,
@@ -147,27 +226,38 @@ pub fn tables(interface: &Json, program: &[u8], view_desc: &[u8], event_desc: Op
         fix_at("lat")?,
         fix_at("lon")?,
         fix_at("alt")?,
-        as_u16("gps maxItems", iface.lists[0].max as u64)?,
+        as_u16("gps maxItems", iface.lists[gps_list as usize].max as u64)?,
         as_u16("the published value's largest encoding", pub_max)?,
         as_u16("the largest event encoding", event_max)?,
         free_strings(state_ty),
     ];
-    let mut layout = [0u8; LAYOUT_BYTES];
+    let mut layout = vec![0u8; LAYOUT_BYTES];
     for (i, f) in fields.iter().enumerate() {
         layout[2 * i..2 * i + 2].copy_from_slice(&f.to_le_bytes());
     }
     layout[HASH_AT..].copy_from_slice(&iface.hash);
+    if !state_lists.is_empty() {
+        for v in [state_lists.len() as u16, gps_list] {
+            layout.extend_from_slice(&v.to_le_bytes());
+        }
+        for l in &state_lists {
+            for v in [l.list, l.leaf, l.max_items, l.item_leaves] {
+                layout.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+    }
     let enums = (!w.enums.is_empty()).then(|| enums_bin(&w.enums));
     Ok(Tables { layout, view_map, event_map, enums })
 }
 
 /// The string leaves of a value of type `t` that aren't enums (any string
-/// can be in them, so they'd point into memory the host doesn't keep).
+/// can be in them, so they'd point into memory the host doesn't keep),
+/// those of a list's item included.
 fn free_strings(t: &Ty) -> u16 {
     match t {
         Ty::Str(StrTy { values: None, .. }) => 1,
         Ty::Rec(f, _) => f.values().map(free_strings).sum(),
-        Ty::Opt(inner) => free_strings(inner),
+        Ty::Opt(inner) | Ty::List(inner, _) => free_strings(inner),
         _ => 0,
     }
 }
@@ -471,6 +561,26 @@ mod tests {
         assert_eq!(Cost::bits(1).then(&Cost::identity().or(&Cost::bytes(1))).max_from(START), 2);
         // up to 3 items of a bool + a byte: 3 bools share a bit byte
         assert_eq!(Cost::bits(1).then(&Cost::bytes(1)).up_to(3).max_from(START), 4);
+    }
+
+    /// Tune's interface (lang/examples/tune) with `edit` made to it, and its
+    /// program compiled against that.
+    fn tune(edit: impl FnOnce(&mut Json)) -> (Json, Vec<u8>) {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../lang/examples/tune");
+        let mut iface: Json = serde_json::from_str(&std::fs::read_to_string(format!("{dir}/interface.json")).unwrap()).unwrap();
+        edit(&mut iface);
+        let source = std::fs::read_to_string(format!("{dir}/program.expr")).unwrap();
+        let program = compiler::compile(&source, &iface, &Default::default()).unwrap_or_else(|d| panic!("{d:#?}")).bytes;
+        (iface, program)
+    }
+
+    /// A state list the output could make longer than the next evaluation
+    /// takes is refused (the descriptors aren't looked at before it).
+    #[test]
+    fn a_state_list_must_fit_the_next_input() {
+        let (iface, program) = tune(|i| i["output"]["properties"]["state"]["properties"]["samples"]["maxItems"] = 65.into());
+        let e = tables(&iface, &program, &[], None).unwrap_err();
+        assert!(e.contains("the output's `state.samples` holds up to 65 items, the input's up to 64"), "{e}");
     }
 
     #[test]

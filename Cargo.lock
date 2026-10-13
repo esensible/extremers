@@ -327,6 +327,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "engine-builtins",
  "extreme-bundle",
+ "extreme-pack",
  "extreme-packages",
  "extreme-protocol",
  "heapless 0.8.0",

@@ -234,26 +234,34 @@ fn enum_strings(enums: &[u8]) -> Json {
 /// (JSON) as it was compiled against, `program` the bytecode, `view_desc`
 /// the bitwire descriptor of the published value (the view, or the state
 /// without one), `event_desc` the author's events' (if any). `{ok: true,
-/// layout: {<field>: u16, …}, interface_hash, view_map: [{leaf, span,
+/// layout: {<field>: u16, …}, gps_list, state_lists: [{list, leaf,
+/// max_items, item_leaves}], interface_hash, view_map: [{leaf, span,
 /// aux}], event_map: […] | null, enums: [string] | null, bytes: {layout,
 /// view_map, event_map, enums} (base64; null where absent)}` or `{ok:
-/// false, error}`.
+/// false, error}`. `layout` is the fixed part's fields; `gps_list` and
+/// `state_lists` its list table's (`gps` list 0 and none without state
+/// lists: a version 1 layout, which has no table).
 #[wasm_bindgen]
 pub fn layout(interface: &str, program: &[u8], view_desc: &[u8], event_desc: Option<Vec<u8>>) -> String {
     let result = (|| {
         let iface = parse("interface", interface)?;
         let t = layout::tables(&iface, program, view_desc, event_desc.as_deref())?;
         let fields: serde_json::Map<String, Json> = layout::layout_fields(&t.layout).into_iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
+        let (gps_list, state_lists) = layout::layout_lists(&t.layout).ok_or("layout.bin's list table is cut short")?;
+        let state_lists: Vec<Json> =
+            state_lists.iter().map(|l| json!({"list": l.list, "leaf": l.leaf, "max_items": l.max_items, "item_leaves": l.item_leaves})).collect();
         let b64 = |b: &Option<Vec<u8>>| b.as_ref().map(|b| BASE64.encode(b));
         Ok::<_, String>(json!({
             "ok": true,
             "layout": fields,
-            "interface_hash": hex(&t.layout[layout::HASH_AT..]),
+            "gps_list": gps_list,
+            "state_lists": state_lists,
+            "interface_hash": hex(&t.layout[layout::HASH_AT..layout::LAYOUT_BYTES]),
             "view_map": map_entries(&t.view_map),
             "event_map": t.event_map.as_deref().map(map_entries),
             "enums": t.enums.as_deref().map(enum_strings),
             "bytes": {
-                "layout": BASE64.encode(t.layout),
+                "layout": BASE64.encode(&t.layout),
                 "view_map": BASE64.encode(&t.view_map),
                 "event_map": b64(&t.event_map),
                 "enums": b64(&t.enums),

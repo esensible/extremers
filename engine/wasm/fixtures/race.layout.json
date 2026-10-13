@@ -43,6 +43,7 @@
       "span": 1
     }
   ],
+  "gps_list": 0,
   "interface_hash": "77c1a1e5bf56f737",
   "layout": {
     "ev_gps": 23,
@@ -82,6 +83,7 @@
     "view_leaves": 10
   },
   "ok": true,
+  "state_lists": [],
   "view_map": [
     {
       "aux": 0,
