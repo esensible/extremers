@@ -12,6 +12,7 @@
 import { KindlePreview, parseKindleSize, KINDLE_SIZES } from './kindle.js';
 import { WatchPreview, parseWatchSize, WATCH_SIZES } from './watch.js';
 import { decodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
+import { applyKindleFit, kindleStatusText, watchStatusText, renderStatus, setProp, throttle } from './panel.js';
 
 const SCOPE_URL = new URL('../', import.meta.url);
 const SW_URL = new URL('../sw.js', import.meta.url);
@@ -135,48 +136,37 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
     el.scrollTop = el.scrollHeight;
   };
 
-  const kindle = new KindlePreview({ host: $('preview-kindle-screen'), sim: api._sim, scope: SCOPE_URL.pathname, worker, onLog: logLine('preview-kindle-log'), onChange: () => renderKindle() });
-  const watch = new WatchPreview({ host: $('preview-watch-screen'), sim: api._sim, onLog: logLine('preview-watch-log'), onChange: () => renderWatch() });
+  // Redraws are throttled (an envelope or a heartbeat each ask for one) and
+  // write in place only what changed (panel.js); the iframe and the watch
+  // mount are made once per open, never here.
+  const renderKindleSoon = throttle(() => renderKindle(), 250);
+  const renderWatchSoon = throttle(() => renderWatch(), 250);
+  const kindle = new KindlePreview({ host: $('preview-kindle-screen'), sim: api._sim, scope: SCOPE_URL.pathname, worker, onLog: logLine('preview-kindle-log'), onChange: renderKindleSoon });
+  const watch = new WatchPreview({ host: $('preview-watch-screen'), sim: api._sim, onLog: logLine('preview-watch-log'), onChange: renderWatchSoon });
   const controller = createController({ api, getLastBuild, kindle, watch, worker });
 
-  // ---- Kindle: fit the page's CSS px into the pane
-  function fitKindle() {
-    const vp = $('preview-kindle-viewport');
-    const f = $('preview-kindle-frame');
-    if (!vp || !f || !kindle.size) { if (vp) vp.style.height = ''; return; }
-    const scale = Math.min(1, vp.clientWidth / kindle.size.width);
-    Object.assign(f.style, { width: `${kindle.size.width}px`, height: `${kindle.size.height}px`, transform: `scale(${scale})`, transformOrigin: '0 0' });
-    vp.style.height = `${Math.ceil(kindle.size.height * scale)}px`;
-  }
+  // ---- Kindle: fit the page's CSS px into the pane (only a changed fit is written)
+  const fitted = { key: null, frame: null };
+  const fitKindle = () => applyKindleFit($('preview-kindle-viewport'), $('preview-kindle-frame'), kindle.size, fitted);
   if (typeof ResizeObserver !== 'undefined' && $('preview-kindle-viewport')) new ResizeObserver(fitKindle).observe($('preview-kindle-viewport'));
 
   function renderKindle() {
     fitKindle();
     const s = kindle.status();
-    const el = $('preview-kindle-status');
-    if (!el) return;
-    const w = worker.status();
-    el.textContent = !s.open
-      ? `closed · service worker: ${w.state}${w.error ? ` (${w.error})` : ''}`
-      : `${s.build.name} · ${s.size.width}×${s.size.height} · ${s.loaded ? 'loaded' : 'loading'} · socket ${s.socketOpen ? 'open' : 'closed'} · ${s.envelopes} envelopes · ${s.events.length} events · ${s.errors.length} errors${s.served ? ` · served==built ${s.served.identical}/${s.served.checked}` : ''}${s.note ? ` · ${s.note}` : ''}`;
-    el.classList.toggle('err', s.errors.length > 0);
-    $('preview-kindle-close').disabled = !s.open;
+    renderStatus({ statusEl: $('preview-kindle-status'), closeEl: $('preview-kindle-close') }, kindleStatusText(s, worker.status()), { open: s.open, errors: s.errors.length });
     if (s.size) {
       const key = `${s.size.width}x${s.size.height}`;
       const sel = $('preview-kindle-size');
-      if (sel && [...sel.options].some((o) => o.value === key)) { sel.value = key; if ($('preview-kindle-custom')) $('preview-kindle-custom').value = ''; } else if ($('preview-kindle-custom')) $('preview-kindle-custom').value = key;
+      const custom = $('preview-kindle-custom');
+      if (sel && [...sel.options].some((o) => o.value === key)) { setProp(sel, 'value', key); setProp(custom, 'value', ''); } else setProp(custom, 'value', key);
     }
   }
   function renderWatch() {
     const s = watch.status();
-    const el = $('preview-watch-status');
-    if (!el) return;
-    el.textContent = !s.open ? 'closed' : `${s.build.name} · ${s.size.name} ${s.size.width}×${s.size.height} · ${s.envelopes} states · ${s.events.length} events · ${s.haptics.length} haptics · ${s.errors.length} errors`;
-    el.classList.toggle('err', s.errors.length > 0);
-    $('preview-watch-close').disabled = !s.open;
+    renderStatus({ statusEl: $('preview-watch-status'), closeEl: $('preview-watch-close') }, watchStatusText(s), { open: s.open, errors: s.errors.length });
     const bezel = $('preview-watch-bezel');
-    if (bezel) bezel.dataset.size = s.size?.name ?? '';
-    if (s.size && $('preview-watch-size')) $('preview-watch-size').value = s.size.name; // an agent's open shows here too
+    if (bezel && bezel.dataset.size !== (s.size?.name ?? '')) bezel.dataset.size = s.size?.name ?? '';
+    if (s.size) setProp($('preview-watch-size'), 'value', s.size.name); // an agent's open shows here too
   }
 
   const kindleSize = () => {

@@ -12,7 +12,7 @@
 //
 // Origins: dingo-cli/web/ble.js createBridge (the GATT queue, the remembered
 // device → advertisement → connect path, reconnect with backoff, the refusal
-// and stale-pairing mapping, the timeouts) and bundle/js/client.js (the UUIDs,
+// and stale-pairing mapping, the timeouts) and bundle/js/client.js (removed; in git history) (the UUIDs,
 // subscribing first and writing a request to make the OS pair).
 //
 // No DOM: everything comes in through createLink({ bluetooth, log, ... }).
@@ -111,6 +111,7 @@ export function createLink({
   let reconnecting = null;
   let reconnects = 0;
   let droppedWhileConnecting = false;
+  let remembered = null; // true: Chrome holds a permission for the box; false: none; null: not looked yet (or getDevices is missing)
   const listening = new WeakSet();
   const bundleListeners = new Set();
   const dataListeners = new Set();
@@ -331,6 +332,7 @@ export function createLink({
           : new LinkError(`the chooser failed: ${why}`, 'CHOOSER_FAILED', HINTS.CHOOSE);
       throw fail(err);
     }
+    remembered = true; // the chooser grants the page the box
     if (isConnected() && (dev === device || dev.id === device?.id)) return { deviceName: dev.name, already: true };
     if (device && device !== dev) disconnect();
     device = dev;
@@ -353,6 +355,7 @@ export function createLink({
         const devs = await bluetooth.getDevices();
         L('info', `getDevices(): ${devs.length ? devs.map((d) => d.name || d.id).join(', ') : 'none permitted'}`);
         dev = devs.find((d) => d.name === DEVICE_NAME) || null;
+        remembered = !!dev;
       }
       if (!dev) throw new LinkError(`no remembered '${DEVICE_NAME}': this page has never been given the box`, 'NEEDS_CHOOSER', HINTS.CHOOSE);
       device = dev;
@@ -397,12 +400,26 @@ export function createLink({
     return isConnected();
   }
 
+  /**
+   * Whether Chrome remembers the box for this page (getDevices(): the
+   * permissions only, nothing goes over the air). → true | false | null
+   * (null: this Chrome has no getDevices). Tells the state listeners.
+   */
+  async function lookRemembered() {
+    if (!bluetooth || typeof bluetooth.getDevices !== 'function') return remembered;
+    if (device) { remembered = true; return true; }
+    let r = remembered;
+    try { r = (await bluetooth.getDevices()).some((d) => d.name === DEVICE_NAME); } catch (e) { L('warn', `getDevices(): ${errText(e)}`); }
+    if (r !== remembered) { remembered = r; emit(stateListeners, state); }
+    return remembered;
+  }
+
   const on = (set) => (cb) => { set.add(cb); return () => set.delete(cb); };
 
   return {
-    choose, connect, disconnect, write, writeData, waitConnected, isConnected,
+    choose, connect, disconnect, write, writeData, waitConnected, isConnected, lookRemembered,
     onBundle: on(bundleListeners), onData: on(dataListeners), onDrop: on(dropListeners), onState: on(stateListeners),
-    info: () => ({ state, deviceName: device?.name ?? null, bonded, lastError, hint: lastHint, reconnects, bluetooth: !!bluetooth, reconnecting: !!reconnecting }),
+    info: () => ({ state, deviceName: device?.name ?? null, bonded, remembered, lastError, hint: lastHint, reconnects, bluetooth: !!bluetooth, reconnecting: !!reconnecting }),
     get state() { return state; },
   };
 }

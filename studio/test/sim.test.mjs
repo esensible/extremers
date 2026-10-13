@@ -19,6 +19,7 @@ import bitwire from '../vendor/runtimes/wire/js/compile.esm.js';
 import { decodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
 import { packageId } from '../vendor/runtimes/client-common/host.js';
 import { rmcSentence, rmcUpdate } from '../sim/nmea.js';
+import { hostTimers } from '../sim/host.js';
 
 const skip = !haveVendor && 'studio/vendor/ not generated';
 const T0 = 1_790_000_000_000;
@@ -241,7 +242,7 @@ test('an engine that fails its first evaluation does not start', { skip }, async
   const w = await engineWorld();
   ok(assert, await w.api.project.create('nil', { template: 'blank' }));
   ok(assert, await w.api.files.write('engine/engine.expr', 'let n = state.count;\n{state: {count: min(n + 1, 1000000)}}\n'));
-  const r = notOk(assert, await w.api.sim.start(), /does not start.*R-NIL at engine\/engine.expr:1:/);
+  const r = notOk(assert, await w.api.sim.start({ clock: 'virtual' }), /does not start.*R-NIL at engine\/engine.expr:1:/);
   assert.match(r.hint, /nil/);
   assert.equal(ok(assert, await w.api.sim.state()).running, false);
 });
@@ -249,7 +250,7 @@ test('an engine that fails its first evaluation does not start', { skip }, async
 test('a blank engine (no view, no events): the state is published; events are refused clearly', { skip }, async () => {
   const w = await engineWorld();
   ok(assert, await w.api.project.create('blank', { template: 'blank' }));
-  const s = ok(assert, await w.api.sim.start());
+  const s = ok(assert, await w.api.sim.start({ clock: 'virtual' }));
   assert.deepEqual(s.view, { count: 2 }, 'the state is the published value: start + t0');
   notOk(assert, await w.api.sim.event({ x: {} }), /no events of its own/);
   const r = ok(assert, await w.api.sim.gps({ t: T0 + 5, lat: 1, lon: 2 }));
@@ -277,7 +278,7 @@ test('a GPS update the engine rejects: errors[] has its R-code and where; the fi
   // a fix without a velocity: event.gps.velocity is nil → R-NIL
   ok(assert, await w.api.files.write('engine/engine.expr', 'let c = (state ?? {count: 0}).count;\nlet v = event.gps?.fix == nil ? 0.0 : event.gps.velocity.speed;\n{state: {count: v > 1000.0 ? 0 : min(c + 1, 1000000)}}\n'));
   ok(assert, await w.api.engine.compile());
-  const s = ok(assert, await w.api.sim.start());
+  const s = ok(assert, await w.api.sim.start({ clock: 'virtual' }));
   assert.deepEqual(s.state, { count: 2 });
   const r = ok(assert, await w.api.sim.gps({ t: T0 + 1000, lat: 1, lon: 2 }));
   assert.equal(r.evaluations.length, 1);
@@ -297,7 +298,7 @@ test('gps is the C6\'s track: an engine sees more than 128 fixes', { skip }, asy
   const w = await engineWorld();
   ok(assert, await w.api.project.create('fixes', { template: 'blank' }));
   ok(assert, await w.api.files.write('engine/engine.expr', '{state: {count: len(gps)}}\n'));
-  ok(assert, await w.api.sim.start());
+  ok(assert, await w.api.sim.start({ clock: 'virtual' }));
   const fixes = Array.from({ length: 200 }, (_, k) => ({ t: T0 + 1000 * (k + 1), lat: -33.85 + k * 1e-5, lon: 151.25 }));
   ok(assert, await w.api.files.write('tracks/long.json', JSON.stringify(fixes)));
   const r = ok(assert, await w.api.sim.replay({ path: 'tracks/long.json' }));
@@ -319,4 +320,57 @@ test('live clock: advance refused; a wake fires on wall time; stop makes it virt
   ok(assert, await api.sim.stop());
   assert.equal(ok(assert, await api.sim.state()).clock, 'virtual');
   ok(assert, await api.sim.reset());
+});
+
+/**
+ * A browser's timers: Window methods that throw "Illegal invocation" unless
+ * called on the global (or with no receiver). Node's don't care, which is
+ * how `{ set: setTimeout }.set(fn, ms)` passed here and failed in Chrome.
+ */
+function receiverChecked(g) {
+  const calls = { set: 0, clear: 0 };
+  const strict = (real, name) => function (...a) {
+    if (this !== undefined && this !== g) throw new TypeError(`Illegal invocation (${name} called on ${Object.prototype.toString.call(this)})`);
+    calls[name === 'setTimeout' ? 'set' : 'clear']++;
+    return real(...a);
+  };
+  return { setTimeout: strict(globalThis.setTimeout, 'setTimeout'), clearTimeout: strict(globalThis.clearTimeout, 'clearTimeout'), calls };
+}
+
+test('the live clock calls its timers on the global, as a browser requires (the default clock, from sim.start())', { skip }, async () => {
+  const real = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const checked = receiverChecked(globalThis);
+  // the fake enforces receivers: the old default's shape fails on it
+  assert.throws(() => ({ set: checked.setTimeout }).set(() => {}, 0), /Illegal invocation/);
+  // the Sim's default timers (hostTimers()) read setTimeout/clearTimeout off globalThis at each call
+  globalThis.setTimeout = checked.setTimeout; globalThis.clearTimeout = checked.clearTimeout;
+  try {
+    const w = await engineWorld();
+    ok(assert, await w.api.project.create('race', { template: 'race' }));
+    const s = ok(assert, await w.api.sim.start());
+    assert.equal(s.clock, 'live', 'live is the default');
+    assert.ok(Math.abs(s.now - Date.now()) < 5000, 'live: t0 is now');
+    ok(assert, await w.api.sim.event({ bump_seq: { seconds: 0, tapped_at: s.now + 150 } }));
+    await new Promise((res) => real.setTimeout(res, 450));
+    const st = ok(assert, await w.api.sim.state());
+    assert.ok(st.view.phase.racing, `the gun fired on wall time: ${JSON.stringify(st.view)}`);
+    assert.deepEqual(st.findings, []);
+    ok(assert, await w.api.sim.stop());
+    ok(assert, await w.api.sim.reset());
+    assert.ok(checked.calls.set >= 3, `the live clock ran (${checked.calls.set} setTimeout calls)`);
+    assert.ok(checked.calls.clear >= 1, 'stop cleared its timer');
+  } finally {
+    globalThis.setTimeout = real.setTimeout; globalThis.clearTimeout = real.clearTimeout;
+  }
+});
+
+test('hostTimers(g) and createApi({ timers }): the live clock on a fake global that enforces receivers', { skip }, async () => {
+  const g = {};
+  Object.assign(g, receiverChecked(g));
+  const w = await engineWorld({ timers: hostTimers(g) });
+  ok(assert, await w.api.project.create('race', { template: 'race' }));
+  ok(assert, await w.api.sim.start({ clock: 'live' }));
+  await new Promise((res) => setTimeout(res, 250));
+  ok(assert, await w.api.sim.reset());
+  assert.ok(g.calls.set >= 2 && g.calls.clear >= 1, JSON.stringify(g.calls));
 });

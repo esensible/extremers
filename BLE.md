@@ -250,8 +250,8 @@ over GATT, from a browser (Web Bluetooth) as from anything else: never over
 the hotspot. Firmware: `common/src/ble_bundles.rs` (what a request does),
 `common/src/ble.rs` (the characteristics), `common/src/store.rs` (the
 flash). Messages: `extreme-protocol/src/bundle.rs`, generated into
-`protocol-js` and `protocol-swift`. A development page:
-`bundle/web/devtool.html` ("The devtool" below).
+`protocol-js` and `protocol-swift`. From a browser: the studio's Device
+panel and `api.device.*` ("The studio's client" below).
 
 Three characteristics of the service, all on a bonded link only (like
 everything else, "Security"):
@@ -432,20 +432,22 @@ puts several writes in one event. The box keeps up: erasing a 4 KiB sector
 (about every 17 chunks) takes ~45 ms, three events, which the 8 queued
 writes absorb. The packet pool is unchanged.
 
-### The devtool
+### The studio's client
 
-`bundle/web/devtool.html` (with `bundle/js/client.js`, plain ES modules,
-the generated `protocol-js/protocol.js`): Choose device / List / Install
-(a `.bundle`, e.g. `target/packages/race.bundle`, with throughput in the
-log) / Activate / Delete / Get (downloads the archive after checking its
-SHA-256) / Abort. Web Bluetooth needs Chrome and a secure origin; serve the
-repository root from a container, e.g.
-
-    podman run -d --name bundle-devtool -p 127.0.0.1:5191:5191 \
-      -v "$PWD":/workspace:ro -w /workspace localhost/hilux-dev:latest \
-      python3 -m http.server 5191 --bind 0.0.0.0
-
-and open `http://localhost:5191/bundle/web/devtool.html`.
+The studio (`studio/`, served at `http://localhost:5190/` in development;
+Web Bluetooth needs Chrome and a secure origin) speaks this protocol with
+`studio/device/ble.js` (the link: the chooser, a remembered device without
+it, pairing and stale-key errors, reconnects) and
+`studio/device/bundles.js` (the requests above: Begin/Data/Ack/Commit with
+the box's chunk and window, rewinds, resends and resume; List, Activate,
+Delete, Get with its SHA-256 check), over the generated
+`protocol-js/protocol.js`. A person uses the **Device** panel (Connect /
+List / Install the open project / Activate / Delete / Get) and the
+header's **Choose device…** (Chrome opens its chooser only from a click);
+an agent calls `api.device.*` (`status`, `connect`, `list`, `install`,
+`activate`, `delete`, `get`; the studio-api skill). It replaced the
+earlier development page (`bundle/web/devtool.html`), which measured the
+numbers above.
 
 **Pairing without a Kindle.** Firmware built with `--features dev-pairing`
 (`tgt-xiaoc6`, off by default) opens the pairing window once, at boot,

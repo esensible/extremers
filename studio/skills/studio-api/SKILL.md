@@ -81,8 +81,18 @@ again (or pack with that name). A project without the file uses its own name.
   checks again by itself shortly after an engine file is saved.
 - `api.sim.start()` packs the engine and starts the real host (`common::Host`):
   the host evaluates `{gps: {}}` on a nil state, then the device clock is set
-  to `t0` (default 1790000000000). The clock is virtual (it moves only with
-  `advance`, a GPS `t` ahead of it, or a replay) unless `{ clock: 'live' }`.
+  to `t0`. Two clocks:
+  - **live** (the default; `t0` defaults to now): the device clock runs with
+    the page's, wakes fire by themselves on wall time, `advance` is refused.
+    This is the box's behaviour: use it with the previews (a person watching
+    a countdown, an agent pressing preview buttons and waiting).
+  - **virtual** (`api.sim.start({ clock: 'virtual' })`; `t0` defaults to
+    1790000000000): the clock moves only with `advance`, a GPS `t` ahead of
+    it, or a replay. Use it for scripted runs and tests, where you want exact
+    times. With the previews open it looks wrong: the Kindle preview re-sends
+    the state every 5 s (the device's heartbeat) stamped with the virtual
+    time, so the page's countdown jumps back to it while wall time runs on.
+  `api.sim.stop()` turns a live clock virtual where it stands.
 - Inputs: `api.sim.event(variant)` (your events, encoded and sent as a
   client does; a refusal says `refused`), `api.sim.gps({ t, lat, lon, speed,
   heading })` or NMEA text, `api.sim.advance(ms)` / `advance('wake')`,
@@ -103,8 +113,9 @@ again (or pack with that name). A project without the file uses its own name.
 - The sim's `gps` input holds the newest 20,480 fixes, as the C6's track
   does (`sim.state().track`, `trackCapacity`).
 - `api.sim.history({ offset, limit })` pages the last 2,000 evaluations;
-  the #sim panel shows the timeline, the view and the state, with buttons
-  for each event, a GPS fix, +1 s, +10 s and the next wake.
+  the #sim panel shows the timeline, the view and the state, with the clock
+  (live by default) and buttons for each event, a GPS fix, and (virtual
+  clock) +1 s, +10 s and the next wake.
 
 ## The workflow
 
@@ -119,10 +130,11 @@ again (or pack with that name). A project without the file uses its own name.
    `files.write` replaces the whole file. The page shows the change.
 5. `api.engine.check()` — compile, the smoke runs and `engine/samples.json`
    (chained). Fix every diagnostic from its `help` before going on.
-6. `api.sim.start()`, then `api.sim.gps({ t, lat, lon, speed, heading })`,
+6. `api.sim.start({ clock: 'virtual' })`, then `api.sim.gps({ t, lat, lon, speed, heading })`,
    `api.sim.event({ line_stbd: {} })`, `api.sim.advance(ms)`,
-   `api.sim.state()`, `api.sim.history()`: the engine on the real host,
-   with its refusals, publish rules and wake timer (below).
+   `api.sim.state()`, `api.sim.history()`: a scripted run of the engine on
+   the real host, with its refusals, publish rules and wake timer (above).
+   For the previews, `api.sim.start()` (live) again.
 7. `api.ui.build({ target: 'both' })` (under the settings' name; a failed
    build keeps the last good one, and says so in `kept`),
    `api.preview.open({ target: 'kindle' })`, `api.preview.text('kindle')`,
@@ -185,7 +197,8 @@ fake of the box; it has not yet run against the hardware itself.
 - **Choose the box.** Chrome opens the Bluetooth chooser only from a
   person's click. `api.device.connect()` never opens it; when it answers
   `no remembered 'nacra'`, ask the person to click **Choose device…**
-  (`#device-choose`, top right) once and pick `nacra`. After that
+  (`#device-choose`, top right) once and pick `nacra`
+  (`api.device.status().remembered` says whether that is needed). After that
   `connect()` works from script, also after a reload *(getDevices() and
   connect without the chooser verified 2026-10-13 with the development page)*.
 - **Pair** *(verified 2026-10-13 with the development page; the Mac in use
@@ -215,7 +228,11 @@ fake of the box; it has not yet run against the hardware itself.
 ## The page, for reading it
 
 Stable ids: `#project-select`, `#status` (the last result as text,
-`aria-live`), `#device-choose`; `#files` (one button per file,
+`aria-live`); the header's box: `#device-state` (`nacra · connected`,
+`nacra · disconnected`, `nacra · busy: install 42%`, `no device chosen`),
+`#device-head-connect` / `#device-head-disconnect` (shown when they apply)
+and `#device-choose`, the chooser: **Choose device…** until Chrome
+remembers the box for this page, then a quiet **Re-choose…**; `#files` (one button per file,
 `data-path`); editor tabs `#editor-tab-<path>`, one per open file, and the
 editor `#editor-<path>`: Monaco shows one file at a time, so only the file
 shown has an `#editor-<path>` (find open files by their tabs; use

@@ -148,7 +148,7 @@ install bundles:
     cargo run --release --features dev-pairing
 
 A reflash or reset opens it again. Anyone in range can pair meanwhile.
-`../BLE.md` "The devtool" has the rest (stale keys on the computer, a Mac
+`../BLE.md` "The studio's client" and "Pairing without a Kindle" have the rest (stale keys on the computer, a Mac
 that stops finding the box).
 
 The firmware builds against a patched trouble-host clone at

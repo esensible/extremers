@@ -43,7 +43,9 @@ version 1.
 ## The sim
 
 `sim/host.js` drives `HostHandle` (`engine/wasm/src/host.rs`): the real
-`common::Host` on a virtual clock. After every call it takes the host's log
+`common::Host`, on the live clock (the default: the page's time, wakes on
+wall time, as on the box) or a virtual one (moved only by `advance`, a GPS
+`t` or a replay: scripted runs and tests). After every call it takes the host's log
 (`HostHandle.log()`: each evaluation with its cause, its outcome, an `R-…`
 code with the instruction and source span when it failed, and the state,
 view and wake after it) and the envelopes it sent (`poll()`); the state shown
@@ -201,7 +203,7 @@ reconnect and sends `Begin` again, which the box answers with what it has (it
 keeps an upload 60 s). Then `Commit` (the box checks the length and SHA-256 and
 validates the bundle) and, when asked, `Activate`.
 
-Taken from `bundle/js/client.js` (the development tool measured on the box on
+Taken from `bundle/js/client.js` (the development tool, since removed, measured on the box on
 2026-10-13: 104,568 B in 10.8 s from Chrome on a Mac) with these changes: a
 `Sequence` rewind no longer counts as a stall (it used to, then resent from
 the last `Ack` instead of from `expected`, and gave up after 3 gaps); a write

@@ -3,7 +3,8 @@
 // messages are tools/bindgen's, from the vendored protocol-js
 // (encodeHostEvent({ tag: 'Bundle', value: request }), decodeBundleResponse).
 //
-// Origin: bundle/js/client.js (the development tool's client, measured on the
+// Origin: bundle/js/client.js (the development tool's client, since removed:
+// see git history; measured on the
 // C6 from Chrome on 2026-10-13: 104,568 B in 10.8 s), with these changes: a
 // Sequence error rewinds without counting as a stall (client.js counted it,
 // then resent from the last Ack instead of from where the box asked); waiting

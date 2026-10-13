@@ -151,6 +151,7 @@ export class WatchPreview {
     const realm = this.realmFrame?.contentWindow;
     this.host.state(realm ? new realm.Uint8Array(bytes) : Uint8Array.from(bytes));
     this.envelopes++;
+    this.onChange(); // the count (the panel throttles its redraw and writes only what changed)
   }
 
   send(bytes) {

@@ -125,7 +125,7 @@ test('a Race project under another name builds, packs and runs as the bundle "ra
   const p = ok(assert, await api.bundle.pack());
   assert.deepEqual([p.name, p.uiSource], ['race', 'build']);
   assert.ok(p.sizes.files.some((f) => f.name === 'watch.js'));
-  const s = ok(assert, await api.sim.start());
+  const s = ok(assert, await api.sim.start({ clock: 'virtual' }));
   assert.deepEqual([s.name, s.uiSource], ['race', 'build']);
   const now = s.now;
   ok(assert, await api.sim.event({ bump_seq: { seconds: 60, tapped_at: now } }));
@@ -137,7 +137,7 @@ test('a Race project under another name builds, packs and runs as the bundle "ra
   assert.equal((await getLastBuild('demo')).name, 'other');
   const refused = notOk(assert, await api.bundle.pack(), /the last ui\.build of demo built the bundle 'other', not 'race'/);
   assert.match(refused.hint, /api\.ui\.build\(\)/);
-  notOk(assert, await api.sim.start(), /built the bundle 'other'/);
+  notOk(assert, await api.sim.start({ clock: 'virtual' }), /built the bundle 'other'/);
   ok(assert, await api.ui.build({ target: 'both' }));
   ok(assert, await api.bundle.pack());
   ok(assert, await api.project.delete('demo'));

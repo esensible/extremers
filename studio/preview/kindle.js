@@ -227,6 +227,7 @@ export class KindlePreview {
     const buf = Uint8Array.from(bytes).buffer;
     w.postMessage({ __preview: this.sid, type: 'envelope', bytes: buf }, this.win.location.origin, [buf]);
     this.envelopes++;
+    this.onChange(); // the count (the panel throttles its redraw and writes only what changed)
     return true;
   }
 

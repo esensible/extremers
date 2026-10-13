@@ -60,6 +60,25 @@ test('connect(): no remembered device → never the chooser; the hint asks for t
   assert.match(dev.status().lastError, /no remembered/);
 });
 
+test('lookRemembered(): getDevices only (no connection), told to onChange; the chooser makes it true', async () => {
+  const { dev, bluetooth, device } = setup();
+  assert.equal(dev.status().remembered, null, 'not looked yet');
+  const seen = [];
+  dev.onChange((s) => seen.push(s.remembered));
+  assert.equal(await dev.lookRemembered(), true);
+  assert.equal(dev.status().remembered, true);
+  assert.deepEqual(seen, [true]);
+  assert.equal(bluetooth.getDevicesCalls, 1);
+  assert.equal(dev.status().state, 'disconnected');
+  assert.equal(device.gatt.connected, false, 'nothing over the air');
+  const none = setup({ remembered: false });
+  assert.equal(await none.dev.lookRemembered(), false);
+  none.bluetooth.chooserResult = none.device;
+  await none.dev.choose();
+  assert.equal(none.dev.status().remembered, true);
+  assert.equal(await setup({ getDevices: false }).dev.lookRemembered(), null, 'no getDevices: unknown');
+});
+
 test('connect(): no getDevices (the Chrome flag is off) → the flag in the hint', async () => {
   const { dev, bluetooth } = setup({ getDevices: false });
   const e = await rejects(dev.connect(), /cannot list remembered devices/);

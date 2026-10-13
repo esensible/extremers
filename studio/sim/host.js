@@ -64,6 +64,16 @@ export function flatGps(u) {
   return out;
 }
 
+/**
+ * The live clock's timers on a global `g` (default globalThis). Each is
+ * called with `g` as its receiver: in a browser setTimeout and clearTimeout
+ * are Window methods, and one taken off `window` and called on another
+ * object (`{ set: setTimeout }.set(...)`) throws "Illegal invocation".
+ */
+export function hostTimers(g = globalThis) {
+  return { set: (fn, ms) => g.setTimeout(fn, ms), clear: (id) => g.clearTimeout(id) };
+}
+
 export class Sim {
   /**
    * new Sim({ mod, bundle, name, program, ifaceJson, source, view, event, clock, t0, trackCapacity })
@@ -74,7 +84,7 @@ export class Sim {
    *   clock      'virtual' | 'live'; t0: the device time to set (as the first GPS time does), or null to stay on uptime
    *   trackCapacity  the fixes `gps` holds (default the C6's, TRACK_CAPACITY)
    */
-  constructor({ mod, bundle, name, program, ifaceJson, source, view, event, clock = 'virtual', t0 = 1_790_000_000_000, path = 'engine/engine.expr', timers = { set: setTimeout, clear: clearTimeout }, wallNow = () => Date.now(), onEnvelope = null, trackCapacity = TRACK_CAPACITY }) {
+  constructor({ mod, bundle, name, program, ifaceJson, source, view, event, clock = 'virtual', t0 = 1_790_000_000_000, path = 'engine/engine.expr', timers = hostTimers(), wallNow = () => Date.now(), onEnvelope = null, trackCapacity = TRACK_CAPACITY }) {
     Object.assign(this, { mod, name, id: packageId(name), program, ifaceJson, source, path, VIEW: view, EVENT: event, clock, timers, wallNow });
     this.history = []; this.n = 0; this.findings = []; this.listeners = new Set(onEnvelope ? [onEnvelope] : []);
     this.lastEnvelope = null; this.replaying = null; this.liveTimer = null; this.clockSet = false;

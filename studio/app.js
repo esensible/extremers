@@ -11,7 +11,7 @@ import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
 import { toBase64, fromBase64 } from './zip.js';
-import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceProgressText, deviceRowsHtml } from './ui.js';
+import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml } from './ui.js';
 import { createEditor } from './editor.js';
 import { mountPanels } from './panels.js';
 import { mountPreviews } from './preview/index.js';
@@ -430,15 +430,45 @@ let deviceUrl = null;
 function renderDevice(s) {
   $('device-status').textContent = deviceStatusText(s);
   $('device-progress').textContent = s?.progress ? `${s.state === 'busy' ? '' : 'last transfer: '}${deviceProgressText(s.progress)}` : '';
-  $('device-choose').disabled = !s?.bluetooth || s.state === 'busy' || s.state === 'connecting';
+  renderDeviceHead(s);
+}
+
+// The header: the box's state, Connect/Disconnect, and the chooser
+// (#device-choose: 'Choose device…' until Chrome remembers the box for this
+// page, then a quiet 'Re-choose…'). Driven by the controller's onChange (no
+// polling); the text is set in place, so the header never re-lays out
+// beyond the text's own width.
+let headShown = null;
+function renderDeviceHead(s) {
+  const h = deviceHead(s);
+  const key = JSON.stringify(h);
+  if (key === headShown) return;
+  headShown = key;
+  const st = $('device-state');
+  st.textContent = h.text;
+  st.dataset.tone = h.tone;
+  st.title = s?.lastError ? `${s.lastError}${s.hint ? ` — ${s.hint}` : ''}` : '';
+  const ch = $('device-choose');
+  ch.textContent = h.choose.label;
+  ch.classList.toggle('quiet', !h.choose.prominent);
+  ch.disabled = h.disabled || !s?.bluetooth || s?.state === 'connecting';
+  $('device-head-connect').hidden = !h.connect;
+  $('device-head-disconnect').hidden = !h.disconnect;
+  $('device-head-connect').disabled = $('device-head-disconnect').disabled = h.disabled;
 }
 function renderDeviceRows() { $('device-bundles').innerHTML = deviceRowsHtml(deviceList, deviceConfirm); }
 function renderDeviceLog() { $('device-log').textContent = logger.lines(500).filter((l) => /\bdevice[.:]/.test(l)).slice(-200).join('\n'); }
 logger.onLine((line) => { if (/\bdevice[.:]/.test(line)) renderDeviceLog(); });
 
-api._device.controller().then((c) => { c.onChange(renderDevice); renderDevice(c.status()); }, (e) => { $('device-status').textContent = `the device client did not load: ${e.message}`; });
+api._device.controller().then((c) => {
+  c.onChange(renderDevice);
+  renderDevice(c.status());
+  c.lookRemembered().catch(() => {}); // getDevices(): permissions only, nothing over the air; onChange redraws
+}, (e) => { $('device-status').textContent = `the device client did not load: ${e.message}`; $('device-state').textContent = 'device client failed'; $('device-state').dataset.tone = 'err'; });
 
 $('device-choose').onclick = () => { api._device.choose(); }; // Chrome's chooser opens inside this click's activation
+$('device-head-connect').onclick = () => window.api.device.connect();
+$('device-head-disconnect').onclick = () => window.api.device.disconnect();
 $('device-connect').onclick = () => window.api.device.connect();
 $('device-disconnect').onclick = () => window.api.device.disconnect();
 $('device-list').onclick = () => window.api.device.list();
@@ -507,7 +537,7 @@ window.__selftest = async () => {
     await step('project.delete copy', window.api.project.delete(`${name}-copy`));
     await step('unknown guard', window.api.project.nope(), (r) => r.ok === false && /does not exist/.test(r.error));
     await step('engine.check (blank)', window.api.engine.check(), (r) => r.ok && r.runs.every((x) => x.ok));
-    await step('sim.start', window.api.sim.start(), (r) => r.ok && r.view?.count >= 1);
+    await step('sim.start', window.api.sim.start({ clock: 'virtual' }),(r) => r.ok && r.view?.count >= 1);
     await step('sim.advance', window.api.sim.advance(1000), (r) => r.ok);
     await step('sim.state: no findings', window.api.sim.state(), (r) => r.ok && r.findings.length === 0);
     await step('sim.reset', window.api.sim.reset());

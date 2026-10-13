@@ -49,6 +49,11 @@
   .top label { display: flex; align-items: center; gap: 6px; }
   #status { flex: 1 1 260px; font-size: 14px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
   #status.err { color: var(--danger); }
+  .dev-head { display: flex; align-items: center; gap: 6px; }
+  .dev-state { font: 500 13px var(--f-mono); color: var(--muted); white-space: nowrap; }
+  .dev-state[data-tone="ok"] { color: #1F7A3A; }
+  .dev-state[data-tone="busy"] { color: var(--info-ink); }
+  .dev-state[data-tone="err"] { color: var(--danger); }
   .projbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
   .projbar .grp { display: flex; align-items: center; gap: 6px; padding-right: 10px; border-right: 1px solid var(--line-2); }
   .projbar .grp:last-child { border-right: 0; }
@@ -126,7 +131,12 @@
   .dev-log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 6px 0 0; max-height: 220px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--raised); }
   .dev-log:empty { display: none; }
 
-  .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+  /* The pane keeps its scrollbar's gutter whether it scrolls or not: with a
+     classic scrollbar, one coming and going changed the Kindle viewport's
+     width, so its fitted height, so whether the pane scrolled — the previews
+     jumped up and down every frame (preview/panel.js). The logs and status
+     lines have fixed heights, so updates don't change the pane's height. */
+  .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; scrollbar-gutter: stable; }
   .previews h2 { margin: 0; font: 700 16px var(--f-head); }
   .pv { display: flex; flex-direction: column; gap: 6px; }
   .pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -137,10 +147,9 @@
   #preview-kindle-frame { border: 0; display: block; background: #FFFFFF; }
   .pv-bezel { align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 5px #2A2A28; }
   #preview-watch-screen { width: 198px; height: 242px; background: #000000; color: #FFFFFF; overflow: hidden; }
-  .pv-status { font-size: 12px; overflow-wrap: anywhere; }
+  .pv-status { font-size: 12px; line-height: 1.4; height: calc(3 * 1.4em); overflow: hidden; overflow-wrap: anywhere; flex: none; }
   .pv-status.err { color: var(--danger); }
-  .pv-log { max-height: 120px; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; background: var(--raised); }
-  .pv-log:empty { display: none; }
+  .pv-log { height: 96px; flex: none; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; background: var(--raised); }
   .pv-line { overflow-wrap: anywhere; border-bottom: 1px dotted var(--line-2); }
   .pv-line.error { color: var(--danger); } .pv-line.warn { color: var(--warn); }
 </style>
@@ -150,7 +159,12 @@
     <span class="brand">Studio</span>
     <label class="eb" for="project-select">Project <select id="project-select" data-testid="project-select"><option value="">— none —</option></select></label>
     <span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span>
-    <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome's Bluetooth chooser: pick 'nacra' (the box). Needed once; then api.device.connect() works from script">Choose device…</button>
+    <span class="dev-head" id="device-head" data-testid="device-head">
+      <span class="dev-state" id="device-state" data-testid="device-state" role="status" aria-live="polite" data-tone="idle">no device chosen</span>
+      <button type="button" class="btn" id="device-head-connect" data-testid="device-head-connect" hidden>Connect</button>
+      <button type="button" class="btn" id="device-head-disconnect" data-testid="device-head-disconnect" hidden>Disconnect</button>
+      <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome's Bluetooth chooser: pick 'nacra' (the box). Needed once; then api.device.connect() works from script">Choose device…</button>
+    </span>
   </header>
 
   <div class="projbar" id="project-actions">
@@ -211,7 +225,7 @@
         </div>
         <div class="panel" id="sim" role="tabpanel" aria-labelledby="tab-sim" data-testid="sim" hidden>
           <div class="build-bar sim-bar">
-            <select id="sim-clock" aria-label="Clock"><option value="virtual">virtual clock</option><option value="live">live clock</option></select>
+            <select id="sim-clock" aria-label="Clock" title="live: the device clock runs with wall time, as on the box (wakes fire by themselves); virtual: it moves only on +1 s / +10 s / To next wake, for a scripted run"><option value="live" selected>live clock</option><option value="virtual">virtual clock</option></select>
             <button type="button" class="btn pri" id="sim-start" data-testid="sim-start">Start</button>
             <button type="button" class="btn" id="sim-reset" data-testid="sim-reset">Reset</button>
             <button type="button" class="btn" id="sim-stop" data-testid="sim-stop" title="Stop a live clock or a replay">Stop</button>

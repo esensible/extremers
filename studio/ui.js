@@ -268,6 +268,41 @@ export function deviceStatusText(s) {
 }
 
 /**
+ * The header's device group from api.device.status():
+ *   text        'nacra · connected' | 'nacra · disconnected' | 'nacra · connecting…' |
+ *               'nacra · busy: install 42%' | 'no device chosen' | …
+ *   tone        'ok' | 'busy' | 'idle' | 'err' (the text's colour)
+ *   choose      the chooser button (#device-choose): { label, prominent } — prominent
+ *               ('Choose device…') only when Chrome remembers no box for this page;
+ *               otherwise a quiet 'Re-choose…' (another box, or the same one again)
+ *   connect     show Connect (a remembered box, not connected)
+ *   disconnect  show Disconnect (connected or connecting)
+ *   disabled    the buttons are disabled (a device call is running)
+ */
+export function deviceHead(s) {
+  if (!s) return { text: '', tone: 'idle', choose: { label: 'Choose device…', prominent: true }, connect: false, disconnect: false, disabled: false };
+  if (!s.bluetooth) return { text: 'no Web Bluetooth', tone: 'err', choose: { label: 'Choose device…', prominent: true }, connect: false, disconnect: false, disabled: true };
+  const who = s.deviceName ?? 'nacra';
+  const remembered = s.remembered === true || !!s.deviceName;
+  const busy = s.state === 'busy';
+  let text; let tone;
+  if (busy) {
+    const pct = s.progress?.total && s.op !== 'connect' && s.op !== 'choose' ? ` ${Math.floor((s.progress.sent / s.progress.total) * 100)}%` : '';
+    text = `${who} · busy: ${s.op}${pct}`; tone = 'busy';
+  } else if (s.state === 'connected') { text = `${who} · connected`; tone = 'ok'; }
+  else if (s.state === 'connecting') { text = `${who} · connecting…`; tone = 'busy'; }
+  else if (remembered) { text = `${who} · disconnected`; tone = s.lastError ? 'err' : 'idle'; }
+  else { text = 'no device chosen'; tone = s.lastError ? 'err' : 'idle'; }
+  return {
+    text, tone,
+    choose: remembered ? { label: 'Re-choose…', prominent: false } : { label: 'Choose device…', prominent: true },
+    connect: remembered && s.state === 'disconnected',
+    disconnect: s.state === 'connected' || s.state === 'connecting',
+    disabled: busy,
+  };
+}
+
+/**
  * The bundles of api.device.list() as a table. Each row: data-id, data-name;
  * its buttons [data-act=activate|delete|get] (ids device-<act>-<id>); a row
  * whose action waits for its inline confirm (confirm: { id, act }) shows

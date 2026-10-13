@@ -124,8 +124,9 @@ function hintFor(msg) {
  *   log         a createLogger() object, or a function (level, msg)
  *   engine      engine/wasm.js createEngineLoader() (status only until the engine groups are wired)
  *   device      device/index.js createDevice() (default: one on navigator.bluetooth, loaded on first use)
+ *   timers      the sim's live-clock timers, sim/host.js hostTimers(g) (default: globalThis's)
  */
-export function createApi({ store, fetchText, fetchBytes, log, engine, device, now = () => Date.now() } = {}) {
+export function createApi({ store, fetchText, fetchBytes, log, engine, device, timers, now = () => Date.now() } = {}) {
   const logger = log && typeof log.lines === 'function' ? log : createLogger({ sink: typeof log === 'function' ? log : undefined });
   const L = (level, msg) => logger.log(level, msg);
 
@@ -929,15 +930,15 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
     },
     {
       name: 'sim.start', kind: 'pure',
-      summary: `Start the real host (common::Host in the wasm) on the project's engine, packed as bundle.pack would (the bundle name and version from ${SETTINGS_PATH}; the last good ui.build, or the placeholder page until there is one): it evaluates {gps: {}} on a nil state at uptime 0 and publishes; then t0, as the first GPS time does on the C6, sets the device clock (a GPS update without a fix: a second {gps: {}} evaluation). Its gps holds the newest 20,480 fixes, as the C6's track. Virtual clock: moves only on advance/gps t/replay. Live: follows the page's clock from t0. Replaces a running sim.`,
+      summary: `Start the real host (common::Host in the wasm) on the project's engine, packed as bundle.pack would (the bundle name and version from ${SETTINGS_PATH}; the last good ui.build, or the placeholder page until there is one): it evaluates {gps: {}} on a nil state at uptime 0 and publishes; then t0, as the first GPS time does on the C6, sets the device clock (a GPS update without a fix: a second {gps: {}} evaluation). Its gps holds the newest 20,480 fixes, as the C6's track. Live (the default): the device clock follows the page's from t0 (now), wakes fire on wall time, as on the C6; the previews' countdowns run smoothly. Virtual: the clock moves only on advance/gps t/replay, for scripted runs and tests (the Kindle preview's 5 s heartbeat re-sends the state at the virtual time, so its countdown jumps back while wall time runs on). Replaces a running sim.`,
       args: [DIR_OPT,
-        { name: 'opts.clock', type: "'virtual' | 'live'", required: false, description: "default 'virtual'" },
-        { name: 'opts.t0', type: 'integer | null', required: false, description: 'device time to set, epoch ms (default 1790000000000; live: default now; null: stay on uptime)' },
+        { name: 'opts.clock', type: "'live' | 'virtual'", required: false, description: "default 'live'; 'virtual' for a scripted run (sim.advance moves it)" },
+        { name: 'opts.t0', type: 'integer | null', required: false, description: 'device time to set, epoch ms (live: default now; virtual: default 1790000000000; null: stay on uptime)' },
         { name: 'opts.name', type: 'string', required: false, description: `the package name (default: ${SETTINGS_PATH}'s; refused when the last ui.build was for another name)` }],
       returns: '{ ok, clock, now, id, name, ui: { web, watch }, uiSource: "build"|"placeholder", uiNotes?: string[], state, view, wake, evaluations: [record], errors?: [{ n, t, cause, code, at, help }] }',
-      example: "await api.sim.start({ clock: 'virtual' })",
+      example: "await api.sim.start() // live; a scripted run: await api.sim.start({ clock: 'virtual' })",
       run: async (opts = {}) => {
-        const clock = opts.clock ?? 'virtual';
+        const clock = opts.clock ?? 'live';
         if (clock !== 'virtual' && clock !== 'live') throw new ApiError(`clock must be 'virtual' or 'live', got ${JSON.stringify(clock)}`);
         const t0 = opts.t0 === null ? null : opts.t0 === undefined ? (clock === 'live' ? now() : 1_790_000_000_000) : clampInt(opts.t0, 0, 0, 2 ** 52, 't0');
         const p = await packProject({ dir: opts.dir, name: opts.name });
@@ -948,6 +949,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
           sim = new Sim({
             mod, bundle: p.bytes, name: p.name, program: p.built.program, ifaceJson: p.built.ifaceJson,
             source: p.built.files['engine.expr'], path: `${p.built.dir}/engine.expr`, view: p.built.view.loaded, event: p.built.event?.loaded ?? null, clock, t0,
+            ...(timers ? { timers } : {}),
             onEnvelope: (bytes, e) => { for (const cb of envelopeListeners) { try { cb(bytes, e); } catch { /* the subscriber's */ } } },
           });
         } catch (e) { throw simErr(e); }
@@ -995,7 +997,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
     },
     {
       name: 'sim.advance', kind: 'pure',
-      summary: 'Move the virtual clock on by ms: a wake falls due exactly at its time and is evaluated then (at once if the engine set one in the past).',
+      summary: "Move the virtual clock (api.sim.start({ clock: 'virtual' })) on by ms: a wake falls due exactly at its time and is evaluated then (at once if the engine set one in the past). Refused on the live clock.",
       args: [{ name: 'ms', type: 'integer', required: true, description: "milliseconds, ≥ 0; or 'wake': to the pending wake" }],
       returns: '{ ok, now, fired, evaluations: [record], errors?: [{ n, t, cause, code: "R-…", at, help }] (wakes the host rejected), state, view, wake }',
       example: 'await api.sim.advance(300000)',
@@ -1208,9 +1210,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
     // ------------------------------------------------------------- device (Web Bluetooth to the C6)
     {
       name: 'device.status', kind: 'info',
-      summary: "The Bluetooth link to the box ('nacra'): state (disconnected, connecting, connected, or busy while a device call runs), the device's name, bonded (true once subscribed on an encrypted link, false when the box refused this computer, null not known yet), the chunk and window the box set for the last transfer, the running call and its progress, the last error and what to do about it.",
+      summary: "The Bluetooth link to the box ('nacra'): state (disconnected, connecting, connected, or busy while a device call runs), the device's name, bonded (true once subscribed on an encrypted link, false when the box refused this computer, null not known yet), remembered (true when Chrome has given this page the box, so connect works without the chooser; false: a person must click #device-choose; null: not looked yet), the chunk and window the box set for the last transfer, the running call and its progress, the last error and what to do about it.",
       args: [],
-      returns: "{ ok, state: 'disconnected'|'connecting'|'connected'|'busy', op, deviceName, bonded, chunk, window, progress: { phase, sent, total, kbps }|null, lastError, hint, reconnects, bluetooth }",
+      returns: "{ ok, state: 'disconnected'|'connecting'|'connected'|'busy', op, deviceName, bonded, remembered, chunk, window, progress: { phase, sent, total, kbps }|null, lastError, hint, reconnects, bluetooth }",
       example: 'await api.device.status()',
       run: async () => ({ ok: true, ...(await dev()).status() }),
     },
@@ -1287,7 +1289,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
     { name: 'project', summary: `projects in this browser (IndexedDB): list, create from a template, open, delete, rename, export/import as ZIP; settings (${SETTINGS_PATH}: the bundle's name and version)` },
     { name: 'files', summary: "the open project's files; writes save at once" },
     { name: 'engine', summary: 'the interface, compile, check (smoke runs + samples), disassembly, device tables and builtins, on the engine wasm' },
-    { name: 'sim', summary: 'the engine on the real host (common::Host in the wasm): virtual or live clock, events, GPS and NMEA, wakes, replay, history; W-WIRE/W-HOST checks' },
+    { name: 'sim', summary: 'the engine on the real host (common::Host in the wasm): live clock (the default) or virtual, events, GPS and NMEA, wakes, replay, history; W-WIRE/W-HOST checks' },
     { name: 'ui', summary: 'bundle the Kindle and watch clients in the browser (a Web Worker: rollup, Babel, terser); the last good build per project is what bundle.pack, sim.start and the previews carry' },
     { name: 'preview', summary: 'the Kindle page and the watch app of the last build, live on the sim host: open, read the text, press buttons, console errors' },
     { name: 'bundle', summary: 'pack the project into a bundle archive (the engine wasm\'s pack), and inspect one' },
@@ -1309,7 +1311,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, n
         `3. api.project.list(); api.project.create(name, { template: 'race' }) to start from the Race example, or api.project.open(name). api.project.settings() is the bundle's name and version (${SETTINGS_PATH}), which the UI build, the sim and the pack use.`,
         '4. api.files.list() / api.files.read(path) / api.files.write(path, text) — edit engine/engine.expr, the schemas, engine/samples.json, kindle/src/*, watch/src/*.',
         '5. api.engine.check() — compile + smoke runs + samples; fix every diagnostic (read its help) before going on.',
-        "6. api.sim.start(), then api.sim.event(...), api.sim.gps(...), api.sim.advance(ms) — exercise the engine on the real host; api.sim.history() and api.sim.state() (its findings must stay empty).",
+        "6. api.sim.start({ clock: 'virtual' }), then api.sim.event(...), api.sim.gps(...), api.sim.advance(ms) — a scripted run of the engine on the real host; api.sim.history() and api.sim.state() (its findings must stay empty). api.sim.start() (the live clock, the default) for the previews: time runs as on the box.",
         "7. api.ui.build({ target: 'both' }), api.preview.open({ target: 'kindle' }), api.preview.text('kindle'), api.preview.press(...).",
         '8. api.bundle.pack() (the name and version from the settings; it refuses a UI build made under another name).',
         "9. api.device.connect() — if it says no device was chosen, ask the person to click 'Choose device…' (#device-choose) once; then api.device.install({ activate: true }) and api.device.list().",

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine } from '../ui.js';
+import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead } from '../ui.js';
 import { studioDir } from './engine-world.mjs';
 
 const LIST = {
@@ -63,9 +63,29 @@ test('statusLine for the device calls', () => {
   assert.equal(statusLine('device.install', { ok: false, error: 'busy', hint: 'wait' }), 'device.install failed: busy — wait');
 });
 
-test('the page: #device-choose enabled, the #device panel\'s ids', () => {
+test('deviceHead: the box\'s state in the header; the chooser prominent only with no remembered box', () => {
+  const base = { bluetooth: true, deviceName: null, bonded: null, remembered: false, state: 'disconnected', op: null, progress: null, lastError: null };
+  const none = deviceHead(base);
+  assert.deepEqual(none, { text: 'no device chosen', tone: 'idle', choose: { label: 'Choose device…', prominent: true }, connect: false, disconnect: false, disabled: false });
+  // after a reload: Chrome remembers it (getDevices), not connected yet
+  const rem = deviceHead({ ...base, remembered: true });
+  assert.deepEqual([rem.text, rem.choose, rem.connect, rem.disconnect], ['nacra · disconnected', { label: 'Re-choose…', prominent: false }, true, false]);
+  const con = deviceHead({ ...base, remembered: true, deviceName: 'nacra', bonded: true, state: 'connected' });
+  assert.deepEqual([con.text, con.tone, con.connect, con.disconnect, con.disabled], ['nacra · connected', 'ok', false, true, false]);
+  const busy = deviceHead({ ...base, remembered: true, deviceName: 'nacra', state: 'busy', op: 'install', progress: { phase: 'upload', sent: 43000, total: 100000, kbps: 9 } });
+  assert.deepEqual([busy.text, busy.tone, busy.disabled], ['nacra · busy: install 43%', 'busy', true]);
+  assert.equal(deviceHead({ ...base, deviceName: 'nacra', state: 'busy', op: 'connect', progress: { phase: 'done', sent: 1, total: 1 } }).text, 'nacra · busy: connect', 'a connect shows no transfer');
+  assert.equal(deviceHead({ ...base, deviceName: 'nacra', state: 'connecting' }).text, 'nacra · connecting…');
+  // a box this page has a device object for is remembered even if getDevices was never asked
+  assert.equal(deviceHead({ ...base, remembered: null, deviceName: 'nacra', state: 'disconnected', lastError: 'dropped' }).tone, 'err');
+  assert.equal(deviceHead({ ...base, remembered: null, deviceName: 'nacra' }).choose.prominent, false);
+  assert.equal(deviceHead({ ...base, bluetooth: false }).text, 'no Web Bluetooth');
+});
+
+test('the page: #device-choose enabled, the header\'s device group, the #device panel\'s ids', () => {
   const html = readFileSync(join(studioDir, 'index.html'), 'utf8');
   assert.match(html, /<button[^>]*id="device-choose"(?![^>]*disabled)[^>]*>/);
+  for (const id of ['device-head', 'device-state', 'device-head-connect', 'device-head-disconnect']) assert.match(html, new RegExp(`id="${id}"`), id);
   for (const id of ['device-connect', 'device-disconnect', 'device-list', 'device-install', 'device-install-activate', 'device-status', 'device-progress', 'device-bundles', 'device-log']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }

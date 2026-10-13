@@ -28,7 +28,8 @@ export function nodeEngineLoader() {
   });
 }
 
-export async function engineWorld() {
+/** opts.timers: the sim's live-clock timers (sim/host.js hostTimers(g)); default globalThis's. */
+export async function engineWorld({ timers } = {}) {
   const indexedDB = createFakeIndexedDB();
   const read = (url) => {
     const p = join(studioDir, url.replace(/^\.\//, ''));
@@ -37,7 +38,7 @@ export async function engineWorld() {
   };
   const fetchText = async (url) => readFileSync(read(url), 'utf8');
   const fetchBytes = async (url) => new Uint8Array(readFileSync(read(url)));
-  const api = createApi({ store: () => openStore({ indexedDB }), fetchText, fetchBytes, log: createLogger(), engine: nodeEngineLoader() });
+  const api = createApi({ store: () => openStore({ indexedDB }), fetchText, fetchBytes, log: createLogger(), engine: nodeEngineLoader(), timers });
   return { api, guarded: withUnknownGuard(api) };
 }
 

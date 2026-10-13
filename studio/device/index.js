@@ -48,6 +48,7 @@ export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log 
       op,
       deviceName: i.deviceName,
       bonded: i.bonded,
+      remembered: i.remembered,
       chunk,
       window,
       progress,
@@ -118,6 +119,9 @@ export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log 
   return {
     status,
     onChange: (cb) => { changeListeners.add(cb); return () => changeListeners.delete(cb); },
+
+    /** Whether Chrome remembers the box for this page (no radio traffic: not a device operation). → true|false|null */
+    lookRemembered: () => link.lookRemembered(),
 
     /** A person's click: the chooser, then connect. */
     choose: () => run('choose', async () => {
