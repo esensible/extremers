@@ -10,7 +10,9 @@
 // Modelled:
 //  - getDevices() returns remembered devices (absent when `getDevices: false`,
 //    as without chrome://flags/#enable-web-bluetooth-new-permissions-backend);
-//    requestDevice() needs `chooserResult`.
+//    requestDevice() needs `chooserResult` and adds it to what is remembered.
+//  - several granted boxes with the same name (`absent`: earlier boxes that
+//    are not here), listed first, as Chrome did on 2026-10-14.
 //  - after a reload (device.inRangeKnown = false) gatt.connect() fails "no
 //    longer in range" until watchAdvertisements() saw an advertisement.
 //  - concurrent GATT operations reject ("GATT operation already in progress.").
@@ -416,14 +418,24 @@ export class FakeDevice extends EventTarget {
 }
 
 /**
- * makeFakeBluetooth({ remembered, inRangeKnown, getDevices, ...c6 options }) → { c6, device, bluetooth }.
+ * makeFakeBluetooth({ remembered, inRangeKnown, getDevices, absent, deviceId, ...c6 options }) → { c6, device, absentDevices, bluetooth }.
  * bluetooth.chooserResult is what the chooser returns (null: the person cancels).
+ * absent: ids of other boxes named 'nacra' this page was given earlier that are
+ * not here (off, elsewhere: no advertisements, "no longer in range"); like
+ * Chrome, getDevices() lists them before `device`. A pick in the chooser adds
+ * to what is remembered, it replaces nothing.
  */
-export function makeFakeBluetooth({ remembered = true, inRangeKnown = true, getDevices = true, ...c6opts } = {}) {
+export function makeFakeBluetooth({ remembered = true, inRangeKnown = true, getDevices = true, absent = [], deviceId = 'fake-nacra-id', ...c6opts } = {}) {
   const c6 = new FakeC6(c6opts);
-  const device = new FakeDevice({ c6, inRangeKnown });
+  const device = new FakeDevice({ c6, inRangeKnown, id: deviceId });
+  const absentDevices = absent.map((id) => {
+    const d = new FakeDevice({ c6: new FakeC6(c6opts), id, inRangeKnown: false });
+    d.powered = false;
+    d.advertising = false;
+    return d;
+  });
   const bluetooth = {
-    remembered: remembered ? [device] : [],
+    remembered: [...absentDevices, ...(remembered ? [device] : [])],
     chooserResult: null,
     requestDeviceCalls: [],
     getDevicesCalls: 0,
@@ -432,10 +444,10 @@ export function makeFakeBluetooth({ remembered = true, inRangeKnown = true, getD
       if (this.noUserActivation) throw domErr('SecurityError', 'Must be handling a user gesture to show a permission request.');
       if (!this.chooserResult) throw domErr('NotFoundError', 'User cancelled the requestDevice() chooser.');
       this.chooserResult.serviceNotGranted = false; // a pick grants the optionalServices asked for
-      this.remembered = [this.chooserResult];
+      if (!this.remembered.includes(this.chooserResult)) this.remembered.push(this.chooserResult);
       return this.chooserResult;
     },
   };
   if (getDevices) bluetooth.getDevices = async function () { this.getDevicesCalls++; return [...this.remembered]; };
-  return { c6, device, bluetooth };
+  return { c6, device, absentDevices, bluetooth };
 }

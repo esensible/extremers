@@ -289,9 +289,16 @@ fake of the box; it has not yet run against the hardware itself.
   never opens it, and answers `no remembered 'nacra'` until 2. is done
   (`api.device.status().remembered` says whether it is needed). Each
   browser origin must choose the box once, even if the Mac is already
-  paired with it. A page that remembers a *different* box (an earlier
-  `nacra`) waits for that one's advertisement and answers not in range:
-  ask the person to click **Choose another box…** and pick `nacra` again.
+  paired with it. Chrome remembers each box chosen separately, all named
+  `nacra` (two C6s chosen on different days are two;
+  `api.device.status().candidates` counts them and `deviceId` is the one
+  connect works with). `connect()` prefers the box last chosen (or
+  connected to); with several granted and none of them remembered or in
+  range it watches all of them and takes the one that advertises. When
+  none advertises it answers `none of the 2 remembered boxes named 'nacra'
+  advertised in 12 s`: the box is off, out of range or both its slots are
+  taken; if it is a different box than before, ask the person to click
+  **Choose another box…** and pick `nacra`.
 - **Pair** *(verified 2026-10-13 with the development page; the Mac in use
   is bonded already)*. The box serves bundles only on a link encrypted with
   a bond it holds. A computer pairs only while the box's pairing window is
@@ -306,8 +313,9 @@ fake of the box; it has not yet run against the hardware itself.
   (`the link dropped while connecting`). The person must forget `nacra` in
   macOS System Settings → Bluetooth (it may be listed only in the menu-bar
   Bluetooth menu), then pair again within the window. If the box is not
-  found at all although it is on, turning the Mac's Bluetooth off and on
-  cleared that once.
+  found at all although it is on, ask the person to click **Choose another
+  box…** and pick `nacra` (toggling the Mac's Bluetooth clears nothing:
+  a page that "could not find" the box was waiting for another one).
 - **Chrome flags** (desktop Chrome): for a remembered device without the
   chooser (`navigator.bluetooth.getDevices()`),
   `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
@@ -319,7 +327,9 @@ fake of the box; it has not yet run against the hardware itself.
 
 Stable ids: `#project-select`, `#status` (the last result as text,
 `aria-live`); the header's box: `#device-state` (`nacra · connected`,
-`nacra · disconnected`, `nacra · busy: install 42%`, `no box chosen`),
+`nacra · disconnected`, `nacra · busy: install 42%`, `no box chosen`; with
+more than one box remembered the id's last 4 characters follow the name:
+`nacra ·CA5Q · disconnected`),
 `#device-head-connect` / `#device-head-disconnect` (shown when they apply)
 and `#device-choose`, the chooser: **Choose the box…** until Chrome
 remembers the box for this page, then a quiet **Choose another box…**; `#files` (one button per file,

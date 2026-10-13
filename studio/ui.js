@@ -272,13 +272,15 @@ export function deviceStatusText(s) {
 /**
  * The header's device group from api.device.status():
  *   text        'nacra · connected' | 'nacra · disconnected' | 'nacra · connecting…' |
- *               'nacra · busy: install 42%' | 'no box chosen' | …
+ *               'nacra · busy: install 42%' | 'no box chosen' | …; with more than
+ *               one box remembered (status().candidates > 1) the name carries the
+ *               last 4 characters of the box's id: 'nacra ·CA5Q · disconnected'
  *   tone        'ok' | 'busy' | 'idle' | 'err' (the text's colour)
  *   choose      the chooser button (#device-choose): { label, prominent } — prominent
  *               ('Choose the box…') only when Chrome remembers no box for this page;
- *               otherwise a quiet 'Choose another box…' (a different box, or the
- *               same one again: a page that remembers an earlier box waits for
- *               that one's advertisement)
+ *               otherwise a quiet 'Choose another box…' (a different box than
+ *               before: Chrome remembers each pick separately, and connect
+ *               prefers the last one chosen)
  *   connect     show Connect (a remembered box, not connected)
  *   disconnect  show Disconnect (connected or connecting)
  *   disabled    the buttons are disabled (a device call is running)
@@ -286,10 +288,14 @@ export function deviceStatusText(s) {
 export const CHOOSE_LABEL = 'Choose the box…';
 export const CHOOSE_AGAIN_LABEL = 'Choose another box…';
 
+/** A BluetoothDevice.id's last 4 characters without its '::'/'=' padding (device/ble.js idTag; the page loads the device client lazily, so not imported). */
+export const deviceIdTag = (id) => (typeof id === 'string' && id ? id.replace(/[:=]+$/, '').slice(-4) : '');
+
 export function deviceHead(s) {
   if (!s) return { text: '', tone: 'idle', choose: { label: CHOOSE_LABEL, prominent: true }, connect: false, disconnect: false, disabled: false };
   if (!s.bluetooth) return { text: 'no Web Bluetooth', tone: 'err', choose: { label: CHOOSE_LABEL, prominent: true }, connect: false, disconnect: false, disabled: true };
-  const who = s.deviceName ?? 'nacra';
+  const tag = s.candidates > 1 ? deviceIdTag(s.deviceId) : '';
+  const who = `${s.deviceName ?? 'nacra'}${tag ? ` ·${tag}` : ''}`;
   const remembered = s.remembered === true || !!s.deviceName;
   const busy = s.state === 'busy';
   let text; let tone;

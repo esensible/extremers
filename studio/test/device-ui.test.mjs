@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceTableAfter } from '../ui.js';
+import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter } from '../ui.js';
 import { studioDir } from './engine-world.mjs';
 
 const LIST = {
@@ -103,6 +103,14 @@ test('deviceHead: the box\'s state in the header; the chooser prominent only wit
   assert.equal(deviceHead({ ...base, remembered: null, deviceName: 'nacra', state: 'disconnected', lastError: 'dropped' }).tone, 'err');
   assert.equal(deviceHead({ ...base, remembered: null, deviceName: 'nacra' }).choose.prominent, false);
   assert.equal(deviceHead({ ...base, bluetooth: false }).text, 'no Web Bluetooth');
+  // more than one box remembered: the id's last 4 characters (without the '::' padding) tell them apart
+  const two = { ...base, remembered: true, deviceId: 'e9rpKC4aQW/C44nrJaCA5Q::', candidates: 2 };
+  assert.equal(deviceHead(two).text, 'nacra ·CA5Q · disconnected');
+  assert.equal(deviceHead({ ...two, deviceName: 'nacra', state: 'connected' }).text, 'nacra ·CA5Q · connected');
+  assert.equal(deviceHead({ ...two, candidates: 1 }).text, 'nacra · disconnected', 'one box: no tag');
+  assert.equal(deviceHead({ ...two, deviceId: null }).text, 'nacra · disconnected', 'none of them remembered: no tag');
+  assert.equal(deviceIdTag('SDFSYoOuOeYm1IJfqO0lsQ=='), '0lsQ');
+  assert.equal(deviceIdTag(null), '');
 });
 
 test('the page: #device-choose enabled, the header\'s device group, the #device panel\'s ids', () => {

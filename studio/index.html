@@ -291,7 +291,7 @@
               <li>macOS then asks to pair with <code>nacra</code>: accept. This is the Bluetooth pairing itself.</li>
               <li>From then on this page remembers the box: <b>Connect</b> connects without prompts, also after a reload.</li>
             </ol>
-            <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. A page that remembers a different box (an earlier <code>nacra</code>) waits for that one: click <b>Choose another box…</b> and pick <code>nacra</code> again.</p>
+            <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. Chrome remembers each box chosen separately (all named <code>nacra</code>); Connect takes the one chosen last, else the one that advertises. For a different box than before, click <b>Choose another box…</b> and pick <code>nacra</code>.</p>
           </details>
           <div id="device-progress" class="dev-line hint" data-testid="device-progress" aria-live="polite"></div>
           <div id="device-bundles" data-testid="device-bundles"><p class="hint">List shows the bundles on the box.</p></div>

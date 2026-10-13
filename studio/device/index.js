@@ -47,6 +47,8 @@ export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log 
       state: op ? 'busy' : i.state,
       op,
       deviceName: i.deviceName,
+      deviceId: i.deviceId,
+      candidates: i.candidates,
       bonded: i.bonded,
       remembered: i.remembered,
       chunk,

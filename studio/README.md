@@ -236,13 +236,20 @@ boot); (2) click **Choose the box…**: Chrome's popup ("localhost:5190 wants to
 pair") only asks which device the page may talk to: pick `nacra`; (3) macOS
 then asks to pair: accept; (4) from then on the box is remembered and Connect
 needs no prompts. Each browser origin chooses the box once, even if the Mac is
-already paired; a page that remembers a different box waits for that one's
-advertisement and must choose again (**Choose another box…**).
+already paired. Chrome remembers each box chosen separately, all named
+`nacra` (two C6s chosen on different days are two, and `getDevices()` lists
+both, the one not here possibly first). The page keeps the id of the box it
+last chose or connected to (`localStorage` `studio.device.id`) and connects to
+that one; with several granted and none of them remembered or in range it
+watches all of them for an advertisement and takes the first (the log names
+it by the last 4 characters of its id, as does the header: `nacra ·CA5Q ·
+disconnected`). Nothing advertising answers `none of the 2 remembered boxes
+named 'nacra' advertised in 12 s`; for a different box than before, click
+**Choose another box…**.
 `chrome://flags/#enable-web-bluetooth-new-permissions-backend`
 must be Enabled for `getDevices()`. A Mac that holds an old pairing the box no
 longer has (the link drops while connecting) must forget `nacra` in System
-Settings → Bluetooth (sometimes listed only in the menu-bar Bluetooth menu);
-turning Bluetooth off and on once cleared a discovery stall.
+Settings → Bluetooth (sometimes listed only in the menu-bar Bluetooth menu).
 
 `test/fake-bluetooth.mjs` models the box: bonding (refused when not bonded
 and the window is closed, in both of Chrome's forms; paired by a write request

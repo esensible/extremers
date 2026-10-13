@@ -103,16 +103,146 @@ test('after a reload: "no longer in range" → watchAdvertisements → connect',
   assert.equal(dev.status().state, 'connected');
 });
 
-test('the box not advertising → not in range, with the Bluetooth off/on hint', async () => {
+test('the box not advertising → not in range, with the range hint', async () => {
   const { dev, device } = setup({ inRangeKnown: false });
   device.advertising = false;
   const e = await rejects(dev.connect(), /advertisement/);
   assert.equal(e.code, 'NOT_IN_RANGE');
   assert.match(e.hint, /powered and within range/);
   assert.match(e.hint, /both of its connection slots are taken: the watch plus another studio tab or window/);
-  assert.match(e.hint, /a different box/);
-  assert.match(e.hint, /Choose another box…/);
-  assert.match(e.hint, /Bluetooth off and on/);
+  assert.match(e.hint, /each box this page was given separately/);
+  assert.match(e.hint, /if this is a different box than before, click 'Choose another box…'/i);
+  assert.doesNotMatch(e.hint, /off and on/, 'toggling Bluetooth cleared nothing');
+});
+
+// ======================================== several boxes named 'nacra' granted
+
+/** A localStorage stand-in: getItem/setItem over a Map. */
+function memStorage(init = {}) {
+  const m = new Map(Object.entries(init));
+  return { map: m, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); } };
+}
+const GONE = 'SDFSYoOuOeYm1IJfqO0lsQ::';
+const HERE = 'e9rpKC4aQW/C44nrJaCA5Q::';
+const KEY = 'studio.device.id';
+
+test('two granted boxes named nacra, only the second here, none remembered: watch both, connect to the one advertising, remember it', async () => {
+  const storage = memStorage();
+  const { dev, device, absentDevices: [gone], bluetooth, lines } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+  assert.deepEqual((await bluetooth.getDevices()).map((d) => [d.id, d.name]), [[GONE, 'nacra'], [HERE, 'nacra']], 'the absent box first, as Chrome lists it');
+  const r = await dev.connect();
+  assert.equal(r.state, 'connected');
+  assert.equal(gone.watchCalls, 1, 'both watched at once');
+  assert.equal(device.watchCalls, 1);
+  assert.equal(gone.watching, false, 'every watch stopped');
+  assert.equal(gone.connectCalls, 0, 'never a connect to the box that is not here');
+  assert.equal(storage.map.get(KEY), HERE, 'the id persisted');
+  assert.ok(lines.some((l) => /nacra \(…CA5Q\) advertised first of 2/.test(l)), lines.join('\n'));
+  const s = dev.status();
+  assert.equal(s.deviceId, HERE);
+  assert.equal(s.candidates, 2);
+  assert.equal(bluetooth.requestDeviceCalls.length, 0);
+
+  // a reload: a fresh page, the box known in range now; straight to the remembered one
+  await dev.disconnect();
+  const before = { goneWatch: gone.watchCalls, goneConnect: gone.connectCalls, watch: device.watchCalls };
+  const fresh = createDevice({ bluetooth, storage, ...FAST });
+  await fresh.connect();
+  assert.equal(fresh.status().state, 'connected');
+  assert.equal(fresh.status().deviceId, HERE);
+  assert.equal(gone.watchCalls, before.goneWatch, 'the other box not watched');
+  assert.equal(gone.connectCalls, before.goneConnect);
+  assert.equal(device.watchCalls, before.watch, 'a direct connect, no advertisement wait');
+});
+
+test('two granted, the remembered one here but Chrome says "no longer in range" (a reload): it is watched with the other, connects', async () => {
+  const storage = memStorage({ [KEY]: HERE });
+  const { dev, device, absentDevices: [gone] } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+  assert.equal(dev.status().deviceId, HERE, 'remembered before getDevices');
+  await dev.connect();
+  assert.equal(dev.status().state, 'connected');
+  assert.equal(device.connectCalls, 2, 'a direct try, then after its advertisement');
+  assert.equal(gone.connectCalls, 0);
+});
+
+test('the remembered id is not among getDevices(): falls back to watching the candidates', async () => {
+  const storage = memStorage({ [KEY]: 'forgotten-box-id::' });
+  const { dev, device, absentDevices: [gone], lines } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+  await dev.connect();
+  assert.equal(dev.status().state, 'connected');
+  assert.equal(gone.watchCalls, 1);
+  assert.equal(device.watchCalls, 1);
+  assert.equal(storage.map.get(KEY), HERE, 'the one that answered is remembered now');
+  assert.ok(lines.some((l) => /none of them the remembered …x-id; watching all of them/.test(l)), lines.join('\n'));
+});
+
+test('the remembered box is the absent one: its direct connect is refused, then the one advertising', async () => {
+  const storage = memStorage({ [KEY]: GONE });
+  const { dev, absentDevices: [gone] } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+  await dev.connect();
+  assert.equal(dev.status().state, 'connected');
+  assert.equal(gone.connectCalls, 1, 'one direct try');
+  assert.equal(storage.map.get(KEY), HERE);
+  assert.equal(dev.status().deviceId, HERE);
+});
+
+test('two granted, none advertising: says what was tried, with the range hint', async () => {
+  const storage = memStorage();
+  const { dev, device } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+  device.advertising = false;
+  const e = await rejects(dev.connect(), /^none of the 2 remembered boxes named 'nacra' advertised in 0\.2 s$/);
+  assert.equal(e.code, 'NOT_IN_RANGE');
+  assert.match(e.hint, /both of its connection slots are taken/);
+  assert.match(e.hint, /if this is a different box than before, click 'Choose another box…'/i);
+  assert.equal(storage.map.has(KEY), false);
+  assert.equal(dev.status().state, 'disconnected');
+  // the box comes back: the next connect lists again, finds it
+  device.advertising = true;
+  await dev.connect();
+  assert.equal(dev.status().state, 'connected');
+});
+
+test('the chooser persists the picked box\'s id; connect() after a reload goes to it', async () => {
+  const storage = memStorage();
+  const { dev, device, absentDevices: [gone], bluetooth } = setup({ absent: [GONE], deviceId: HERE, remembered: false }, { storage });
+  bluetooth.chooserResult = device;
+  await dev.choose();
+  assert.equal(storage.map.get(KEY), HERE);
+  await dev.disconnect();
+  device.inRangeKnown = true;
+  const fresh = createDevice({ bluetooth, storage, ...FAST });
+  await fresh.lookRemembered();
+  assert.equal(fresh.status().candidates, 2);
+  assert.equal(fresh.status().deviceId, HERE);
+  await fresh.connect();
+  assert.equal(fresh.status().state, 'connected');
+  assert.equal(gone.connectCalls, 0);
+  assert.equal(gone.watchCalls, 0);
+});
+
+for (const [what, storage] of [
+  ['absent', null],
+  ['throwing', { getItem() { throw new Error('SecurityError: access denied'); }, setItem() { throw new Error('QuotaExceededError'); } }],
+]) {
+  test(`localStorage ${what}: two granted boxes still connect (to the one advertising)`, async () => {
+    const { dev, absentDevices: [gone] } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false }, { storage });
+    await dev.connect();
+    assert.equal(dev.status().state, 'connected');
+    assert.equal(dev.status().deviceId, HERE);
+    assert.equal(gone.connectCalls, 0);
+  });
+}
+
+test('localStorage itself throwing on access (blocked site data): still connects', async () => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('SecurityError: The operation is insecure.'); } });
+  try {
+    const { dev } = setup({ absent: [GONE], deviceId: HERE, inRangeKnown: false });
+    await dev.connect();
+    assert.equal(dev.status().state, 'connected');
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had); else delete globalThis.localStorage;
+  }
 });
 
 for (const form of ['mac', 'other']) {

@@ -10,6 +10,13 @@
 // time, subscribing with the pairing trigger, reconnecting after a drop, and
 // Chrome's errors mapped to what a person must do. The protocol is bundles.js.
 //
+// Chrome grants each box a page chooses separately and getDevices() lists all
+// of them, all named 'nacra' (two C6s chosen on different days are two). The
+// page keeps the id of the box it last chose or connected to (localStorage,
+// DEVICE_ID_KEY) and connects to that one; with several granted and none of
+// them remembered (or the remembered one refused as out of range) it watches
+// all of them for an advertisement and takes the first.
+//
 // Origins: dingo-cli/web/ble.js createBridge (the GATT queue, the remembered
 // device → advertisement → connect path, reconnect with backoff, the refusal
 // and stale-pairing mapping, the timeouts) and bundle/js/client.js (removed; in git history) (the UUIDs,
@@ -33,11 +40,22 @@ export const HINTS = {
   CHOOSE: "ask the person, in order: (1) if this Mac is not paired with the box yet, on the Kindle Choose → Settings → Pair watch (opens the box's pairing window for 2 minutes; named for the watch, it pairs any device, one per window); (2) click 'Choose the box…' (#device-choose, top right of the studio): Chrome's popup ('… wants to pair') only asks which device this page may talk to: pick 'nacra'; (3) accept macOS's pairing prompt that follows, if one comes. Chrome opens its chooser only from a person's click, and each browser origin must choose the box once even if the Mac is already paired. After that api.device.connect() works from script without prompts, also after a reload",
   FLAGS: 'for a remembered device without the chooser, chrome://flags/#enable-web-bluetooth-new-permissions-backend must be Enabled (then relaunch Chrome)',
   PAIR: "the box serves bundles only to a computer it has bonded with. Ask the person to open its pairing window: on the Kindle, Choose → Settings → Pair watch (2 minutes; named for the watch, it pairs any device, one device per window), or dev-pairing firmware: 120 s after boot; then api.device.connect() again, and the person accepts macOS's pairing prompt. If this computer was paired before the box lost its bond (provision, Forget all), it must first forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu)",
-  STALE: "this computer probably holds an old pairing with 'nacra' that the box no longer has: forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu), open the box's pairing window (Kindle: Choose → Settings → Pair watch), then api.device.connect() and accept macOS's pairing prompt. If the box is not found at all, turn the Mac's Bluetooth off and on",
-  RANGE: "the box was not seen advertising: is it powered and within range? It also stops advertising while both of its connection slots are taken: the watch plus another studio tab or window holding the link (disconnect there first: its Device panel's Disconnect, or close it). If it is free, this page may remember a different box (an earlier 'nacra'), whose advertisement Chrome waits for: ask the person to click 'Choose another box…' (#device-choose) and pick 'nacra'. Otherwise turn the Mac's Bluetooth off and on (that cleared a discovery stall before), then api.device.connect()",
+  STALE: "this computer probably holds an old pairing with 'nacra' that the box no longer has: forget 'nacra' in macOS System Settings → Bluetooth (it may only be listed in the menu-bar Bluetooth menu), open the box's pairing window (Kindle: Choose → Settings → Pair watch), then api.device.connect() and accept macOS's pairing prompt. If the box is not found at all, ask the person to click 'Choose another box…' (#device-choose) and pick 'nacra'",
+  RANGE: "the box was not seen advertising: is it powered and within range? It also stops advertising while both of its connection slots are taken: the watch plus another studio tab or window holding the link (disconnect there first: its Device panel's Disconnect, or close it). Chrome remembers each box this page was given separately (two 'nacra's chosen on different days are two boxes); connect() prefers the last one chosen and otherwise takes the one that advertises. If this is a different box than before, click 'Choose another box…' (#device-choose) and pick 'nacra', then api.device.connect()",
   NOT_GRANTED: "Chrome has not granted this page the bundle service on 'nacra' (it was picked before the service existed): ask the person to click 'Choose another box…' (#device-choose) and pick 'nacra' again",
   NOT_CONNECTED: 'api.device.connect() first (api.device.status() shows the link)',
 };
+
+/** Where the page keeps the id of the box it last chose or connected to. */
+export const DEVICE_ID_KEY = 'studio.device.id';
+
+/**
+ * A BluetoothDevice.id (stable per origin, base64 with '::' or '=' padding)
+ * as a short tag: its last 4 characters without the padding.
+ */
+export function idTag(id) {
+  return typeof id === 'string' && id ? id.replace(/[:=]+$/, '').slice(-4) : '';
+}
 
 export class LinkError extends Error {
   constructor(message, code, hint) { super(message); this.code = code; this.hint = hint; }
@@ -87,10 +105,14 @@ export function isRefusal(e) {
  *   reconnectDelayMs (1000)   backoff base (× the attempt number)
  *   pairAttempts (6)          subscriptions tried while the OS pairs
  *   pairRetryMs (2000)        between them (a person confirms the prompt meanwhile)
+ *   storage (localStorage)    where the chosen box's id is kept (getItem/setItem;
+ *                             null: nowhere). Every access is guarded: a
+ *                             missing or throwing storage only loses the preference.
  */
 export function createLink({
   bluetooth = globalThis.navigator?.bluetooth,
   log = () => {},
+  storage,
   connectTimeoutMs = 15000,
   advertTimeoutMs = 12000,
   reconnectTries = 3,
@@ -112,7 +134,21 @@ export function createLink({
   let reconnects = 0;
   let droppedWhileConnecting = false;
   let remembered = null; // true: Chrome holds a permission for the box; false: none; null: not looked yet (or getDevices is missing)
+  let grantedIds = null; // Set of the ids of the boxes named DEVICE_NAME Chrome has granted this page (null: not looked yet)
   const listening = new WeakSet();
+
+  // ---- the chosen box's id (localStorage; the page works without it)
+  function theStorage() {
+    try { return storage === undefined ? (globalThis.localStorage ?? null) : storage; } catch { return null; }
+  }
+  function storedId() {
+    try { return theStorage()?.getItem(DEVICE_ID_KEY) || null; } catch { return null; }
+  }
+  function storeId(id) {
+    if (!id) return;
+    try { theStorage()?.setItem(DEVICE_ID_KEY, id); } catch (e) { L('warn', `could not remember the box's id: ${errText(e)}`); }
+  }
+  const tagged = (dev) => `${dev.name || 'the box'} (…${idTag(dev.id)})`;
   const bundleListeners = new Set();
   const dataListeners = new Set();
   const dropListeners = new Set();
@@ -180,21 +216,42 @@ export function createLink({
     }
   }
 
-  async function waitForAdvertisement(dev) {
-    if (typeof dev.watchAdvertisements !== 'function') {
-      throw new LinkError(`'${dev.name || dev.id}' is not in range for Chrome, and this Chrome has no watchAdvertisements()`, 'NO_ADVERTISEMENTS', HINTS.FLAGS);
+  /**
+   * Watch advertisements on every device of `devs` at once (one
+   * AbortController each) for advertTimeoutMs → the first that advertises, or
+   * null. Every watch is stopped before it returns.
+   */
+  async function firstAdvertising(devs) {
+    const watchable = devs.filter((d) => typeof d.watchAdvertisements === 'function');
+    if (!watchable.length) {
+      throw new LinkError(`'${devs[0]?.name || devs[0]?.id}' is not in range for Chrome, and this Chrome has no watchAdvertisements()`, 'NO_ADVERTISEMENTS', HINTS.FLAGS);
     }
-    const ac = typeof AbortController === 'function' ? new AbortController() : null;
-    let handler;
-    const seen = new Promise((resolve) => { handler = resolve; dev.addEventListener('advertisementreceived', handler, { once: true }); });
+    const watches = watchable.map((dev) => {
+      const ac = typeof AbortController === 'function' ? new AbortController() : null;
+      let handler;
+      const seen = new Promise((resolve) => { handler = () => resolve(dev); dev.addEventListener('advertisementreceived', handler, { once: true }); });
+      return { dev, ac, handler, seen };
+    });
     try {
-      await dev.watchAdvertisements(ac ? { signal: ac.signal } : undefined);
-      await withTimeout(seen, advertTimeoutMs, `waiting for an advertisement from ${dev.name || dev.id}`).catch((e) => {
-        throw new LinkError(errText(e), 'NOT_IN_RANGE', HINTS.RANGE);
-      });
+      const started = await Promise.allSettled(watches.map((w) => w.dev.watchAdvertisements(w.ac ? { signal: w.ac.signal } : undefined)));
+      started.forEach((r, i) => { if (r.status === 'rejected') L('warn', `watchAdvertisements() on ${tagged(watches[i].dev)}: ${errText(r.reason)}`); });
+      if (started.every((r) => r.status === 'rejected')) throw started[0].reason;
+      let t;
+      const timeout = new Promise((resolve) => { t = setTimeout(() => resolve(null), advertTimeoutMs); });
+      try {
+        return await Promise.race([...watches.filter((w, i) => started[i].status === 'fulfilled').map((w) => w.seen), timeout]);
+      } finally { clearTimeout(t); }
     } finally {
-      dev.removeEventListener('advertisementreceived', handler);
-      try { ac?.abort(); } catch { /* ignore */ }
+      for (const w of watches) {
+        w.dev.removeEventListener('advertisementreceived', w.handler);
+        try { w.ac?.abort(); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  async function waitForAdvertisement(dev) {
+    if (!(await firstAdvertising([dev]))) {
+      throw new LinkError(`waiting for an advertisement from ${dev.name || dev.id} timed out after ${advertTimeoutMs} ms`, 'NOT_IN_RANGE', HINTS.RANGE);
     }
   }
 
@@ -242,7 +299,14 @@ export function createLink({
     throw new LinkError(`the box refused this computer: it is not bonded with 'nacra' (${pairAttempts} subscriptions refused; the last: ${errText(last)})`, 'NOT_BONDED', HINTS.PAIR);
   }
 
-  async function openLink(dev, fromReconnect) {
+  /**
+   * gatt.connect() and the bundle service on `dev`. `advert` says what to do
+   * when Chrome refuses the direct connect as out of range:
+   *   'wait'   watch for its advertisement, then connect again (one candidate)
+   *   'direct' fail with NOT_IN_RANGE (.direct: the caller watches several)
+   *   'seen'   an advertisement was just seen: no wait, a refusal is the box's
+   */
+  async function openLink(dev, fromReconnect, advert = 'wait') {
     let c;
     try {
       c = await gattConnect(dev);
@@ -250,10 +314,20 @@ export function createLink({
       const msg = errText(e);
       try { dev.gatt.disconnect(); } catch { /* ignore */ }
       if (e instanceof LinkError) throw e;
+      const outOfRange = /no longer in range|not in range|out of range|Connection attempt failed/i.test(msg);
+      if (advert === 'seen') {
+        if (/Connection attempt failed/i.test(msg)) e.afterAdvert = true;
+        throw e;
+      }
+      if (advert === 'direct' && outOfRange) {
+        const err = new LinkError(`${tagged(dev)} refused a direct connect (${msg})`, 'NOT_IN_RANGE', HINTS.RANGE);
+        err.direct = true;
+        throw err;
+      }
       // After a reload Chrome says "no longer in range" until it has seen an
       // advertisement; an advertisement also tells "the box is off" apart from
       // "the box is there and refuses the link" (a stale pairing).
-      if (/no longer in range|not in range|out of range|Connection attempt failed/i.test(msg) || fromReconnect) {
+      if (outOfRange || fromReconnect) {
         L('info', `direct connect failed (${msg}); waiting for an advertisement`);
         await waitForAdvertisement(dev);
         L('info', 'advertisement seen; connecting');
@@ -275,17 +349,18 @@ export function createLink({
     chars = c;
     lastError = null; lastHint = null;
     setState('connected');
-    L('info', `connected to ${dev.name || dev.id}; subscribed to bundle and data`);
+    L('info', `connected to ${tagged(dev)}; subscribed to bundle and data`);
+    storeId(dev.id);
   }
 
-  async function openDevice(dev, { fromReconnect = false } = {}) {
+  async function openDevice(dev, { fromReconnect = false, advert = 'wait' } = {}) {
     if (!listening.has(dev)) {
       dev.addEventListener('gattserverdisconnected', onDisconnected);
       listening.add(dev);
     }
     droppedWhileConnecting = false;
     try {
-      await openLink(dev, fromReconnect);
+      await openLink(dev, fromReconnect, advert);
     } catch (e) {
       try { dev.gatt.disconnect(); } catch { /* ignore */ }
       if (e.code === 'NOT_GRANTED' || e.code === 'NOT_BONDED' || e.code === 'NO_SERVICE' || e.code === 'NOT_IN_RANGE' || e.code === 'NO_ADVERTISEMENTS') throw e;
@@ -334,11 +409,46 @@ export function createLink({
       throw fail(err);
     }
     remembered = true; // the chooser grants the page the box
+    if (grantedIds) grantedIds.add(dev.id);
+    storeId(dev.id); // the box connect() prefers from now on, also after a reload
+    L('info', `chosen: ${tagged(dev)}`);
     if (isConnected() && (dev === device || dev.id === device?.id)) return { deviceName: dev.name, already: true };
     if (device && device !== dev) disconnect();
     device = dev;
     connecting = run(async () => { await openDevice(dev); return { deviceName: dev.name, already: false }; });
     try { return await connecting; } finally { connecting = null; }
+  }
+
+  /**
+   * Several granted boxes share the name: the remembered id's box by a direct
+   * connect, else (none remembered, not granted any more, or refused as out of
+   * range) whichever of them advertises first.
+   */
+  async function openOneOf(candidates) {
+    const want = storedId();
+    const preferred = want ? candidates.find((d) => d.id === want) : null;
+    if (preferred) {
+      L('info', `${candidates.length} boxes named '${DEVICE_NAME}' granted; trying the remembered one, ${tagged(preferred)}, directly`);
+      device = preferred;
+      try {
+        await openDevice(preferred, { advert: 'direct' });
+        return preferred;
+      } catch (e) {
+        if (!e.direct) throw e; // the box answered: its error is the one to tell
+        device = null;
+        L('info', `${errText(e)}; watching all ${candidates.length} for an advertisement`);
+      }
+    } else {
+      L('info', `${candidates.length} boxes named '${DEVICE_NAME}' granted, ${want ? `none of them the remembered …${idTag(want)}` : 'none remembered'}; watching all of them for an advertisement`);
+    }
+    const winner = await firstAdvertising(candidates);
+    if (!winner) {
+      throw new LinkError(`none of the ${candidates.length} remembered boxes named '${DEVICE_NAME}' advertised in ${advertTimeoutMs / 1000} s`, 'NOT_IN_RANGE', HINTS.RANGE);
+    }
+    L('info', `${tagged(winner)} advertised first of ${candidates.length}: connecting to it`);
+    device = winner;
+    await openDevice(winner, { advert: 'seen' });
+    return winner;
   }
 
   /** The remembered device, never the chooser (script calls). */
@@ -348,20 +458,27 @@ export function createLink({
     if (connecting) return connecting;
     connecting = run(async () => {
       requireBluetooth();
-      let dev = device;
-      if (!dev) {
-        if (typeof bluetooth.getDevices !== 'function') {
-          throw new LinkError("this Chrome cannot list remembered devices (no navigator.bluetooth.getDevices), so only the chooser can connect", 'NO_GET_DEVICES', `${HINTS.FLAGS}; meanwhile ${HINTS.CHOOSE}`);
-        }
-        const devs = await bluetooth.getDevices();
-        L('info', `getDevices(): ${devs.length ? devs.map((d) => d.name || d.id).join(', ') : 'none permitted'}`);
-        dev = devs.find((d) => d.name === DEVICE_NAME) || null;
-        remembered = !!dev;
+      if (device) {
+        L('info', `connecting to ${tagged(device)}`);
+        await openDevice(device);
+        return { deviceName: device.name, already: false };
       }
-      if (!dev) throw new LinkError(`no remembered '${DEVICE_NAME}': this page has never been given the box`, 'NEEDS_CHOOSER', HINTS.CHOOSE);
-      device = dev;
-      L('info', `connecting to ${dev.name || dev.id}`);
-      await openDevice(dev);
+      if (typeof bluetooth.getDevices !== 'function') {
+        throw new LinkError("this Chrome cannot list remembered devices (no navigator.bluetooth.getDevices), so only the chooser can connect", 'NO_GET_DEVICES', `${HINTS.FLAGS}; meanwhile ${HINTS.CHOOSE}`);
+      }
+      const devs = await bluetooth.getDevices();
+      L('info', `getDevices(): ${devs.length ? devs.map((d) => `${d.name || '?'} (…${idTag(d.id)})`).join(', ') : 'none permitted'}`);
+      const candidates = devs.filter((d) => d.name === DEVICE_NAME);
+      remembered = candidates.length > 0;
+      grantedIds = new Set(candidates.map((d) => d.id));
+      if (!candidates.length) throw new LinkError(`no remembered '${DEVICE_NAME}': this page has never been given the box`, 'NEEDS_CHOOSER', HINTS.CHOOSE);
+      if (candidates.length === 1) {
+        device = candidates[0];
+        L('info', `connecting to ${tagged(device)}`);
+        await openDevice(device);
+        return { deviceName: device.name, already: false };
+      }
+      const dev = await openOneOf(candidates);
       return { deviceName: dev.name, already: false };
     });
     try { return await connecting; } finally { connecting = null; }
@@ -410,9 +527,26 @@ export function createLink({
     if (!bluetooth || typeof bluetooth.getDevices !== 'function') return remembered;
     if (device) { remembered = true; return true; }
     let r = remembered;
-    try { r = (await bluetooth.getDevices()).some((d) => d.name === DEVICE_NAME); } catch (e) { L('warn', `getDevices(): ${errText(e)}`); }
-    if (r !== remembered) { remembered = r; emit(stateListeners, state); }
+    let ids = grantedIds;
+    try {
+      ids = new Set((await bluetooth.getDevices()).filter((d) => d.name === DEVICE_NAME).map((d) => d.id));
+      r = ids.size > 0;
+    } catch (e) { L('warn', `getDevices(): ${errText(e)}`); }
+    const before = candidatesCount();
+    grantedIds = ids;
+    if (r !== remembered || candidatesCount() !== before) { remembered = r; emit(stateListeners, state); }
     return remembered;
+  }
+
+  /** How many boxes named DEVICE_NAME Chrome has granted this page (null: not looked yet). */
+  function candidatesCount() { return grantedIds ? grantedIds.size : null; }
+
+  /** The box connect() works with: the one in hand, else the remembered id if Chrome still grants it. */
+  function currentId() {
+    if (device) return device.id ?? null;
+    const id = storedId();
+    if (!id) return null;
+    return !grantedIds || grantedIds.has(id) ? id : null;
   }
 
   const on = (set) => (cb) => { set.add(cb); return () => set.delete(cb); };
@@ -420,7 +554,7 @@ export function createLink({
   return {
     choose, connect, disconnect, write, writeData, waitConnected, isConnected, lookRemembered,
     onBundle: on(bundleListeners), onData: on(dataListeners), onDrop: on(dropListeners), onState: on(stateListeners),
-    info: () => ({ state, deviceName: device?.name ?? null, bonded, remembered, lastError, hint: lastHint, reconnects, bluetooth: !!bluetooth, reconnecting: !!reconnecting }),
+    info: () => ({ state, deviceName: device?.name ?? null, deviceId: currentId(), candidates: candidatesCount(), bonded, remembered, lastError, hint: lastHint, reconnects, bluetooth: !!bluetooth, reconnecting: !!reconnecting }),
     get state() { return state; },
   };
 }
