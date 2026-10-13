@@ -1,0 +1,15 @@
+let IDLE_MS = 10000;
+let next =
+  input.tag == "Step" ? {count: state.count + 1, recent: push_last(state.recent, now, 10), idle: false}
+  : input.tag == "Reset" ? {count: 0, recent: [], idle: false}
+  : input.tag == "Wake" ? {
+      count: state.count,
+      recent: state.recent,
+      idle: len(state.recent) > 0 && now >= last(state.recent) + IDLE_MS
+    }
+  : input.tag == "Location" ? state
+  : fail("steps: unknown input ", input.tag);
+{
+  state: next,
+  wake: next.idle || len(next.recent) == 0 ? nil : last(next.recent) + IDLE_MS
+}

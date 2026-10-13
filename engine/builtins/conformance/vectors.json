@@ -1,0 +1,348 @@
+{
+  "cases": [
+    {
+      "name": "distance",
+      "results": [
+        {
+          "ok": {
+            "bits": "40c268d0c53cab30",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "41703347555093e4",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "40d5b7bf0fa0ff21",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "distance from a fix (an extra field)",
+      "results": [
+        {
+          "ok": {
+            "bits": "4096958868c6adc6",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4096958868c6adc6",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "distance of int literals",
+      "results": [
+        {
+          "ok": {
+            "bits": "40fb25aed3893ead",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bearing",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4056800000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4066800000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4070e00000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4056800000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4046875c31dda080",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "courses cross",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "3fdfffb026a37589",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "3fdffffffffffffc",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c040eb31df34b0d3",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4062e815cee9dc50",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "courses cross within a range",
+      "results": [
+        {
+          "ok": {
+            "bits": "c08f380000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "3fdfffb026a37589",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "c08f380000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a negative range fails",
+      "results": [
+        {
+          "error": "courses_cross(pos1, heading1, pos2, heading2[, range]): range must be metres, 0 or more; got -1 (1:1)"
+        }
+      ]
+    },
+    {
+      "name": "lines cross",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "3fe00077c9ef214d",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "3fdfffffffffffff",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c040eb852218f68e",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4062e80418a81574",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a course crosses a start line",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c040eb85221b2166",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4062e7ffffffffdc",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "c08f380000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a crossing fed to distance",
+      "results": [
+        {
+          "ok": {
+            "bits": "40f3326adc98b752",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bearing to a crossing",
+      "results": [
+        {
+          "ok": {
+            "bits": "4046800000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4066800000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    }
+  ],
+  "oracle": "github.com/expr-lang/expr v1.17.9-0.20260412144015-3a46b1970b37 (v1.17.8 + PR #954), Optimize(false), arm64"
+}

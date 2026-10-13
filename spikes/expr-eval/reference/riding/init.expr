@@ -1,0 +1,12 @@
+// Riding: nothing heard from the GPS yet.
+{
+  t: nil,           // the latest time seen, epoch ms
+  last_fix: nil,    // {lat, lon}
+  metres: 0.0,      // distance ridden while not paused
+  ride_ms: 0,       // time ridden while not paused
+  paused: false,
+  speed: 0.0,       // km/h
+  gain: 0.0,        // metres climbed
+  ref_alt: nil,     // climbing: the last high counted; else the lowest since
+  climbing: false
+}

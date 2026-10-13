@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RidingView",
+  "description": "What the bike computer shows. Exactly these fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["speed_kmh", "avg_speed_kmh", "distance_km", "elevation_gain_m", "ride_time_ms", "paused"],
+  "properties": {
+    "speed_kmh": {
+      "type": "number",
+      "description": "Current speed, km/h. 0 before any GPS."
+    },
+    "avg_speed_kmh": {
+      "type": "number",
+      "description": "distance_km divided by ride time in hours. 0 while the ride time is 0."
+    },
+    "distance_km": {
+      "type": "number",
+      "description": "Distance ridden while not paused, km: the sum of the distances between successive fixes."
+    },
+    "elevation_gain_m": {
+      "type": "number",
+      "description": "Total climbing, metres, by the rule in TASK.md: a climb starts 3 m above the low point (counting the whole rise from it), counts every new high, and ends 3 m below its high. Never decreases."
+    },
+    "ride_time_ms": {
+      "type": "integer",
+      "description": "Time since the first GPS fix, ms, not counting time paused."
+    },
+    "paused": {
+      "type": "boolean",
+      "description": "true between a PauseResume that pauses and the next one."
+    }
+  }
+}

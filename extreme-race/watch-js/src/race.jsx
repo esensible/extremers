@@ -2,7 +2,7 @@
 // (a tick loop, each minute) on the finish button, behind the confirm
 // widget (2 taps). Entering the race from the sequence also buzzes the gun
 // if the countdown's own tick did not (haptics.jsx).
-import { startTime, speed, heading, state, STATE_SEQ, STATE_RACE, raceConfirm } from "./common.jsx";
+import { startTime, speed, heading, phase, COUNTDOWN, RACING, raceConfirm } from "./common.jsx";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { postEvent, timestamp, previousPhase } from "./api.js";
 import { raceStarted } from "./haptics.jsx";
@@ -12,7 +12,7 @@ const [raceTime, setRaceTime] = createSignal("0:00");
 const [Confirm, doConfirm] = raceConfirm();
 
 createEffect(() => {
-  if (state() !== STATE_RACE) {
+  if (phase() !== RACING) {
     return;
   }
   var timerId = null;
@@ -25,7 +25,7 @@ createEffect(() => {
   });
 
   // the device switched from the sequence to the race: the gun just went
-  if (previousPhase() === STATE_SEQ && startTime() !== null) {
+  if (previousPhase() === COUNTDOWN && startTime() !== null) {
     raceStarted(timestamp() - startTime());
   }
 
@@ -57,7 +57,7 @@ createEffect(() => {
 });
 
 export const finishClick = () => {
-  doConfirm(() => { postEvent({ tag: "RaceFinish" }); }, 2);
+  doConfirm(() => { postEvent({ race_finish: {} }); }, 2);
 };
 
 // props: the screen ({ width, height }), for the confirm button

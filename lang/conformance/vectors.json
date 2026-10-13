@@ -1,0 +1,3631 @@
+{
+  "cases": [
+    {
+      "name": "int literals",
+      "results": [
+        {
+          "ok": {
+            "int": "1016",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "float literal",
+      "results": [
+        {
+          "ok": {
+            "bits": "408f540000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "add wraps",
+      "results": [
+        {
+          "ok": {
+            "int": "-9223372036854775808",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mul wraps",
+      "results": [
+        {
+          "ok": {
+            "int": "-2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "neg wraps",
+      "results": [
+        {
+          "ok": {
+            "int": "-9223372036854775808",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-7",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "div gives a float",
+      "results": [
+        {
+          "ok": {
+            "bits": "400c000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "c00c000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "div by zero is inf or nan",
+      "results": [
+        {
+          "ok": {
+            "bits": "7ff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "fff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "7ff8000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mod has the sign of the left",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:3)"
+        }
+      ]
+    },
+    {
+      "name": "pow",
+      "results": [
+        {
+          "ok": {
+            "bits": "4022000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4002000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "pow is right associative",
+      "results": [
+        {
+          "ok": {
+            "bits": "4080000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "unary minus binds looser than pow",
+      "results": [
+        {
+          "ok": {
+            "bits": "c010000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "pow of a negative",
+      "results": [
+        {
+          "ok": {
+            "bits": "3fe0000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "precedence",
+      "results": [
+        {
+          "ok": {
+            "bits": "4014000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "parentheses",
+      "results": [
+        {
+          "ok": {
+            "int": "9",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mixed int and float",
+      "results": [
+        {
+          "ok": {
+            "bits": "3ff8000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "comparisons",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "int equals float",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "chained comparison",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "chain of three",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "equality doesn't chain",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "and short-circuits",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:8)"
+        }
+      ]
+    },
+    {
+      "name": "or short-circuits",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:8)"
+        }
+      ]
+    },
+    {
+      "name": "not",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "word operators",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce",
+      "results": [
+        {
+          "ok": {
+            "int": "7",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce chains",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce binds tighter than unary minus",
+      "results": [
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce binds tighter than plus",
+      "results": [
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce binds tighter than pow",
+      "results": [
+        {
+          "ok": {
+            "bits": "4022000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "403b000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "coalesce then ternary",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "not of a coalesce",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ternary",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nested ternary",
+      "results": [
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ternary mixing int and float",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4004000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "if else if",
+      "results": [
+        {
+          "ok": {
+            "kind": "string",
+            "string": "pos"
+          }
+        },
+        {
+          "ok": {
+            "kind": "string",
+            "string": "neg"
+          }
+        },
+        {
+          "ok": {
+            "kind": "string",
+            "string": "zero"
+          }
+        }
+      ]
+    },
+    {
+      "name": "let",
+      "results": [
+        {
+          "ok": {
+            "int": "49",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "49",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "let inside a branch",
+      "results": [
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "let in a parenthesised operand",
+      "results": [
+        {
+          "ok": {
+            "int": "16",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "string equality",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "enum passes through",
+      "results": [
+        {
+          "ok": {
+            "kind": "string",
+            "string": "a"
+          }
+        },
+        {
+          "ok": {
+            "kind": "string",
+            "string": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "string literals into an enum",
+      "results": [
+        {
+          "ok": {
+            "kind": "string",
+            "string": "a"
+          }
+        },
+        {
+          "ok": {
+            "kind": "string",
+            "string": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nil equality",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nil isn't zero",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "arithmetic on nil fails",
+      "results": [
+        {
+          "error": "invalid operation: \u003cnil\u003e + int (1:3)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "comparing nil fails",
+      "results": [
+        {
+          "error": "invalid operation: \u003cnil\u003e \u003e int (1:3)"
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "abs",
+      "results": [
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-9223372036854775808",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "abs of a float",
+      "results": [
+        {
+          "ok": {
+            "bits": "4004000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "8000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "int truncates and saturates",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "9223372036854775807",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-9223372036854775808",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "int of nan",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "float",
+      "results": [
+        {
+          "ok": {
+            "bits": "3fe8000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "round half away from zero",
+      "results": [
+        {
+          "ok": {
+            "bits": "4008000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "c008000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4008000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "floor and ceil",
+      "results": [
+        {
+          "ok": {
+            "bits": "4040000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "c037000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "int of round",
+      "results": [
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "min keeps the first winner",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "min and max of mixed numbers",
+      "results": [
+        {
+          "ok": {
+            "bits": "3ff8000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4018000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "max of three ints",
+      "results": [
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "9",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "7",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a nan in first place sticks",
+      "results": [
+        {
+          "ok": {
+            "bits": "7ff8000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a later nan is skipped",
+      "results": [
+        {
+          "ok": {
+            "bits": "3ff0000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "clamped into a range",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "50",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "100",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "comments",
+      "results": [
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record fields",
+      "results": [
+        {
+          "ok": {
+            "bits": "405d700000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bracket field",
+      "results": [
+        {
+          "ok": {
+            "bits": "c040c00000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "optional field",
+      "results": [
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "405e200000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record literal leaves out an optional field",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record literal passes an optional field on",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "alt": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "lat": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a record passes through",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "alt": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "lat": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a state update",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "best": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              },
+              "count": {
+                "int": "1",
+                "kind": "int"
+              },
+              "last": {
+                "fields": {
+                  "lat": {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "best": {
+                "bits": "4023000000000000",
+                "kind": "float"
+              },
+              "count": {
+                "int": "8",
+                "kind": "int"
+              },
+              "last": {
+                "fields": {
+                  "alt": {
+                    "bits": "4024000000000000",
+                    "kind": "float"
+                  },
+                  "lat": {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "optional chain",
+      "results": [
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4010000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "dot on a nil record fails",
+      "results": [
+        {
+          "error": "cannot fetch count from \u003cnil\u003e (1:3)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a later dot after ?. still fails on nil",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "error": "cannot fetch lat from \u003cnil\u003e (1:9)"
+        },
+        {
+          "ok": {
+            "bits": "4010000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "parenthesised chain continues",
+      "results": [
+        {
+          "ok": {
+            "bits": "4014000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4010000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record compared with nil",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record not nil",
+      "results": [
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "records in a ternary",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "alt": {
+                "bits": "401c000000000000",
+                "kind": "float"
+              },
+              "lat": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4018000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record default",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "count": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "best": {
+                "bits": "3ff8000000000000",
+                "kind": "float"
+              },
+              "count": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "field of a record default",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record let",
+      "results": [
+        {
+          "ok": {
+            "int": "15",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record returned from a scope",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "field of a computed record",
+      "results": [
+        {
+          "ok": {
+            "bits": "3ff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4022000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "len",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum of ints",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "29",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum of floats",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "bits": "3fe3333333333334",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum with an expression",
+      "results": [
+        {
+          "ok": {
+            "int": "12",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum of a map",
+      "results": [
+        {
+          "ok": {
+            "int": "14",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum of a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "map over a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "60",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "count with a predicate",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "count of bools",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mean",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4002aaaaaaaaaaab",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mean of ints",
+      "results": [
+        {
+          "ok": {
+            "bits": "3ff8000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "min and max of a list",
+      "results": [
+        {
+          "ok": {
+            "int": "301",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-101",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "505",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "min of floats",
+      "results": [
+        {
+          "ok": {
+            "bits": "bfe0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "any all none one",
+      "results": [
+        {
+          "ok": {
+            "int": "110",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1111",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1100",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "find and findLast",
+      "results": [
+        {
+          "ok": {
+            "int": "23",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-11",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findIndex and findLastIndex",
+      "results": [
+        {
+          "ok": {
+            "int": "12",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-11",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-11",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findLast as an operand (expr PR #954)",
+      "results": [
+        {
+          "ok": {
+            "int": "303",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "301",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findLast compared and called (expr PR #954)",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findLast in a record literal (expr issue #950)",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "i": {
+                "int": "4",
+                "kind": "int"
+              },
+              "r": {
+                "int": "5",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "i": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "r": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findLast over a filter as an operand",
+      "results": [
+        {
+          "ok": {
+            "int": "54",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findIndex over a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "first and last",
+      "results": [
+        {
+          "ok": {
+            "int": "13",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-11",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "77",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "first of a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "22",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "50",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-11",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "indexing",
+      "results": [
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "30",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:3)"
+        },
+        {
+          "error": "index out of range: -1 (array length is 3) (1:3)"
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:3)"
+        }
+      ]
+    },
+    {
+      "name": "indexing a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:18)"
+        }
+      ]
+    },
+    {
+      "name": "get",
+      "results": [
+        {
+          "ok": {
+            "int": "20",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "30",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "in",
+      "results": [
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reduce",
+      "results": [
+        {
+          "ok": {
+            "int": "123",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reduce without an initial value",
+      "results": [
+        {
+          "ok": {
+            "int": "123",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "reduce of empty array with no initial value (1:1)"
+        }
+      ]
+    },
+    {
+      "name": "reduce with #index",
+      "results": [
+        {
+          "ok": {
+            "int": "20",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reduce without init, with #index",
+      "results": [
+        {
+          "ok": {
+            "int": "106",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a record accumulator",
+      "results": [
+        {
+          "ok": {
+            "bits": "4000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "#index in map",
+      "results": [
+        {
+          "ok": {
+            "int": "20",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "#index after a filter",
+      "results": [
+        {
+          "ok": {
+            "int": "112",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fields of list items",
+      "results": [
+        {
+          "ok": {
+            "bits": "4016000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "the last fix",
+      "results": [
+        {
+          "ok": {
+            "bits": "4028000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "3ff8000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "error": "index out of range: -1 (array length is 0) (1:3)"
+        }
+      ]
+    },
+    {
+      "name": "find a fix",
+      "results": [
+        {
+          "ok": {
+            "bits": "4010000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a found fix as a record",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "alt": {
+                "bits": "4022000000000000",
+                "kind": "float"
+              },
+              "lat": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a list in a record",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2920",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum of a nil list fails",
+      "results": [
+        {
+          "error": "reflect: call of reflect.Value.Len on zero Value (1:1)"
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "first and in of a nil list",
+      "results": [
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "103",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "list literals",
+      "results": [
+        {
+          "ok": {
+            "int": "27",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "33",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:40)"
+        }
+      ]
+    },
+    {
+      "name": "a literal of mixed numbers",
+      "results": [
+        {
+          "ok": {
+            "bits": "4004000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "int": "9",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a literal of records",
+      "results": [
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "pipes",
+      "results": [
+        {
+          "ok": {
+            "int": "10",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a braced predicate",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a pipeline used twice",
+      "results": [
+        {
+          "ok": {
+            "int": "52",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a nested predicate",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a list handle through ?: and let",
+      "results": [
+        {
+          "ok": {
+            "int": "201",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "109",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "field of a literal",
+      "results": [
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a pace",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4072c00000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: != nil",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: == nil narrows the other branch",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: nil on the left, and not",
+      "results": [
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "8",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: a record",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "count": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "best": {
+                "bits": "3ff8000000000000",
+                "kind": "float"
+              },
+              "count": {
+                "int": "4",
+                "kind": "int"
+              },
+              "last": {
+                "fields": {
+                  "lat": {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  "lon": {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: an optional field and its prefix",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "lat": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "alt": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              },
+              "lat": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "lon": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: fields of a narrowed record",
+      "results": [
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "20",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "31",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: through \u0026\u0026",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: the right of \u0026\u0026 and of ||",
+      "results": [
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: || narrows the else branch",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: through a boolean let",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "0",
+                "kind": "int"
+              },
+              "b": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "0",
+                "kind": "int"
+              },
+              "b": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "2",
+                "kind": "int"
+              },
+              "b": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: a let name",
+      "results": [
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4018000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: ?? on a narrowed value",
+      "results": [
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: a builtin's arguments",
+      "results": [
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "bff0000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "401c000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "400c000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: a builtin's argument through a let",
+      "results": [
+        {
+          "ok": {
+            "bits": "0000000000000000",
+            "kind": "float"
+          }
+        },
+        {
+          "ok": {
+            "bits": "401e000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "narrowing: a list item's field",
+      "results": [
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "bits": "4028000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: build each one",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "6",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: pass through",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: a group passes through a field",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: read through narrowing",
+      "results": [
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: dispatch on an event",
+      "results": [
+        {
+          "ok": {
+            "int": "100",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: a default with variants",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "line": {
+                "fields": {},
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "line": {
+                "fields": {
+                  "a": {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                },
+                "kind": "record"
+              },
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: through a let",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: an optional group with a default",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "2",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: beside ordinary fields",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "id": {
+                "int": "1",
+                "kind": "int"
+              },
+              "queued": {
+                "fields": {},
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "done": {
+                "fields": {
+                  "code": {
+                    "int": "42",
+                    "kind": "int"
+                  }
+                },
+                "kind": "record"
+              },
+              "id": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "variants: a state machine",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "countdown": {
+                    "fields": {
+                      "gun": {
+                        "int": "100",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "100",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "idle": {
+                    "fields": {},
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "phase": {
+                "fields": {
+                  "racing": {
+                    "fields": {
+                      "gun": {
+                        "int": "100",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record let: written out, then read by field",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {
+                      "a": {
+                        "int": "8",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "countdown": {
+                        "fields": {
+                          "gun": {
+                            "int": "7",
+                            "kind": "int"
+                          }
+                        },
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "wake": {
+                "int": "7",
+                "kind": "int"
+              },
+              "z": {
+                "int": "80",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {},
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "idle": {
+                        "fields": {},
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "z": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {
+                      "a": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "racing": {
+                        "fields": {
+                          "gun": {
+                            "int": "5",
+                            "kind": "int"
+                          }
+                        },
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "z": {
+                "int": "30",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {},
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "countdown": {
+                        "fields": {
+                          "gun": {
+                            "int": "9",
+                            "kind": "int"
+                          }
+                        },
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              },
+              "wake": {
+                "int": "9",
+                "kind": "int"
+              },
+              "z": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record let: read by field before it's written out",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "8",
+                "kind": "int"
+              },
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {
+                      "a": {
+                        "int": "8",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "countdown": {
+                        "fields": {
+                          "gun": {
+                            "int": "7",
+                            "kind": "int"
+                          }
+                        },
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "3",
+                "kind": "int"
+              },
+              "state": {
+                "fields": {
+                  "line": {
+                    "fields": {
+                      "a": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "phase": {
+                    "fields": {
+                      "idle": {
+                        "fields": {},
+                        "kind": "record"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                },
+                "kind": "record"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "record let: written out inside a field, past another let",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "out": {
+                "fields": {
+                  "s": {
+                    "fields": {
+                      "x": {
+                        "int": "4",
+                        "kind": "int"
+                      },
+                      "y": {
+                        "int": "8",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "w": {
+                    "int": "20",
+                    "kind": "int"
+                  }
+                },
+                "kind": "record"
+              },
+              "z": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "out": {
+                "fields": {
+                  "s": {
+                    "fields": {
+                      "x": {
+                        "int": "-3",
+                        "kind": "int"
+                      },
+                      "y": {
+                        "int": "-6",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  "w": {
+                    "int": "-15",
+                    "kind": "int"
+                  }
+                },
+                "kind": "record"
+              },
+              "z": {
+                "int": "-3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    }
+  ],
+  "oracle": "github.com/expr-lang/expr v1.17.9-0.20260412144015-3a46b1970b37 (v1.17.8 + PR #954), Optimize(false), arm64"
+}

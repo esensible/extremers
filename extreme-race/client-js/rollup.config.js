@@ -4,6 +4,8 @@ import postcss from 'rollup-plugin-postcss';
 import terser from '@rollup/plugin-terser';
 import resolve from '@rollup/plugin-node-resolve';
 import image from '@rollup/plugin-image';
+import commonjs from '@rollup/plugin-commonjs';
+import { raceWire } from '../race-wire.mjs';
 
 export default {
   input: 'src/index.jsx',
@@ -19,6 +21,11 @@ export default {
   cache: false,
   plugins: [
     resolve(),
+    // the race engine's wire descriptors, compiled at build time
+    // ("race-wire", ../race-wire.mjs)
+    raceWire(),
+    // the wire codec (wire/js/codec.js) is CommonJS / a classic script
+    commonjs(),
     image(),
     // Two passes: Solid's JSX first, then preset-env on the result. In one
     // pass, preset-env's transforms can make babel-preset-solid lose a

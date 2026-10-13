@@ -2514,6 +2514,1227 @@
       "encode_refusals": []
     },
     {
+      "name": "variants",
+      "about": "A record with variants and no plain fields: a oneOf whose alternatives each have one required property, the variant, holding an object. The value has exactly one variant key. Variant index in bitLength(n - 1) bits of the bit byte, then the variant as an object.",
+      "schema": {
+        "oneOf": [
+          {
+            "properties": {
+              "idle": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "idle"
+            ]
+          },
+          {
+            "properties": {
+              "countdown": {
+                "type": "object",
+                "properties": {
+                  "gun": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                },
+                "required": [
+                  "gun"
+                ]
+              }
+            },
+            "required": [
+              "countdown"
+            ]
+          },
+          {
+            "properties": {
+              "racing": {
+                "type": "object",
+                "properties": {
+                  "gun": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "lap": {
+                    "type": "integer",
+                    "format": "uint8"
+                  }
+                },
+                "required": [
+                  "gun"
+                ]
+              }
+            },
+            "required": [
+              "racing"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"idle\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"idle\"]},{\"type\":\"object\",\"properties\":{\"countdown\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"gun\"]}},\"required\":[\"countdown\"]},{\"type\":\"object\",\"properties\":{\"racing\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"},\"lap\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"gun\"]}},\"required\":[\"racing\"]}]}",
+      "hash": "b37289aceb98b339",
+      "descriptor": "01b37289aceb98b339071200020c0f00000f0101090f020209820469646c6509636f756e74646f776e06726163696e670367756e0367756e036c6170",
+      "cases": [
+        {
+          "name": "empty variant",
+          "value": {
+            "idle": {}
+          },
+          "wire": "00"
+        },
+        {
+          "name": "countdown",
+          "value": {
+            "countdown": {
+              "gun": 1790000000000
+            }
+          },
+          "wire": "0180b083c59868"
+        },
+        {
+          "name": "racing without the optional",
+          "value": {
+            "racing": {
+              "gun": 1790000000000
+            }
+          },
+          "wire": "0280b083c59868"
+        },
+        {
+          "name": "racing with the optional",
+          "value": {
+            "racing": {
+              "gun": -1,
+              "lap": 3
+            }
+          },
+          "wire": "060103"
+        },
+        {
+          "name": "undeclared keys are ignored",
+          "value": {
+            "zzz": 1,
+            "idle": {
+              "x": 2
+            }
+          },
+          "wire": "00",
+          "decoded": {
+            "idle": {}
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "index 3 of 3",
+          "wire": "03",
+          "error": "invalid"
+        },
+        {
+          "name": "countdown with its varint missing",
+          "wire": "01",
+          "error": "truncated"
+        },
+        {
+          "name": "unused bits set",
+          "wire": "04",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "no variant key",
+          "value": {},
+          "error": "shape"
+        },
+        {
+          "name": "two variant keys",
+          "value": {
+            "idle": {},
+            "countdown": {
+              "gun": 1
+            }
+          },
+          "error": "shape"
+        },
+        {
+          "name": "variant value not an object",
+          "value": {
+            "countdown": 5
+          },
+          "error": "shape"
+        },
+        {
+          "name": "variant value is an array",
+          "value": {
+            "idle": []
+          },
+          "error": "shape"
+        },
+        {
+          "name": "variant value null",
+          "value": {
+            "idle": null
+          },
+          "error": "shape"
+        },
+        {
+          "name": "unknown key only",
+          "value": {
+            "paused": {}
+          },
+          "error": "shape"
+        },
+        {
+          "name": "not an object",
+          "value": "idle",
+          "error": "shape"
+        },
+        {
+          "name": "variant missing a required field",
+          "value": {
+            "countdown": {}
+          },
+          "error": "shape"
+        },
+        {
+          "name": "variant field out of range",
+          "value": {
+            "racing": {
+              "gun": 0,
+              "lap": 256
+            }
+          },
+          "error": "range"
+        }
+      ]
+    },
+    {
+      "name": "variants spelled differently",
+      "about": "The same record as \"variants\", written with type \"object\" everywhere, an empty properties, and $ref: same canonical form, hash and descriptor.",
+      "schema": {
+        "$defs": {
+          "Gun": {
+            "type": "object",
+            "properties": {
+              "gun": {
+                "type": "integer",
+                "format": "int64"
+              }
+            },
+            "required": [
+              "gun"
+            ]
+          },
+          "Countdown": {
+            "type": "object",
+            "properties": {
+              "countdown": {
+                "$ref": "#/$defs/Gun"
+              }
+            },
+            "required": [
+              "countdown"
+            ],
+            "title": "ignored"
+          }
+        },
+        "type": "object",
+        "properties": {},
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "idle": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            "required": [
+              "idle"
+            ]
+          },
+          {
+            "$ref": "#/$defs/Countdown"
+          },
+          {
+            "properties": {
+              "racing": {
+                "type": "object",
+                "properties": {
+                  "gun": {
+                    "type": "integer"
+                  },
+                  "lap": {
+                    "type": "integer",
+                    "format": "uint8"
+                  }
+                },
+                "required": [
+                  "gun"
+                ]
+              }
+            },
+            "required": [
+              "racing"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"idle\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"idle\"]},{\"type\":\"object\",\"properties\":{\"countdown\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"gun\"]}},\"required\":[\"countdown\"]},{\"type\":\"object\",\"properties\":{\"racing\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"},\"lap\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"gun\"]}},\"required\":[\"racing\"]}]}",
+      "hash": "b37289aceb98b339",
+      "descriptor": "01b37289aceb98b339071200020c0f00000f0101090f020209820469646c6509636f756e74646f776e06726163696e670367756e0367756e036c6170",
+      "cases": [
+        {
+          "name": "countdown",
+          "value": {
+            "countdown": {
+              "gun": 1790000000000
+            }
+          },
+          "wire": "0180b083c59868"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": []
+    },
+    {
+      "name": "variants beside plain fields",
+      "about": "Plain properties beside oneOf are ordinary fields, written first; then the variant index; then the variant. Decoded with the plain fields first, then the variant key.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "speed": {
+            "type": "number",
+            "format": "float"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "speed",
+          "name"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "idle": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "idle"
+            ]
+          },
+          {
+            "properties": {
+              "countdown": {
+                "type": "object",
+                "properties": {
+                  "gun": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                },
+                "required": [
+                  "gun"
+                ]
+              }
+            },
+            "required": [
+              "countdown"
+            ]
+          },
+          {
+            "properties": {
+              "racing": {
+                "type": "object",
+                "properties": {
+                  "gun": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "lap": {
+                    "type": "integer",
+                    "format": "uint8"
+                  }
+                },
+                "required": [
+                  "gun"
+                ]
+              }
+            },
+            "required": [
+              "racing"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"speed\":{\"type\":\"number\",\"format\":\"float\"},\"name\":{\"type\":\"string\"}},\"required\":[\"speed\",\"name\"],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"idle\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"idle\"]},{\"type\":\"object\",\"properties\":{\"countdown\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"gun\"]}},\"required\":[\"countdown\"]},{\"type\":\"object\",\"properties\":{\"racing\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"},\"lap\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"gun\"]}},\"required\":[\"racing\"]}]}",
+      "hash": "af82e7bf5e0cecb0",
+      "descriptor": "01af82e7bf5e0cecb0091202020e0a0c0f00000f0101090f02020982057370656564046e616d650469646c6509636f756e74646f776e06726163696e670367756e0367756e036c6170",
+      "cases": [
+        {
+          "name": "idle",
+          "value": {
+            "speed": 1.5,
+            "name": "a",
+            "idle": {}
+          },
+          "wire": "0000c03f016100",
+          "value_f64": {
+            "/speed": "3ff8000000000000"
+          }
+        },
+        {
+          "name": "racing",
+          "value": {
+            "speed": 0,
+            "name": "",
+            "racing": {
+              "gun": 1790000000000,
+              "lap": 1
+            }
+          },
+          "wire": "00000000000680b083c5986801"
+        },
+        {
+          "name": "keys in any order",
+          "value": {
+            "racing": {
+              "gun": 7
+            },
+            "name": "b",
+            "speed": 2
+          },
+          "wire": "000000400162020e",
+          "decoded": {
+            "speed": 2,
+            "name": "b",
+            "racing": {
+              "gun": 7
+            }
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "variant index missing",
+          "wire": "0000c03f00",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "missing plain field",
+          "value": {
+            "name": "a",
+            "idle": {}
+          },
+          "error": "shape"
+        },
+        {
+          "name": "no variant key",
+          "value": {
+            "speed": 1,
+            "name": "a"
+          },
+          "error": "shape"
+        },
+        {
+          "name": "two variant keys",
+          "value": {
+            "speed": 1,
+            "name": "a",
+            "idle": {},
+            "racing": {
+              "gun": 1
+            }
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "optional fields and the variant index",
+      "about": "Presence bits, booleans and the variant index share the stream-wide bit byte: here all in one byte, around a raw uint8.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "boolean"
+          },
+          "n": {
+            "type": "integer",
+            "format": "uint8"
+          },
+          "b": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "p": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "p"
+            ]
+          },
+          {
+            "properties": {
+              "q": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "q"
+            ]
+          },
+          {
+            "properties": {
+              "r": {
+                "type": "object",
+                "properties": {
+                  "v": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "v"
+                ]
+              }
+            },
+            "required": [
+              "r"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"boolean\"},\"n\":{\"type\":\"integer\",\"format\":\"uint8\"},\"b\":{\"type\":\"boolean\"}},\"required\":[\"n\"],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"p\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"p\"]},{\"type\":\"object\",\"properties\":{\"q\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"q\"]},{\"type\":\"object\",\"properties\":{\"r\":{\"type\":\"object\",\"properties\":{\"v\":{\"type\":\"boolean\"}},\"required\":[\"v\"]}},\"required\":[\"r\"]}]}",
+      "hash": "e5b3b76ae975134e",
+      "descriptor": "01e5b3b76ae975134e081203020d8102810f00000f00000f0101010161016e01620170017101720176",
+      "cases": [
+        {
+          "name": "nothing optional, p",
+          "value": {
+            "n": 0,
+            "p": {}
+          },
+          "wire": "0000"
+        },
+        {
+          "name": "all present, r",
+          "value": {
+            "a": true,
+            "n": 255,
+            "b": true,
+            "r": {
+              "v": true
+            }
+          },
+          "wire": "6fff"
+        },
+        {
+          "name": "b only, q",
+          "value": {
+            "n": 9,
+            "b": false,
+            "q": {}
+          },
+          "wire": "0a09"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "byte after the message",
+          "wire": "000000",
+          "error": "trailing"
+        },
+        {
+          "name": "index 3 of 3",
+          "wire": "0c00",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": []
+    },
+    {
+      "name": "nested variants",
+      "about": "A variant's object may have variants of its own, with plain fields beside them, to any depth; a variant may be given by $ref.",
+      "schema": {
+        "$defs": {
+          "Auto": {
+            "properties": {
+              "auto": {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "integer",
+                    "format": "int16"
+                  }
+                },
+                "required": [
+                  "target"
+                ]
+              }
+            },
+            "required": [
+              "auto"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "off": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "off"
+            ]
+          },
+          {
+            "properties": {
+              "on": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "integer",
+                    "format": "uint8"
+                  }
+                },
+                "required": [
+                  "level"
+                ],
+                "oneOf": [
+                  {
+                    "properties": {
+                      "manual": {
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "manual"
+                    ]
+                  },
+                  {
+                    "$ref": "#/$defs/Auto"
+                  },
+                  {
+                    "properties": {
+                      "deep": {
+                        "oneOf": [
+                          {
+                            "properties": {
+                              "x": {
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "x"
+                            ]
+                          },
+                          {
+                            "properties": {
+                              "y": {
+                                "type": "object",
+                                "properties": {
+                                  "s": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "s"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "y"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "deep"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "on"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"off\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"off\"]},{\"type\":\"object\",\"properties\":{\"on\":{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"level\"],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"manual\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"manual\"]},{\"type\":\"object\",\"properties\":{\"auto\":{\"type\":\"object\",\"properties\":{\"target\":{\"type\":\"integer\",\"format\":\"int16\"}},\"required\":[\"target\"]}},\"required\":[\"auto\"]},{\"type\":\"object\",\"properties\":{\"deep\":{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"x\"]},{\"type\":\"object\",\"properties\":{\"y\":{\"type\":\"object\",\"properties\":{\"s\":{\"type\":\"string\"}},\"required\":[\"s\"]}},\"required\":[\"y\"]}]}},\"required\":[\"deep\"]}]}},\"required\":[\"on\"]}]}",
+      "hash": "817ab8e2955d3656",
+      "descriptor": "01817ab8e2955d36560b1200011a0f000012010213020f00000f010105120001070f00000f01010c036f6666026f6e056c6576656c066d616e75616c046175746f046465657006746172676574017801790173",
+      "cases": [
+        {
+          "name": "off",
+          "value": {
+            "off": {}
+          },
+          "wire": "00"
+        },
+        {
+          "name": "on, manual",
+          "value": {
+            "on": {
+              "level": 3,
+              "manual": {}
+            }
+          },
+          "wire": "0103"
+        },
+        {
+          "name": "on, auto",
+          "value": {
+            "on": {
+              "level": 200,
+              "auto": {
+                "target": -300
+              }
+            }
+          },
+          "wire": "03c8d704"
+        },
+        {
+          "name": "on, deep x",
+          "value": {
+            "on": {
+              "level": 0,
+              "deep": {
+                "x": {}
+              }
+            }
+          },
+          "wire": "0500"
+        },
+        {
+          "name": "on, deep y",
+          "value": {
+            "on": {
+              "level": 1,
+              "deep": {
+                "y": {
+                  "s": "hi"
+                }
+              }
+            }
+          },
+          "wire": "0d01026869"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "inner index 3 of 3",
+          "wire": "0700",
+          "error": "invalid"
+        },
+        {
+          "name": "deep y with its string missing",
+          "wire": "0d00",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "inner record without a variant",
+          "value": {
+            "on": {
+              "level": 1
+            }
+          },
+          "error": "shape"
+        },
+        {
+          "name": "inner variant beside the outer one",
+          "value": {
+            "off": {},
+            "on": {
+              "level": 1,
+              "manual": {}
+            }
+          },
+          "error": "shape"
+        },
+        {
+          "name": "inner variant at the outer level",
+          "value": {
+            "manual": {}
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "one variant",
+      "about": "A record with one variant writes no index bits.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "integer",
+            "format": "uint8"
+          }
+        },
+        "required": [
+          "a"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "only": {
+                "type": "object",
+                "properties": {
+                  "b": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "b"
+                ]
+              }
+            },
+            "required": [
+              "only"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"a\"],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"only\":{\"type\":\"object\",\"properties\":{\"b\":{\"type\":\"boolean\"}},\"required\":[\"b\"]}},\"required\":[\"only\"]}]}",
+      "hash": "81382d22d1ebbe11",
+      "descriptor": "0181382d22d1ebbe110412010005020f0101010161046f6e6c790162",
+      "cases": [
+        {
+          "name": "the variant",
+          "value": {
+            "a": 7,
+            "only": {
+              "b": true
+            }
+          },
+          "wire": "0701"
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "bit byte missing",
+          "wire": "07",
+          "error": "truncated"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "variant absent",
+          "value": {
+            "a": 7
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "one empty variant",
+      "about": "A record with one empty variant and no plain fields encodes to nothing (so it cannot be an array item).",
+      "schema": {
+        "oneOf": [
+          {
+            "properties": {
+              "only": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "only"
+            ]
+          }
+        ]
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"only\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"only\"]}]}",
+      "hash": "f0ec253d954bdf43",
+      "descriptor": "01f0ec253d954bdf4302120000030f0000046f6e6c79",
+      "cases": [
+        {
+          "name": "the variant",
+          "value": {
+            "only": {}
+          },
+          "wire": ""
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "any byte is trailing",
+          "wire": "00",
+          "error": "trailing"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "variant absent",
+          "value": {},
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "array of records with variants",
+      "about": "Records with variants as array items; each item's index continues the current bit byte.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            {
+              "properties": {
+                "a": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "a"
+              ]
+            },
+            {
+              "properties": {
+                "b": {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "type": "integer",
+                      "format": "uint8"
+                    }
+                  },
+                  "required": [
+                    "v"
+                  ]
+                }
+              },
+              "required": [
+                "b"
+              ]
+            }
+          ]
+        }
+      },
+      "canonical": "{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"a\"]},{\"type\":\"object\",\"properties\":{\"b\":{\"type\":\"object\",\"properties\":{\"v\":{\"type\":\"integer\",\"format\":\"uint8\"}},\"required\":[\"v\"]}},\"required\":[\"b\"]}]}}",
+      "hash": "45aa49dd56ec2b49",
+      "descriptor": "0145aa49dd56ec2b4905100b120001070f00000f010102016101620176",
+      "cases": [
+        {
+          "name": "three",
+          "value": [
+            {
+              "a": {}
+            },
+            {
+              "b": {
+                "v": 5
+              }
+            },
+            {
+              "a": {}
+            }
+          ],
+          "wire": "030205"
+        }
+      ],
+      "decode_refusals": [],
+      "encode_refusals": [
+        {
+          "name": "item without a variant",
+          "value": [
+            {
+              "a": {}
+            },
+            {}
+          ],
+          "error": "shape"
+        }
+      ]
+    },
+    {
+      "name": "race state",
+      "about": "A sailing race's state: a phase with variants (idle, countdown to the gun, racing), a start line of optional fixes, an optional velocity.",
+      "schema": {
+        "type": "object",
+        "required": [
+          "phase",
+          "line"
+        ],
+        "properties": {
+          "phase": {
+            "oneOf": [
+              {
+                "properties": {
+                  "idle": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "idle"
+                ]
+              },
+              {
+                "properties": {
+                  "countdown": {
+                    "type": "object",
+                    "required": [
+                      "gun"
+                    ],
+                    "properties": {
+                      "gun": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "countdown"
+                ]
+              },
+              {
+                "properties": {
+                  "racing": {
+                    "type": "object",
+                    "required": [
+                      "gun"
+                    ],
+                    "properties": {
+                      "gun": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "racing"
+                ]
+              }
+            ]
+          },
+          "line": {
+            "type": "object",
+            "properties": {
+              "stbd": {
+                "type": "object",
+                "properties": {
+                  "t": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "alt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ]
+              },
+              "port": {
+                "type": "object",
+                "properties": {
+                  "t": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "alt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ]
+              },
+              "crossing": {
+                "type": "object",
+                "properties": {
+                  "pct": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "time": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                },
+                "required": [
+                  "pct",
+                  "time"
+                ]
+              }
+            }
+          },
+          "velocity": {
+            "type": "object",
+            "properties": {
+              "speed": {
+                "type": "number"
+              },
+              "heading": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "speed",
+              "heading"
+            ]
+          }
+        }
+      },
+      "canonical": "{\"type\":\"object\",\"properties\":{\"phase\":{\"type\":\"object\",\"properties\":{},\"required\":[],\"oneOf\":[{\"type\":\"object\",\"properties\":{\"idle\":{\"type\":\"object\",\"properties\":{},\"required\":[]}},\"required\":[\"idle\"]},{\"type\":\"object\",\"properties\":{\"countdown\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"gun\"]}},\"required\":[\"countdown\"]},{\"type\":\"object\",\"properties\":{\"racing\":{\"type\":\"object\",\"properties\":{\"gun\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"gun\"]}},\"required\":[\"racing\"]}]},\"line\":{\"type\":\"object\",\"properties\":{\"stbd\":{\"type\":\"object\",\"properties\":{\"t\":{\"type\":\"integer\",\"format\":\"int64\"},\"lat\":{\"type\":\"number\",\"format\":\"double\"},\"lon\":{\"type\":\"number\",\"format\":\"double\"},\"alt\":{\"type\":\"number\",\"format\":\"double\"}},\"required\":[\"t\",\"lat\",\"lon\"]},\"port\":{\"type\":\"object\",\"properties\":{\"t\":{\"type\":\"integer\",\"format\":\"int64\"},\"lat\":{\"type\":\"number\",\"format\":\"double\"},\"lon\":{\"type\":\"number\",\"format\":\"double\"},\"alt\":{\"type\":\"number\",\"format\":\"double\"}},\"required\":[\"t\",\"lat\",\"lon\"]},\"crossing\":{\"type\":\"object\",\"properties\":{\"pct\":{\"type\":\"integer\",\"format\":\"int64\"},\"time\":{\"type\":\"integer\",\"format\":\"int64\"}},\"required\":[\"pct\",\"time\"]}},\"required\":[]},\"velocity\":{\"type\":\"object\",\"properties\":{\"speed\":{\"type\":\"number\",\"format\":\"double\"},\"heading\":{\"type\":\"number\",\"format\":\"double\"}},\"required\":[\"speed\",\"heading\"]}},\"required\":[\"phase\",\"line\"]}",
+      "hash": "efeaf73aa6711413",
+      "descriptor": "01efeaf73aa6711413180f032a1200020b0f00000f0101090f0101090f03138f0404090b0b8b8f0404090b0b8b8f020209098f02020b0b057068617365046c696e650876656c6f636974790469646c6509636f756e74646f776e06726163696e670367756e0367756e047374626404706f72740863726f7373696e670174036c6174036c6f6e03616c740174036c6174036c6f6e03616c74037063740474696d650573706565640768656164696e67",
+      "cases": [
+        {
+          "name": "idle, nothing set",
+          "value": {
+            "phase": {
+              "idle": {}
+            },
+            "line": {}
+          },
+          "wire": "00"
+        },
+        {
+          "name": "countdown, both ends and a crossing",
+          "value": {
+            "phase": {
+              "countdown": {
+                "gun": 1790000300000
+              }
+            },
+            "line": {
+              "stbd": {
+                "t": 1790000000000,
+                "lat": -33.85,
+                "lon": 151.21
+              },
+              "port": {
+                "t": 1790000010000,
+                "lat": -33.851,
+                "lon": 151.212,
+                "alt": 2.5
+              },
+              "crossing": {
+                "pct": 47,
+                "time": 1790000299000
+              }
+            },
+            "velocity": {
+              "speed": 6.2,
+              "heading": 187.5
+            }
+          },
+          "wire": "f5c0ffa7c5986880b083c59868cdccccccccec40c01f85eb51b8e66240a0cc84c59868b0726891edec40c0105839b4c8e6624000000000000004405ef0efa7c59868cdcccccccccc18400000000000706740",
+          "value_f64": {
+            "/line/stbd/lat": "c040eccccccccccd",
+            "/line/stbd/lon": "4062e6b851eb851f",
+            "/line/port/lat": "c040eced916872b0",
+            "/line/port/lon": "4062e6c8b4395810",
+            "/line/port/alt": "4004000000000000",
+            "/velocity/speed": "4018cccccccccccd",
+            "/velocity/heading": "4067700000000000"
+          }
+        },
+        {
+          "name": "racing, starboard end only",
+          "value": {
+            "phase": {
+              "racing": {
+                "gun": 1790000300000
+              }
+            },
+            "line": {
+              "stbd": {
+                "t": 1790000000000,
+                "lat": -33.85,
+                "lon": 151.21
+              }
+            },
+            "velocity": {
+              "speed": 0,
+              "heading": 0
+            }
+          },
+          "wire": "46c0ffa7c5986880b083c59868cdccccccccec40c01f85eb51b8e6624000000000000000000000000000000000",
+          "value_f64": {
+            "/line/stbd/lat": "c040eccccccccccd",
+            "/line/stbd/lon": "4062e6b851eb851f"
+          }
+        }
+      ],
+      "decode_refusals": [
+        {
+          "name": "phase index 3 of 3",
+          "wire": "03",
+          "error": "invalid"
+        }
+      ],
+      "encode_refusals": [
+        {
+          "name": "phase without a variant",
+          "value": {
+            "phase": {},
+            "line": {}
+          },
+          "error": "shape"
+        },
+        {
+          "name": "phase with two variants",
+          "value": {
+            "phase": {
+              "idle": {},
+              "racing": {
+                "gun": 1
+              }
+            },
+            "line": {}
+          },
+          "error": "shape"
+        },
+        {
+          "name": "line missing",
+          "value": {
+            "phase": {
+              "idle": {}
+            }
+          },
+          "error": "shape"
+        }
+      ]
+    },
+    {
       "name": "deepest nesting",
       "about": "31 nested arrays around a boolean: depth 32, the limit.",
       "schema": {

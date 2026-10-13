@@ -96,7 +96,9 @@ impl<'a> Descriptor<'a> {
     /// Every name, in the order the nodes consume them (SPEC §6.2): an
     /// enum's values; an object's field names (then its children's); a
     /// union's tag property name and tag values (then each branch's field
-    /// names and children's). Only hosts that build named values need them.
+    /// names and children's); a record's field names and variant names (then
+    /// its fields' names, then its variants'). Only hosts that build named
+    /// values need them.
     pub fn names(&self) -> Names<'a> {
         Names { b: self.bytes, p: self.names }
     }
@@ -151,15 +153,36 @@ impl Loader<'_> {
                 let size = self.varint()? as usize;
                 self.names += fields as u64;
                 let start = self.p;
-                let mut empty = true;
-                for _ in 0..fields {
-                    let (_, opt, e) = self.node(depth + 1, true)?;
-                    empty &= !opt && e;
-                }
+                let empty = self.fields(depth, fields)?;
                 if self.p - start != size {
                     return Err(Error::Descriptor);
                 }
                 empty
+            }
+            Op::Variants => {
+                let fields = self.varint()?;
+                if fields > MAX_FIELDS {
+                    return Err(Error::Descriptor);
+                }
+                let n = self.u8()? as u32 + 1;
+                let size = self.varint()? as usize;
+                self.names += fields as u64 + n as u64;
+                let start = self.p;
+                let fields_empty = self.fields(depth, fields)?;
+                let mut first_empty = false;
+                for i in 0..n {
+                    let (vop, _, e) = self.node(depth + 1, false)?;
+                    if vop != Op::Object && vop != Op::Variants {
+                        return Err(Error::Descriptor);
+                    }
+                    if i == 0 {
+                        first_empty = e;
+                    }
+                }
+                if self.p - start != size {
+                    return Err(Error::Descriptor);
+                }
+                fields_empty && n == 1 && first_empty
             }
             Op::Array => {
                 let size = self.varint()? as usize;
@@ -194,6 +217,16 @@ impl Loader<'_> {
         };
         Ok((op, optional, empty))
     }
+
+    /// Parses `count` object fields; returns whether all are required and empty.
+    fn fields(&mut self, depth: u32, count: u32) -> Result<bool, Error> {
+        let mut empty = true;
+        for _ in 0..count {
+            let (_, opt, e) = self.node(depth + 1, true)?;
+            empty &= !opt && e;
+        }
+        Ok(empty)
+    }
 }
 
 /// SPEC §6.3 rule 11, walking the nodes and the names together.
@@ -203,6 +236,12 @@ fn check_names(n: Node<'_>, names: &mut Names<'_>) -> Result<(), Error> {
         Op::Object => {
             distinct(names, n.len(), None, true)?;
             n.children().try_for_each(|f| check_names(f, names))
+        }
+        Op::Variants => {
+            // the field names and the variant names, distinct as one set
+            distinct(names, n.len() + n.variant_count(), None, true)?;
+            n.children().try_for_each(|f| check_names(f, names))?;
+            n.variants().try_for_each(|v| check_names(v, names))
         }
         Op::Array => check_names(n.item(), names),
         Op::Union => {
@@ -270,9 +309,11 @@ pub struct Node<'a> {
     b: &'a [u8],
     op: Op,
     optional: bool,
-    /// enum values, object fields, union branches; 1 for an array
+    /// enum values, object or record fields, union branches; 1 for an array
     len: u16,
-    /// index width in bits (enum, union)
+    /// a record's variants (0 for every other op)
+    alts: u16,
+    /// index width in bits (enum, union, record with variants)
     bits: u8,
     /// offset of the first child
     body: usize,
@@ -295,6 +336,7 @@ impl<'a> Node<'a> {
         let op = Op::from_u8(byte & !OPTIONAL).unwrap_or(Op::Bool);
         let mut p = at + 1;
         let (len, bits, end);
+        let mut alts = 0;
         match op {
             Op::Enum | Op::Union => {
                 let n = b[p] as u32 + 1;
@@ -306,6 +348,15 @@ impl<'a> Node<'a> {
             Op::Object => {
                 len = tv(b, &mut p) as u16;
                 bits = 0;
+                let size = tv(b, &mut p);
+                end = p + size;
+            }
+            Op::Variants => {
+                len = tv(b, &mut p) as u16;
+                let n = b[p] as u32 + 1;
+                p += 1;
+                alts = n as u16;
+                bits = bit_length(n - 1);
                 let size = tv(b, &mut p);
                 end = p + size;
             }
@@ -321,7 +372,7 @@ impl<'a> Node<'a> {
                 end = p;
             }
         }
-        Node { b, op, optional: byte & OPTIONAL != 0, len, bits, body: p, end }
+        Node { b, op, optional: byte & OPTIONAL != 0, len, alts, bits, body: p, end }
     }
 
     /// The op.
@@ -336,11 +387,25 @@ impl<'a> Node<'a> {
         self.optional
     }
 
-    /// The number of enum values, object fields or union branches; 1 for an
-    /// array (its item); 0 for the other ops.
+    /// The number of enum values, object fields, union branches, or a
+    /// record's plain fields; 1 for an array (its item); 0 for the other ops.
     #[inline]
     pub fn len(&self) -> usize {
         self.len as usize
+    }
+
+    /// The number of a record's variants ([`Op::Variants`]); 0 for every
+    /// other op.
+    #[inline]
+    pub fn variant_count(&self) -> usize {
+        self.alts as usize
+    }
+
+    /// The number of values an index of this node may take: the enum's
+    /// values, the union's branches or the record's variants.
+    #[inline]
+    pub(crate) fn choices(&self) -> usize {
+        if self.op == Op::Variants { self.alts as usize } else { self.len as usize }
     }
 
     /// Whether [`Node::len`] is 0.
@@ -349,22 +414,34 @@ impl<'a> Node<'a> {
         self.len == 0
     }
 
-    /// For an enum or union: the index width in bits, `bitLength(n − 1)`
-    /// (0 for a single value or branch).
+    /// For an enum, union or record with variants: the index width in bits,
+    /// `bitLength(n − 1)` (0 for a single value, branch or variant).
     #[inline]
     pub fn bits(&self) -> u32 {
         self.bits as u32
     }
 
-    /// The children: an object's fields, an array's item, a union's
-    /// branches (each an object); none for the other ops.
+    /// The children: an object's or a record's (plain) fields, an array's
+    /// item, a union's branches (each an object); none for the other ops. A
+    /// record's variants are [`Node::variants`].
     #[inline]
     pub fn children(&self) -> Children<'a> {
         let n = match self.op {
-            Op::Object | Op::Array | Op::Union => self.len,
+            Op::Object | Op::Array | Op::Union | Op::Variants => self.len,
             _ => 0,
         };
         Children { b: self.b, p: self.body, left: n }
+    }
+
+    /// A record's variants, in index order (each an object or a record with
+    /// variants); none for the other ops.
+    pub fn variants(&self) -> Children<'a> {
+        if self.op != Op::Variants {
+            return Children { b: self.b, p: self.body, left: 0 };
+        }
+        let mut fields = self.children();
+        for _ in fields.by_ref() {}
+        Children { b: self.b, p: fields.p, left: self.alts }
     }
 
     /// An array's item node. Only meaningful for [`Op::Array`].
@@ -373,12 +450,14 @@ impl<'a> Node<'a> {
         Node::at(self.b, self.body)
     }
 
-    /// A union's branch `i` (an object node), if `i` < [`Node::len`].
+    /// A union's branch `i` (an object node), if `i` < [`Node::len`]; a
+    /// record's variant `i`, if `i` < [`Node::variant_count`].
     pub fn branch(&self, i: usize) -> Option<Node<'a>> {
-        if self.op != Op::Union {
-            return None;
+        match self.op {
+            Op::Union => self.children().nth(i),
+            Op::Variants => self.variants().nth(i),
+            _ => None,
         }
-        self.children().nth(i)
     }
 }
 

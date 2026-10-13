@@ -74,6 +74,46 @@ function branch(tagName, tag, props, required) {
   Object.keys(props || {}).forEach(function (k) { p[k] = props[k]; });
   return obj(p, [tagName].concat(required || Object.keys(props || {})));
 }
+/** A variant alternative, written as the engine language writes it (no `type`). */
+function alt(name, schema) {
+  var p = {};
+  p[name] = schema;
+  return { properties: p, required: [name] };
+}
+var EMPTY = { type: 'object' };
+function phaseVariants() {
+  return [
+    alt('idle', EMPTY),
+    alt('countdown', obj({ gun: int('int64') })),
+    alt('racing', obj({ gun: int('int64'), lap: int('uint8') }, ['gun']))
+  ];
+}
+function fix() {
+  return obj({ t: int('int64'), lat: num(), lon: num(), alt: num() }, ['t', 'lat', 'lon']);
+}
+// a race engine's state schema, descriptions left out
+var RACE_STATE = {
+  type: 'object',
+  required: ['phase', 'line'],
+  properties: {
+    phase: {
+      oneOf: [
+        { properties: { idle: { type: 'object' } }, required: ['idle'] },
+        { properties: { countdown: { type: 'object', required: ['gun'], properties: { gun: int('int64') } } }, required: ['countdown'] },
+        { properties: { racing: { type: 'object', required: ['gun'], properties: { gun: int('int64') } } }, required: ['racing'] }
+      ]
+    },
+    line: {
+      type: 'object',
+      properties: {
+        stbd: fix(),
+        port: fix(),
+        crossing: obj({ pct: int('int64'), time: int('int64') })
+      }
+    },
+    velocity: obj({ speed: num(), heading: num() })
+  }
+};
 function deepArrays(levels, leaf) {
   var s = leaf;
   for (var i = 0; i < levels; i++) s = { type: 'array', items: s };
@@ -466,6 +506,173 @@ var SCHEMAS = [
     encodeRefusals: []
   },
   {
+    name: 'variants',
+    about: 'A record with variants and no plain fields: a oneOf whose alternatives each have one required property, the variant, holding an object. The value has exactly one variant key. Variant index in bitLength(n - 1) bits of the bit byte, then the variant as an object.',
+    schema: { oneOf: phaseVariants() },
+    cases: [
+      ['empty variant', { idle: {} }],
+      ['countdown', { countdown: { gun: 1790000000000 } }],
+      ['racing without the optional', { racing: { gun: 1790000000000 } }],
+      ['racing with the optional', { racing: { gun: -1, lap: 3 } }],
+      { name: 'undeclared keys are ignored', value: { zzz: 1, idle: { x: 2 } }, decoded: { idle: {} } }
+    ],
+    decodeRefusals: [
+      ['index 3 of 3', '03', 'invalid'],
+      ['countdown with its varint missing', '01', 'truncated'],
+      ['unused bits set', '04', 'invalid']
+    ],
+    encodeRefusals: [
+      ['no variant key', {}, 'shape'],
+      ['two variant keys', { idle: {}, countdown: { gun: 1 } }, 'shape'],
+      ['variant value not an object', { countdown: 5 }, 'shape'],
+      ['variant value is an array', { idle: [] }, 'shape'],
+      ['variant value null', { idle: null }, 'shape'],
+      ['unknown key only', { paused: {} }, 'shape'],
+      ['not an object', 'idle', 'shape'],
+      ['variant missing a required field', { countdown: {} }, 'shape'],
+      ['variant field out of range', { racing: { gun: 0, lap: 256 } }, 'range']
+    ]
+  },
+  {
+    name: 'variants spelled differently',
+    about: 'The same record as "variants", written with type "object" everywhere, an empty properties, and $ref: same canonical form, hash and descriptor.',
+    schema: {
+      $defs: {
+        Gun: obj({ gun: int('int64') }),
+        Countdown: { type: 'object', properties: { countdown: { $ref: '#/$defs/Gun' } }, required: ['countdown'], title: 'ignored' }
+      },
+      type: 'object',
+      properties: {},
+      oneOf: [
+        { type: 'object', properties: { idle: { type: 'object', properties: {} } }, required: ['idle'] },
+        { $ref: '#/$defs/Countdown' },
+        alt('racing', obj({ gun: int(), lap: int('uint8') }, ['gun']))
+      ]
+    },
+    cases: [['countdown', { countdown: { gun: 1790000000000 } }]],
+    decodeRefusals: [],
+    encodeRefusals: []
+  },
+  {
+    name: 'variants beside plain fields',
+    about: 'Plain properties beside oneOf are ordinary fields, written first; then the variant index; then the variant. Decoded with the plain fields first, then the variant key.',
+    schema: {
+      type: 'object',
+      properties: { speed: num('float'), name: { type: 'string' } },
+      required: ['speed', 'name'],
+      oneOf: phaseVariants()
+    },
+    cases: [
+      ['idle', { speed: 1.5, name: 'a', idle: {} }],
+      ['racing', { speed: 0, name: '', racing: { gun: 1790000000000, lap: 1 } }],
+      { name: 'keys in any order', value: { racing: { gun: 7 }, name: 'b', speed: 2 }, decoded: { speed: 2, name: 'b', racing: { gun: 7 } } }
+    ],
+    decodeRefusals: [['variant index missing', '0000c03f00', 'truncated']],
+    encodeRefusals: [
+      ['missing plain field', { name: 'a', idle: {} }, 'shape'],
+      ['no variant key', { speed: 1, name: 'a' }, 'shape'],
+      ['two variant keys', { speed: 1, name: 'a', idle: {}, racing: { gun: 1 } }, 'shape']
+    ]
+  },
+  {
+    name: 'optional fields and the variant index',
+    about: 'Presence bits, booleans and the variant index share the stream-wide bit byte: here all in one byte, around a raw uint8.',
+    schema: {
+      type: 'object',
+      properties: { a: { type: 'boolean' }, n: int('uint8'), b: { type: 'boolean' } },
+      required: ['n'],
+      oneOf: [alt('p', EMPTY), alt('q', EMPTY), alt('r', obj({ v: { type: 'boolean' } }))]
+    },
+    cases: [
+      ['nothing optional, p', { n: 0, p: {} }],
+      ['all present, r', { a: true, n: 255, b: true, r: { v: true } }],
+      ['b only, q', { n: 9, b: false, q: {} }]
+    ],
+    decodeRefusals: [['byte after the message', '000000', 'trailing'], ['index 3 of 3', '0c00', 'invalid']],
+    encodeRefusals: []
+  },
+  {
+    name: 'nested variants',
+    about: 'A variant\'s object may have variants of its own, with plain fields beside them, to any depth; a variant may be given by $ref.',
+    schema: {
+      $defs: { Auto: alt('auto', obj({ target: int('int16') })) },
+      oneOf: [
+        alt('off', EMPTY),
+        alt('on', {
+          type: 'object',
+          properties: { level: int('uint8') },
+          required: ['level'],
+          oneOf: [
+            alt('manual', EMPTY),
+            { $ref: '#/$defs/Auto' },
+            alt('deep', { oneOf: [alt('x', EMPTY), alt('y', obj({ s: { type: 'string' } }))] })
+          ]
+        })
+      ]
+    },
+    cases: [
+      ['off', { off: {} }],
+      ['on, manual', { on: { level: 3, manual: {} } }],
+      ['on, auto', { on: { level: 200, auto: { target: -300 } } }],
+      ['on, deep x', { on: { level: 0, deep: { x: {} } } }],
+      ['on, deep y', { on: { level: 1, deep: { y: { s: 'hi' } } } }]
+    ],
+    decodeRefusals: [['inner index 3 of 3', '0700', 'invalid'], ['deep y with its string missing', '0d00', 'truncated']],
+    encodeRefusals: [
+      ['inner record without a variant', { on: { level: 1 } }, 'shape'],
+      ['inner variant beside the outer one', { off: {}, on: { level: 1, manual: {} } }, 'shape'],
+      ['inner variant at the outer level', { manual: {} }, 'shape']
+    ]
+  },
+  {
+    name: 'one variant',
+    about: 'A record with one variant writes no index bits.',
+    schema: { type: 'object', properties: { a: int('uint8') }, required: ['a'], oneOf: [alt('only', obj({ b: { type: 'boolean' } }))] },
+    cases: [['the variant', { a: 7, only: { b: true } }]],
+    decodeRefusals: [['bit byte missing', '07', 'truncated']],
+    encodeRefusals: [['variant absent', { a: 7 }, 'shape']]
+  },
+  {
+    name: 'one empty variant',
+    about: 'A record with one empty variant and no plain fields encodes to nothing (so it cannot be an array item).',
+    schema: { oneOf: [alt('only', EMPTY)] },
+    cases: [['the variant', { only: {} }]],
+    decodeRefusals: [['any byte is trailing', '00', 'trailing']],
+    encodeRefusals: [['variant absent', {}, 'shape']]
+  },
+  {
+    name: 'array of records with variants',
+    about: 'Records with variants as array items; each item\'s index continues the current bit byte.',
+    schema: { type: 'array', items: { oneOf: [alt('a', EMPTY), alt('b', obj({ v: int('uint8') }))] } },
+    cases: [['three', [{ a: {} }, { b: { v: 5 } }, { a: {} }]]],
+    decodeRefusals: [],
+    encodeRefusals: [['item without a variant', [{ a: {} }, {}], 'shape']]
+  },
+  {
+    name: 'race state',
+    about: 'A sailing race\'s state: a phase with variants (idle, countdown to the gun, racing), a start line of optional fixes, an optional velocity.',
+    schema: RACE_STATE,
+    cases: [
+      ['idle, nothing set', { phase: { idle: {} }, line: {} }],
+      ['countdown, both ends and a crossing', {
+        phase: { countdown: { gun: 1790000300000 } },
+        line: {
+          stbd: { t: 1790000000000, lat: -33.85, lon: 151.21 },
+          port: { t: 1790000010000, lat: -33.851, lon: 151.212, alt: 2.5 },
+          crossing: { pct: 47, time: 1790000299000 }
+        },
+        velocity: { speed: 6.2, heading: 187.5 }
+      }],
+      ['racing, starboard end only', { phase: { racing: { gun: 1790000300000 } }, line: { stbd: { t: 1790000000000, lat: -33.85, lon: 151.21 } }, velocity: { speed: 0, heading: 0 } }]
+    ],
+    decodeRefusals: [['phase index 3 of 3', '03', 'invalid']],
+    encodeRefusals: [
+      ['phase without a variant', { phase: {}, line: {} }, 'shape'],
+      ['phase with two variants', { phase: { idle: {}, racing: { gun: 1 } }, line: {} }, 'shape'],
+      ['line missing', { phase: { idle: {} } }, 'shape']
+    ]
+  },
+  {
     name: 'deepest nesting',
     about: '31 nested arrays around a boolean: depth 32, the limit.',
     schema: deepArrays(31, { type: 'boolean' }),
@@ -537,6 +744,13 @@ function buildCodec() {
     });
     out.push(entry);
   });
+  // Schemas that mean the same thing have the same canonical form (SPEC §5).
+  var same = { 'variants spelled differently': 'variants' };
+  Object.keys(same).forEach(function (a) {
+    var x = out.filter(function (e) { return e.name === a; })[0];
+    var y = out.filter(function (e) { return e.name === same[a]; })[0];
+    if (x.canonical !== y.canonical || x.descriptor !== y.descriptor) die(a + ': differs from ' + same[a]);
+  });
   return {
     about: 'Golden vectors for the codec, written by js/scripts/gen-vectors.js. See SPEC.md "Test vectors" for how to consume them.',
     format: 1,
@@ -566,7 +780,15 @@ function cat() {
   return out;
 }
 var HASH = [0, 0, 0, 0, 0, 0, 0, 0];
-var O = { BOOL: 1, U8: 2, ENUM: 14, OBJECT: 15, ARRAY: 16, UNION: 17 };
+var O = { BOOL: 1, U8: 2, ENUM: 14, OBJECT: 15, ARRAY: 16, UNION: 17, VARIANTS: 18 };
+var EMPTY_OBJECT = [O.OBJECT, 0, 0];
+/** A record with variants: `fields` field nodes then `n` variant nodes, all in `body`. */
+function record(fields, n, body) {
+  return cat([O.VARIANTS], varint(fields), [n - 1], varint(body.length), body);
+}
+function array(body) {
+  return cat([O.ARRAY], varint(body.length), body);
+}
 function raw(count, nodes, names) {
   return hex(cat([1], HASH, varint(count), nodes, names || []));
 }
@@ -585,6 +807,9 @@ function buildDescriptors() {
   for (var i = 0; i < 257; i++) { many.push(O.BOOL); manyNames = manyNames.concat(str('f' + i)); }
   var deep = [O.BOOL];
   for (i = 0; i < 32; i++) deep = cat([O.ARRAY], varint(deep.length), deep);
+  var deepRecord = EMPTY_OBJECT;
+  var deepNames = [];
+  for (i = 0; i < 32; i++) { deepRecord = record(0, 1, deepRecord); deepNames = deepNames.concat(str('v')); }
 
   var refusals = [
     ['empty', ''],
@@ -596,7 +821,7 @@ function buildDescriptors() {
     ['node count too high', raw(2, [O.BOOL])],
     ['node count too low', raw(0, [O.BOOL])],
     ['op 0', raw(1, [0])],
-    ['op 18', raw(1, [18])],
+    ['op 19', raw(1, [19])],
     ['op 0x7f', raw(1, [0x7f])],
     ['optional flag on the root', raw(1, [0x81])],
     ['optional flag on an array item', raw(2, cat([O.ARRAY], varint(1), [0x81]))],
@@ -626,7 +851,28 @@ function buildDescriptors() {
     ['field named __proto__', raw(2, object(1, [O.BOOL]), names('__proto__'))],
     ['duplicate enum values', raw(1, [O.ENUM, 1], names('a', 'a'))],
     ['duplicate union tags', raw(3, cat([O.UNION, 1], varint(6), [O.OBJECT, 0, 0, O.OBJECT, 0, 0]), names('t', 'a', 'a'))],
-    ['union tag name equals a branch field', raw(3, cat([O.UNION, 0], varint(4), object(1, [O.BOOL])), names('t', 'a', 't'))]
+    ['union tag name equals a branch field', raw(3, cat([O.UNION, 0], varint(4), object(1, [O.BOOL])), names('t', 'a', 't'))],
+    ['record: variant count past the end', raw(1, [O.VARIANTS, 0])],
+    ['record: size missing', raw(1, [O.VARIANTS, 0, 0])],
+    ['record: fewer variant nodes than its count', raw(2, record(0, 2, EMPTY_OBJECT), names('a', 'b'))],
+    ['record: variant is a boolean', raw(2, record(0, 1, [O.BOOL]), names('a'))],
+    ['record: variant is a union', raw(3, record(0, 1, cat([O.UNION, 0], varint(3), EMPTY_OBJECT)), names('a', 't', 'x'))],
+    ['record: variant is an array', raw(3, record(0, 1, array([O.BOOL])), names('a'))],
+    ['record: optional flag on a variant', raw(2, record(0, 1, [0x80 | O.OBJECT, 0, 0]), names('a'))],
+    ['record: optional flag on the root record', raw(2, [0x80 | O.VARIANTS].concat(record(0, 1, EMPTY_OBJECT).slice(1)), names('a'))],
+    ['record: size too small', raw(2, cat([O.VARIANTS], varint(0), [0], varint(2), EMPTY_OBJECT), names('a'))],
+    ['record: size too large', raw(3, cat([O.VARIANTS], varint(0), [0], varint(4), EMPTY_OBJECT, [O.BOOL]), names('a'))],
+    ['record: size counts only the fields', raw(3, cat([O.VARIANTS], varint(1), [0], varint(1), [O.BOOL], EMPTY_OBJECT), names('f', 'a'))],
+    ['record: 257 fields', raw(259, record(257, 1, cat(many, EMPTY_OBJECT)), manyNames.concat(str('v')))],
+    ['record: field name equals a variant name', raw(3, record(1, 1, cat([O.BOOL], EMPTY_OBJECT)), names('a', 'a'))],
+    ['record: duplicate variant names', raw(3, record(0, 2, cat(EMPTY_OBJECT, EMPTY_OBJECT)), names('a', 'a'))],
+    ['record: duplicate field names', raw(4, record(2, 1, cat([O.BOOL, O.BOOL], EMPTY_OBJECT)), names('f', 'f', 'a'))],
+    ['record: variant named __proto__', raw(2, record(0, 1, EMPTY_OBJECT), names('__proto__'))],
+    ['record: field named __proto__', raw(3, record(1, 1, cat([O.BOOL], EMPTY_OBJECT)), names('__proto__', 'a'))],
+    ['record: duplicate field names inside a variant', raw(4, record(0, 1, object(2, [O.BOOL, O.BOOL])), names('a', 'x', 'x'))],
+    ['record: variant names missing', raw(2, record(0, 1, EMPTY_OBJECT))],
+    ['array of records that encode to nothing', raw(3, array(record(0, 1, EMPTY_OBJECT)), names('a'))],
+    ['nesting 33 deep through variants', raw(33, deepRecord, deepNames)]
   ];
   var out = [];
   refusals.forEach(function (r) {

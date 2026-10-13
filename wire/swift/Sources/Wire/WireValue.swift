@@ -8,8 +8,9 @@
 /// - `U8`, `U16`, `U32`, `U64` → `.uint64`; `I8`, `I16`, `I32`, `I64` → `.int64`;
 /// - `F32`, `F64` → `.double` (a `float` is widened exactly);
 /// - `STRING` and `ENUM` → `.string`; `BYTES` → `.bytes`;
-/// - `ARRAY` → `.array`; `OBJECT` and `UNION` → `.object`, keys in wire order
-///   (a union's tag property first).
+/// - `ARRAY` → `.array`; `OBJECT`, `UNION` and `VARIANTS` → `.object`, keys
+///   in wire order (a union's tag property first; a record's plain fields,
+///   then its one variant's key).
 ///
 /// Encoding accepts any of `.int64`, `.uint64` or a whole `.double` for an
 /// integer node, and any of the three for a float node. `.null` is never a

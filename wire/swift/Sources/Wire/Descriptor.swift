@@ -18,6 +18,7 @@ let opEnum: UInt8 = 14
 let opObject: UInt8 = 15
 let opArray: UInt8 = 16
 let opUnion: UInt8 = 17
+let opVariants: UInt8 = 18
 
 let formatVersion: UInt8 = 1
 let maxDepth = 32
@@ -27,7 +28,9 @@ let maxFields = 256
 /// (`kid0 ..< kid0 + kidCount`), names in `Descriptor.names` from `name0`:
 /// - `ENUM`: `n` values;
 /// - `OBJECT`: one name per field;
-/// - `UNION`: the tag property name, then `n` tag values.
+/// - `UNION`: the tag property name, then `n` tag values;
+/// - `VARIANTS`: one name per kid: the `fieldCount` field names, then the
+///   `n` variant names (kids: the fields, then the variants).
 struct Node {
     var op: UInt8
     var optional: Bool
@@ -35,12 +38,14 @@ struct Node {
     var zero = false
     /// A union branch (its field names are checked with the union's tag).
     var branch = false
-    /// Bit width of an enum or union index.
+    /// Bit width of an enum, union or variant index.
     var bits: UInt8 = 0
-    /// Enum values / union branches.
+    /// Enum values / union branches / variants.
     var n: Int32 = 0
     var kid0: Int32 = 0
     var kidCount: Int32 = 0
+    /// Object or record fields: the first `fieldCount` kids.
+    var fieldCount: Int32 = 0
     var name0: Int32 = 0
     /// Index into `Descriptor.lookups` (enum values / union tag values).
     var lookup: Int32 = -1
@@ -138,7 +143,8 @@ public struct Descriptor: Sendable {
             case opEnum:
                 nodes[i].lookup = Int32(lookups.count)
                 lookups.append(try table(Int(nd.name0), Int(nd.n), "enum value"))
-            case opObject where !nd.branch:
+            case opObject where !nd.branch, opVariants:
+                // a record's kids are its fields then its variants, all named
                 try checkFields(nd, tag: nil)
             case opUnion:
                 nodes[i].lookup = Int32(lookups.count)
@@ -228,15 +234,37 @@ private struct Loader {
             let start = p
             var ks = [Int32]()
             ks.reserveCapacity(nf)
-            nd.zero = true
-            for _ in 0..<nf {
-                let k = try node(depth: depth + 1, inObject: true)
-                if nodes[k].optional || !nodes[k].zero { nd.zero = false }
-                ks.append(Int32(k))
-            }
+            nd.zero = try fields(nf, depth, &ks)
             if p - start != size { throw fail("object size does not match its fields") }
             nd.kid0 = Int32(kids.count)
             nd.kidCount = Int32(nf)
+            nd.fieldCount = Int32(nf)
+            kids += ks
+        case opVariants:
+            let nf = try varint()
+            if nf > maxFields { throw fail("more than \(maxFields) fields") }
+            let n = Int(try u8()) + 1
+            nd.n = Int32(n)
+            nd.bits = bitLength(n - 1)
+            let size = try varint()
+            nd.name0 = Int32(nameCount)
+            nameCount += nf + n
+            let start = p
+            var ks = [Int32]()
+            ks.reserveCapacity(nf + n)
+            let fieldsZero = try fields(nf, depth, &ks)
+            for _ in 0..<n {
+                let k = try node(depth: depth + 1, inObject: false)
+                if nodes[k].op != opObject && nodes[k].op != opVariants {
+                    throw fail("variant is not an object or a record with variants")
+                }
+                ks.append(Int32(k))
+            }
+            nd.zero = fieldsZero && n == 1 && nodes[Int(ks[nf])].zero
+            if p - start != size { throw fail("record size does not match its fields and variants") }
+            nd.kid0 = Int32(kids.count)
+            nd.kidCount = Int32(nf + n)
+            nd.fieldCount = Int32(nf)
             kids += ks
         case opArray:
             let size = try varint()
@@ -273,6 +301,18 @@ private struct Loader {
         }
         nodes[idx] = nd
         return idx
+    }
+
+    /// Parses `count` object fields into `ks`; returns whether all are
+    /// required and encode to nothing.
+    mutating func fields(_ count: Int, _ depth: Int, _ ks: inout [Int32]) throws -> Bool {
+        var zero = true
+        for _ in 0..<count {
+            let k = try node(depth: depth + 1, inObject: true)
+            if nodes[k].optional || !nodes[k].zero { zero = false }
+            ks.append(Int32(k))
+        }
+        return zero
     }
 }
 

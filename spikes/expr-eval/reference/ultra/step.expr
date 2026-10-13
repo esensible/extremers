@@ -1,0 +1,55 @@
+// Ultra: course distance (GPS, reset to the station's at each check-in),
+// and the pace of the last ~10 minutes for the ETA (worked out in the view).
+
+let PACE_WINDOW_MS = 600000;
+let SAMPLE_MS = 10000;
+let SAMPLES = 80;        // 13 min of 10 s samples
+let LAST = 3;            // the Finish
+let STATION_KM = [12.0, 25.5, 41.0, 56.0];
+
+let s = state;
+
+let next =
+  input.tag == "Location" ? (
+    input.fix == nil ? s : (
+      let ts = input.timestamp;
+      let p = {lat: input.fix.lat, lon: input.fix.lon};
+      let track = s.track_m + (s.last_fix == nil ? 0.0 : distance(s.last_fix, p));
+      let samples = len(s.samples) == 0 || ts - last(s.samples).t >= SAMPLE_MS
+        ? push_last(s.samples, {t: ts, m: track}, SAMPLES)
+        : s.samples;
+      let oldest = first(filter(samples, .t >= ts - PACE_WINDOW_MS));
+      let span = ts - oldest.t;
+      let moved = track - oldest.m;
+      {
+        start: s.start ?? ts,
+        t: ts,
+        last_fix: p,
+        track_m: track,
+        checkin_m: s.checkin_m,
+        base_km: s.base_km,
+        next: s.next,
+        samples: samples,
+        pace: span >= 60000 && moved >= 50 ? span / moved : nil
+      }
+    )
+  )
+
+  // Checked in at the next station: we're at its distance; on to the one after.
+  : input.tag == "CheckIn" ? {
+    start: s.start,
+    t: s.t,
+    last_fix: s.last_fix,
+    track_m: s.track_m,
+    checkin_m: s.track_m,
+    base_km: STATION_KM[s.next],
+    next: min(s.next + 1, LAST),
+    samples: s.samples,
+    pace: s.pace
+  }
+
+  : input.tag == "Wake" ? s
+
+  : fail("ultra: unknown input ", input.tag);
+
+{state: next, wake: nil}

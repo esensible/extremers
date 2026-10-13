@@ -1,32 +1,52 @@
 // The link to the device, as the Kindle race page's api.js: the state
-// arrives from the watch shell (the BLE `state` value: a host Envelope whose
-// `state` is this package's RaceView) and events leave with send(bytes)
-// (the shell writes them to the BLE `event` characteristic as HostEvents).
-// Encoding and decoding: the generated host bindings (protocol-js/) and
-// this package's own (../protocol-js/). The websocket and its reconnect are the Kindle's; on
-// the watch the shell owns the link and shows when it is down.
+// arrives from the watch shell (the BLE `state` value) and events leave with
+// send(bytes) (the shell writes them to the BLE `event` characteristic).
+// The host envelope is unchanged: the state is a host Envelope and an event
+// a HostEvent (protocol-js/, the host protocol, still postcard). The bytes
+// inside are the race engine's, in the wire codec (wire/js):
+//   - an envelope's `state`, while race is active, is the engine's view
+//     (engine/race/view.schema.json), e.g.
+//       { phase: { racing: { gun: 1790000300000 } },
+//         line: { stbd: true, port: true }, speed: 12.3, heading: 253 }
+//     a variant named by which key is present; `crossing`, `speed` and
+//     `heading` absent when the engine has none;
+//   - a HostEvent Engine's bytes are an engine event
+//     (engine/race/event.schema.json).
+// The descriptors are compiled from the schemas at build time ("race-wire":
+// ../race-wire.mjs, a rollup plugin), so the bundle carries only the codec.
+// The websocket and its reconnect are the Kindle's; on the watch the shell
+// owns the link and shows when it is down.
 import { createStore, reconcile } from "solid-js/store";
 import { send } from "solid-watch";
 import { decodeEnvelope, encodeHostEvent } from "../../../protocol-js/protocol.js";
 import { packageId } from "../../../client-common/host.js";
-import { decodeRaceView, encodeRaceEvent } from "../../protocol-js/protocol.js";
+import wire from "../../../wire/js/codec.js";
+import { VIEW, EVENT } from "race-wire";
 
 const PACKAGE = packageId("race");
+const VIEW_DESC = wire.load(VIEW);
+const EVENT_DESC = wire.load(EVENT);
 
 // Device clock minus ours, from the timestamp every state carries. The
 // initial value is large so nothing looks synced before the first message.
 var timestampOffset = 10000000;
 var timezoneOffset = 0;
-// The phase before the latest state's (haptics: a gun that just went).
-var lastPhase = "Loading";
+// The phase variant before the latest state's (haptics: a gun that just
+// went); null before the first.
+var lastPhase = null;
 
-// The race as the device last described it: its RaceView (protocol.d.ts),
-// applied with reconcile so only the fields that changed notify. Until the
-// first message the phase is "Loading", which no view matches.
+// The race as the device last described it: the engine's view, applied with
+// reconcile so only the fields that changed notify (and a field the view no
+// longer has, or the phase's previous variant, goes away). Until the first
+// message the phase has no variant: "Loading" (index.jsx).
 export const [race, setRace] = createStore({
-  speed: 0,
-  phase: { tag: "Loading", value: null },
+  phase: {},
+  line: { stbd: false, port: false },
 });
+
+// Which phase variant `p` holds (the key present), or null.
+export const variant = (p) =>
+  p.idle !== undefined ? "idle" : p.countdown !== undefined ? "countdown" : p.racing !== undefined ? "racing" : null;
 
 // The device's clock now, epoch ms.
 export function timestamp() {
@@ -59,19 +79,19 @@ export function onState(bytes) {
     return;
   }
   try {
-    view = decodeRaceView(message.state);
+    view = wire.decode(VIEW_DESC, new Uint8Array(message.state));
   } catch (e) {
     return;
   }
-  lastPhase = race.phase.tag;
+  lastPhase = variant(race.phase);
   setRace(reconcile(view));
 }
 
-// A RaceEvent, e.g.
-//   postEvent({ tag: "LineStbd" })
-//   postEvent({ tag: "BumpSeq", value: { seconds: 30, timestamp: timestamp() } })
+// An engine event (engine/race/event.schema.json), e.g.
+//   postEvent({ line_stbd: {} })
+//   postEvent({ bump_seq: { seconds: 30, tapped_at: timestamp() } })
 export function postEvent(event) {
-  send(encodeHostEvent({ tag: "Engine", value: { package: PACKAGE, bytes: encodeRaceEvent(event) } }));
+  send(encodeHostEvent({ tag: "Engine", value: { package: PACKAGE, bytes: wire.encode(EVENT_DESC, event) } }));
 }
 
 // Back to the default app (Choose if installed): the Kindle's

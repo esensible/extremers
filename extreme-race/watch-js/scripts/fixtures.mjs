@@ -1,21 +1,28 @@
 // Builds the golden fixtures in fixtures/: bundle.js (= dist/watch.js),
-// script.json (BLE state values: host Envelopes carrying RaceViews, and
-// taps), then solid-watch's make-fixtures writes bundle.js.sha256,
+// script.json (BLE state values: host Envelopes whose `state` is the race
+// engine's view, wire-encoded (wire/js) against engine/race/view.schema.json;
+// and taps), then solid-watch's make-fixtures writes bundle.js.sha256,
 // log.jsonl (qjs, checked against node) and frames.jsonl.
 //   npm run build && QJS=/path/to/qjs npm run fixtures
 //
-// The story: Active (line ends set one by one, the time to the line), a
-// 1-minute start tapped and confirmed, the sequence counting down with a
-// bump and a sync, the gun from the countdown, the race, Finish; then a
-// short sequence whose Racing state beats the countdown to the gun; Exit.
-// Plus another package's envelope and bytes that are no envelope.
+// The story: idle (before any fix: no speed; line ends set one by one; both
+// ends before and after the first crossing prediction), a 5-minute start
+// tapped and confirmed, the countdown with a bump and a sync (the line as
+// the device has it: one end, both unpredicted, both predicted), the gun
+// from the countdown, the race, Finish; then a short countdown whose racing
+// state (no speed or heading) beats the countdown to the gun; Exit. Plus
+// another package's envelope and bytes that are no envelope.
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { encodeEnvelope } from "../../../protocol-js/protocol.js";
 import { packageId } from "../../../client-common/host.js";
-import { encodeRaceView } from "../../protocol-js/protocol.js";
+import { raceDescriptors } from "../../race-wire.mjs";
 import { tagOf, CONFIRM } from "../../../watch-js/test/fixture-tags.mjs";
+
+const wire = createRequire(import.meta.url)("../../../wire/js/codec.js");
+const VIEW = wire.load(raceDescriptors().view);
 
 const HERE = fileURLToPath(new URL("..", import.meta.url));
 const SOLID_WATCH = fileURLToPath(new URL("../../../solid-watch/", import.meta.url));
@@ -44,13 +51,18 @@ function stateStep(envelope) {
 }
 function envelope(view, active = RACE) {
   const at = device(nextAt());
-  stateStep({ timestamp: at, active, ui: HASH, state: encodeRaceView(view) });
+  stateStep({ timestamp: at, active, ui: HASH, state: Array.from(wire.encode(VIEW, view)) });
   return at;
 }
-const active = (line, speed = 6.4) => ({ speed, phase: { tag: "Active", value: { line } } });
-const seq = (start_time, line, speed = 5.5) => ({ speed, phase: { tag: "InSequence", value: { start_time, line } } });
-const racing = (start_time, heading, speed = 12.3) => ({ speed, phase: { tag: "Racing", value: { start_time, heading } } });
-const NONE = { tag: "None", value: null };
+// The engine's views (view.schema.json). `more`: crossing, speed, heading
+// as the engine has them (each absent when it has none).
+const idle = (line, more = { speed: 6.4 }) => ({ phase: { idle: {} }, line, ...more });
+const countdown = (gun, line, more = { speed: 5.5 }) => ({ phase: { countdown: { gun } }, line, ...more });
+const racing = (gun, line, more) => ({ phase: { racing: { gun } }, line, ...more });
+const NONE = { stbd: false, port: false };
+const STBD = { stbd: true, port: false };
+const PORT = { stbd: false, port: true };
+const BOTH = { stbd: true, port: true };
 function tap(which, nth = 0) {
   const tag = tagOf(bundle, { ctx, steps }, which, nth);
   clock = nextAt();
@@ -63,11 +75,13 @@ function wait(ms) {
 }
 const EXIT = (p) => p.left === 0 && p.top === 0;
 
-// Active: no line, then each end, then both (the boat 75 s from the line)
-envelope(active(NONE));
-envelope(active({ tag: "Stbd", value: null }));
-envelope(active({ tag: "Port", value: null }));
-envelope(active({ tag: "Both", value: { cross: 30, time: device(nextAt()) + 75_000 } }));
+// idle: no fix yet (no speed), no line; then each end; then both, not yet
+// predicted, then predicted (the boat 75 s from the line)
+envelope(idle(NONE, {}));
+envelope(idle(STBD));
+envelope(idle(PORT));
+envelope(idle(BOTH));
+envelope(idle(BOTH, { crossing: device(nextAt()) + 75_000, speed: 6.4 }));
 // the line ends: no confirm, sent at once
 tap("Port");
 tap("Stbd");
@@ -80,15 +94,16 @@ steps.push({ localMs: clock, stateHex: "02ffff" });
 // start a 5-minute sequence: the tap is stamped, the confirm sends it
 const tapped = tap("5");
 tap(CONFIRM);
-// the device starts the sequence from the tap
+// the device starts the countdown from the tap (the line: one end set)
 let start = tapped + 300_000;
-envelope(seq(start, NONE));
+envelope(countdown(start, PORT));
 // 20 s of countdown, then a bump (+1 min: seconds -60) and its confirm
 wait(20_000);
 tap("1", 0);
 tap(CONFIRM);
 start += 60_000;
-envelope(seq(start, NONE));
+// (both ends set, no prediction yet)
+envelope(countdown(start, BOTH));
 // a sync, left to time out once, then confirmed
 tap("Sync");
 wait(6_000);
@@ -97,26 +112,29 @@ tap(CONFIRM);
 // sync: the device rounds the countdown at the tap down to the minute
 const left = start - synced;
 start = synced + Math.floor(left / 60_000) * 60_000;
-envelope(seq(start, { tag: "Both", value: { cross: 50, time: start - 4_000 } }));
+// (the boat reaches the line 4 s early)
+envelope(countdown(start, BOTH, { crossing: start - 4_000, speed: 5.5 }));
 // count down to the gun (the minutes, 30, 10, the last five, the gun)
 wait(start - device(clock) - 700); // the state step is 1 s after: 0.3 s after the gun
-// the device: racing (the gun already buzzed: no second one)
-envelope(racing(start, 253));
+// the device: racing (the gun already buzzed: no second one); no crossing
+// while racing
+envelope(racing(start, BOTH, { speed: 12.3, heading: 253 }));
 // a minute of racing, then Finish (2 taps on the confirm)
 wait(61_000);
 tap((p, t) => /^\d\d:\d\d$/.test(t));
 tap(CONFIRM);
 tap(CONFIRM);
-envelope(active(NONE));
-// a sequence whose Racing state arrives 0.4 s before the countdown's own
+envelope(idle(NONE));
+// a countdown whose racing state arrives 0.4 s before the countdown's own
 // gun (on the watch the device's clock lags by the link latency): the gun
 // buzzes from the state
 const tapped2 = tap("1");
 tap(CONFIRM);
 const start2 = tapped2 + 60_000;
-envelope(seq(start2, NONE));
+envelope(countdown(start2, STBD));
 wait(start2 - device(clock) - 1_400); // the state step is 1 s after
-envelope(racing(start2, 0));
+// (no speed or heading: no fix with a velocity)
+envelope(racing(start2, STBD, {}));
 // Exit: 2 taps on the confirm, then SelectDefault
 tap(EXIT);
 tap(CONFIRM);

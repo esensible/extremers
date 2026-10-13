@@ -1,0 +1,20 @@
+[package]
+name = "engine-race"
+version = "0.1.0"
+edition = "2024"
+description = "Race on the engine contract (engine.expr): its interface, generated from its schemas, and the test that drives it beside extreme-race."
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+serde_json = "1"
+sailing = { package = "engine-builtins", path = "../builtins" }
+
+[dev-dependencies]
+compiler = { package = "lang-compiler", path = "../../lang/compiler" }
+extreme-race = { path = "../../extreme-race" }
+extreme-sdk = { path = "../../extreme-sdk" }
+
+# Its own workspace, like engine/builtins.
+[workspace]

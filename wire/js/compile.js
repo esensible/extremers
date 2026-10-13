@@ -28,7 +28,8 @@
 
   var OP = {
     BOOL: 1, U8: 2, I8: 3, U16: 4, I16: 5, U32: 6, I32: 7, U64: 8, I64: 9,
-    F32: 10, F64: 11, STRING: 12, BYTES: 13, ENUM: 14, OBJECT: 15, ARRAY: 16, UNION: 17
+    F32: 10, F64: 11, STRING: 12, BYTES: 13, ENUM: 14, OBJECT: 15, ARRAY: 16, UNION: 17,
+    VARIANTS: 18
   };
   var OPTIONAL = 0x80;
 
@@ -152,7 +153,12 @@
 
   // ---- canonicalisation (one named rule per kind) -------------------------
 
-  function canon(ctx, node, path, isRoot) {
+  /**
+   * The keywords of a schema that matter: ignored ones dropped, root-only
+   * ones reported when not at the root. Null (reported) when the schema is
+   * not a JSON object.
+   */
+  function keywords(ctx, node, path, isRoot) {
     if (node === true || node === false) {
       ctx.err(path, 'boolean schemas (true/false) are not supported; write an object schema');
       return null;
@@ -172,13 +178,19 @@
       }
       k[key] = node[key];
     }
+    return k;
+  }
+
+  function canon(ctx, node, path, isRoot) {
+    var k = keywords(ctx, node, path, isRoot);
+    if (!k) return null;
     if (hasOwn.call(k, '$ref')) return refRule(ctx, k, path);
-    if (hasOwn.call(k, 'oneOf')) return unionRule(ctx, k, path);
+    if (hasOwn.call(k, 'oneOf')) return oneOfRule(ctx, k, path);
     if (hasOwn.call(k, 'const') || hasOwn.call(k, 'enum')) return enumRule(ctx, k, path);
     if (!hasOwn.call(k, 'type')) {
       allowOnly(ctx, k, {}, path, 'this schema');
       ctx.err(path, "missing 'type': use boolean, integer, number, string, object or array, " +
-        "or 'enum'/'const' for a set of strings, 'oneOf' for a tagged union, or '$ref'");
+        "or 'enum'/'const' for a set of strings, 'oneOf' for a tagged union or for variants, or '$ref'");
       return null;
     }
     var t = k.type;
@@ -205,6 +217,21 @@
   }
 
   function refRule(ctx, k, path) {
+    var r = resolveRef(ctx, k, path);
+    if (!r) return null;
+    ctx.refStack.push(r.frag);
+    var out = canon(ctx, r.target, r.frag, r.frag === '');
+    ctx.refStack.pop();
+    return out;
+  }
+
+  /**
+   * Follows the `$ref` of `k` (whose keywords are already filtered): returns
+   * { target, frag } where frag is the target's JSON pointer, or null after
+   * reporting why not. The caller pushes frag on ctx.refStack while it walks
+   * the target.
+   */
+  function resolveRef(ctx, k, path) {
     var others = keysOf(k);
     if (others.length > 1) {
       ctx.err(path, "'$ref' cannot be combined with other keywords here (found: " +
@@ -244,10 +271,36 @@
         return null;
       }
     }
-    ctx.refStack.push(frag);
-    var out = canon(ctx, target, frag, frag === '');
-    ctx.refStack.pop();
-    return out;
+    return { target: target, frag: frag };
+  }
+
+  /**
+   * The schema a node stands for, following local `$ref`s without reporting
+   * anything; null when a reference does not resolve (canonicalisation then
+   * reports it). Used only to choose the form of a oneOf.
+   */
+  function peek(root, node) {
+    for (var hops = 0; hops <= MAX_DEPTH; hops++) {
+      if (!isPlainObject(node) || !hasOwn.call(node, '$ref')) return node;
+      var ref = node.$ref;
+      if (typeof ref !== 'string' || ref.charAt(0) !== '#') return null;
+      var frag;
+      try {
+        frag = decodeURIComponent(ref.slice(1));
+      } catch (e) {
+        return null;
+      }
+      if (frag !== '' && frag.charAt(0) !== '/') return null;
+      var target = root;
+      var tokens = frag === '' ? [] : frag.slice(1).split('/');
+      for (var i = 0; i < tokens.length; i++) {
+        var tok = tokens[i].replace(/~1/g, '/').replace(/~0/g, '~');
+        if (target === null || typeof target !== 'object' || !hasOwn.call(target, tok)) return null;
+        target = target[tok];
+      }
+      node = target;
+    }
+    return null;
   }
 
   function booleanRule(ctx, k, path) {
@@ -358,6 +411,12 @@
 
   function objectRule(ctx, k, path) {
     allowOnly(ctx, k, { type: 1, properties: 1, required: 1 }, path, 'an object');
+    var fields = objectFields(ctx, k, path);
+    return fields ? { kind: 'object', fields: fields } : null;
+  }
+
+  /** The fields of an object schema's `properties`/`required`, or null. */
+  function objectFields(ctx, k, path) {
     var props = hasOwn.call(k, 'properties') ? k.properties : {};
     if (!isPlainObject(props)) {
       ctx.err(ptr(path, 'properties'), 'must be an object');
@@ -392,7 +451,7 @@
       if (!child) { ok = false; continue; }
       fields.push({ name: names[i], schema: child, optional: !required['$' + names[i]] });
     }
-    return ok ? { kind: 'object', fields: fields } : null;
+    return ok ? fields : null;
   }
 
   /** True when a value of this schema always encodes to nothing. */
@@ -401,14 +460,20 @@
       case 'enum':
         return n.values.length === 1;
       case 'object':
-        for (var i = 0; i < n.fields.length; i++) {
-          if (n.fields[i].optional || !isZero(n.fields[i].schema)) return false;
-        }
-        return true;
+        return fieldsZero(n.fields);
       case 'union':
         return n.branches.length === 1 && isZero(branchBody(n, 0));
+      case 'variants':
+        return fieldsZero(n.fields) && n.variants.length === 1 && isZero(n.variants[0].schema);
     }
     return false;
+  }
+
+  function fieldsZero(fields) {
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].optional || !isZero(fields[i].schema)) return false;
+    }
+    return true;
   }
 
   function arrayRule(ctx, k, path) {
@@ -453,6 +518,183 @@
     return { kind: 'object', fields: fields };
   }
 
+  // ---- oneOf: a tagged union, or a record with variants -------------------
+
+  var VARIANT_EXAMPLE = '{"properties": {"countdown": {"type": "object", "properties": ' +
+    '{"gun": {"type": "integer"}}, "required": ["gun"]}}, "required": ["countdown"]}';
+
+  /**
+   * Chooses the form of a oneOf (SPEC §2.2): with a discriminator, a tagged
+   * union; else, when every alternative is a variant (one required property
+   * whose schema is an object), a record with variants; else the tagged
+   * union's inference. When no alternative could hold a tag either, the
+   * refusal explains the variants form, the one the author most likely meant.
+   */
+  function oneOfRule(ctx, k, path) {
+    var list = k.oneOf;
+    if (hasOwn.call(k, 'discriminator') || !isArray(list) || list.length === 0) {
+      return unionRule(ctx, k, path);
+    }
+    var miss = -1;
+    var reason = null;
+    var anyTag = false;
+    var allObjects = true;
+    for (var i = 0; i < list.length; i++) {
+      var s = variantShape(ctx.root, peek(ctx.root, list[i]));
+      if (!s.object) allObjects = false;
+      if (s.tag) anyTag = true;
+      if (s.reason !== null && miss < 0) {
+        miss = i;
+        reason = s.reason;
+      }
+    }
+    if (miss < 0) return variantsRule(ctx, k, path);
+    if (anyTag || !allObjects) return unionRule(ctx, k, path);
+    ctx.err(ptr(path, 'oneOf'), 'no alternative has a tag property (a "const" string), so this ' +
+      'oneOf is read as a record with variants, but ' + ptr(ptr(path, 'oneOf'), miss) +
+      ' is not a variant: ' + reason + '. Write each alternative as one variant: a single ' +
+      "property, the variant's name, listed in its 'required', whose schema is an object, e.g. " +
+      VARIANT_EXAMPLE + '. For a tagged union instead, give every alternative the same required ' +
+      'tag property holding a different "const" string');
+    return null;
+  }
+
+  /** An object-valued schema: `type: "object"`, or a bare oneOf (variants). */
+  function isObjectSchema(s) {
+    return isPlainObject(s) &&
+      (s.type === 'object' || (!hasOwn.call(s, 'type') && hasOwn.call(s, 'oneOf')));
+  }
+
+  function describe(s) {
+    if (!isPlainObject(s)) return 'not an object schema';
+    if (hasOwn.call(s, 'type')) return '{"type": ' + q(s.type) + '}';
+    if (hasOwn.call(s, 'const') || hasOwn.call(s, 'enum')) return 'an enum';
+    return 'a schema without "type": "object"';
+  }
+
+  /**
+   * How a oneOf alternative (refs followed) fits the two forms: `object`, it
+   * is an object schema (type "object" or none); `tag`, it has a property
+   * that could be a union tag (a one-value enum); `reason`, why it is not a
+   * variant, or null when it is one.
+   */
+  function variantShape(root, alt) {
+    var out = { object: false, tag: false, reason: null };
+    if (!isPlainObject(alt) || hasOwn.call(alt, '$ref') || hasOwn.call(alt, 'oneOf') ||
+        (hasOwn.call(alt, 'type') && alt.type !== 'object')) {
+      out.reason = 'it is not an object schema';
+      return out;
+    }
+    out.object = true;
+    var props = hasOwn.call(alt, 'properties') ? alt.properties : {};
+    if (!isPlainObject(props)) {
+      out.reason = "its 'properties' is not an object";
+      return out;
+    }
+    var names = keysOf(props);
+    for (var i = 0; i < names.length; i++) {
+      var p = peek(root, props[names[i]]);
+      if (isPlainObject(p) && (hasOwn.call(p, 'const') ||
+          (isArray(p['enum']) && p['enum'].length === 1))) {
+        out.tag = true;
+      }
+    }
+    if (names.length === 0) {
+      out.reason = 'it has no properties';
+    } else if (names.length > 1) {
+      out.reason = 'it has ' + names.length + ' properties (' + names.map(q).join(', ') +
+        "); a variant alternative has exactly one, the variant's name";
+    } else if (!isArray(alt.required) || alt.required.indexOf(names[0]) < 0) {
+      out.reason = 'its property ' + q(names[0]) + " is not listed in its 'required'";
+    } else if (!isObjectSchema(peek(root, props[names[0]]))) {
+      out.reason = 'the schema of ' + q(names[0]) + ' is ' + describe(peek(root, props[names[0]])) +
+        ', not an object; a variant holds an object, so wrap the value in one';
+    }
+    return out;
+  }
+
+  function variantsRule(ctx, k, path) {
+    allowOnly(ctx, k, { type: 1, properties: 1, required: 1, oneOf: 1 }, path, 'an object with variants');
+    if (hasOwn.call(k, 'type') && k.type !== 'object') {
+      ctx.err(ptr(path, 'type'), "an object with variants (a 'oneOf' of one-property alternatives) " +
+        "is an object, so 'type' may only be 'object'");
+      return null;
+    }
+    var at = ptr(path, 'oneOf');
+    var list = k.oneOf;
+    if (list.length > MAX_CHOICES) {
+      ctx.err(at, 'more than ' + MAX_CHOICES + ' variants');
+      return null;
+    }
+    var fields = objectFields(ctx, k, path);
+    var ok = fields !== null;
+    var seen = {};
+    for (var i = 0; fields && i < fields.length; i++) seen['$' + fields[i].name] = 'field';
+    var variants = [];
+    for (i = 0; i < list.length; i++) {
+      var v = variantAlternative(ctx, list[i], ptr(at, i), seen);
+      if (v) variants.push(v);
+      else ok = false;
+    }
+    return ok ? { kind: 'variants', fields: fields, variants: variants } : null;
+  }
+
+  /** One alternative of a record with variants (known to be variant-shaped). */
+  function variantAlternative(ctx, raw, path, seen) {
+    var pushed = 0;
+    var out = null;
+    var k = keywords(ctx, raw, path, false);
+    while (k && hasOwn.call(k, '$ref')) {
+      var r = resolveRef(ctx, k, path);
+      if (!r) { k = null; break; }
+      ctx.refStack.push(r.frag);
+      pushed++;
+      path = r.frag;
+      k = keywords(ctx, r.target, path, path === '');
+    }
+    if (k) out = variantBody(ctx, k, path, seen);
+    while (pushed--) ctx.refStack.pop();
+    return out;
+  }
+
+  function variantBody(ctx, k, path, seen) {
+    allowOnly(ctx, k, { type: 1, properties: 1, required: 1 }, path, 'a variant alternative');
+    var name = keysOf(k.properties)[0];
+    var at = ptr(ptr(path, 'properties'), name);
+    var ok = true;
+    var count = 0;
+    for (var j = 0; j < k.required.length; j++) {
+      var rat = ptr(ptr(path, 'required'), j);
+      if (k.required[j] !== name) {
+        ctx.err(rat, (typeof k.required[j] === 'string' ? q(k.required[j]) : 'a non-string') +
+          " is not in 'properties'; a variant alternative requires only its one property, the variant");
+        ok = false;
+      } else if (count++) {
+        ctx.err(rat, 'duplicate ' + q(name));
+        ok = false;
+      }
+    }
+    if (!checkName(ctx, name, at)) return null;
+    if (seen['$' + name] === 'field') {
+      ctx.err(at, q(name) + " is both a plain property and a variant; a record's field and " +
+        'variant names must all differ, so rename one');
+      ok = false;
+    } else if (seen['$' + name] === 'variant') {
+      ctx.err(at, q(name) + ' names two variants; rename one');
+      ok = false;
+    }
+    seen['$' + name] = 'variant';
+    var schema = canon(ctx, k.properties[name], at, false);
+    if (!schema) return null;
+    if (schema.kind !== 'object' && schema.kind !== 'variants') {
+      ctx.err(at, 'a variant holds an object (with or without variants of its own), but this is a ' +
+        'tagged union; put the union in a property of an object, e.g. {"type": "object", ' +
+        '"properties": {"value": <the union>}, "required": ["value"]}');
+      return null;
+    }
+    return ok ? { name: name, schema: schema } : null;
+  }
+
   function unionRule(ctx, k, path) {
     allowOnly(ctx, k, { oneOf: 1, discriminator: 1, type: 1 }, path, 'a oneOf');
     if (hasOwn.call(k, 'type') && k.type !== 'object') {
@@ -475,8 +717,10 @@
       var b = canon(ctx, list[i], ptr(at, i), false);
       if (!b) { ok = false; continue; }
       if (b.kind !== 'object') {
-        ctx.err(ptr(at, i), 'each oneOf branch must be an object with a tag property, ' +
-          'e.g. {"type": "object", "properties": {"tag": {"const": "Name"}}, "required": ["tag"]}');
+        ctx.err(ptr(at, i), 'each oneOf alternative must be an object: a tagged-union branch ' +
+          'with a tag property, e.g. {"type": "object", "properties": {"tag": {"const": "Name"}}, ' +
+          '"required": ["tag"]}, or a variant, e.g. {"properties": {"name": {"type": "object"}}, ' +
+          '"required": ["name"]}');
         ok = false;
         continue;
       }
@@ -511,7 +755,8 @@
         if (every) candidates.push(name);
       }
       if (candidates.length === 0) {
-        ctx.err(at, 'a oneOf needs a tag property: the same required property in every ' +
+        ctx.err(at, 'this oneOf is read as a tagged union (an alternative has a "const" ' +
+          'property), so it needs a tag property: the same required property in every ' +
           'branch, holding a different "const" string in each (e.g. "tag": {"const": "Active"})');
         return null;
       }
@@ -559,14 +804,15 @@
         for (i = 0; i < n.values.length; i++) parts.push(q(n.values[i]));
         return '{"enum":[' + parts.join(',') + ']}';
       case 'object':
+        return canonicalObject(n.fields) + '}';
+      case 'variants':
         parts = [];
-        var req = [];
-        for (i = 0; i < n.fields.length; i++) {
-          parts.push(q(n.fields[i].name) + ':' + canonicalJson(n.fields[i].schema));
-          if (!n.fields[i].optional) req.push(q(n.fields[i].name));
+        for (i = 0; i < n.variants.length; i++) {
+          var v = n.variants[i];
+          parts.push('{"type":"object","properties":{' + q(v.name) + ':' + canonicalJson(v.schema) +
+            '},"required":[' + q(v.name) + ']}');
         }
-        return '{"type":"object","properties":{' + parts.join(',') + '},"required":[' +
-          req.join(',') + ']}';
+        return canonicalObject(n.fields) + ',"oneOf":[' + parts.join(',') + ']}';
       case 'array':
         return '{"type":"array","items":' + canonicalJson(n.items) + '}';
       case 'union':
@@ -576,6 +822,17 @@
           q(n.tag) + '}}';
     }
     throw new Error('unreachable');
+  }
+
+  /** `{"type":"object","properties":{...},"required":[...]` without the closing brace. */
+  function canonicalObject(fields) {
+    var parts = [];
+    var req = [];
+    for (var i = 0; i < fields.length; i++) {
+      parts.push(q(fields[i].name) + ':' + canonicalJson(fields[i].schema));
+      if (!fields[i].optional) req.push(q(fields[i].name));
+    }
+    return '{"type":"object","properties":{' + parts.join(',') + '},"required":[' + req.join(',') + ']';
   }
 
   function utf8(s) {
@@ -703,6 +960,24 @@
         for (i = 0; i < n.fields.length; i++) {
           append(body, emit(ctx, n.fields[i].schema, n.fields[i].optional, depth + 1,
             ptr(path, n.fields[i].name), st));
+        }
+        varint(out, body.length);
+        append(out, body);
+        break;
+      case 'variants':
+        out.push(OP.VARIANTS | flag);
+        varint(out, n.fields.length);
+        out.push(n.variants.length - 1);
+        for (i = 0; i < n.fields.length; i++) st.names.push(n.fields[i].name);
+        for (i = 0; i < n.variants.length; i++) st.names.push(n.variants[i].name);
+        body = [];
+        for (i = 0; i < n.fields.length; i++) {
+          append(body, emit(ctx, n.fields[i].schema, n.fields[i].optional, depth + 1,
+            ptr(path, n.fields[i].name), st));
+        }
+        for (i = 0; i < n.variants.length; i++) {
+          append(body, emit(ctx, n.variants[i].schema, false, depth + 1,
+            ptr(path, n.variants[i].name), st));
         }
         varint(out, body.length);
         append(out, body);

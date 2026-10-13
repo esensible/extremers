@@ -16,8 +16,8 @@ the notation, not a validator: validation keywords (`minimum`, `maxItems`,
    then decode and encode messages by walking it.
 
 The wire is compact without compression: varints for integers, raw IEEE
-floats, and one shared **bit byte** stream for booleans, enum and union
-indices and optional-field presence. Both ends must hold the identical
+floats, and one shared **bit byte** stream for booleans, enum, union and
+variant indices and optional-field presence. Both ends must hold the identical
 descriptor; there is no built-in compatibility or extension mechanism. The
 schema hash in the descriptor identifies the schema so that mismatches can be
 detected out of band.
@@ -34,7 +34,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
   - the JS type matches the declared type;
   - an integer is whole and fits its width;
   - an enum string is one of the values;
-  - a union tag is known.
+  - a union tag is known;
+  - a record with variants holds exactly one of its variants.
 
   It does not check anything else:
   - validation keywords (`minimum`, `maxItems`, `pattern`, …) are ignored;
@@ -79,7 +80,8 @@ says what to write instead.
   recursion is rejected. Errors inside a referenced schema are reported at
   the referenced location.
 - Each schema has one **kind**, chosen in this order: `$ref` → `oneOf` →
-  `enum`/`const` → `type`.
+  `enum`/`const` → `type`. A `oneOf` is a tagged union or a record with
+  variants, chosen as §2.2 says.
 - Every other keyword is rejected, structural ones (`anyOf`, `allOf`, `not`,
   `if`/`then`/`else`, `prefixItems`, `patternProperties`, `nullable`, type
   lists such as `["integer", "null"]`, `type: "null"`) with a hint.
@@ -101,7 +103,8 @@ says what to write instead.
 | `{"enum":[...]}` / `{"const":"..."}` | `ENUM` | index in `bitLength(n−1)` bits of a bit byte |
 | `{"type":"object",...}` | `OBJECT` | fields in declared order |
 | `{"type":"array","items":S}` | `ARRAY` | length (varint) + items |
-| `{"oneOf":[...]}` | `UNION` | branch index in `bitLength(n−1)` bits + the branch |
+| `{"oneOf":[...]}`, tagged | `UNION` | branch index in `bitLength(n−1)` bits + the branch |
+| `{"type":"object","properties":{...},"oneOf":[...]}`, variants | `VARIANTS` | fields in declared order + variant index in `bitLength(n−1)` bits + the variant |
 
 **Integer formats** are the OpenAPI Format Registry names (`int8`, `int16`,
 `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`); **number formats**
@@ -139,21 +142,71 @@ nothing (a `const`, an object of only `const` fields, …) is rejected: it
 would carry only its length, and a decoder could be made to loop without
 reading any data.
 
-**Tagged unions.** A `oneOf` is a union of 1 to 256 object schemas sharing
+**Tagged unions.** A tagged union is a `oneOf` of 1 to 256 object schemas sharing
 a **tag property**: a property that every branch lists in `required` and
 defines as a one-value string enum (`{"const": "Name"}`), different in each
 branch (modelled on JTD's `discriminator`). The tag is named by
 `"discriminator": {"propertyName": "..."}` (only `propertyName` is
 supported) or, without it, inferred as the only property that qualifies in
-every branch. Branch order is wire order.
+every branch. Branch order is wire order. The value carries the tag as one
+of its properties (serde's "internally tagged" representation).
+
+**Records with variants.** An object schema may carry `oneOf` beside its
+`properties`. Each alternative names one **variant**: it is an object
+schema (`type` `"object"` or absent) with exactly one property, the
+variant's name, which it lists in `required`; that property's schema is the
+variant's, and it is an object, or itself a record with variants, to any
+depth:
+
+```json
+{"type": "object",
+ "properties": {"line": {"type": "object", "properties": {"a": {"type": "integer"}}}},
+ "required": ["line"],
+ "oneOf": [
+   {"properties": {"idle": {"type": "object"}}, "required": ["idle"]},
+   {"properties": {"countdown": {"type": "object", "properties": {"gun": {"type": "integer"}}, "required": ["gun"]}}, "required": ["countdown"]}
+ ]}
+```
+
+- The `properties` and `required` beside `oneOf` are ordinary **plain
+  fields**, as in an object. A bare `{"oneOf": [...]}` of this shape is a
+  record with variants and no plain fields. `type`, if given, is
+  `"object"`.
+- A value is an object holding the plain fields and **exactly one** variant
+  key: `{"line": {"a": 1}, "countdown": {"gun": 1790000000000}}`. No tag
+  property exists or is added: the variant's key is the tag (serde's
+  "externally tagged" representation).
+- 1 to 256 variants; variant order is wire order. The plain field names and
+  the variant names are all distinct and follow the property name rules of
+  **Objects** above.
+- A variant's schema is an object or a record with variants, not a tagged
+  union; to hold a union, put it in a property of the variant's object.
+
+On the wire, the plain fields are written as an `OBJECT`'s, then the
+variant's index in `bitLength(n−1)` bits, then the variant's object. A
+record with one variant writes no index bits.
+
+**Choosing the form of a `oneOf`.** A schema with `oneOf` is
+
+1. a tagged union, when it has `discriminator`;
+2. otherwise a record with variants, when every alternative is a variant
+   alternative as above (after following `$ref`s): one property, listed in
+   its `required`, whose schema is an object (`type: "object"`, or a bare
+   `oneOf`, which must then be a record with variants too);
+3. otherwise a tagged union, its tag property inferred.
+
+In case 3, when every alternative is an object schema and none has a
+property that could be a tag (a `const`), no tag can be inferred; the
+compiler then explains why the alternatives are not variants, since that is
+the form such a schema is closest to.
 
 ### 2.3 Limits
 
 | Limit | Value |
 |---|---|
-| enum values, union branches | 256 |
-| object properties | 256 |
-| nesting depth (root = 1; a union branch counts as a level) | 32 |
+| enum values, union branches, variants | 256 |
+| object properties, plain fields of a record with variants | 256 |
+| nesting depth (root = 1; a union branch or a variant counts as a level) | 32 |
 | string, byte string and array length | 2^32 − 1 |
 
 ### 2.4 Values
@@ -169,6 +222,7 @@ every branch. Branch order is wire order.
 | object | an object; absent optional fields are omitted; present fields in declared order |
 | array | an array |
 | tagged union | the branch's object with the tag property first: `{"tag": "Both", "cross": 47, "time": 1790000025780}` |
+| record with variants | an object: the plain fields as for an object, then the one variant's key: `{"line": {"a": 1}, "countdown": {"gun": 1790000000000}}` |
 
 **Absent and null.** On encode, a field is **absent** when the host value
 has no such key or property: a missing map key (Swift, Kotlin), or a
@@ -177,9 +231,14 @@ counts as missing, since JS cannot tell them apart in practice. An explicit
 `null` (`nil`, `JSONNull`, …) is **present**: `null` is never a value of
 any type, so it is refused as `shape`, for optional fields too. Properties
 the schema does not declare are ignored. For a union, the branch is chosen
-by the tag, and only that branch's declared properties are read.
+by the tag, and only that branch's declared properties are read. For a
+record with variants, the variant is the one variant key present: none, or
+more than one, is refused as `shape`, and so is a variant whose value is
+not an object (`null` included, since a `null` key is present). A key that
+is neither a plain field nor a variant is ignored, so a value holding only
+undeclared keys has no variant.
 
-**Name comparison.** Property names, enum values and union tags compare by
+**Name comparison.** Property names, variant names, enum values and union tags compare by
 exact Unicode code points (equivalently, by their UTF-8 bytes), with no
 normalisation: `"é"` (U+00E9) and `"é"` (U+0065 U+0301) are different
 names. Hosts whose default string equality normalises (Swift's `String ==`)
@@ -196,22 +255,25 @@ walk of the value in schema order. Two kinds of item are written:
 - **Byte values** (`U8`/`I8`, varints, floats, string and byte-string
   lengths and contents, array lengths) are written at the current byte
   position, which then advances past them.
-- **Bit fields** (a `BOOL`, an `ENUM` index, a `UNION` index, an optional
-  field's presence bit) of width `w` (1 ≤ w ≤ 8) go into the **current bit
+- **Bit fields** (a `BOOL`, an `ENUM` index, a `UNION` index, a `VARIANTS`
+  index, an optional field's presence bit) of width `w` (1 ≤ w ≤ 8) go into the **current bit
   byte**. If there is none yet, or it has fewer than `w` unused bits, the
   encoder **reserves the byte at the current position** as a new bit byte
   (initially zero) and the position advances by one. The field then takes
   the lowest unused bits: bit `used` to `used + w − 1`, where bit 0 is the
-  least significant, and `used += w`. A 0-width field (a one-value enum or
-  union) writes nothing and never reserves a bit byte.
+  least significant, and `used += w`. A 0-width field (a one-value enum, a
+  one-branch union, a one-variant record) writes nothing and never reserves
+  a bit byte.
 
 So a bit byte sits where the first bit field that needed it occurred, and
 later byte values follow it; bit fields that come after those byte values
 still fill the same bit byte while it has room. Byte values never shift.
 
 **One stream-wide bit byte.** There is a single current bit byte for the
-whole message, not one per object, array or union: nested presence bits,
-union indices and booleans from any depth share it. This packs the most
+whole message, not one per object, array, union or record: nested presence
+bits, union and variant indices and booleans from any depth share it. A
+record's variant index, written after its plain fields, shares a bit byte
+with their presence bits whenever it fits. This packs the most
 bits per byte, and a decoder reproduces it exactly because it walks the
 descriptor in the same order.
 
@@ -358,6 +420,7 @@ inlined, in exactly these shapes and key orders:
 | object | `{"type":"object","properties":{name:schema,...},"required":[names]}`, properties in declared order, `required` in declared property order, both always written |
 | array | `{"type":"array","items":S}` |
 | tagged union | `{"oneOf":[branches],"discriminator":{"propertyName":"tag"}}`, each branch an object with its tag property in place |
+| record with variants | `{"type":"object","properties":{name:schema,...},"required":[names],"oneOf":[alternatives]}`: the plain fields exactly as for an object (`properties` and `required` always written, empty when there are none), then every alternative in declared order as `{"type":"object","properties":{"variant":schema},"required":["variant"]}` |
 
 Strings are written as by ECMAScript `JSON.stringify`. The hash is an
 identity, not an integrity check: interpreters do not recompute it.
@@ -379,7 +442,8 @@ names      = { length:varint  utf8:bytes[length] }     (as many as the nodes use
 
 A node starts with an **op byte**: the op in bits 0–6 and the **optional**
 flag in bit 7. The optional flag is valid only on a direct field of an
-`OBJECT` (it gives the field a presence bit).
+`OBJECT` or a plain field of a `VARIANTS` (it gives the field a presence
+bit), never on a union branch or a variant.
 
 | Op | Name | After the op byte |
 |---|---|---|
@@ -400,9 +464,11 @@ flag in bit 7. The optional flag is valid only on a direct field of an
 | 15 | `OBJECT` | `fields`: varint, `size`: varint, then `fields` child nodes |
 | 16 | `ARRAY` | `size`: varint, then 1 child node (the item) |
 | 17 | `UNION` | `n − 1`: u8 (1 to 256 branches), `size`: varint, then `n` child nodes, each an `OBJECT` |
+| 18 | `VARIANTS` | `fields`: varint, `n − 1`: u8 (1 to 256 variants), `size`: varint, then `fields` child nodes (the plain fields), then `n` child nodes (the variants), each an `OBJECT` or a `VARIANTS` |
 
-`size` is the byte length of the node's children. It lets a walker skip a
-subtree (e.g. the union branches before the chosen one) without parsing it;
+`size` is the byte length of the node's children (for `VARIANTS`, its
+fields and its variants together). It lets a walker skip a subtree (e.g.
+the union branches or variants before the chosen one) without parsing it;
 leaf nodes are self-delimiting. Bit widths (`bitLength(n − 1)`) are derived
 from `n` at load, never stored. Children are in walk order (pre-order), so a
 decoder reads the descriptor forward as it reads the message.
@@ -417,6 +483,9 @@ before its children:
 - `UNION`: `1 + n` names: the tag property name, then each branch's tag
   value. The branch objects then consume their own field names (which
   exclude the tag).
+- `VARIANTS`: `fields + n` names: the plain field names in order, then the
+  variant names in index order. The fields then consume their names, then
+  the variants theirs.
 
 Nodes store no name indices. Interpreters that build named values (JS,
 Swift, Kotlin) resolve names once at load; one that does not need them
@@ -430,23 +499,28 @@ refuse it (`descriptor`) on any failure:
 1. No read goes past the end of the descriptor.
 2. `version` is 1.
 3. Every descriptor varint follows §6.
-4. Every op is 1–17; the optional flag appears only on direct `OBJECT`
-   fields.
-5. `OBJECT` has at most 256 fields; every `UNION` branch's op byte is
-   exactly 15.
+4. Every op is 1–18; the optional flag appears only on direct `OBJECT`
+   fields and plain `VARIANTS` fields.
+5. `OBJECT` and `VARIANTS` have at most 256 fields; every `UNION` branch's
+   op byte is exactly 15; every `VARIANTS` variant's op byte is exactly 15
+   or 18.
 6. Every `size` equals the byte length of the children actually parsed.
-7. Nesting depth is at most 32 (root = 1, each child one deeper).
+7. Nesting depth is at most 32 (root = 1, each child one deeper: a field,
+   an item, a union branch, a variant).
 8. No `ARRAY` item is **empty**. An empty node is an `ENUM` with `n = 1`,
    an `OBJECT` whose fields are all required and empty (including none),
-   or a `UNION` with `n = 1` whose branch is empty.
+   a `UNION` with `n = 1` whose branch is empty, or a `VARIANTS` whose
+   fields are all required and empty (including none), with `n = 1` and an
+   empty variant.
 9. The number of nodes parsed equals `nodeCount`.
 10. The names section holds exactly as many names as the nodes consume; each
     `length` fits in the remaining bytes; each is strict UTF-8; nothing
     follows the last name.
 11. Names are distinct where they must be: an object's field names; a
-    union's tag property name together with each branch's field names; an
-    enum's values; a union's tag values. Distinct means different code
-    points (§2.4), with no normalisation. No field or tag property is named
+    union's tag property name together with each branch's field names; a
+    record's field names and variant names, as one set; an enum's values;
+    a union's tag values. Distinct means different code points (§2.4), with
+    no normalisation. No field, variant or tag property is named
     `__proto__`.
 
 ---
@@ -458,9 +532,9 @@ refuse it (`descriptor`) on any failure:
 | `descriptor` | load | the descriptor fails §6.3 |
 | `truncated` | decode | the message ends before the value does |
 | `trailing` | decode | bytes after the end of the value |
-| `invalid` | decode | a non-canonical or too-wide varint, a length above 2^32 − 1, an enum or union index ≥ n, non-zero unused bits in a bit byte, invalid UTF-8 |
+| `invalid` | decode | a non-canonical or too-wide varint, a length above 2^32 − 1, an enum, union or variant index ≥ n, non-zero unused bits in a bit byte, invalid UTF-8 |
 | `precision` | decode (hosts without 64-bit integers) | a valid integer the host's number type cannot hold exactly (§4.3) |
-| `shape` | encode | the value has the wrong type for its node (not a boolean / number / string / byte array / object / array as required), it is an explicit `null` (§2.4), a required property is absent, or a union's tag property is absent or not a string |
+| `shape` | encode | the value has the wrong type for its node (not a boolean / number / string / byte array / object / array as required; a variant's value is an object), it is an explicit `null` (§2.4), a required property is absent, a union's tag property is absent or not a string, or a record with variants holds no variant key or more than one |
 | `range` | encode | the value has the right type but cannot be written: a non-whole number or an integer outside the width, a string not among the enum's values or the union's tags, or a string, byte string or array of length 2^32 or more |
 
 These are the only encode refusals. Encoders never refuse a value for
@@ -517,7 +591,19 @@ of the big-endian binary64 pattern (a `float` value widened to binary64).
 The JSON at that pointer holds the number, `0` for −0, or `null` when not
 finite. Consumers MUST build mapped numbers from the map rather than the
 JSON text, and compare floats by bits, with any NaN equal to any NaN. Decoded objects list keys in wire
-order; hosts that keep key order SHOULD check it.
+order (a union's tag first; a record's plain fields, then its variant's
+key); hosts that keep key order SHOULD check it.
+
+The vectors cover each kind, records with variants among them: with and
+without plain fields, nested, with one variant, sharing a bit byte with
+presence bits, and a whole race state (a phase with variants beside
+optional fields); and among
+the refusals, a record value with no variant, two variants or a variant
+that is not an object, and descriptors with a variant that is not an
+`OBJECT` or `VARIANTS`, a field and a variant of the same name, a wrong
+`size` and a truncated header. `js/test/compile-refusals.json` holds
+schemas the compiler must refuse, with the path and the words its message
+must contain.
 
 ---
 
@@ -525,9 +611,14 @@ order; hosts that keep key order SHOULD check it.
 
 - **Postcard alignment.** Byte values use exactly postcard's encodings
   (LEB128, zigzag, raw `u8`/`i8`, little-endian floats, length-prefixed
-  strings and sequences). Only booleans, enum and union indices and option
-  presence differ: they move into shared bit bytes. A bridge between the
-  two formats is a straight walk of the descriptor.
+  strings and sequences). Only booleans, enum, union and variant indices
+  and option presence differ: they move into shared bit bytes. A bridge
+  between the two formats is a straight walk of the descriptor.
+- **Two forms of `oneOf`.** A tagged union puts its tag inside the value
+  (serde's internally tagged enums, JTD's `discriminator`); a record with
+  variants names the variant by its key (serde's externally tagged enums),
+  so the value is exactly what the schema declares, with no added tag
+  field. Both encode the same way: an index, then an object.
 - **Why bit bytes:** a byte-aligned wire is fast to read and write, but tags
   and flags are mostly 1–3 bits. Packing them into reserved bytes keeps
   every byte value aligned while saving about a byte per union or option.

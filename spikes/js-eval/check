@@ -1,0 +1,8 @@
+#!/bin/sh
+# check [--no-tests] <running|riding|vendee|ultra> <engine dir>
+#
+# The engine validator: (a) compile, (b) language lint, (c) hidden tests
+# (skipped with --no-tests). Exits non-zero on failure. Needs Go and the
+# spike harness at ../js-engines. See RUN.md.
+root=$(cd "$(dirname "$0")" && pwd)
+CHECK_PWD=$(pwd) JS_EVAL_ROOT=$root exec go -C "$root" run ./cmd/check "$@"

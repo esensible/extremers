@@ -1,0 +1,4 @@
+// The same, forgetting that `metres` is nil before the first fix.
+let km = metres / 1000;
+let seconds = elapsed_ms / 1000;
+km > 0.01 ? min(seconds / km, 3600.0) : 0.0

@@ -1,0 +1,13 @@
+[package]
+name = "lang-vm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The executor: loads a program, checks it, and evaluates it over host-supplied inputs. no_std, no alloc."
+
+[lib]
+name = "vm"
+
+[dependencies]
+bytecode = { package = "lang-bytecode", path = "../bytecode" }
+libm = "0.2"

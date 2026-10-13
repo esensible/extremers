@@ -1,0 +1,330 @@
+── if c then 1 else 2
+program.expr:1:6: error[E-PARSE]: expected `{`, found `then`
+  help: write `c ? a : b`, or `if c { a } else { b }`
+
+── if b { 1 }
+program.expr:1:11: error[E-PARSE]: expected `else`, found the end of the input
+  help: `if` needs an `else`: `if c { a } else { b }`
+
+── let a = 1
+a + 1
+program.expr:2:1: error[E-PARSE]: expected `;` after the `let` value, found `a`
+  help: each `let` ends with `;`: `let a = 1; let b = 2; …`
+
+── n ?? 1 + 1
+program.expr:1:8: error[E-PARSE]: `+` can't follow a `??` expression without parentheses
+  help: wrap the `??`: `(a ?? b) + 1`
+
+── i === 1
+program.expr:1:3: error[E-PARSE]: expected the end of the expression, found `===`
+  help: use `==`
+
+── i.length
+program.expr:1:2: error[E-PARSE]: `i.length` isn't expr
+  help: use `len(i)`
+
+── metre * 2
+program.expr:1:1: error[E-NAME]: there's no input or name `metre`
+  help: did you mean `metres`?
+
+── pow(f, 2)
+program.expr:1:1: error[E-NAME]: `pow` isn't a builtin
+  help: use `x ** y`
+
+── let max = 1; max
+program.expr:1:5: error[E-REDECLARE]: `max` is a builtin and can't be a name
+  help: rename it, e.g. `max_v`
+
+── let i = 5; i + 1
+program.expr:1:5: error[E-REDECLARE]: `i` is an input and can't be renamed
+  help: pick a new name, e.g. `i2`
+
+── let a = 1; let a = 2; a
+program.expr:1:16: error[E-REDECLARE]: `a` is already named
+  help: a name is set once; pick a new name for the new value
+
+── i / 1000
+program.expr:1:1: error[E-TYPE]: the output is an integer but this is a float
+  help: convert it: `int(…)` truncates, `int(round(…))` rounds (`/` always gives a float)
+
+── c ? 1 : 2
+program.expr:1:1: error[E-TYPE]: this may be nil, so it can't be used as a condition
+  help: give it a default: `(…) ?? false`
+
+── f % 60
+program.expr:1:1: error[E-TYPE]: `%` needs integers, but this is a float
+  help: convert it first: `int(x) % n`
+
+── b == 1
+program.expr:1:1: error[E-TYPE]: `==` compares a bool with an integer (1), which can never be equal
+  help: compare values of the same kind (ints and floats mix)
+
+── b ? 1 : "one"
+program.expr:1:5: error[E-TYPE]: the branches don't agree: one is an integer (1), the other the string "one"
+  help: both branches must give the same kind of value (ints and floats mix; records need the same fields)
+
+── n
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is an integer (0..10) or nil
+  help: test it first: `n != nil ? … : …` (in the first branch `n` isn't nil), or give a default: `n ?? 0`
+
+── i > 0 ? i : nil
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is an integer or nil
+  help: give a default with `??`, e.g. `(…) ?? 0`
+
+── round(f, 2)
+program.expr:1:1: error[E-ARG]: `round` takes one argument
+  help: to round to 2 places: `round(x * 100) / 100`
+
+── s + "!"
+program.expr:1:1: error[E-UNSUPPORTED]: strings can't be built with `+`
+  help: output numbers; format them where they're displayed
+
+── now()
+program.expr:1:1: error[E-UNSUPPORTED]: `now` isn't available: a program is pure
+  help: pass time in as an input
+
+── len(i)
+program.expr:1:5: error[E-TYPE]: `len` needs a list, but this is an integer
+
+── (n ?? 0) + 1
+program.expr:1:1: error[E-RANGE]: the output is an integer (0..10) but this can be 1..11
+  help: keep it in range, e.g. `min(max(…, 0), 10)`
+
+── i * 2
+program.expr:1:1: error[E-RANGE]: the output is an integer (0..255) but this can be 0..510
+  help: keep it in range, e.g. `min(max(…, 0), 255)`
+
+── b ? "a" : "z"
+program.expr:1:1: error[E-RANGE]: the output is one of "a", "b", but this can be "z"
+  help: use only its values, or add the new one to its `enum`
+
+── s
+program.expr:1:1: error[E-OUTPUT-BOUND]: the output's `maxLength` is 2, but this string can be 10 characters
+  help: raise its `maxLength` to 10
+
+── p.lta
+program.expr:1:2: error[E-NAME]: `p` has no field `lta`
+  help: did you mean `lat`?
+
+── {lat: 1.0}
+program.expr:1:1: error[E-FIELD]: the output is missing the field `lon`
+  help: every required field must be written, e.g. `lon: …`
+
+── {lat: 1.0, lon: 2.0, height: 3.0}
+program.expr:1:1: error[E-FIELD]: the output has no field `height`
+  help: its fields are: alt, lat, lon
+
+── {lat: 1.0, lat: 2.0, lon: 0.0}
+program.expr:1:12: error[E-DUP-KEY]: the field `lat` appears twice
+  help: keep one
+
+── {lat, lon}
+program.expr:1:2: error[E-PARSE]: the field `lat` has no value
+  help: write every field in full: `{lat: lat}`
+
+── {count: 1.5}
+program.expr:1:1: error[E-TYPE]: the output field `count` is an integer but this is a float
+  help: convert it: `int(…)` truncates, `int(round(…))` rounds (`/` always gives a float)
+
+── {count: (s?.count ?? 0) + 1}
+program.expr:1:1: error[E-RANGE]: the output field `count` is an integer (0..1000) but this can be 1..1001
+  help: keep it in range, e.g. `min(max(…, 0), 1000)`
+
+── i.x
+program.expr:1:2: error[E-TYPE]: `i` is an integer, not a record, so it has no field `x`
+
+── p == p
+program.expr:1:1: error[E-UNSUPPORTED]: records can't be compared with `==`
+  help: compare their fields, e.g. `a.x == b.x`, or compare with `nil`
+
+── s
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is a record {count, last} or nil
+  help: test it first: `s != nil ? … : …` (in the first branch `s` isn't nil), or give a default: `s ?? {…}`
+
+── b ? p : 1
+program.expr:1:5: error[E-TYPE]: the branches don't agree: one is a record {alt, lat, lon}, the other an integer (1)
+  help: both branches must give the same kind of value (ints and floats mix; records need the same fields)
+
+── dist(p)
+program.expr:1:1: error[E-ARG]: `dist` takes 2 to 3 arguments, but this gives 1
+  help: call it as `dist(a, b, scale?)`
+
+── dist(p, 1)
+program.expr:1:9: error[E-ARG]: the argument `b` of `dist`: a record is needed, but this is an integer (1)
+  help: `b` is a record {lat, lon}; call it as `dist(a, b, scale?)`
+
+── dist(p, {lat: 1.0})
+program.expr:1:9: error[E-ARG]: the argument `b` of `dist`: it has no field `lon`
+  help: `b` is a record {lat, lon}; call it as `dist(a, b, scale?)`
+
+── dist(p, s?.last)
+program.expr:1:9: error[E-ARG]: the argument `b` of `dist`: this may be nil (it's a record {alt, lat, lon} or nil), but nil isn't allowed here
+  help: test it first: `s?.last != nil ? dist(…) : …` (in the first branch `s?.last` isn't nil), or give a default: `s?.last ?? …`
+
+── let dist = 1; dist
+program.expr:1:5: error[E-REDECLARE]: `dist` is a builtin and can't be a name
+  help: rename it, e.g. `dist_v`
+
+── dits(p, p)
+program.expr:1:1: error[E-NAME]: `dits` isn't a builtin
+  help: did you mean `dist`?
+
+── dist
+program.expr:1:1: error[E-NAME]: `dist` is a builtin
+  help: call it: `dist(…)`
+
+── 1
+interface: error[E-SCHEMA]: /builtins/0: `max` is one of expr's own builtins
+
+── 1
+interface: error[E-SCHEMA]: /builtins/0/params/1: optional parameters must come last
+
+── count(xs, #index > 2)
+program.expr:1:11: error[E-POINTER]: `#index` exists only in `map` and `reduce`
+  help: to skip items use a slice; to count positions, `map` first: `map(xs, #index)`
+
+── # + 1
+program.expr:1:1: error[E-POINTER]: `#` is only meaningful inside a predicate
+  help: use it in the expression argument of a list builtin, e.g. `filter(xs, # > 0)`
+
+── sum(map(xs, #acc))
+program.expr:1:13: error[E-POINTER]: `#acc` exists only in `reduce`
+
+── map(xs, {v: #})
+program.expr:1:11: error[E-PARSE]: a record inside a predicate needs parentheses
+  help: write `map(xs, ({v: #}))`
+
+── sum(xs) + len(i)
+program.expr:1:15: error[E-TYPE]: `len` needs a list, but this is an integer
+
+── filter(xs, # + 1)[0]
+program.expr:1:12: error[E-TYPE]: `filter`'s predicate must be a bool, but this is an integer (-2147483647..2147483648)
+  help: compare it, e.g. `filter(xs, # > 0)`
+
+── xs[1.5]
+program.expr:1:4: error[E-TYPE]: an index must be an integer, but this is a float
+  help: e.g. `xs[int(n / 2)]`
+
+── b ? filter(xs, # > 1) : xs
+program.expr:1:5: error[E-UNSUPPORTED]: a `map` or `filter` result can only be passed to another list builtin here
+  help: reduce it to a value (`sum`, `count`, `first`, `find`, …); keeping a computed list isn't implemented yet
+program.expr:1:1: error[E-TYPE]: the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
+
+── xs
+program.expr:1:1: error[E-UNSUPPORTED]: the output is a list; writing lists to the output isn't implemented yet
+  help: it comes in the next step (list outputs)
+
+── sortBy(xs, #)[0]
+program.expr:1:1: error[E-UNSUPPORTED]: `sortBy` isn't implemented yet
+  help: lists that are sorted, deduplicated or built from parts come in the next step
+program.expr:1:12: error[E-POINTER]: `#` is only meaningful inside a predicate
+  help: use it in the expression argument of a list builtin, e.g. `filter(xs, # > 0)`
+
+── len(reduce(xs, [#], []))
+program.expr:1:16: error[E-ACC-GROWS]: a `reduce` accumulator can't be a list
+  help: keep a fixed set of values, e.g. a record of totals
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema: a list needs `maxItems`
+  help: every list needs a maximum length, e.g. "maxItems": 100
+
+── s
+interface: error[E-SCHEMA]: /inputs/0/schema: a string needs `maxLength`
+  help: every string needs a maximum length, e.g. "maxLength": 32
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema: `required` names `b`, which isn't in `properties`
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema: `uint64` can exceed the largest integer the language has (int64)
+  help: use `int64` or a narrower format
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema: type lists aren't in the wire subset
+  help: declare the input `nullable`, or leave a record field out of `required`
+
+── 1 + (2 + (3 + (4 + 5)))
+program.expr:1:1: error[E-LIMIT]: the program needs 96 bytes (stack 5 × 16, locals 0 × 16, output 1 × 16); the limit is 64
+  help: nest to the left: `a + b + c` needs less stack than `a + (b + c)`
+
+── n != nil ? n : n
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is an integer (0..10) or nil
+  help: give a default with `??`, e.g. `(…) ?? 0`
+
+── {a: n != nil ? n : 0, b: n}
+program.expr:1:1: error[E-TYPE]: the output field `b` can't be nil, but this is an integer (0..10) or nil
+  help: test it first: `n != nil ? … : …` (in the first branch `n` isn't nil), or give a default: `n ?? 0`
+
+── p != nil || dist(p, p) > 0.0
+program.expr:1:18: error[E-ARG]: the argument `a` of `dist`: this may be nil (it's a record {alt, lat, lon} or nil), but nil isn't allowed here
+  help: test it first: `p != nil ? dist(…) : …` (in the first branch `p` isn't nil), or give a default: `p ?? …`
+program.expr:1:21: error[E-ARG]: the argument `b` of `dist`: this may be nil (it's a record {alt, lat, lon} or nil), but nil isn't allowed here
+  help: test it first: `p != nil ? dist(…) : …` (in the first branch `p` isn't nil), or give a default: `p ?? …`
+
+── s != nil ? dist(s.last, p) : 0.0
+program.expr:1:17: error[E-ARG]: the argument `a` of `dist`: this may be nil (it's a record {alt, lat, lon} or nil), but nil isn't allowed here
+  help: test it first: `s.last != nil ? dist(…) : …` (in the first branch `s.last` isn't nil), or give a default: `s.last ?? …`
+
+── let ok = n == nil; ok ? n : 0
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is an integer (0..10) or nil
+  help: give a default with `??`, e.g. `(…) ?? 0`
+
+── (n != nil) == true ? n : 0
+program.expr:1:1: error[E-TYPE]: the output can't be nil, but this is an integer (0..10) or nil
+  help: give a default with `??`, e.g. `(…) ?? 0`
+
+── {phase: {idle: {}, racing: {gun: 1}}}
+program.expr:1:9: error[E-VARIANT]: the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but this sets 2 of them: `idle` and `racing`
+  help: set only one; to choose between them, use a condition: `c ? {a: …} : {b: …}`
+
+── {phase: {}}
+program.expr:1:9: error[E-VARIANT]: the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but this sets none of them
+  help: set one, e.g. `countdown: {…}`
+
+── {phase: {racing: st?.phase?.racing}}
+program.expr:1:18: error[E-VARIANT]: the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but the variant `racing` here may be nil
+  help: choose the variant with a condition, e.g. `st?.phase?.racing != nil ? {racing: st?.phase?.racing} : {countdown: …}`
+
+── {phase: b ? {idle: {}} : {}}
+program.expr:1:26: error[E-VARIANT]: the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but this sets none of them
+  help: set one, e.g. `countdown: {…}`
+
+── {phase: first([b ? {idle: {}} : {racing: {gun: 1}}]) ?? {idle: {}}}
+program.expr:1:9: error[E-VARIANT]: the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but this is a record {idle, racing} and isn't known to have exactly one
+  help: build it with one variant, e.g. `{countdown: {…}}`, or pass on a value that has these variants
+
+── {phase: {countdown: {}}}
+program.expr:1:1: error[E-FIELD]: the output field `phase.countdown` is missing the field `gun`
+  help: every required field must be written, e.g. `gun: …`
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: an alternative of type "integer" isn't supported: every alternative is a record that names its variant
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: this alternative looks like a union tagged by a property (`kind`); variants are named by their alternative's one property instead
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: an alternative has exactly one property, the variant's name, but this has 2
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0/properties/a: the variant `a` must be an object schema (a record), but this is an integer
+  help: put the value in a record: {"type": "object", "properties": {"value": …}, "required": ["value"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: the alternative must list its variant in `required`: "required": ["a"]
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/1: the variant `a` appears twice
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: `a` is both a property and a variant
+  help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}
+
+── 1
+interface: error[E-SCHEMA]: /inputs/0/schema: variants (`oneOf`) inside list items aren't supported yet
+

@@ -209,6 +209,21 @@ private func setAt(_ v: WireValue, _ path: ArraySlice<String>, _ x: WireValue) -
 func bytesify(_ v: WireValue, _ schema: WireValue, root: WireValue) -> WireValue {
     let s = resolve(schema, root)
     if s["contentEncoding"]?.string == "base64", case .string(let h) = v { return .bytes(unhex(h)) }
+    if case .array(let branches)? = s["oneOf"], case .object(let fs) = v, case .none = s["discriminator"],
+       branches.allSatisfy({ isVariant(resolve($0, root)) }) {
+        // A record with variants: its plain properties and the variants'.
+        var props = [WireValue.Field]()
+        if case .object(let p)? = s["properties"] { props += p }
+        for br in branches {
+            if case .object(let p)? = resolve(br, root)["properties"] { props += p }
+        }
+        return .object(fs.map { f in
+            if let p = props.first(where: { $0.key == f.key }) {
+                return .init(f.key, bytesify(f.value, p.value, root: root))
+            }
+            return f
+        })
+    }
     if case .array(let branches)? = s["oneOf"], case .object = v {
         for br in branches {
             let b = resolve(br, root)
@@ -233,6 +248,13 @@ func bytesify(_ v: WireValue, _ schema: WireValue, root: WireValue) -> WireValue
         return .array(a.map { bytesify($0, items, root: root) })
     }
     return v
+}
+
+/// A variant alternative (SPEC §2.2): one property, listed in `required`.
+private func isVariant(_ alt: WireValue) -> Bool {
+    guard case .object(let props)? = alt["properties"], props.count == 1,
+          case .array(let req)? = alt["required"] else { return false }
+    return req.contains(.string(props[0].key))
 }
 
 private func resolve(_ schema: WireValue, _ root: WireValue) -> WireValue {

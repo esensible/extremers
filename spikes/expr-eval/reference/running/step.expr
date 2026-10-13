@@ -1,0 +1,57 @@
+// Running: elapsed time, distance, ~30 s pace, kilometre splits, laps.
+
+let PACE_WINDOW_MS = 30000;
+let SAMPLES = 90;      // fixes kept for the pace: 30 s at 1 Hz, with room
+let SPLITS = 5;
+
+let s = state;
+
+let next =
+  input.tag == "Location" ? (
+    input.fix == nil ? s : (
+      let ts = input.timestamp;
+      let is_first = s.start == nil;
+      let leg = is_first ? 0.0 : distance(s.last_fix, input.fix);
+      let metres = s.metres + leg;
+      let done = int(metres / 1000);
+      // A kilometre ended inside this leg: when, interpolated along it.
+      let crossed = !is_first && done > s.km_done && leg > 0;
+      let at = crossed
+        ? s.last_fix_t + int((ts - s.last_fix_t) * (done * 1000 - s.metres) / leg)
+        : 0;
+      let recent = push_last(s.recent, {t: ts, m: metres}, SAMPLES);
+      let window = filter(recent, .t >= ts - PACE_WINDOW_MS);
+      let oldest = first(window);
+      let moved = metres - oldest.m;
+      {
+        start: is_first ? ts : s.start,
+        t: ts,
+        last_fix: {lat: input.fix.lat, lon: input.fix.lon},
+        last_fix_t: ts,
+        metres: metres,
+        recent: recent,
+        pace: ts - oldest.t >= 5000 && moved > 1 ? (ts - oldest.t) / moved : nil,
+        km_done: done,
+        km_start: is_first ? ts : (crossed ? at : s.km_start),
+        splits: crossed ? push_last(s.splits, at - s.km_start, SPLITS) : s.splits,
+        lap_start: is_first ? ts : s.lap_start,
+        last_lap: s.last_lap
+      }
+    )
+  )
+
+  : input.tag == "Lap" ? (
+    s.start == nil ? s : {
+      start: s.start, t: now, last_fix: s.last_fix, last_fix_t: s.last_fix_t,
+      metres: s.metres, recent: s.recent, pace: s.pace,
+      km_done: s.km_done, km_start: s.km_start, splits: s.splits,
+      lap_start: now,
+      last_lap: now - s.lap_start
+    }
+  )
+
+  : input.tag == "Wake" ? s
+
+  : fail("running: unknown input ", input.tag);
+
+{state: next, wake: nil}

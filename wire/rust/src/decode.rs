@@ -18,7 +18,14 @@ use crate::{Descriptor, Error, Node, Op, varint};
 ///   then [`leave`](Sink::leave);
 /// - a union is [`variant`](Sink::variant)`(i)`, then branch `i`'s fields
 ///   exactly as an object's (its tag is the variant, not a field), then
-///   [`leave`](Sink::leave).
+///   [`leave`](Sink::leave);
+/// - a record with variants ([`Op::Variants`]) is
+///   [`enter_object`](Sink::enter_object), its plain fields as an object's,
+///   then [`variant`](Sink::variant)`(i)` followed by variant `i`'s value (an
+///   object or a record with variants, with its own enter and leave), then
+///   [`leave`](Sink::leave). Of the names the record owns (SPEC §6.2: its
+///   field names, then its variant names), variant `i`'s is number
+///   [`len`](Node::len)` + i`.
 ///
 /// Decoding streams: when [`decode`] fails (say on trailing bytes), the
 /// sink has already seen the values before the fault and must discard
@@ -55,9 +62,11 @@ pub trait Sink {
     fn field(&mut self, index: u8, optional: bool, present: bool) -> Result<(), Self::Error>;
     /// The start of an array of `len` items.
     fn enter_array(&mut self, len: u32) -> Result<(), Self::Error>;
-    /// The start of a union value: branch `i` (< the union's count).
+    /// The start of a union value: branch `i` (< the union's count); or, in a
+    /// record with variants, after its plain fields: variant `i` (< the
+    /// record's variant count), whose value follows.
     fn variant(&mut self, i: u8) -> Result<(), Self::Error>;
-    /// The end of the innermost object, array or union.
+    /// The end of the innermost object, array, union or record.
     fn leave(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -143,11 +152,11 @@ impl<'m> Reader<'m> {
         u32::try_from(v).map_err(|_| Error::Invalid)
     }
 
-    /// An enum or union index, checked against the count.
+    /// An enum, union or variant index, checked against the count.
     #[inline]
     fn index(&mut self, n: &Node<'_>) -> Result<u8, Error> {
         let i = if n.bits() == 0 { 0 } else { self.bits(n.bits())? };
-        if i as usize >= n.len() {
+        if i as usize >= n.choices() {
             return Err(Error::Invalid);
         }
         Ok(i as u8)
@@ -217,6 +226,16 @@ impl<'m> Reader<'m> {
                 s.variant(i)?;
                 if let Some(b) = n.branch(i as usize) {
                     self.fields(b, s)?;
+                }
+                s.leave()
+            }
+            Op::Variants => {
+                s.enter_object()?;
+                self.fields(n, s)?;
+                let i = self.index(&n)?;
+                s.variant(i)?;
+                if let Some(v) = n.branch(i as usize) {
+                    self.node(v, s)?;
                 }
                 s.leave()
             }

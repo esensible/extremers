@@ -1,0 +1,8 @@
+{
+  speed_kmh: state.speed,
+  avg_speed_kmh: state.ride_ms > 0 ? (state.metres / 1000) / (state.ride_ms / 3600000.0) : 0.0,
+  distance_km: state.metres / 1000,
+  elevation_gain_m: state.gain,
+  ride_time_ms: state.ride_ms,
+  paused: state.paused
+}

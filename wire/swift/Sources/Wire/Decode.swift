@@ -199,6 +199,15 @@ private struct Reader {
             out.append(.init(names[Int(n.name0)], .string(names[Int(n.name0) + 1 + k])))
             try fields(br, &out)
             return .object(out)
+        case opVariants:
+            var out = [WireValue.Field]()
+            out.reserveCapacity(Int(n.fieldCount) + 1)
+            try fields(n, &out)
+            let k = n.bits == 0 ? 0 : Int(try bits(UInt32(n.bits)))
+            if k >= Int(n.n) { throw WireError(.invalid, "variant index out of range") }
+            let at = Int(n.fieldCount) + k
+            out.append(.init(names[Int(n.name0) + at], try node(Int(kids[Int(n.kid0) + at]))))
+            return .object(out)
         default:
             preconditionFailure("unreachable: op validated at load")
         }
@@ -208,7 +217,7 @@ private struct Reader {
     mutating func fields(_ n: Node, _ out: inout [WireValue.Field]) throws {
         let k0 = Int(n.kid0)
         let n0 = Int(n.name0)
-        for f in 0..<Int(n.kidCount) {
+        for f in 0..<Int(n.fieldCount) {
             let k = Int(kids[k0 + f])
             if nodes[k].optional, try bits(1) == 0 { continue }
             out.append(.init(names[n0 + f], try node(k)))

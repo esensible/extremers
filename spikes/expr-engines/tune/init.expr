@@ -1,0 +1,10 @@
+// Tune: nothing heard from the GPS yet.
+{
+  speed: 0.0,          // knots, the latest
+  speed_dev: 0.0,      // latest minus the 30 s average, knots
+  heading_dev: 0.0,    // latest minus the 30 s average, degrees, -180..180
+
+  // private: never in the view
+  history: [],         // the last HISTORY samples, oldest first: {speed, heading, ts}
+  last_timestamp: nil  // of the newest sample
+}

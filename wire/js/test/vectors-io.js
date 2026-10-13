@@ -24,6 +24,7 @@
   var OBJECT = 15;
   var ARRAY = 16;
   var UNION = 17;
+  var VARIANTS = 18;
 
   var LE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 
@@ -62,6 +63,8 @@
   }
   function fieldsOf(node, value) {
     if (node.op === OBJECT) return node.fields;
+    // a record with variants: its fields and its variants are all keys
+    if (node.op === VARIANTS) return node.fields.concat(node.variants);
     if (node.op === UNION && isRecord(value)) {
       var i = node.index[value[node.tag]];
       if (i !== undefined) return node.branches[i].fields;

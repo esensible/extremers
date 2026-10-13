@@ -17,6 +17,7 @@ internal const val OP_ENUM = 14
 internal const val OP_OBJECT = 15
 internal const val OP_ARRAY = 16
 internal const val OP_UNION = 17
+internal const val OP_VARIANTS = 18
 
 private const val OPTIONAL = 0x80
 private const val FORMAT_VERSION = 1
@@ -35,10 +36,10 @@ internal class Node(@JvmField val op: Int, @JvmField val optional: Boolean) {
     /** Encodes to nothing (SPEC §6.3 rule 8). */
     @JvmField var zero = false
 
-    /** ENUM / UNION: number of values or branches. */
+    /** ENUM / UNION / VARIANTS: number of values, branches or variants. */
     @JvmField var n = 0
 
-    /** ENUM / UNION: index width, bitLength(n - 1). */
+    /** ENUM / UNION / VARIANTS: index width, bitLength(n - 1). */
     @JvmField var bits = 0
 
     /** First name of this node in the names section. */
@@ -53,9 +54,13 @@ internal class Node(@JvmField val op: Int, @JvmField val optional: Boolean) {
     /** ENUM / UNION: value or tag to index. */
     @JvmField var index: HashMap<String, Int> = HashMap(0)
 
-    /** OBJECT: the fields and their names, in wire order. */
+    /** OBJECT / VARIANTS: the (plain) fields and their names, in wire order. */
     @JvmField var fields: Array<Node> = NO_NODES
     @JvmField var fieldNames: Array<String> = NO_NAMES
+
+    /** VARIANTS: the variants (OBJECT or VARIANTS nodes) and their names, in index order. */
+    @JvmField var variants: Array<Node> = NO_NODES
+    @JvmField var variantNames: Array<String> = NO_NAMES
 
     /** ARRAY: the item node. */
     @JvmField var item: Node? = null
@@ -152,14 +157,26 @@ private class Loader(private val b: ByteArray) {
                 n.name0 = names.toInt()
                 names += nf
                 val start = p
-                var zero = true
-                n.fields = Array(nf.toInt()) {
-                    val f = node(depth + 1, true)
-                    if (f.optional || !f.zero) zero = false
-                    f
-                }
-                n.zero = zero
+                n.zero = fields(n, nf.toInt(), depth)
                 if ((p - start).toLong() != size) fail("object size does not match its fields")
+            }
+            OP_VARIANTS -> {
+                val nf = varint()
+                if (nf > MAX_FIELDS) fail("more than $MAX_FIELDS fields")
+                n.n = u8() + 1
+                n.bits = bitLength(n.n - 1)
+                val size = varint()
+                n.name0 = names.toInt()
+                names += nf + n.n
+                val start = p
+                val fieldsZero = fields(n, nf.toInt(), depth)
+                n.variants = Array(n.n) {
+                    val v = node(depth + 1, false)
+                    if (v.op != OP_OBJECT && v.op != OP_VARIANTS) fail("variant is not an object or a record with variants")
+                    v
+                }
+                n.zero = fieldsZero && n.n == 1 && n.variants[0].zero
+                if ((p - start).toLong() != size) fail("record size does not match its fields and variants")
             }
             OP_ARRAY -> {
                 val size = varint()
@@ -193,6 +210,17 @@ private class Loader(private val b: ByteArray) {
         return n
     }
 
+    /** Parses [count] object fields into [n]; returns whether all are required and encode to nothing. */
+    private fun fields(n: Node, count: Int, depth: Int): Boolean {
+        var zero = true
+        n.fields = Array(count) {
+            val f = node(depth + 1, true)
+            if (f.optional || !f.zero) zero = false
+            f
+        }
+        return zero
+    }
+
     fun load(): Descriptor {
         val version = u8()
         if (version != FORMAT_VERSION) fail("unsupported format version $version")
@@ -223,11 +251,17 @@ private class Loader(private val b: ByteArray) {
         return m
     }
 
-    /** SPEC §6.3 rule 11: an object's field names (and its union's tag) are distinct, none is __proto__. */
+    /**
+     * SPEC §6.3 rule 11: an object's field names (with its union's tag, or
+     * with its variants' names) are distinct, none is __proto__.
+     */
     private fun checkFieldNames(obj: Node, tag: String?) {
-        val seen = HashSet<String>(obj.fieldNames.size * 2 + 2)
+        val seen = HashSet<String>((obj.fieldNames.size + obj.variantNames.size) * 2 + 2)
         for (name in obj.fieldNames) {
             if (!seen.add(name)) fail("duplicate field name \"$name\"")
+        }
+        for (name in obj.variantNames) {
+            if (!seen.add(name)) fail("duplicate field or variant name \"$name\"")
         }
         if (tag != null && !seen.add(tag)) fail("duplicate field name \"$tag\"")
         if ("__proto__" in seen) fail("field name \"__proto__\" is not allowed")
@@ -242,6 +276,13 @@ private class Loader(private val b: ByteArray) {
             OP_OBJECT -> {
                 attachFields(n, table)
                 if (!n.branch) checkFieldNames(n, null)
+            }
+            OP_VARIANTS -> {
+                attachFields(n, table)
+                val v0 = n.name0 + n.fields.size
+                n.variantNames = Array(n.n) { table[v0 + it] }
+                for (v in n.variants) attach(v, table)
+                checkFieldNames(n, null)
             }
             OP_ARRAY -> attach(n.item!!, table)
             OP_UNION -> {

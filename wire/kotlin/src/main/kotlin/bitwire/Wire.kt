@@ -24,6 +24,7 @@ import java.math.BigInteger
  * | `OBJECT` | `Map<String, Any?>` ([LinkedHashMap], keys in wire order, absent optionals omitted) | `Map<*, *>`: only declared keys are read; a missing key is absent; a key mapped to `null` is refused (`shape`) |
  * | `ARRAY` | `List<Any?>` | `List<*>` |
  * | `UNION` | `Map<String, Any?>`, tag property first | `Map<*, *>` holding the tag property |
+ * | `VARIANTS` | `Map<String, Any?>`, plain fields then the one variant's key | `Map<*, *>` holding exactly one variant key (none, or two, is `shape`) |
  *
  * **uint64.** `U64` always decodes to [ULong], so every value up to 2^64 - 1
  * is exact and the type does not depend on the magnitude; the other integer
@@ -206,6 +207,14 @@ private class Reader(private val b: ByteArray, private var p: Int, private val e
                 val obj = LinkedHashMap<String, Any?>(mapCapacity(br.fields.size + 1))
                 obj[n.tag] = n.values[i]
                 return fields(br, obj)
+            }
+            OP_VARIANTS -> {
+                val obj = LinkedHashMap<String, Any?>(mapCapacity(n.fields.size + 1))
+                fields(n, obj)
+                val i = if (n.bits == 0) 0 else bits(n.bits)
+                if (i >= n.n) invalid("variant index out of range")
+                obj[n.variantNames[i]] = node(n.variants[i])
+                return obj
             }
         }
         throw IllegalStateException("unreachable op ${n.op}")
@@ -551,6 +560,28 @@ private class Writer {
                 val i = n.index[t] ?: range("unknown tag \"$t\"", n.tag)
                 if (n.bits != 0) bits(i, n.bits)
                 fields(n.branches[i], v)
+            }
+            OP_VARIANTS -> {
+                if (v !is Map<*, *>) shape("expected an object (Map)")
+                fields(n, v)
+                val names = n.variantNames
+                var chosen = -1
+                for (i in names.indices) {
+                    // A key mapped to null is present (its value is then refused).
+                    if (v[names[i]] == null && !v.containsKey(names[i])) continue
+                    if (chosen >= 0) {
+                        shape("two variants present (\"${names[chosen]}\" and \"${names[i]}\"); exactly one is allowed")
+                    }
+                    chosen = i
+                }
+                if (chosen < 0) {
+                    shape("no variant present; expected exactly one of ${names.joinToString(", ") { "\"$it\"" }}")
+                }
+                if (n.bits != 0) bits(chosen, n.bits)
+                val name = names[chosen]
+                keys.add(name)
+                node(n.variants[chosen], v[name])
+                keys.removeAt(keys.size - 1)
             }
             else -> throw IllegalStateException("unreachable op ${n.op}")
         }

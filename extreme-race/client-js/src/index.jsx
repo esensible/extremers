@@ -1,4 +1,4 @@
-import { state, STATE_ACTIVE, STATE_SEQ, STATE_RACE } from './common.jsx';
+import { phase, IDLE, COUNTDOWN, RACING } from './common.jsx';
 import { Active } from './idle.jsx';
 import { Race } from './race.jsx';
 import { Sequence } from './sequence.jsx';
@@ -13,13 +13,13 @@ const [Confirm, doConfirm] = confirm();
 
 export const Main = () => (
   <Switch fallback={<div><h1>Loading...</h1></div>}>
-    <Match when={state() === STATE_ACTIVE}>
+    <Match when={phase() === IDLE}>
       <Active />
     </Match>
-    <Match when={state() === STATE_SEQ}>
+    <Match when={phase() === COUNTDOWN}>
       <Sequence />
     </Match>
-    <Match when={state() === STATE_RACE}>
+    <Match when={phase() === RACING}>
       <Race />
     </Match>
   </Switch>

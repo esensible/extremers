@@ -1,0 +1,7 @@
+{
+  "inputs": [
+    {"name": "elapsed_ms", "schema": {"type": "integer", "minimum": 0}},
+    {"name": "metres", "schema": {"type": "number"}, "nullable": true}
+  ],
+  "output": {"type": "number", "format": "float"}
+}

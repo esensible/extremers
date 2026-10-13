@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VendeeView",
+  "description": "What the navigation screen shows. Exactly these fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["next_waypoint", "to_next_nm", "to_finish_nm", "run_24h_nm", "vmg_kn"],
+  "properties": {
+    "next_waypoint": {
+      "type": "string",
+      "enum": ["Finisterre", "Canaries", "Equator Out", "Good Hope", "Leeuwin", "Campbell", "Point Nemo", "Cape Horn", "Equator Home", "Finish"],
+      "description": "The waypoint being sailed to. Starts at Finisterre; moves on when the boat is within 10 nm of it."
+    },
+    "to_next_nm": {
+      "type": ["number", "null"],
+      "description": "Great-circle distance from the boat to the next waypoint, nautical miles (1852 m). null before the first fix."
+    },
+    "to_finish_nm": {
+      "type": ["number", "null"],
+      "description": "to_next_nm plus the great-circle legs from the next waypoint through each later waypoint in order to the Finish, nautical miles. null before the first fix."
+    },
+    "run_24h_nm": {
+      "type": "number",
+      "description": "Distance sailed along the track over the last 24 hours (since the first fix if that is less than 24 hours ago), nautical miles. 0 before any."
+    },
+    "vmg_kn": {
+      "type": ["number", "null"],
+      "description": "Velocity made good towards the next waypoint, knots: GPS speed times the cosine of the angle between the GPS course and the bearing to the waypoint. Negative when sailing away. null until there is a fix and a velocity."
+    }
+  }
+}

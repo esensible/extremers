@@ -6,7 +6,7 @@
 // "connection lost" line is the watch shell's (it owns the link).
 import { Switch, Match } from "solid-js";
 import { createApp } from "solid-watch";
-import { state, STATE_ACTIVE, STATE_SEQ, STATE_RACE, EXIT_SIZE, raceConfirm } from "./common.jsx";
+import { phase, IDLE, COUNTDOWN, RACING, EXIT_SIZE, raceConfirm } from "./common.jsx";
 import { Active } from "./idle.jsx";
 import { Race } from "./race.jsx";
 import { Sequence } from "./sequence.jsx";
@@ -18,13 +18,13 @@ const [Confirm, doConfirm] = raceConfirm();
 // props: the screen ({ width, height }), for the views' confirm buttons
 export const Main = (props) => (
   <Switch fallback={<text fontSize={20} textAlign="center">Loading...</text>}>
-    <Match when={state() === STATE_ACTIVE}>
+    <Match when={phase() === IDLE}>
       <Active width={props.width} height={props.height} />
     </Match>
-    <Match when={state() === STATE_SEQ}>
+    <Match when={phase() === COUNTDOWN}>
       <Sequence width={props.width} height={props.height} />
     </Match>
-    <Match when={state() === STATE_RACE}>
+    <Match when={phase() === RACING}>
       <Race width={props.width} height={props.height} />
     </Match>
   </Switch>

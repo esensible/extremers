@@ -8,7 +8,7 @@ function seqClick(seconds) {
     return () => {
         // the tap, in device time (api.js timestamp()), before the confirm
         const clickTime = timestamp();
-        doConfirm(() => { postEvent({ tag: "BumpSeq", value: { seconds: seconds, timestamp: clickTime } }) });
+        doConfirm(() => { postEvent({ bump_seq: { seconds: seconds, tapped_at: clickTime } }) });
     }
 }
 

@@ -1,0 +1,6 @@
+{
+  count: state.count,
+  idle: state.idle,
+  cadence_spm: len(state.recent) < 2 ? nil
+    : (len(state.recent) - 1) * 60000.0 / (last(state.recent) - first(state.recent))
+}

@@ -1,0 +1,60 @@
+// Riding: speed, distance, ride time (stopped while paused), climbing.
+
+let KNOTS_TO_KMH = 1.852;
+let THRESHOLD_M = 3.0;
+
+let s = state;
+
+let next =
+  input.tag == "Location" ? (
+    let ts = input.timestamp;
+    let f = input.fix;
+    let riding = !s.paused && s.t != nil;
+    let leg = riding && f != nil && s.last_fix != nil ? distance(s.last_fix, f) : 0.0;
+    let alt = f?.altitude;
+    let use_alt = !s.paused && alt != nil;
+    let r = s.ref_alt;
+    // Climbing: every new high counts; 3 m below it, climbing is over.
+    // Not climbing: track the low; 3 m above it, count the whole rise.
+    let climb =
+      !use_alt ? {gain: s.gain, ref_alt: r, climbing: s.climbing}
+      : r == nil ? {gain: s.gain, ref_alt: alt, climbing: false}
+      : s.climbing ? (
+          alt > r ? {gain: s.gain + alt - r, ref_alt: alt, climbing: true}
+          : alt <= r - THRESHOLD_M ? {gain: s.gain, ref_alt: alt, climbing: false}
+          : {gain: s.gain, ref_alt: r, climbing: true}
+        )
+      : alt >= r + THRESHOLD_M ? {gain: s.gain + alt - r, ref_alt: alt, climbing: true}
+      : {gain: s.gain, ref_alt: min(r, alt), climbing: false};
+    {
+      t: ts,
+      last_fix: f != nil ? {lat: f.lat, lon: f.lon} : s.last_fix,
+      metres: s.metres + leg,
+      ride_ms: s.ride_ms + (riding ? ts - s.t : 0),
+      paused: s.paused,
+      speed: input.velocity != nil ? input.velocity.speed * KNOTS_TO_KMH : s.speed,
+      gain: climb.gain,
+      ref_alt: climb.ref_alt,
+      climbing: climb.climbing
+    }
+  )
+
+  // Pausing banks the time ridden up to the press; resuming restarts the
+  // clock from the press.
+  : input.tag == "PauseResume" ? {
+    t: s.t == nil ? nil : now,
+    last_fix: s.last_fix,
+    metres: s.metres,
+    ride_ms: s.ride_ms + (!s.paused && s.t != nil ? now - s.t : 0),
+    paused: !s.paused,
+    speed: s.speed,
+    gain: s.gain,
+    ref_alt: s.ref_alt,
+    climbing: s.climbing
+  }
+
+  : input.tag == "Wake" ? s
+
+  : fail("riding: unknown input ", input.tag);
+
+{state: next, wake: nil}

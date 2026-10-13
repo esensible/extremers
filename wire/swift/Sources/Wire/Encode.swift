@@ -162,6 +162,34 @@ private struct Writer {
             }
             if n.bits != 0 { bits(UInt8(k), n.bits) }
             try fields(nodes[Int(kids[Int(n.kid0) + Int(k)])], fs)
+        case opVariants:
+            guard case .object(let fs) = v else { throw shape("expected an object") }
+            try fields(n, fs)
+            let first = Int(n.fieldCount)
+            var chosen = -1
+            var at = 0
+            var cursor = 0
+            for k in 0..<Int(n.n) {
+                guard let j = find(fs, names[Int(n.name0) + first + k], &cursor) else { continue }
+                if chosen >= 0 {
+                    throw shape("two variants present (\"\(names[Int(n.name0) + first + chosen])\" and " +
+                        "\"\(names[Int(n.name0) + first + k])\"); exactly one is allowed")
+                }
+                chosen = k
+                at = j
+            }
+            if chosen < 0 {
+                let all = (0..<Int(n.n)).map { "\"\(names[Int(n.name0) + first + $0])\"" }.joined(separator: ", ")
+                throw shape("no variant present; expected exactly one of \(all)")
+            }
+            if n.bits != 0 { bits(UInt8(chosen), n.bits) }
+            let name = names[Int(n.name0) + first + chosen]
+            do {
+                try node(Int(kids[Int(n.kid0) + first + chosen]), fs[at].value)
+            } catch var e as WireError {
+                e.prepend(name)
+                throw e
+            }
         default:
             preconditionFailure("unreachable: op validated at load")
         }
@@ -173,7 +201,7 @@ private struct Writer {
         let k0 = Int(n.kid0)
         let n0 = Int(n.name0)
         var cursor = 0
-        for f in 0..<Int(n.kidCount) {
+        for f in 0..<Int(n.fieldCount) {
             let k = Int(kids[k0 + f])
             let name = names[n0 + f]
             let at = find(fs, name, &cursor)

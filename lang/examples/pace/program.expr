@@ -1,0 +1,4 @@
+// Current pace in seconds per km, or 0 before any distance.
+let km = (metres ?? 0.0) / 1000;
+let seconds = elapsed_ms / 1000;
+km > 0.01 ? min(seconds / km, 3600.0) : 0.0

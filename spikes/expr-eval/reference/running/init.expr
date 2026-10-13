@@ -1,0 +1,15 @@
+// Running: nothing heard from the GPS yet.
+{
+  start: nil,      // epoch ms of the first fix
+  t: nil,          // the latest time seen (a fix or a Lap press)
+  last_fix: nil,   // {lat, lon} of the latest fix
+  last_fix_t: nil, // its timestamp
+  metres: 0.0,     // track distance
+  recent: [],      // {t, m}: the last fixes, cumulative metres, for the pace
+  pace: nil,       // s/km over ~30 s
+  km_done: 0,      // whole kilometres completed
+  km_start: nil,   // when the current kilometre began
+  splits: [],      // ms each, the last 5
+  lap_start: nil,
+  last_lap: nil
+}

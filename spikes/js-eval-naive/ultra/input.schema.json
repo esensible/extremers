@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UltraInput",
+  "description": "Every input the ultra engine receives: one map with a tag. Location and Wake come from the host, CheckIn from the watch's button.",
+  "oneOf": [
+    {
+      "title": "Location",
+      "description": "A GPS update, about once a second.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "timestamp", "fix", "velocity"],
+      "properties": {
+        "tag": { "const": "Location" },
+        "timestamp": { "type": "integer", "description": "When the fix was taken, epoch ms." },
+        "fix": {
+          "type": ["object", "null"],
+          "description": "Where we are; null if the GPS has no position.",
+          "required": ["lat", "lon"],
+          "properties": {
+            "lat": { "type": "number", "description": "Degrees, south negative." },
+            "lon": { "type": "number", "description": "Degrees, west negative." },
+            "altitude": { "type": ["number", "null"], "description": "Metres above sea level; null or absent if unknown." }
+          }
+        },
+        "velocity": {
+          "type": ["object", "null"],
+          "description": "How we are moving; null if unknown.",
+          "required": ["speed", "heading"],
+          "properties": {
+            "speed": { "type": "number", "description": "Speed over ground, knots." },
+            "heading": { "type": "number", "description": "Course over ground, degrees true, 0 up to 360." }
+          }
+        }
+      }
+    },
+    {
+      "title": "Wake",
+      "description": "The wake time the engine asked for has come (may also arrive late or unasked).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag"],
+      "properties": { "tag": { "const": "Wake" } }
+    },
+    {
+      "title": "CheckIn",
+      "description": "The \"checked in\" button was pressed (at `now`) on arriving at the next aid station.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag"],
+      "properties": { "tag": { "const": "CheckIn" } }
+    }
+  ]
+}

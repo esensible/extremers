@@ -1,4 +1,4 @@
-import { startTime, speed, heading, state, STATE_RACE } from './common.jsx';
+import { startTime, speed, heading, phase, RACING } from './common.jsx';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { confirm } from './confirm.jsx';
 import { postEvent, timestamp } from "./api.js"
@@ -7,7 +7,7 @@ const [raceTime, setRaceTime] = createSignal("0:00")
 const [Confirm, doConfirm] = confirm();
 
 createEffect(() => {
-    if (state() !== STATE_RACE) {
+    if (phase() !== RACING) {
         return;
     }
     var timerId = null;
@@ -47,7 +47,7 @@ createEffect(() => {
 })
 
 export const finishClick = () => {
-    doConfirm(() => { postEvent({ tag: "RaceFinish" }) }, 2);
+    doConfirm(() => { postEvent({ race_finish: {} }) }, 2);
 };
 
 

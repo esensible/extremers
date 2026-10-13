@@ -1,0 +1,12 @@
+// Ultra: on the start line, no GPS yet.
+{
+  start: nil,      // the first fix's time: the race start
+  t: nil,          // the latest fix's time
+  last_fix: nil,   // {lat, lon}
+  track_m: 0.0,    // GPS track since the start
+  checkin_m: 0.0,  // track_m at the last check-in
+  base_km: 0.0,    // the course distance of the last station checked in at
+  next: 0,         // index of the next station: Ridge Hut
+  samples: [],     // {t, m}: track_m every 10 s, for the recent pace
+  pace: nil        // ms per metre over the last ~10 min
+}

@@ -64,15 +64,16 @@ pub enum Error {
     /// Decode: bytes follow the end of the value.
     Trailing,
     /// Decode: malformed bytes (a non-canonical or too wide varint, a length
-    /// above 2^32 − 1, an enum or union index ≥ n, non-zero unused bits in
+    /// above 2^32 − 1, an enum, union or variant index ≥ n, non-zero unused bits in
     /// a bit byte, invalid UTF-8).
     Invalid,
-    /// Encode: the value has the wrong type for its node, or a required
-    /// field is missing. A [`Source`] reports wrong types itself; the walk
+    /// Encode: the value has the wrong type for its node, a required field is
+    /// missing, or a record with variants has no variant or more than one. A
+    /// [`Source`] reports wrong types and variant counts itself; the walk
     /// reports a missing required field.
     Shape,
     /// Encode: the value has the right type but cannot be written: an
-    /// integer outside its width, an enum index or union variant ≥ n.
+    /// integer outside its width, an enum index, union branch or variant ≥ n.
     Range,
     /// Encode: the output buffer is too small for the message.
     Full,
@@ -141,6 +142,10 @@ pub enum Op {
     /// `oneOf` tagged union: a branch index in `bitLength(n − 1)` bits + the
     /// branch's fields.
     Union = 17,
+    /// A record with variants (`oneOf` of one-property alternatives): the
+    /// plain fields in declared order, a variant index in `bitLength(n − 1)`
+    /// bits, then the chosen variant (an object or a record with variants).
+    Variants = 18,
 }
 
 impl Op {
@@ -164,6 +169,7 @@ impl Op {
             15 => Op::Object,
             16 => Op::Array,
             17 => Op::Union,
+            18 => Op::Variants,
             _ => return None,
         })
     }

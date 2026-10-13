@@ -1,0 +1,76 @@
+// Vendée: next waypoint (passed within 10 nm), distance to it and to the
+// finish along the course, the 24 h run along the track, VMG to the next.
+
+let NM = 1852.0;
+let RADIUS_NM = 10.0;
+let DAY_MS = 86400000;
+let SAMPLE_MS = 900000;   // a 24 h run sample every 15 min
+let SAMPLES = 100;        // 25 h of them
+let DEG = 3.141592653589793 / 180;
+
+let COURSE = [
+  {name: "Finisterre", lat: 43.0, lon: -10.0},
+  {name: "Canaries", lat: 28.0, lon: -19.0},
+  {name: "Equator Out", lat: 0.0, lon: -27.0},
+  {name: "Good Hope", lat: -42.0, lon: 18.5},
+  {name: "Leeuwin", lat: -45.0, lon: 115.0},
+  {name: "Campbell", lat: -50.0, lon: 170.0},
+  {name: "Point Nemo", lat: -49.0, lon: -123.0},
+  {name: "Cape Horn", lat: -57.0, lon: -67.3},
+  {name: "Equator Home", lat: 0.0, lon: -30.0},
+  {name: "Finish", lat: 46.47, lon: -1.79}
+];
+let LAST = len(COURSE) - 1;
+
+let s = state;
+
+let next =
+  input.tag == "Location" ? (
+    input.fix == nil ? s : (
+      let ts = input.timestamp;
+      let p = {lat: input.fix.lat, lon: input.fix.lon};
+      let sailed = s.sailed_nm + (s.pos == nil ? 0.0 : distance(s.pos, p) / NM);
+
+      // Passed the target? (At most one per fix; the finish stays.)
+      let passed = s.next < LAST && distance(p, COURSE[s.next]) / NM <= RADIUS_NM;
+      let n = passed ? s.next + 1 : s.next;
+      let wp = COURSE[n];
+      let to_next = distance(p, wp) / NM;
+      let legs = map(COURSE[n:LAST], distance(#, COURSE[n + #index + 1]) / NM);
+
+      // 24 h run: sailed now minus sailed 24 h ago, interpolated between
+      // the samples either side of then.
+      let samples = len(s.samples) == 0 || ts - last(s.samples).t >= SAMPLE_MS
+        ? push_last(s.samples, {t: ts, nm: sailed}, SAMPLES)
+        : s.samples;
+      let cut = ts - DAY_MS;
+      let i = findLastIndex(samples, .t <= cut);
+      let run =
+        i == nil ? sailed   // not 24 h of samples yet (findLastIndex: nil if none)
+        : (
+            let a = samples[i];
+            let b = i + 1 < len(samples) ? samples[i + 1] : {t: ts, nm: sailed};
+            let day_ago = b.t == a.t ? a.nm : a.nm + (b.nm - a.nm) * (cut - a.t) / (b.t - a.t);
+            sailed - day_ago
+          );
+
+      let v = input.velocity;
+      {
+        next: n,
+        pos: p,
+        t: ts,
+        sailed_nm: sailed,
+        samples: samples,
+        run_nm: run,
+        to_next: to_next,
+        to_finish: to_next + sum(legs),
+        vmg: v == nil ? nil : v.speed * cos(angle_diff(v.heading, bearing(p, wp)) * DEG)
+      }
+    )
+  )
+
+  : input.tag == "Wake" ? s
+
+  : fail("vendee: unknown input ", input.tag);
+
+{state: next, wake: nil}

@@ -40,7 +40,8 @@ indirect enum S {
         names += fs.map(\.name)
         var kids = [UInt8]()
         for f in fs { kids += f.schema.node(&names, &count, optional: f.optional) }
-        return [15 | (optional ? 0x80 : 0)] + varint(fs.count) + varint(kids.count) + kids
+        let flag: UInt8 = optional ? 0x80 : 0
+        return [15 | flag] + varint(fs.count) + varint(kids.count) + kids
     }
 
     private func node(_ names: inout [String], _ count: inout Int, optional: Bool) -> [UInt8] {

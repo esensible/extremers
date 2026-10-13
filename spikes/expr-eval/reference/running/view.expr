@@ -1,0 +1,8 @@
+{
+  elapsed_ms: state.start == nil ? 0 : state.t - state.start,
+  distance_m: state.metres,
+  pace_s_per_km: state.pace,
+  splits_ms: state.splits,
+  lap_ms: state.start == nil ? 0 : state.t - state.lap_start,
+  last_lap_ms: state.last_lap
+}

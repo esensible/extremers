@@ -1,0 +1,121 @@
+// Race: the start sequence, setting the line, and when and where the boat
+// would cross it on its current course.
+//
+//   step(state, input, now) -> {state, wake}
+//
+// Inputs: LineStbd, LinePort, BumpSeq{seconds, timestamp}, RaceFinish from
+// clients; Location{timestamp, fix?, velocity?} and Wake from the host.
+// Times are epoch ms on the device clock.
+
+let KNOTS_TO_MPS = 0.514444;
+
+let phase = state.phase;
+let line = state.line;
+let here = state.location;
+
+let next =
+  // Set an end of the line where the boat is. Setting the second end makes
+  // the line Both; where and when we cross it comes with the next GPS update.
+  input.tag == "LineStbd" ? {
+    phase: phase,
+    line: line.tag == "None" || line.tag == "Stbd"
+      ? {tag: "Stbd", stbd: here}
+      : {tag: "Both", stbd: here, port: line.port, cross: line.cross ?? 0, time: line.time ?? 0},
+    location: here,
+    velocity: state.velocity
+  }
+
+  : input.tag == "LinePort" ? {
+    phase: phase,
+    line: line.tag == "None" || line.tag == "Port"
+      ? {tag: "Port", port: here}
+      : {tag: "Both", stbd: line.stbd, port: here, cross: line.cross ?? 0, time: line.time ?? 0},
+    location: here,
+    velocity: state.velocity
+  }
+
+  // Not in a sequence: start one with the gun `seconds` from the tap. In
+  // one: seconds > 0 moves the gun earlier, < 0 later, 0 rounds the time
+  // left (from the tap) down to a whole minute. Never before time 0.
+  : input.tag == "BumpSeq" ? (
+    let offset = abs(input.seconds) * 1000;
+    let tap = input.timestamp;
+    let start = phase.tag == "InSequence"
+      ? (
+          input.seconds == 0 ? phase.start_time - max(0, phase.start_time - tap) % 60000
+          : input.seconds < 0 ? phase.start_time + offset
+          : max(0, phase.start_time - offset)
+        )
+      : (input.seconds < 0 ? max(0, tap - offset) : tap + offset);
+    {phase: {tag: "InSequence", start_time: start}, line: line, location: here, velocity: state.velocity}
+  )
+
+  // Finish the race, or abort the sequence (and with it the gun).
+  : input.tag == "RaceFinish" ? {phase: {tag: "Active"}, line: line, location: here, velocity: state.velocity}
+
+  // The gun. Only in a sequence: a stale wake (raced with a RaceFinish) is
+  // ignored. The heading reads 0 until the first GPS update after the start.
+  : input.tag == "Wake" ? (
+    phase.tag == "InSequence"
+      ? {
+          phase: {tag: "Racing", start_time: phase.start_time},
+          line: line, location: here,
+          velocity: {speed: state.velocity.speed, heading: 0.0}
+        }
+      : state
+  )
+
+  // GPS. Before the start, a fix with a velocity also works out where
+  // (cross: % of the way from the port end) and when (time) we would cross
+  // a fully set line.
+  : input.tag == "Location" ? (
+    let boat = input.fix ?? here;
+    let v = input.velocity;
+    {
+      phase: phase,
+      line: input.fix != nil && v != nil && phase.tag != "Racing" && line.tag == "Both"
+        ? (
+            let stbd = line.stbd;
+            let port = line.port;
+            let mps = max(v.speed, 1e-5) * KNOTS_TO_MPS;  // never 0
+            let length = max(distance(stbd, port), 1.0);
+
+            // Pointing at the line: the starboard end is to the right of the
+            // port end, and our course lies between them.
+            let to_stbd = bearing(boat, stbd);
+            let to_port = bearing(boat, port);
+            let pointing = angle_diff(to_stbd, to_port) > 0
+              && angle_diff(to_stbd, v.heading) > 0
+              && angle_diff(v.heading, to_port) > 0;
+            let x = pointing ? course_crosses_line(boat, v.heading, stbd, port) : nil;
+
+            // {along: 0 at the port end .. 1 at stbd, seconds: until we're there}
+            let to = x != nil
+              ? {along: distance(port, x) / length, seconds: distance(boat, x) / mps}
+              : (
+                  // Not pointing at it (or no crossing within 200 km): the
+                  // nearer end.
+                  let to_s = distance(boat, stbd);
+                  let to_p = distance(boat, port);
+                  to_s < to_p ? {along: 1.0, seconds: to_s / mps} : {along: 0.0, seconds: to_p / mps}
+                );
+
+            let pct = to.along * 100;
+            {
+              tag: "Both", stbd: stbd, port: port,
+              cross: pct >= 255 ? 255 : (pct >= 0 ? int(pct) : 0),  // as Rust's `as u8`
+              time: max(0, input.timestamp + int(to.seconds * 1000))
+            }
+          )
+        : line,
+      location: boat,
+      velocity: v ?? state.velocity
+    }
+  )
+
+  : fail("race: unknown input ", input.tag);
+
+{
+  state: next,
+  wake: next.phase.tag == "InSequence" ? next.phase.start_time : nil  // the gun
+}

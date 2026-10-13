@@ -1,0 +1,942 @@
+{
+  "builtins": [
+    {
+      "description": "metres between two positions (haversine, earth radius 6,371,000 m)",
+      "name": "distance",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    },
+    {
+      "description": "initial bearing from a to b, degrees true, 0 <= x < 360",
+      "name": "bearing",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    },
+    {
+      "description": "where two courses cross: the crossing within range (metres, default 200 km) of pos1, or nil",
+      "name": "courses_cross",
+      "nullable": true,
+      "params": [
+        {
+          "name": "pos1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading1",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "pos2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading2",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "where the great circles through a1-a2 and b1-b2 cross: the crossing within range of a1, or nil",
+      "name": "lines_cross",
+      "nullable": true,
+      "params": [
+        {
+          "name": "a1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "a2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b1",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b2",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "where a course crosses the great circle through a-b: the crossing within range of pos, or nil",
+      "name": "course_crosses_line",
+      "nullable": true,
+      "params": [
+        {
+          "name": "pos",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "heading",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "a",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lon": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "name": "range",
+          "optional": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "heading a minus heading b, degrees, wrapped to -180..180 (positive: a is clockwise of b); extreme-race's simple_diff, in degrees",
+      "name": "angle_diff",
+      "params": [
+        {
+          "name": "a",
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "b",
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "type": "number"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "name": "state",
+      "nullable": true,
+      "schema": {
+        "description": "Race's state: what the next evaluation needs, and what the view shows on an evaluation that carries no fix (bump, tap, wake). Clients receive the view (view.schema.json), not this. Times are epoch ms on the device clock; positions degrees; speeds knots; headings degrees true.",
+        "properties": {
+          "line": {
+            "description": "The start line, as far as it has been set; kept while racing",
+            "properties": {
+              "crossing": {
+                "description": "when the boat reaches the line on its course, as of the last GPS update before the gun with a fix, a velocity and both ends set; absent until the first",
+                "format": "int64",
+                "type": "integer"
+              },
+              "port": {
+                "description": "the port end: the fix where it was set",
+                "properties": {
+                  "alt": {
+                    "type": "number"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "t": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ],
+                "type": "object"
+              },
+              "stbd": {
+                "description": "the starboard end: the fix where it was set",
+                "properties": {
+                  "alt": {
+                    "type": "number"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "t": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "phase": {
+            "description": "Where the race is: exactly one of idle, countdown (to the gun) and racing (since the gun)",
+            "oneOf": [
+              {
+                "properties": {
+                  "idle": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "idle"
+                ]
+              },
+              {
+                "properties": {
+                  "countdown": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "countdown"
+                ]
+              },
+              {
+                "properties": {
+                  "racing": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "racing"
+                ]
+              }
+            ]
+          },
+          "velocity": {
+            "description": "speed over ground and course, as of the last GPS update that had them; absent until the first",
+            "properties": {
+              "heading": {
+                "type": "number"
+              },
+              "speed": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "speed",
+              "heading"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "phase",
+          "line"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "event",
+      "schema": {
+        "oneOf": [
+          {
+            "properties": {
+              "gps": {
+                "properties": {
+                  "fix": {
+                    "properties": {
+                      "alt": {
+                        "type": "number"
+                      },
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lon": {
+                        "type": "number"
+                      },
+                      "t": {
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "t",
+                      "lat",
+                      "lon"
+                    ],
+                    "type": "object"
+                  },
+                  "velocity": {
+                    "properties": {
+                      "heading": {
+                        "type": "number"
+                      },
+                      "speed": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "speed",
+                      "heading"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "gps"
+            ]
+          },
+          {
+            "properties": {
+              "wake": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "wake"
+            ]
+          },
+          {
+            "properties": {
+              "line_stbd": {
+                "description": "set the starboard end where the boat is",
+                "type": "object"
+              }
+            },
+            "required": [
+              "line_stbd"
+            ]
+          },
+          {
+            "properties": {
+              "line_port": {
+                "description": "set the port end where the boat is",
+                "type": "object"
+              }
+            },
+            "required": [
+              "line_port"
+            ]
+          },
+          {
+            "properties": {
+              "bump_seq": {
+                "description": "not counting down: the gun `seconds` from the tap. Counting down: > 0 moves the gun earlier, < 0 later, 0 rounds the time left (from the tap) down to a whole minute",
+                "properties": {
+                  "seconds": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "tapped_at": {
+                    "description": "when the tap happened, on the device clock",
+                    "format": "int64",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "seconds",
+                  "tapped_at"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "bump_seq"
+            ]
+          },
+          {
+            "properties": {
+              "race_finish": {
+                "description": "finish the race, or abort the countdown",
+                "type": "object"
+              }
+            },
+            "required": [
+              "race_finish"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "timestamp",
+      "schema": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    {
+      "name": "gps",
+      "schema": {
+        "items": {
+          "properties": {
+            "alt": {
+              "type": "number"
+            },
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            },
+            "t": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "t",
+            "lat",
+            "lon"
+          ],
+          "type": "object"
+        },
+        "maxItems": 61440,
+        "type": "array"
+      }
+    }
+  ],
+  "output": {
+    "properties": {
+      "state": {
+        "description": "Race's state: what the next evaluation needs, and what the view shows on an evaluation that carries no fix (bump, tap, wake). Clients receive the view (view.schema.json), not this. Times are epoch ms on the device clock; positions degrees; speeds knots; headings degrees true.",
+        "properties": {
+          "line": {
+            "description": "The start line, as far as it has been set; kept while racing",
+            "properties": {
+              "crossing": {
+                "description": "when the boat reaches the line on its course, as of the last GPS update before the gun with a fix, a velocity and both ends set; absent until the first",
+                "format": "int64",
+                "type": "integer"
+              },
+              "port": {
+                "description": "the port end: the fix where it was set",
+                "properties": {
+                  "alt": {
+                    "type": "number"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "t": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ],
+                "type": "object"
+              },
+              "stbd": {
+                "description": "the starboard end: the fix where it was set",
+                "properties": {
+                  "alt": {
+                    "type": "number"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lon": {
+                    "type": "number"
+                  },
+                  "t": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "t",
+                  "lat",
+                  "lon"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "phase": {
+            "description": "Where the race is: exactly one of idle, countdown (to the gun) and racing (since the gun)",
+            "oneOf": [
+              {
+                "properties": {
+                  "idle": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "idle"
+                ]
+              },
+              {
+                "properties": {
+                  "countdown": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "countdown"
+                ]
+              },
+              {
+                "properties": {
+                  "racing": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "racing"
+                ]
+              }
+            ]
+          },
+          "velocity": {
+            "description": "speed over ground and course, as of the last GPS update that had them; absent until the first",
+            "properties": {
+              "heading": {
+                "type": "number"
+              },
+              "speed": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "speed",
+              "heading"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "phase",
+          "line"
+        ],
+        "type": "object"
+      },
+      "view": {
+        "description": "Race's view: what clients receive, computed from the new state on every evaluation. Only what the clients show. Times are epoch ms on the device clock; speeds knots; headings degrees true.",
+        "properties": {
+          "crossing": {
+            "description": "when the boat reaches the line on its course, as last predicted, for the time to the line (from now while idle, from the gun while counting down); absent while racing and until the first prediction",
+            "format": "int64",
+            "type": "integer"
+          },
+          "heading": {
+            "description": "course over ground, shown while racing; absent otherwise, and until the first GPS update with a velocity",
+            "type": "number"
+          },
+          "line": {
+            "description": "Which ends of the start line are set, for the line buttons; with both, the clients show the time to the line instead. Shown while idle and counting down.",
+            "properties": {
+              "port": {
+                "description": "the port end is set",
+                "type": "boolean"
+              },
+              "stbd": {
+                "description": "the starboard end is set",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "stbd",
+              "port"
+            ],
+            "type": "object"
+          },
+          "phase": {
+            "description": "Where the race is, which picks the clients' page: exactly one of idle, countdown (to the gun) and racing (since the gun). The gun is what the countdown counts to and the race clock counts from.",
+            "oneOf": [
+              {
+                "properties": {
+                  "idle": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "idle"
+                ]
+              },
+              {
+                "properties": {
+                  "countdown": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "countdown"
+                ]
+              },
+              {
+                "properties": {
+                  "racing": {
+                    "properties": {
+                      "gun": {
+                        "description": "the start",
+                        "format": "int64",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "gun"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "racing"
+                ]
+              }
+            ]
+          },
+          "speed": {
+            "description": "speed over ground, shown in every phase; absent until the first GPS update with a velocity",
+            "type": "number"
+          }
+        },
+        "required": [
+          "phase",
+          "line"
+        ],
+        "type": "object"
+      },
+      "wake": {
+        "description": "when the host next delivers the `wake` event: epoch ms on the device clock; absent, no timer",
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "state",
+      "view"
+    ],
+    "type": "object"
+  }
+}

@@ -1,0 +1,12 @@
+// Vendée: heading for Finisterre, no position yet.
+{
+  next: 0,          // index into the course: Finisterre
+  pos: nil,         // {lat, lon}
+  t: nil,           // the latest fix's time
+  sailed_nm: 0.0,   // along the track since the first fix
+  samples: [],      // {t, nm}: sailed_nm every 15 min, the last 100 (25 h)
+  run_nm: 0.0,      // the 24 h run
+  to_next: nil,     // nm
+  to_finish: nil,   // nm
+  vmg: nil          // knots
+}

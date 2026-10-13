@@ -14,10 +14,16 @@ use crate::{Descriptor, Error, Node, Op, varint};
 /// - an array is [`enter_array`](Source::enter_array) (the length), that
 ///   many values, then [`leave`](Source::leave);
 /// - a union is [`variant`](Source::variant) (the branch index), then the
-///   branch's fields as an object's, then [`leave`](Source::leave).
+///   branch's fields as an object's, then [`leave`](Source::leave);
+/// - a record with variants ([`Op::Variants`]) is
+///   [`enter_object`](Source::enter_object), its plain fields as an
+///   object's, then [`variant`](Source::variant) (which variant), then that
+///   variant's value (an object or a record with variants, with its own
+///   enter and leave), then [`leave`](Source::leave).
 ///
 /// The source reports a value of the wrong type for what is asked as
-/// [`Error::Shape`] (SPEC §7). The walk itself refuses what cannot be
+/// [`Error::Shape`] (SPEC §7), and so a record value with no variant or more
+/// than one when asked [`variant`](Source::variant). The walk itself refuses what cannot be
 /// written: an integer outside the op's width, an enum index or variant ≥
 /// the count ([`Error::Range`]; a source that cannot map a name returns an
 /// out-of-range index, e.g. `u32::MAX`), and a required field reported
@@ -52,9 +58,10 @@ pub trait Source {
     fn field(&mut self, index: u8, optional: bool) -> Result<bool, Self::Error>;
     /// The start of an array: its length.
     fn enter_array(&mut self) -> Result<u32, Self::Error>;
-    /// The start of a union value: the branch index.
+    /// The start of a union value: the branch index; or, in a record with
+    /// variants, after its plain fields: the variant index.
     fn variant(&mut self) -> Result<u32, Self::Error>;
-    /// The end of the innermost object, array or union.
+    /// The end of the innermost object, array, union or record.
     fn leave(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -125,10 +132,10 @@ impl Writer<'_> {
         self.put(v)
     }
 
-    /// An enum or union index, checked against the count.
+    /// An enum, union or variant index, checked against the count.
     #[inline]
     fn index(&mut self, n: &Node<'_>, i: u32) -> Result<(), Error> {
-        if i as usize >= n.len() {
+        if i as usize >= n.choices() {
             return Err(Error::Range);
         }
         if n.bits() != 0 {
@@ -209,6 +216,16 @@ impl Writer<'_> {
                 self.index(&n, i)?;
                 if let Some(b) = n.branch(i as usize) {
                     self.fields(b, s)?;
+                }
+                s.leave()?;
+            }
+            Op::Variants => {
+                s.enter_object()?;
+                self.fields(n, s)?;
+                let i = s.variant()?;
+                self.index(&n, i)?;
+                if let Some(v) = n.branch(i as usize) {
+                    self.node(v, s)?;
                 }
                 s.leave()?;
             }

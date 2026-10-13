@@ -1,0 +1,19 @@
+[package]
+name = "engine-builtins"
+version = "0.1.0"
+edition = "2024"
+description = "The extremers engine profile's host builtins (distance, bearing, crossings): declarations for the compiler and no_std implementations for the VM."
+
+[lib]
+name = "sailing"
+
+[dependencies]
+vm = { package = "lang-vm", path = "../../lang/vm" }
+libm = "0.2"
+
+[dev-dependencies]
+compiler = { package = "lang-compiler", path = "../../lang/compiler" }
+serde_json = "1"
+
+# Its own workspace: the profile builds on the language crates, never the reverse.
+[workspace]

@@ -143,10 +143,20 @@ class VectorsTest {
             val i = if (v is Map<*, *>) n.values.indexOf(v[n.tag]) else -1
             if (i >= 0) prepareFields(n.branches[i], v as Map<*, *>) else v
         }
+        OP_VARIANTS -> if (v is Map<*, *>) {
+            val out = prepareFields(n, v)
+            for (i in n.variants.indices) {
+                val name = n.variantNames[i]
+                if (out.containsKey(name)) out[name] = prepare(n.variants[i], out[name])
+            }
+            out
+        } else {
+            v
+        }
         else -> v
     }
 
-    private fun prepareFields(n: Node, v: Map<*, *>): Map<*, *> {
+    private fun prepareFields(n: Node, v: Map<*, *>): LinkedHashMap<Any?, Any?> {
         val out = LinkedHashMap<Any?, Any?>(v)
         for (i in n.fields.indices) {
             val name = n.fieldNames[i]
@@ -200,6 +210,15 @@ class VectorsTest {
                 assertTrue(i >= 0, "$where: decoded tag")
                 assertEquals((exp as Map<*, *>)[n.tag], a[n.tag], "$where: tag")
                 checkFields(n.branches[i], exp, act, at)
+            }
+            OP_VARIANTS -> {
+                checkFields(n, exp, act, at)
+                val e = exp as Map<*, *>
+                val present = n.variantNames.indices.filter { e.containsKey(n.variantNames[it]) }
+                assertEquals(1, present.size, "$where: one variant in the expected value")
+                val i = present[0]
+                val name = n.variantNames[i]
+                check(n.variants[i], e[name], (act as Map<*, *>)[name], "$at/$name")
             }
             else -> fail("unknown op ${n.op}")
         }

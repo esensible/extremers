@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UltraView",
+  "description": "What the ultra screen shows. Exactly these fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["next_station", "distance_km", "to_next_km", "eta_ms", "in_hand_ms"],
+  "properties": {
+    "next_station": {
+      "type": "string",
+      "enum": ["Ridge Hut", "River Crossing", "Summit Camp", "Finish"],
+      "description": "The aid station being run to. Starts at Ridge Hut; moves on with each CheckIn."
+    },
+    "distance_km": {
+      "type": "number",
+      "description": "Course distance covered, km: the distance of the station last checked in at (0 before any) plus the GPS track distance since that check-in (since the first fix before any)."
+    },
+    "to_next_km": {
+      "type": "number",
+      "description": "The next station's distance minus distance_km, km; never below 0."
+    },
+    "eta_ms": {
+      "type": ["integer", "null"],
+      "description": "When the runner will reach the next station, epoch ms: the latest time plus to_next_km at the pace of about the last 10 minutes. null until there is a recent pace."
+    },
+    "in_hand_ms": {
+      "type": ["integer", "null"],
+      "description": "The next station's cutoff (race start, i.e. the first fix's time, plus its cutoff) minus eta_ms, ms. Negative when on course to miss it. null when eta_ms is null."
+    }
+  }
+}

@@ -52,6 +52,7 @@
   var OP_OBJECT = 15;
   var OP_ARRAY = 16;
   var OP_UNION = 17;
+  var OP_VARIANTS = 18;
   var OPTIONAL = 0x80;
 
   // varint byte limits by op (unsigned and signed of each width)
@@ -133,8 +134,19 @@
     return {
       op: op, optional: optional, zero: false, name: null, maxBytes: 0,
       n: 0, bits: 0, values: null, index: null, fields: null, branch: false,
-      item: null, branches: null, tag: null, name0: 0
+      item: null, branches: null, tag: null, name0: 0, variants: null
     };
+  }
+
+  /** Parses `count` object fields (each may be optional); returns whether all are required and empty. */
+  function parseFields(st, depth, count, out) {
+    var zero = true;
+    for (var i = 0; i < count; i++) {
+      var f = parseNode(st, depth + 1, true);
+      if (f.optional || !f.zero) zero = false;
+      out.push(f);
+    }
+    return zero;
   }
 
   function parseNode(st, depth, inObject) {
@@ -170,13 +182,30 @@
         st.names += nf;
         start = dp;
         n.fields = [];
-        n.zero = true;
-        for (i = 0; i < nf; i++) {
-          var f = parseNode(st, depth + 1, true);
-          if (f.optional || !f.zero) n.zero = false;
-          n.fields.push(f);
-        }
+        n.zero = parseFields(st, depth, nf, n.fields);
         if (dp - start !== size) fail('descriptor', 'object size does not match its fields');
+        break;
+      case OP_VARIANTS:
+        nf = dvarint();
+        if (nf > MAX_FIELDS) fail('descriptor', 'more than ' + MAX_FIELDS + ' fields');
+        n.n = du8() + 1;
+        n.bits = bitLength(n.n - 1);
+        size = dvarint();
+        n.name0 = st.names;
+        st.names += nf + n.n;
+        start = dp;
+        n.fields = [];
+        n.zero = parseFields(st, depth, nf, n.fields);
+        n.variants = [];
+        for (i = 0; i < n.n; i++) {
+          var v = parseNode(st, depth + 1, false);
+          if (v.op !== OP_OBJECT && v.op !== OP_VARIANTS) {
+            fail('descriptor', 'variant is not an object or a record with variants');
+          }
+          n.variants.push(v);
+        }
+        n.zero = n.zero && n.n === 1 && n.variants[0].zero;
+        if (dp - start !== size) fail('descriptor', 'record size does not match its fields and variants');
         break;
       case OP_ARRAY:
         size = dvarint();
@@ -261,11 +290,15 @@
     return m;
   }
 
-  /** Descriptor rule §6.3.11: an object's names (and its union tag) are distinct. */
+  /**
+   * Descriptor rule §6.3.11: an object's names (with its union tag, or with
+   * its variants' names) are distinct.
+   */
   function checkFieldNames(obj, tag) {
     var list = [];
     for (var i = 0; i < obj.fields.length; i++) list.push(obj.fields[i].name);
     if (tag !== null) list.push(tag);
+    if (obj.variants) for (i = 0; i < obj.variants.length; i++) list.push(obj.variants[i].name);
     var m = lookup(list, 'field name');
     if (m.__proto__ !== undefined) fail('descriptor', 'field name "__proto__" is not allowed');
   }
@@ -283,6 +316,18 @@
           attachNames(n.fields[i], names);
         }
         if (!n.branch) checkFieldNames(n, null);
+        break;
+      case OP_VARIANTS:
+        var nf = n.fields.length;
+        for (i = 0; i < nf; i++) {
+          n.fields[i].name = names[n.name0 + i];
+          attachNames(n.fields[i], names);
+        }
+        for (i = 0; i < n.variants.length; i++) {
+          n.variants[i].name = names[n.name0 + nf + i];
+          attachNames(n.variants[i], names);
+        }
+        checkFieldNames(n, null);
         break;
       case OP_ARRAY:
         attachNames(n.item, names);
@@ -520,6 +565,12 @@
         var obj = {};
         obj[n.tag] = n.values[i];
         return decodeFields(n.branches[i], obj);
+      case OP_VARIANTS:
+        var rec = decodeFields(n, {});
+        i = n.bits ? rbits(n.bits) : 0;
+        if (i >= n.n) fail('invalid', 'variant index out of range');
+        rec[n.variants[i].name] = decodeNode(n.variants[i]);
+        return rec;
     }
     throw new Error('unreachable');
   }
@@ -821,8 +872,33 @@
         if (n.bits) wbits(i, n.bits);
         encodeFields(n.branches[i], v, path);
         return;
+      case OP_VARIANTS:
+        if (!isRecord(v)) fail('shape', at(path) + ': expected an object');
+        encodeFields(n, v, path);
+        var vars = n.variants;
+        var chosen = -1;
+        for (i = 0; i < vars.length; i++) {
+          if (v[vars[i].name] === undefined) continue;
+          if (chosen >= 0) {
+            fail('shape', at(path) + ': two variants present ("' + vars[chosen].name + '" and "' +
+              vars[i].name + '"); exactly one is allowed');
+          }
+          chosen = i;
+        }
+        if (chosen < 0) fail('shape', at(path) + ': no variant present; expected exactly one of ' + variantList(n));
+        if (n.bits) wbits(chosen, n.bits);
+        keys[kd++] = vars[chosen].name;
+        encodeNode(vars[chosen], v[vars[chosen].name], path);
+        kd--;
+        return;
     }
     throw new Error('unreachable');
+  }
+
+  function variantList(n) {
+    var s = [];
+    for (var i = 0; i < n.variants.length; i++) s.push('"' + n.variants[i].name + '"');
+    return s.join(', ');
   }
 
   /** Reads only the declared fields; any other properties of v are ignored. */

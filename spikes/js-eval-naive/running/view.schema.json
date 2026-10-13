@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunningView",
+  "description": "What the running screen shows. Exactly these fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["elapsed_ms", "distance_m", "pace_s_per_km", "splits_ms", "lap_ms", "last_lap_ms"],
+  "properties": {
+    "elapsed_ms": {
+      "type": "integer",
+      "description": "Time since the first GPS fix, ms. 0 before the first fix."
+    },
+    "distance_m": {
+      "type": "number",
+      "description": "Distance run, metres: the sum of the distances between successive fixes. 0 before any."
+    },
+    "pace_s_per_km": {
+      "type": ["number", "null"],
+      "description": "Current pace, seconds per kilometre, over roughly the last 30 s. null until it can be worked out."
+    },
+    "splits_ms": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "integer" },
+      "description": "How long each of the last 5 completed kilometres took, ms, oldest first. Empty before the first kilometre is complete."
+    },
+    "lap_ms": {
+      "type": "integer",
+      "description": "Time in the current lap, ms: since the first fix, or since the last Lap press."
+    },
+    "last_lap_ms": {
+      "type": ["integer", "null"],
+      "description": "How long the most recently finished lap took, ms. null before the first Lap press."
+    }
+  }
+}

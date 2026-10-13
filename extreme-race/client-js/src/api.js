@@ -1,15 +1,28 @@
-// The websocket to the host: binary frames of postcard. Each frame is a
-// host Envelope (protocol-js/, the host protocol's generated bindings)
-// whose `state`, while race is active, is a RaceView (../protocol-js/, this
-// package's own bindings); events go out as a HostEvent carrying a
-// RaceEvent. An envelope for another package, or another version of this
-// one, reloads `/`, which the host serves as the active package's page
+// The websocket to the host: binary frames, each a host Envelope
+// (protocol-js/, the host protocol; unchanged, still postcard). The bytes
+// inside are the race engine's, in the wire codec (wire/js):
+//   - an envelope's `state`, while race is active, is the engine's view
+//     (engine/race/view.schema.json), e.g.
+//       { phase: { countdown: { gun: 1790000300000 } },
+//         line: { stbd: true, port: true }, crossing: 1790000296000, speed: 5.5 }
+//     a variant named by which key is present; `crossing`, `speed` and
+//     `heading` absent when the engine has none;
+//   - events go out as a HostEvent Engine whose bytes are an engine event
+//     (engine/race/event.schema.json).
+// The descriptors are compiled from the schemas at build time ("race-wire":
+// ../race-wire.mjs, a rollup plugin), so the page carries only the codec.
+// An envelope for another package, or another version of this one, reloads
+// `/`, which the host serves as the active package's page
 // (client-common/host.js).
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { decodeEnvelope, encodeHostEvent } from '../../../protocol-js/protocol.js';
-import { decodeRaceView, encodeRaceEvent } from '../../protocol-js/protocol.js';
+import wire from '../../../wire/js/codec.js';
+import { VIEW, EVENT } from 'race-wire';
 import { ownPackage, staleness, reloadEntry, engineEvent, backEvent } from '../../../client-common/host.js';
+
+const VIEW_DESC = wire.load(VIEW);
+const EVENT_DESC = wire.load(EVENT);
 
 // Device clock minus ours, from the timestamp every state carries. The
 // initial value is large so nothing looks synced before the first message.
@@ -22,13 +35,25 @@ var socket = null;
 const PACKAGE = ownPackage();
 const stale = staleness(PACKAGE);
 
-// The race as the device last described it: its RaceView (protocol.d.ts),
-// applied with reconcile so only the fields that changed notify. Until the
-// first message the phase is "Loading", which no view matches.
+// The race as the device last described it: the engine's view, applied with
+// reconcile so only the fields that changed notify (and a field the view no
+// longer has, or the phase's previous variant, goes away). Until the first
+// message the phase has no variant: "Loading" (index.jsx).
 export const [race, setRace] = createStore({
-  speed: 0,
-  phase: { tag: "Loading", value: null },
+  phase: {},
+  line: { stbd: false, port: false },
 });
+
+// An envelope's `state` (bytes): the view, into the store. Throws on bytes
+// that are not exactly one view.
+export function showView(bytes) {
+  setRace(reconcile(wire.decode(VIEW_DESC, new Uint8Array(bytes))));
+}
+
+// An engine event's bytes.
+export function eventBytes(event) {
+  return wire.encode(EVENT_DESC, event);
+}
 
 // The device's clock now, epoch ms.
 export function timestamp() {
@@ -84,7 +109,6 @@ function connectWebSocket() {
     setConnected(true);
 
     var message;
-    var view;
     try {
       message = decodeEnvelope(event.data);
     } catch (e) {
@@ -101,12 +125,10 @@ function connectWebSocket() {
       return;
     }
     try {
-      view = decodeRaceView(message.state);
+      showView(message.state);
     } catch (e) {
       console.error('Undecodable race view:', e);
-      return;
     }
-    setRace(reconcile(view));
   };
 
   ws.onclose = () => {
@@ -128,11 +150,11 @@ function send(hostEvent) {
   }
 }
 
-// A RaceEvent (../protocol-js/protocol.d.ts), e.g.
-//   postEvent({ tag: "LineStbd" })
-//   postEvent({ tag: "BumpSeq", value: { seconds: 30, timestamp: timestamp() } })
+// An engine event (engine/race/event.schema.json), e.g.
+//   postEvent({ line_stbd: {} })
+//   postEvent({ bump_seq: { seconds: 30, tapped_at: timestamp() } })
 export function postEvent(event) {
-  send(engineEvent(PACKAGE, encodeRaceEvent(event)));
+  send(engineEvent(PACKAGE, eventBytes(event)));
 }
 
 // Back to the chooser (or wherever the host's default is).

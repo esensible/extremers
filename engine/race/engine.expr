@@ -1,0 +1,48 @@
+// Race: the start countdown, the start line, and when the boat reaches the
+// line on its course (extreme-race's race.rs and line.rs). The wake is the
+// start gun, while counting down (extreme-race's next_timer). The view is
+// what the clients show: the phase, which ends of the line are set, the
+// crossing time and the speed; while racing, the heading instead of the line.
+let next = (
+  let s = state ?? {phase: {idle: {}}, line: {}};
+  event.gps != nil ? (
+    let fix = event.gps.fix;
+    let velocity = event.gps.velocity;
+    let predict = fix != nil && velocity != nil && s.phase.racing == nil
+               && s.line.stbd != nil && s.line.port != nil;
+    { phase: s.phase, velocity: velocity ?? s.velocity,
+      line: predict
+        ? (let mps = max(velocity.speed, 1e-5) * 0.514444;
+           let to_stbd = bearing(fix, s.line.stbd);
+           let to_port = bearing(fix, s.line.port);
+           let pointing = angle_diff(to_stbd, to_port) > 0
+                       && angle_diff(to_stbd, velocity.heading) > 0
+                       && angle_diff(velocity.heading, to_port) > 0;
+           let x = pointing ? course_crosses_line(fix, velocity.heading, s.line.stbd, s.line.port) : nil;
+           let stbd_m = distance(fix, s.line.stbd);
+           let port_m = distance(fix, s.line.port);
+           let metres = x != nil ? distance(fix, x) : min(stbd_m, port_m);
+           {stbd: s.line.stbd, port: s.line.port, crossing: fix.t + int(metres / mps * 1000)})
+        : s.line })
+  : event.wake != nil ? (s.phase.countdown != nil
+      ? {phase: {racing: {gun: s.phase.countdown.gun}}, line: s.line, velocity: s.velocity} : s)
+  : event.line_stbd != nil ? {phase: s.phase, velocity: s.velocity,
+      line: {stbd: last(gps) ?? s.line.stbd, port: s.line.port, crossing: s.line.crossing}}
+  : event.line_port != nil ? {phase: s.phase, velocity: s.velocity,
+      line: {stbd: s.line.stbd, port: last(gps) ?? s.line.port, crossing: s.line.crossing}}
+  : event.bump_seq != nil ? (
+    let tap = event.bump_seq.tapped_at; let delta = event.bump_seq.seconds * 1000;
+    let gun = s.phase.countdown?.gun;
+    {phase: {countdown: {gun: gun == nil ? max(0, tap + delta)
+                             : delta == 0 ? gun - max(0, gun - tap) % 60000
+                             : max(0, gun - delta)}}, line: s.line, velocity: s.velocity})
+  : event.race_finish != nil ? {phase: {idle: {}}, line: s.line, velocity: s.velocity}
+  : s
+);
+{state: next,
+ view: {phase: next.phase,
+        line: {stbd: next.line.stbd != nil, port: next.line.port != nil},
+        crossing: next.phase.racing == nil ? next.line.crossing : nil,
+        speed: next.velocity?.speed,
+        heading: next.phase.racing != nil ? next.velocity?.heading : nil},
+ wake: next.phase.countdown?.gun}

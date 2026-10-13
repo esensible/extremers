@@ -28,6 +28,7 @@ pub enum Shadow {
     Object(Vec<Field>),
     Array(Box<Shadow>),
     Union { tag: String, values: Vec<String>, branches: Vec<Vec<Field>> },
+    Variants { fields: Vec<Field>, variants: Vec<(String, Shadow)> },
 }
 
 #[derive(Debug)]
@@ -58,6 +59,17 @@ fn build_shadow(n: Node<'_>, names: &mut Names<'_>) -> Shadow {
             let values = take(names, n.len());
             let branches = n.children().map(|b| shadow_fields(b, names)).collect();
             Shadow::Union { tag, values, branches }
+        }
+        Op::Variants => {
+            let fnames = take(names, n.len());
+            let vnames = take(names, n.variant_count());
+            let fields = n
+                .children()
+                .zip(fnames)
+                .map(|(f, name)| Field { name, optional: f.is_optional(), node: build_shadow(f, names) })
+                .collect();
+            let variants = n.variants().zip(vnames).map(|(v, name)| (name, build_shadow(v, names))).collect();
+            Shadow::Variants { fields, variants }
         }
         op => Shadow::Leaf(op),
     }
@@ -159,6 +171,23 @@ fn exp(sh: &Shadow, j: &Json, map: &F64Map, p: &str) -> V {
             assert_eq!(first, tag, "decoded union lists its tag first");
             out.extend(exp_fields(&branches[i], o, map, p, 1));
             V::Obj(out)
+        }
+        Shadow::Variants { fields, variants } => {
+            let o = j.as_object().expect("record object");
+            V::Obj(
+                o.iter()
+                    .map(|(k, x)| {
+                        let at = ptr(p, k);
+                        if let Some(f) = fields.iter().find(|f| &f.name == k) {
+                            (k.clone(), exp(&f.node, x, map, &at))
+                        } else if let Some((_, v)) = variants.iter().find(|(name, _)| name == k) {
+                            (k.clone(), exp(v, x, map, &at))
+                        } else {
+                            panic!("undeclared key {k} in an expected value")
+                        }
+                    })
+                    .collect(),
+            )
         }
     }
 }
@@ -307,6 +336,15 @@ fn build(sh: &Shadow, evs: &mut VecDeque<Ev>) -> V {
             assert_eq!(next(evs), Ev::Leave);
             V::Obj(o)
         }
+        Shadow::Variants { fields, variants } => {
+            assert_eq!(next(evs), Ev::EnterObject);
+            let mut o = build_fields(fields, evs);
+            let Ev::Variant(i) = next(evs) else { panic!("record variant") };
+            let (name, v) = &variants[i as usize];
+            o.push((name.clone(), build(v, evs)));
+            assert_eq!(next(evs), Ev::Leave);
+            V::Obj(o)
+        }
     }
 }
 
@@ -425,6 +463,20 @@ fn sc(sh: &Shadow, j: &Json, map: &F64Map, p: &str, out: &mut Vec<Result<Ev, Err
             };
             out.push(Ok(Ev::Variant(i as u32)));
             sc_fields(&branches[i], o, map, p, out)?;
+            out.push(Ok(Ev::Leave));
+        }
+        Shadow::Variants { fields, variants } => {
+            let o = j.as_object().ok_or(Error::Shape)?;
+            out.push(Ok(Ev::EnterObject));
+            sc_fields(fields, o, map, p, out)?;
+            // exactly one variant key (an explicit null counts as present)
+            let mut present = variants.iter().enumerate().filter(|(_, (name, _))| o.contains_key(name));
+            let (i, (name, v)) = present.next().ok_or(Error::Shape)?;
+            if present.next().is_some() {
+                return Err(Error::Shape);
+            }
+            out.push(Ok(Ev::Variant(i as u32)));
+            sc(v, &o[name], map, &ptr(p, name), out)?;
             out.push(Ok(Ev::Leave));
         }
     }

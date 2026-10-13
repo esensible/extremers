@@ -1,0 +1,7 @@
+// Race: no sequence running, no line set, nothing heard from the GPS yet.
+{
+  phase: {tag: "Active"},              // Active | InSequence{start_time} | Racing{start_time}
+  line: {tag: "None"},                 // None | Stbd{stbd} | Port{port} | Both{stbd, port, cross, time}
+  location: {lat: 0.0, lon: 0.0},      // the boat, degrees
+  velocity: {speed: 0.0, heading: 0.0} // knots, degrees true
+}

@@ -1,17 +1,26 @@
 // The race bundle's golden fixtures are current, and what they show: the
-// Kindle's behaviour on the watch. Taps send HostEvent Engine(race,
-// RaceEvent) bytes; bumps carry the device time of the tap (not of the
-// confirm); the countdown's tick loop buzzes the cues; Exit sends
-// SelectDefault after 2 confirm taps.
+// Kindle's behaviour on the watch. States are host Envelopes whose `state`
+// is the race engine's view, wire-encoded (engine/race/view.schema.json);
+// taps send HostEvent Engine(race, engine event) bytes, the event
+// wire-encoded (event.schema.json); bumps carry the device time of the tap
+// (not of the confirm); the countdown's tick loop buzzes the cues; Exit
+// sends SelectDefault after 2 confirm taps.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { runNode, replay } from "../../../solid-watch/test/lib.mjs";
-import { decodeHostEvent } from "../../../protocol-js/protocol.js";
+import { decodeEnvelope, decodeHostEvent } from "../../../protocol-js/protocol.js";
 import { packageId } from "../../../client-common/host.js";
 import { exitClear, buttonsPerCommit, confirmClear, CONFIRM } from "../../../watch-js/test/fixture-tags.mjs";
-import { decodeRaceEvent } from "../../protocol-js/protocol.js";
+import { raceDescriptors } from "../../race-wire.mjs";
+
+const wire = createRequire(import.meta.url)("../../../wire/js/codec.js");
+const DESC = raceDescriptors();
+const VIEW = wire.load(DESC.view);
+const EVENT = wire.load(DESC.event);
+const decodeEvent = (bytes) => wire.decode(EVENT, new Uint8Array(bytes));
 
 const dir = new URL("../fixtures/", import.meta.url);
 const read = (f) => readFileSync(new URL(f, dir), "utf8");
@@ -55,15 +64,17 @@ function sends() {
   return out;
 }
 
-test("what is sent: the race events, then SelectDefault", () => {
+test("what is sent: the engine's events, then SelectDefault", () => {
   const RACE = packageId("race");
   const got = sends().map(({ event }) => {
     if (event.tag !== "Engine") return event.tag;
     assert.equal(event.value.package, RACE);
-    const e = decodeRaceEvent(event.value.bytes);
-    return e.tag === "BumpSeq" ? `BumpSeq ${e.value.seconds}` : e.tag;
+    const e = decodeEvent(event.value.bytes);
+    // one variant: its key
+    assert.equal(Object.keys(e).length, 1, JSON.stringify(e));
+    return e.bump_seq ? `bump_seq ${e.bump_seq.seconds}` : Object.keys(e)[0];
   });
-  assert.deepEqual(got, ["LinePort", "LineStbd", "BumpSeq 300", "BumpSeq -60", "BumpSeq 0", "RaceFinish", "BumpSeq 60", "SelectDefault"]);
+  assert.deepEqual(got, ["line_port", "line_stbd", "bump_seq 300", "bump_seq -60", "bump_seq 0", "race_finish", "bump_seq 60", "SelectDefault"]);
 });
 
 test("a bump carries the device time of its tap, not of its confirm", () => {
@@ -71,14 +82,157 @@ test("a bump carries the device time of its tap, not of its confirm", () => {
   let bumps = 0;
   for (const { at, event } of sends()) {
     if (event.tag !== "Engine") continue;
-    const e = decodeRaceEvent(event.value.bytes);
-    if (e.tag !== "BumpSeq") continue;
+    const e = decodeEvent(event.value.bytes);
+    if (!e.bump_seq) continue;
     bumps++;
-    const tapLocal = e.value.timestamp - D0 + T0;
+    const tapLocal = e.bump_seq.tapped_at - D0 + T0;
     assert.ok(taps().includes(tapLocal), `bump stamped ${tapLocal} is a tap`);
     assert.ok(tapLocal < at, "stamped before it was confirmed and sent");
   }
   assert.equal(bumps, 4);
+});
+
+// The script's states, decoded: { envelope, view } (view null when the
+// envelope is another package's, envelope null when the bytes are none).
+function states() {
+  const RACE = packageId("race");
+  return script().steps.filter((s) => s.stateHex).map((s) => {
+    let envelope = null;
+    try {
+      envelope = decodeEnvelope(Buffer.from(s.stateHex, "hex"));
+    } catch (e) {
+      return { envelope, view: null };
+    }
+    return { envelope, view: envelope.active === RACE ? wire.decode(VIEW, new Uint8Array(envelope.state)) : null };
+  });
+}
+
+const phaseOf = (v) => Object.keys(v.phase)[0];
+const lineOf = (v) => (v.line.stbd && v.line.port ? "both" : v.line.stbd ? "stbd" : v.line.port ? "port" : "none");
+
+test("the script's states are the engine's views, wire-encoded: every phase and line state, with and without speed, heading and crossing", () => {
+  const views = states().map((s) => s.view).filter(Boolean);
+  for (const v of views) {
+    // exactly one phase variant, the line's two bools, nothing undeclared
+    assert.equal(Object.keys(v.phase).length, 1, JSON.stringify(v));
+    assert.deepEqual(Object.keys(v.line).sort(), ["port", "stbd"]);
+    for (const k of Object.keys(v)) assert.ok(["phase", "line", "crossing", "speed", "heading"].includes(k), k);
+    // as the engine makes them: no crossing while racing, heading only racing
+    if (phaseOf(v) === "racing") assert.equal(v.crossing, undefined);
+    else assert.equal(v.heading, undefined);
+  }
+  const seen = new Set(views.map((v) => `${phaseOf(v)} ${lineOf(v)}`));
+  for (const p of ["idle", "countdown"]) {
+    for (const l of ["none", "stbd", "port", "both"]) {
+      if (p === "countdown" && l === "none") continue; // the line is kept from idle
+      assert.ok(seen.has(`${p} ${l}`), `${p} ${l}`);
+    }
+  }
+  const has = (pred) => views.some(pred);
+  assert.ok(has((v) => phaseOf(v) === "idle" && v.speed === undefined), "idle without speed");
+  assert.ok(has((v) => phaseOf(v) === "idle" && lineOf(v) === "both" && v.crossing === undefined), "idle, both ends, no crossing");
+  assert.ok(has((v) => phaseOf(v) === "idle" && v.crossing !== undefined), "idle with crossing");
+  assert.ok(has((v) => phaseOf(v) === "countdown" && lineOf(v) === "both" && v.crossing === undefined), "countdown, both ends, no crossing");
+  assert.ok(has((v) => phaseOf(v) === "countdown" && v.crossing !== undefined), "countdown with crossing");
+  assert.ok(has((v) => phaseOf(v) === "racing" && v.speed !== undefined && v.heading !== undefined), "racing with speed and heading");
+  assert.ok(has((v) => phaseOf(v) === "racing" && v.speed === undefined && v.heading === undefined), "racing without");
+});
+
+// What the screen shows after each state of the script (before whatever
+// comes next): its texts in tree order and its buttons, from the golden log.
+function screens() {
+  const nodes = new Map([[1, { type: "root", props: {}, children: [] }]]);
+  const out = [];
+  let pending = false;
+  const snapshot = () => {
+    const texts = [];
+    const pads = [];
+    const textOf = (n) => (n.type === "#text" ? n.text : n.children.map((c) => textOf(nodes.get(c))).join(""));
+    const walk = (n) => {
+      if (n.props.display === "none") return;
+      if (n.type === "#text") texts.push(n.text);
+      if (n.type === "button") pads.push({ label: textOf(n), refresh: n.props.borderWidth === 1 });
+      n.children.forEach((c) => walk(nodes.get(c)));
+    };
+    walk(nodes.get(1));
+    return { texts, pads };
+  };
+  for (const l of lines("log.jsonl")) {
+    const [op, ...a] = JSON.parse(l);
+    if (op.startsWith("#")) {
+      if (pending) out.push(snapshot());
+      pending = op === "#state";
+      continue;
+    }
+    if (op === "createNode") nodes.set(a[0], { type: a[1], props: {}, children: [] });
+    else if (op === "createText") nodes.set(a[0], { type: "#text", props: {}, children: [], text: a[1] });
+    else if (op === "setProp") {
+      if (a[1] === "text") nodes.get(a[0]).text = a[2];
+      else nodes.get(a[0]).props[a[1]] = a[2];
+    } else if (op === "insert") {
+      for (const n of nodes.values()) {
+        const i = n.children.indexOf(a[1]);
+        if (i >= 0) n.children.splice(i, 1);
+      }
+      const kids = nodes.get(a[0]).children;
+      const at = a[2] ? kids.indexOf(a[2]) : -1;
+      if (at >= 0) kids.splice(at, 0, a[1]);
+      else kids.push(a[1]);
+    } else if (op === "remove") {
+      const kids = nodes.get(a[0]).children;
+      const i = kids.indexOf(a[1]);
+      if (i >= 0) kids.splice(i, 1);
+    }
+  }
+  if (pending) out.push(snapshot());
+  return out;
+}
+
+test("what each view shows: the phase's page, speed and heading (0 when absent), the line buttons, the time to the line (~ until predicted)", () => {
+  const all = states();
+  const shown = screens();
+  assert.equal(shown.length, all.length, "a screen per state");
+  const pad = (s, label) => s.pads.find((p) => p.label === label);
+  let checked = 0;
+  all.forEach(({ view: v }, i) => {
+    if (!v) return;
+    const s = shown[i];
+    const at = `state ${i}: ${JSON.stringify(v)} -> ${JSON.stringify(s.texts)}`;
+    assert.ok(!s.texts.includes("Loading..."), at);
+    // speed: the first big number, 0 until the engine has one
+    assert.equal(s.texts[0], (v.speed ?? 0).toFixed(1), at);
+    if (phaseOf(v) === "racing") {
+      // heading: the second, 0 until the engine has one; no line buttons
+      assert.equal(s.texts[1], (v.heading ?? 0).toFixed(0), at);
+      assert.equal(pad(s, "Port"), undefined, at);
+      checked++;
+      return;
+    }
+    // idle: the start buttons; counting down: the bumps
+    assert.ok(pad(s, phaseOf(v) === "idle" ? "10" : "Sync"), at);
+    // a set end is drawn without fill ("refresh"); with both, the time to
+    // the line sits between them
+    const port = pad(s, "Port");
+    const stbd = pad(s, "Stbd");
+    assert.equal(port.refresh, v.line.port, at);
+    assert.equal(stbd.refresh, v.line.stbd, at);
+    const between = s.texts.slice(s.texts.indexOf("Port") + 1, s.texts.indexOf("Stbd"));
+    if (lineOf(v) !== "both") {
+      assert.deepEqual(between, [], at);
+    } else if (v.crossing === undefined) {
+      assert.deepEqual(between, ["~"], at);
+    } else {
+      // idle: from now (the state's own time); counting down: from the gun
+      const ms = phaseOf(v) === "idle" ? v.crossing - all[i].envelope.timestamp : v.crossing - v.phase.countdown.gun;
+      const secs = Math.abs(ms / 1000);
+      assert.deepEqual(between, [`${ms < 0 ? "-" : ""}${Math.floor(secs / 60)}:${Math.floor(secs) % 60}`], at);
+    }
+    checked++;
+  });
+  assert.equal(checked, all.filter((s) => s.view).length);
+  // the two predicted crossings, as the script sets them
+  const crossings = shown.flatMap((s) => s.texts).filter((t) => /^-?\d+:\d+$/.test(t) && !/^\d\d:/.test(t));
+  assert.ok(crossings.includes("1:15") && crossings.includes("-0:4"), JSON.stringify(crossings));
 });
 
 test("haptics: the countdown's cues, one gun from the countdown, one from the device's state", () => {

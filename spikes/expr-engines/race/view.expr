@@ -1,0 +1,18 @@
+// What clients see of a race (RaceView). speed and heading are f32 on the
+// wire: the view schema narrows them, not the expression.
+
+// The line as far as it has been set; its ends and length stay private.
+let line = state.line.tag == "Both"
+  ? {tag: "Both", cross: state.line.cross, time: state.line.time}
+  : {tag: state.line.tag};
+
+{
+  speed: state.velocity.speed,  // knots
+  phase:
+    state.phase.tag == "Racing"
+      // the line is no longer shown; the course is
+      ? {tag: "Racing", start_time: state.phase.start_time, heading: state.velocity.heading}
+    : state.phase.tag == "InSequence"
+      ? {tag: "InSequence", start_time: state.phase.start_time, line: line}
+    : {tag: "Active", line: line}
+}

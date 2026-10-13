@@ -1,0 +1,17 @@
+let STATIONS = [
+  {name: "Ridge Hut", km: 12.0, cutoff_ms: 9000000},        // 2 h 30
+  {name: "River Crossing", km: 25.5, cutoff_ms: 18000000},  // 5 h
+  {name: "Summit Camp", km: 41.0, cutoff_ms: 30600000},     // 8 h 30
+  {name: "Finish", km: 56.0, cutoff_ms: 43200000}           // 12 h
+];
+let st = STATIONS[state.next];
+let covered = state.base_km + (state.track_m - state.checkin_m) / 1000;
+let left = max(0.0, st.km - covered);
+let eta = state.pace == nil || state.t == nil ? nil : state.t + int(left * 1000 * state.pace);
+{
+  next_station: st.name,
+  distance_km: covered,
+  to_next_km: left,
+  eta_ms: eta,
+  in_hand_ms: eta == nil ? nil : state.start + st.cutoff_ms - eta
+}

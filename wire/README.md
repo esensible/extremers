@@ -11,8 +11,8 @@ small **descriptor**; interpreters on each platform walk it to decode and
 encode. There is no code generation and no compression.
 
 The wire is byte-aligned like postcard (varints, raw little-endian floats,
-length-prefixed strings), except that booleans, enum and union indices and
-optional-field presence bits share **bit bytes**, so tags and flags cost
+length-prefixed strings), except that booleans, enum, union and variant
+indices and optional-field presence bits share **bit bytes**, so tags and flags cost
 bits rather than bytes.
 
 ```json
@@ -36,6 +36,16 @@ bits rather than bytes.
 
 `{"speed": 6.5, "phase": {"tag": "Idle"}}` encodes to 5 bytes: the float,
 then one bit byte holding the union index and the presence bit of `note`.
+
+A `oneOf` can also name its alternatives by key, with no tag field: a
+**record with variants**, where each alternative has one required property
+holding an object, as in `"phase": {"oneOf": [{"properties": {"idle":
+{"type": "object"}}, "required": ["idle"]}, {"properties": {"countdown":
+{"type": "object", "properties": {"gun": {"type": "integer"}}, "required":
+["gun"]}}, "required": ["countdown"]}]}`. The value holds exactly one
+variant's key, `{"speed": 6.5, "phase": {"countdown": {"gun":
+1790000000000}}}` (11 bytes: the float, a bit byte with the variant index,
+then `gun`); plain properties may sit beside the `oneOf` (SPEC §2.2).
 
 ## What is here
 

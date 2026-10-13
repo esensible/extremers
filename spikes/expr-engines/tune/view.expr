@@ -1,0 +1,7 @@
+// What clients see of tuning (TuneView): three f32s on the wire (the view
+// schema narrows them). The history stays private.
+{
+  speed: state.speed,
+  speed_dev: state.speed_dev,
+  heading_dev: state.heading_dev
+}

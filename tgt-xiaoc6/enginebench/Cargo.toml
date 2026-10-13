@@ -1,0 +1,47 @@
+[package]
+name = "enginebench"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "ESP32-C6 benchmark: the Race engine as WASM under wasm3 (as the firmware runs it) against Race as bytecode on lang/vm. Not part of the firmware."
+
+# Its own workspace, so the firmware's crates, lock and profile stay as they
+# are; Cargo.lock started as a copy of the root one, so the shared crates
+# have the firmware's versions. Run cargo from this directory: the runner,
+# rustflags and target come from ../.cargo/config.toml.
+[workspace]
+
+[features]
+default = ["old", "new"]
+# The old engine: race.wasm under wasm3, through common::engine::WasmEngine.
+old = ["dep:common", "dep:extreme-protocol", "dep:extreme-sdk", "dep:extreme-race", "dep:postcard"]
+# The new engine: race bytecode on lang/vm with the sailing builtins.
+new = ["dep:vm", "dep:sailing"]
+[dependencies]
+defmt = "1.0"
+rtt-target = { version = "0.6", features = ["defmt"] }
+esp-hal = { version = "1.2", features = ["defmt", "unstable", "esp32c6"] }
+esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt", "esp32c6"] }
+esp-alloc = { version = "0.11", features = ["internal-heap-stats", "esp32c6"] }
+esp-bootloader-esp-idf = { version = "0.6", features = ["esp32c6"] }
+portable-atomic = { version = "1.15", default-features = false, features = ["critical-section"] }
+
+common = { path = "../../common", features = ["defmt"], optional = true }
+extreme-protocol = { path = "../../extreme-protocol", optional = true }
+extreme-sdk = { path = "../../extreme-sdk", optional = true }
+extreme-race = { path = "../../extreme-race", optional = true }
+postcard = { version = "1.1", default-features = false, optional = true }
+
+vm = { package = "lang-vm", path = "../../lang/vm", optional = true }
+sailing = { package = "engine-builtins", path = "../../engine/builtins", optional = true }
+
+[build-dependencies]
+compiler = { package = "lang-compiler", path = "../../lang/compiler" }
+engine-race = { path = "../../engine/race" }
+
+# The firmware's (the root Cargo.toml's [profile.release]).
+[profile.release]
+lto = "fat"
+opt-level = 3
+codegen-units = 1
+debug = 2

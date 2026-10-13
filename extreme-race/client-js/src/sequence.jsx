@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup } from 'solid-js';
-import { speed, startTime, LineButtons, state, STATE_SEQ } from './common.jsx';
+import { speed, startTime, LineButtons, phase, COUNTDOWN } from './common.jsx';
 import { postEvent, timestamp } from "./api.js"
 import { confirm } from './confirm.jsx';
 
@@ -16,13 +16,13 @@ function bumpStart(seconds) {
     return () => {
         // the tap, in device time (api.js timestamp()), before the confirm
         const clickTime = timestamp();
-        doConfirm(() => { postEvent({ tag: "BumpSeq", value: { seconds: seconds, timestamp: clickTime } }) });
+        doConfirm(() => { postEvent({ bump_seq: { seconds: seconds, tapped_at: clickTime } }) });
     }
 }
 
 
 createEffect(() => {
-    if (state() !== STATE_SEQ) {
+    if (phase() !== COUNTDOWN) {
         return;
     }
     var timerId = null;

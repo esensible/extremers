@@ -1,0 +1,59 @@
+// Tune: speed, and how speed and heading differ from their 30 s average.
+//
+//   step(state, input, now) -> {state, wake}
+//
+// Only GPS velocities matter. Never asks for a wake; takes no client inputs.
+
+let WINDOW_MS = 30000;
+let HISTORY = 32;   // samples kept: more than the window at the GPS's 1 Hz
+
+let v = input.velocity;
+let ts = input.timestamp;
+
+let next =
+  input.tag == "Wake" ? state   // not asked for; nothing to do
+  : input.tag != "Location" ? fail("tune: unknown input ", input.tag)
+
+  : v == nil ? state
+
+  // The first sample: nothing to average yet.
+  : state.last_timestamp == nil ? {
+    speed: v.speed, speed_dev: 0.0, heading_dev: 0.0,
+    history: push_last(state.history, {speed: v.speed, heading: v.heading, ts: ts}, HISTORY),
+    last_timestamp: ts
+  }
+
+  // Repeated and out-of-order samples are ignored.
+  : ts <= state.last_timestamp ? state
+
+  : (
+    let history = push_last(state.history, {speed: v.speed, heading: v.heading, ts: ts}, HISTORY);
+
+    // Time-weighted averages over the last 30 s, newest sample first: each
+    // sample counts for the seconds until the one after it, clipped to the
+    // window (so the first sample older than the window counts for the part
+    // inside it, and older ones for nothing).
+    let window_start = max(0, ts - WINDOW_MS);
+    let newest_first = reverse(history);
+    let weighted = map(newest_first, {
+      let until = #index == 0 ? ts : newest_first[#index - 1].ts;
+      {
+        speed: #.speed,
+        heading: #.heading,
+        seconds: max(0, until - max(#.ts, window_start)) / 1000
+      }
+    });
+    let total = sum(weighted, .seconds);
+    let mean_speed = total > 0 ? sum(weighted, .speed * .seconds) / total : v.speed;
+    let avg_heading = mean_heading(map(weighted, .heading), map(weighted, .seconds));
+
+    {
+      speed: v.speed,
+      speed_dev: v.speed - mean_speed,
+      heading_dev: angle_diff(v.heading, avg_heading),
+      history: history,
+      last_timestamp: ts
+    }
+  );
+
+{state: next, wake: nil}

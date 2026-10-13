@@ -1,0 +1,8 @@
+let NAMES = ["Finisterre", "Canaries", "Equator Out", "Good Hope", "Leeuwin", "Campbell", "Point Nemo", "Cape Horn", "Equator Home", "Finish"];
+{
+  next_waypoint: NAMES[state.next],
+  to_next_nm: state.to_next,
+  to_finish_nm: state.to_finish,
+  run_24h_nm: state.run_nm,
+  vmg_kn: state.vmg
+}
