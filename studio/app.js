@@ -11,7 +11,7 @@ import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
 import { toBase64, fromBase64 } from './zip.js';
-import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml } from './ui.js';
+import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceProgressText, deviceRowsHtml } from './ui.js';
 import { createEditor } from './editor.js';
 import { mountPanels } from './panels.js';
 import { mountPreviews } from './preview/index.js';
@@ -355,7 +355,7 @@ api._onCall(({ name, result: r }) => {
 // Every call (the page's and an agent's) comes through here: the status line,
 // and the project/files views when something changed underneath them.
 
-const QUIET = new Set(['describe', 'status', 'log', 'skills', 'skill', 'project.list', 'files.list', 'files.read', 'sim.state', 'sim.history', 'engine.interface']);
+const QUIET = new Set(['describe', 'status', 'log', 'skills', 'skill', 'project.list', 'files.list', 'files.read', 'sim.state', 'sim.history', 'engine.interface', 'device.status']);
 api._onCall((c) => { onCall(c).catch((e) => logger.log('error', `page refresh after ${c.name} failed: ${e?.message ?? e}`)); });
 async function onCall({ name, result: r }) {
   if (QUIET.has(name) && r.ok) return;
@@ -413,6 +413,77 @@ mountPanels({ api, callApi: window.api, editor, openFile, logger });
 const previews = mountPreviews({ api, callApi: window.api, getLastBuild });
 api._setPreview(previews.controller);
 window.__previews = previews;
+
+// ------------------------------------------------------------------ device ----
+// #device-choose opens Chrome's Bluetooth chooser (the page's only native
+// dialog, and only from this click); the #device panel's buttons call
+// window.api.device.*. The status line follows the link (the controller's
+// onChange) and the table follows every device.list, the page's or an
+// agent's. After an agent's install/activate/delete the table is marked stale
+// rather than listed again, so the page never takes the device from an agent.
+
+let deviceList = null; // the last device.list result
+let deviceConfirm = null; // { id, act } waiting for its inline confirm
+let deviceConfirmTimer;
+let deviceUrl = null;
+
+function renderDevice(s) {
+  $('device-status').textContent = deviceStatusText(s);
+  $('device-progress').textContent = s?.progress ? `${s.state === 'busy' ? '' : 'last transfer: '}${deviceProgressText(s.progress)}` : '';
+  $('device-choose').disabled = !s?.bluetooth || s.state === 'busy' || s.state === 'connecting';
+}
+function renderDeviceRows() { $('device-bundles').innerHTML = deviceRowsHtml(deviceList, deviceConfirm); }
+function renderDeviceLog() { $('device-log').textContent = logger.lines(500).filter((l) => /\bdevice[.:]/.test(l)).slice(-200).join('\n'); }
+logger.onLine((line) => { if (/\bdevice[.:]/.test(line)) renderDeviceLog(); });
+
+api._device.controller().then((c) => { c.onChange(renderDevice); renderDevice(c.status()); }, (e) => { $('device-status').textContent = `the device client did not load: ${e.message}`; });
+
+$('device-choose').onclick = () => { api._device.choose(); }; // Chrome's chooser opens inside this click's activation
+$('device-connect').onclick = () => window.api.device.connect();
+$('device-disconnect').onclick = () => window.api.device.disconnect();
+$('device-list').onclick = () => window.api.device.list();
+$('device-install').onclick = async () => {
+  await flushAll();
+  const r = await window.api.device.install({ activate: $('device-install-activate').checked });
+  if (r.ok) await window.api.device.list();
+};
+
+function cancelDeviceConfirm() { clearTimeout(deviceConfirmTimer); deviceConfirm = null; renderDeviceRows(); }
+$('device-bundles').addEventListener('click', async (e) => {
+  const b = e.target.closest?.('button[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  const id = Number(b.dataset.id);
+  if (act === 'cancel') { cancelDeviceConfirm(); return; }
+  if (act === 'activate' || act === 'delete') {
+    clearTimeout(deviceConfirmTimer);
+    deviceConfirm = { id, act };
+    renderDeviceRows();
+    deviceConfirmTimer = setTimeout(cancelDeviceConfirm, 15000);
+    return;
+  }
+  if (act === 'confirm-activate' || act === 'confirm-delete') {
+    cancelDeviceConfirm();
+    const r = act === 'confirm-activate' ? await window.api.device.activate(id) : await window.api.device.delete(id);
+    if (r.ok) await window.api.device.list();
+    return;
+  }
+  if (act === 'get') {
+    const r = await window.api.device.get(id, { bytes: true });
+    if (!r.ok) return;
+    if (deviceUrl) URL.revokeObjectURL(deviceUrl);
+    deviceUrl = URL.createObjectURL(new Blob([fromBase64(r.base64)], { type: 'application/octet-stream' }));
+    $('device-download').innerHTML = `<a id="device-download-link" href="${deviceUrl}" download="${esc(r.name)}-v${r.version}.bundle">Save ${esc(r.name)}-v${r.version}.bundle</a> <span class="hint">${fmtBytes(r.sizes.bundle)}, sha256 ${esc(r.sha256.slice(0, 16))}…; ${r.sizes.files.map((f) => `${esc(f.name)} ${fmtBytes(f.bytes)}`).join(', ')}</span>`;
+  }
+});
+
+api._onCall(({ name, result: r }) => {
+  if (!name.startsWith('device.')) return;
+  if (name === 'device.list' && r.ok) { deviceList = r; deviceConfirm = null; renderDeviceRows(); }
+  else if (r.ok && ['device.install', 'device.activate', 'device.delete'].includes(name) && deviceList) {
+    $('device-space').textContent = 'The box changed since this list: List again.';
+  } else if (name === 'device.disconnect' && r.ok) { deviceList = null; renderDeviceRows(); }
+});
 
 // ---------------------------------------------------------------- selftest ----
 // window.__selftest(): a round trip through the api in a scratch project

@@ -116,6 +116,15 @@
   .tl:hover, .tl[aria-selected="true"] { background: var(--info-bg); }
   .tl .bad { color: var(--danger); } .tl .pub { color: var(--accent); }
   .finding { color: var(--warn); font: 12px var(--f-mono); }
+  /* the #device panel (S7) */
+  .dev-bar { flex-wrap: wrap; }
+  .dev-line { margin: 2px 0 6px; overflow-wrap: anywhere; }
+  .dev-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .dev-table th, .dev-table td { border-bottom: 1px solid var(--line-2); padding: 3px 8px 3px 0; text-align: left; font-variant-numeric: tabular-nums; vertical-align: middle; }
+  .dev-table .acts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .dev-table .btn { min-height: 26px; padding: 0 8px; font-size: 13px; }
+  .dev-log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 6px 0 0; max-height: 220px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--raised); }
+  .dev-log:empty { display: none; }
 
   .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; }
   .previews h2 { margin: 0; font: 700 16px var(--f-head); }
@@ -141,7 +150,7 @@
     <span class="brand">Studio</span>
     <label class="eb" for="project-select">Project <select id="project-select" data-testid="project-select"><option value="">— none —</option></select></label>
     <span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span>
-    <button type="button" class="btn" id="device-choose" data-testid="device-choose" disabled title="Choosing a C6 over Web Bluetooth arrives with milestone S7">Choose device…</button>
+    <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome's Bluetooth chooser: pick 'nacra' (the box). Needed once; then api.device.connect() works from script">Choose device…</button>
   </header>
 
   <div class="projbar" id="project-actions">
@@ -243,7 +252,20 @@
           </div>
           <div id="build-result"><p class="hint">Bundles the project's kindle/src and watch/src in the browser (api.ui.build). The first build loads the toolchain: a few seconds.</p></div>
         </div>
-        <div class="panel" id="device" role="tabpanel" aria-labelledby="tab-device" hidden><p class="hint">Bundles on the C6 over Web Bluetooth — milestone S7.</p></div>
+        <div class="panel" id="device" role="tabpanel" aria-labelledby="tab-device" data-testid="device" hidden>
+          <div class="build-bar dev-bar">
+            <button type="button" class="btn" id="device-connect" data-testid="device-connect">Connect</button>
+            <button type="button" class="btn" id="device-disconnect" data-testid="device-disconnect">Disconnect</button>
+            <button type="button" class="btn" id="device-list" data-testid="device-list">List</button>
+            <button type="button" class="btn pri" id="device-install" data-testid="device-install">Install current project</button>
+            <label class="hint"><input type="checkbox" id="device-install-activate" data-testid="device-install-activate" checked> activate after</label>
+          </div>
+          <div id="device-status" class="dev-line" data-testid="device-status" aria-live="polite">—</div>
+          <div id="device-progress" class="dev-line hint" data-testid="device-progress" aria-live="polite"></div>
+          <div id="device-bundles" data-testid="device-bundles"><p class="hint">List shows the bundles on the box.</p></div>
+          <div id="device-download" class="dev-line"></div>
+          <pre id="device-log" class="dev-log" data-testid="device-log"></pre>
+        </div>
         <div class="panel" id="log-panel" role="tabpanel" aria-labelledby="tab-log" hidden><pre id="log" data-testid="log"></pre></div>
       </div>
     </section>

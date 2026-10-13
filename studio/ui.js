@@ -201,6 +201,13 @@ export function statusLine(name, r) {
       case 'sim.replay': return `Replayed ${r.fixes}${r.done ? '' : ` of ${r.total}`} fixes from ${r.path}: ${r.evaluations} evaluations, now ${fmtDeviceTime(r.now)}`;
       case 'sim.reset': return 'Sim reset';
       case 'bundle.pack': return `Packed ${r.name} v${r.version}: ${fmtBytes(r.sizes.bundle)}, id ${r.id}${r.uiSource === 'placeholder' ? ' (placeholder page)' : ''}`;
+      case 'device.choose': case 'device.connect': return `${r.already ? 'Already connected' : 'Connected'} to ${r.deviceName ?? 'the box'}`;
+      case 'device.disconnect': return 'Disconnected from the box';
+      case 'device.list': return `The box holds ${r.bundles.length} bundle${r.bundles.length === 1 ? '' : 's'}${r.bundles.find((b) => b.active) ? `; active: ${r.bundles.find((b) => b.active).name}` : ''}; ${fmtBytes(r.free)} free`;
+      case 'device.install': return `Installed ${r.installed.name} v${r.installed.version} on the box: ${fmtBytes(r.installed.bytes)} in ${(r.ms / 1000).toFixed(1)} s (${r.kbps} kB/s)${r.resumedFrom ? `, resumed at ${fmtBytes(r.resumedFrom)}` : ''}${r.activated ? '; active' : ''}`;
+      case 'device.activate': return `Activated ${r.name ?? r.id} on the box`;
+      case 'device.delete': return `Deleted ${r.name ?? r.id} from the box`;
+      case 'device.get': return `Downloaded ${r.name} v${r.version} from the box: ${fmtBytes(r.sizes.bundle)}, SHA-256 checked`;
       default: return `${name}: ok`;
     }
   }
@@ -230,4 +237,57 @@ ${x.checks.length ? `<ul>${x.checks.map((c) => `<li data-check="${esc(c.name)}" 
   }
   parts.push(`<p class="hint">${esc(r.name)} · ${esc(r.publicPath ?? '')} · ${r.ms} ms · ${esc(r.toolchain ?? '')}</p>`);
   return parts.join('\n');
+}
+
+// ------------------------------------------------------------ the #device panel
+
+/** A transfer's progress { phase, sent, total, kbps } as one line. */
+export function deviceProgressText(p) {
+  if (!p) return '';
+  const pct = p.total ? Math.floor((p.sent / p.total) * 100) : 0;
+  const what = { begin: 'starting', upload: 'uploading', reconnect: 'link dropped: reconnecting to resume', commit: 'committing (the box validates it)', activate: 'activating', download: 'downloading', done: 'done' }[p.phase] ?? p.phase;
+  return `${what}${p.total ? ` · ${fmtBytes(p.sent)} of ${fmtBytes(p.total)} (${pct}%)` : ''}${p.kbps ? ` · ${p.kbps} kB/s` : ''}`;
+}
+
+/** api.device.status() as the panel's status line. */
+export function deviceStatusText(s) {
+  if (!s) return '';
+  if (s.ok === false) return `device: ${s.error}`;
+  if (!s.bluetooth) return 'Web Bluetooth is not available in this browser (desktop Chrome on http://localhost)';
+  const who = s.deviceName ?? 'the box';
+  let t;
+  switch (s.state) {
+    case 'connected': t = `Connected to ${who}${s.bonded ? ' (bonded)' : ''}`; break;
+    case 'connecting': t = `Connecting to ${who}…`; break;
+    case 'busy': t = `${who}: ${s.op}${s.progress && s.op !== 'connect' && s.op !== 'choose' ? ` — ${deviceProgressText(s.progress)}` : '…'}`; break;
+    default: t = s.deviceName ? `Disconnected from ${who}` : "Not connected: click 'Choose device…' once, then Connect";
+  }
+  if (s.chunk) t += ` · chunk ${s.chunk} B${s.window ? `, window ${s.window} B` : ''}`;
+  if (s.lastError && s.state !== 'connected' && s.state !== 'busy') t += ` — ${s.lastError}${s.hint ? ` (${s.hint})` : ''}`;
+  return t;
+}
+
+/**
+ * The bundles of api.device.list() as a table. Each row: data-id, data-name;
+ * its buttons [data-act=activate|delete|get] (ids device-<act>-<id>); a row
+ * whose action waits for its inline confirm (confirm: { id, act }) shows
+ * device-confirm-yes / device-confirm-no instead.
+ */
+export function deviceRowsHtml(list, confirm = null) {
+  if (!list) return '<p class="hint">List shows the bundles on the box.</p>';
+  const rows = list.bundles.map((b) => {
+    const flags = [b.active && 'active', b.boot && 'boots', b.builtin && 'built in'].filter(Boolean).join(', ');
+    const asking = confirm && confirm.id === b.id;
+    const verb = { activate: 'Activate', delete: 'Delete' }[confirm?.act];
+    const acts = asking
+      ? `<span class="confirm">${esc(verb)} ${esc(b.name)}${confirm.act === 'activate' ? ' (the box restarts on it)' : ''}? <button type="button" class="btn danger solid" id="device-confirm-yes" data-act="confirm-${esc(confirm.act)}" data-id="${b.id}">${esc(verb)}</button><button type="button" class="btn" id="device-confirm-no" data-act="cancel">Cancel</button></span>`
+      : [
+        b.active ? '' : `<button type="button" class="btn" id="device-activate-${b.id}" data-act="activate" data-id="${b.id}">Activate</button>`,
+        b.builtin ? '' : `<button type="button" class="btn danger" id="device-delete-${b.id}" data-act="delete" data-id="${b.id}">Delete…</button>`,
+        `<button type="button" class="btn" id="device-get-${b.id}" data-act="get" data-id="${b.id}">Get</button>`,
+      ].join('');
+    return `<tr data-id="${b.id}" data-name="${esc(b.name)}"><td>${esc(b.name)}</td><td class="mono">${b.id}</td><td>${b.version}</td><td>${fmtBytes(b.len)}</td><td class="mono" title="ui.web ${esc(b.ui.web)}, ui.watch ${esc(b.ui.watch)}">${esc(b.contentHash)}</td><td>${esc(flags)}</td><td class="acts">${acts}</td></tr>`;
+  }).join('');
+  return `<table class="dev-table"><thead><tr><th>name</th><th>id</th><th>v</th><th>bytes</th><th>content hash</th><th>flags</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+<p class="hint" id="device-space">${fmtBytes(list.free)} free; the largest bundle that fits: ${fmtBytes(list.largestFree)}</p>`;
 }

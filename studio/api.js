@@ -123,8 +123,9 @@ function hintFor(msg) {
  *   fetchBytes  async (url) => Uint8Array (project.import({url}), binary template files)
  *   log         a createLogger() object, or a function (level, msg)
  *   engine      engine/wasm.js createEngineLoader() (status only until the engine groups are wired)
+ *   device      device/index.js createDevice() (default: one on navigator.bluetooth, loaded on first use)
  */
-export function createApi({ store, fetchText, fetchBytes, log, engine, now = () => Date.now() } = {}) {
+export function createApi({ store, fetchText, fetchBytes, log, engine, device, now = () => Date.now() } = {}) {
   const logger = log && typeof log.lines === 'function' ? log : createLogger({ sink: typeof log === 'function' ? log : undefined });
   const L = (level, msg) => logger.log(level, msg);
 
@@ -444,7 +445,20 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
     if (!previewImpl) throw new ApiError('the previews need the studio page (they draw in #preview-kindle and #preview-watch)', 'open http://localhost:5190/ in Chrome; api.preview.* is not available outside the page');
     return previewImpl;
   };
-  const DEVICE_HINT = 'the Web Bluetooth bundle client arrives with milestone S7; #device-choose stays disabled until then';
+  // The device controller (device/index.js): given, or made on navigator.bluetooth on first use.
+  let deviceImpl = device ?? null;
+  let deviceLoading = null;
+  function dev() {
+    if (deviceImpl) return Promise.resolve(deviceImpl);
+    if (!deviceLoading) {
+      deviceLoading = import('./device/index.js').then(
+        (m) => { deviceImpl = m.createDevice({ log: (level, msg) => L(level, msg) }); return deviceImpl; },
+        (e) => { deviceLoading = null; throw new ApiError(`the device client did not load: ${errText(e)}`, 'reload the page (studio/device/ and studio/vendor/runtimes/protocol-js/ must be served)'); },
+      );
+    }
+    return deviceLoading;
+  }
+  const IDNAME_ARG = { name: 'idOrName', type: 'integer | string', required: true, description: "the bundle's id or its name, from api.device.list() (a name is looked up in the box's list)" };
 
   const FUNCTIONS = [
     // ------------------------------------------------------------- core
@@ -460,7 +474,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
       name: 'status', kind: 'info',
       summary: 'The open project, project storage, the engine wasm, the device link, the op running now and the last error.',
       args: [],
-      returns: '{ ok, project: string|null, storage: { available, error }, engine: { loaded, loading, error, version, url }, sim: { running, clock, now, name }|{ running: false }, device: { state }, busy: {op, sinceMs, progress}|null, lastError, version }',
+      returns: '{ ok, project: string|null, storage: { available, error }, engine: { loaded, loading, error, version, url }, sim: { running, clock, now, name }|{ running: false }, device: { state, deviceName, bonded }, busy: {op, sinceMs, progress}|null, lastError, version }',
       example: 'await api.status()',
       run: async () => {
         if (!storeObj && storeLoader && !storeError) { try { await getStore(); } catch { /* reported below */ } }
@@ -470,7 +484,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
           storage: { available: !!storeObj, error: storeError },
           engine: engine ? engine.status() : { loaded: false, loading: false, error: 'no engine loader', version: null, url: null },
           sim: sim ? { running: true, clock: sim.clock, now: sim.host.now(), name: simInfo?.name ?? null } : { running: false },
-          device: { state: 'unavailable', note: 'the device group is not wired yet (milestone S7)' },
+          device: deviceImpl ? (({ state, deviceName, bonded }) => ({ state, deviceName, bonded }))(deviceImpl.status()) : { state: 'disconnected', deviceName: null, bonded: null },
           busy: busy ? { op: busy.op, sinceMs: now() - busy.since, progress: busy.progress ?? null } : null,
           lastError,
           version: API_VERSION,
@@ -1193,68 +1207,78 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
 
     // ------------------------------------------------------------- device (Web Bluetooth to the C6)
     {
-      name: 'device.status', kind: 'info', available: false,
-      summary: 'The BLE link to the C6: state, device name, the chunk size it reported, the last error.',
+      name: 'device.status', kind: 'info',
+      summary: "The Bluetooth link to the box ('nacra'): state (disconnected, connecting, connected, or busy while a device call runs), the device's name, bonded (true once subscribed on an encrypted link, false when the box refused this computer, null not known yet), the chunk and window the box set for the last transfer, the running call and its progress, the last error and what to do about it.",
       args: [],
-      returns: '{ ok, state, deviceName, chunk, lastError }',
+      returns: "{ ok, state: 'disconnected'|'connecting'|'connected'|'busy', op, deviceName, bonded, chunk, window, progress: { phase, sent, total, kbps }|null, lastError, hint, reconnects, bluetooth }",
       example: 'await api.device.status()',
-      run: stub('device', DEVICE_HINT),
+      run: async () => ({ ok: true, ...(await dev()).status() }),
     },
     {
-      name: 'device.connect', kind: 'device', available: false,
-      summary: "Connect to the remembered C6 (never opens the chooser: only a person's click on #device-choose does).",
+      name: 'device.connect', kind: 'device',
+      summary: "Connect to the box this page was given before (navigator.bluetooth.getDevices(); after a reload it waits for the box's advertisement first) and subscribe to its bundle service. Never opens Chrome's chooser: when the page has never been given the box it says so, and a person must click 'Choose device…' (#device-choose) once. A first connection pairs: the box's pairing window must be open (Kindle: Settings → Pair watch) and the person confirms macOS's prompt. A dropped link reconnects by itself (3 tries).",
       args: [],
-      returns: '{ ok, state, deviceName, already }',
+      returns: "{ ok, state: 'connected', deviceName, already, bonded }",
       example: 'await api.device.connect()',
-      run: stub('device', DEVICE_HINT),
+      run: async () => ({ ok: true, ...(await (await dev()).connect()) }),
     },
     {
-      name: 'device.disconnect', kind: 'device', available: false,
-      summary: 'Disconnect from the C6.',
+      name: 'device.disconnect', kind: 'device',
+      summary: 'Disconnect from the box (no reconnect until device.connect).',
       args: [],
-      returns: '{ ok, state }',
+      returns: "{ ok, state: 'disconnected' }",
       example: 'await api.device.disconnect()',
-      run: stub('device', DEVICE_HINT),
+      run: async () => ({ ok: true, ...(await (await dev()).disconnect()) }),
     },
     {
-      name: 'device.list', kind: 'device', available: false,
-      summary: 'The bundles on the C6: which is active, which boots, free space.',
+      name: 'device.list', kind: 'device',
+      summary: "The bundles on the box, Choose (id 0, built in) first: each one's manifest (id, name, version, abi, content hash and UI hashes, hex), its archive's length, whether it is active, the one the box boots with, built into the firmware; then the free bytes and the largest bundle that fits now. Names given to activate/delete/get are looked up here.",
       args: [],
-      returns: '{ ok, bundles: [{ id, name, version, len, active, boot, builtin, contentHash }], freeBytes, largestFree }',
+      returns: '{ ok, bundles: [{ id, name, version, abi, len, contentHash, ui: { web, watch }, active, boot, builtin }], count, free, largestFree }',
       example: 'await api.device.list()',
-      run: stub('device', DEVICE_HINT),
+      run: async () => ({ ok: true, ...(await (await dev()).list()) }),
     },
     {
-      name: 'device.install', kind: 'device', available: false,
-      summary: 'Upload the last bundle.pack to the C6 (resumable; progress in status().busy), commit it, optionally activate it.',
-      args: [{ name: 'opts.activate', type: 'boolean', required: false, description: 'activate after the commit (default false)' }],
-      returns: '{ ok, id, bytes, kbps, committed: { id, contentHash }, activated, elapsedMs }',
+      name: 'device.install', kind: 'device',
+      summary: "Pack the open project (as api.bundle.pack(): the engine and the last good api.ui.build of each target) and install it on the box: Begin, then the bytes in the chunks the box sets with at most a window unacknowledged (a gap rewinds to where the box asks, 4 s without an Ack resends from the last one, a dropped link reconnects and resumes where the box is), Commit (the box checks the SHA-256 and validates the bundle; it replaces a bundle of the same name, and keeps a running engine's state when only the UI changed), then Activate when asked. Refused when the project has no Kindle UI build (the placeholder page). While it runs, api.device.status().progress says how far: { phase: begin|upload|reconnect|commit|activate|done, sent, total, kbps }. kbps is thousands of bytes per second (about 10 on the C6 from Chrome on a Mac).",
+      args: [{ name: 'opts.activate', type: 'boolean', required: false, description: 'make it the active bundle (and the one the box boots) after the commit (default false)' }],
+      returns: '{ ok, installed: { id, name, version, contentHash, bytes }, activated, ms, kbps, resumedFrom: integer|null, chunk, window, rewinds, resends, resumes, progress, sha256, uiNotes?: string[] }',
       example: 'await api.device.install({ activate: true })',
-      run: stub('device', DEVICE_HINT),
+      run: async (opts = {}) => {
+        const d = await dev();
+        const p = await packProject({});
+        if (p.failed) return p.failed;
+        if (p.uiSource === 'placeholder') {
+          throw new ApiError(`${p.project} has no Kindle UI build for '${p.name}': the bundle would carry the placeholder page`, "api.ui.build({ target: 'both' }) first (its result and the Build log panel show it), then api.device.install()");
+        }
+        lastPack = { bytes: p.bytes, json: p.json, project: p.project };
+        const r = await d.install(p.bytes, { activate: !!opts.activate, onProgress: (pr) => { if (busy) busy.progress = pr; } });
+        return { ok: true, ...r, sha256: await sha256Hex(p.bytes), ...(p.uiNotes.length ? { uiNotes: p.uiNotes } : {}) };
+      },
     },
     {
-      name: 'device.activate', kind: 'device', available: false,
-      summary: 'Make an installed bundle the active one (and the one that boots).',
-      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
-      returns: '{ ok, id }',
-      example: 'await api.device.activate(id)',
-      run: stub('device', DEVICE_HINT),
+      name: 'device.activate', kind: 'device',
+      summary: 'Make a bundle on the box the active one and the one it boots with (the box restarts on it; the Kindle and the watch follow).',
+      args: [IDNAME_ARG],
+      returns: '{ ok, id, name, active: true }',
+      example: "await api.device.activate('race')",
+      run: async (idOrName) => ({ ok: true, ...(await (await dev()).activate(idOrName)) }),
     },
     {
-      name: 'device.delete', kind: 'device', available: false,
-      summary: 'Delete a bundle from the C6 (Choose cannot be deleted).',
-      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
-      returns: '{ ok, id }',
-      example: 'await api.device.delete(id)',
-      run: stub('device', DEVICE_HINT),
+      name: 'device.delete', kind: 'device',
+      summary: 'Delete a bundle from the box (deleting the active one sends the box back to Choose). Choose (id 0) is built into the firmware: the box refuses, and the error says so.',
+      args: [IDNAME_ARG],
+      returns: '{ ok, id, name, deleted: true }',
+      example: "await api.device.delete('race')",
+      run: async (idOrName) => ({ ok: true, ...(await (await dev()).delete(idOrName)) }),
     },
     {
-      name: 'device.get', kind: 'device', available: false,
-      summary: 'Download a bundle from the C6 and unpack it (source.json reopens it as a project).',
-      args: [{ name: 'id', type: 'integer', required: true, description: 'bundle id from device.list()' }],
-      returns: '{ ok, id, bytes, sha256, manifest, files: [{ name, bytes }] }',
-      example: 'await api.device.get(id)',
-      run: stub('device', DEVICE_HINT),
+      name: 'device.get', kind: 'device',
+      summary: "Download a bundle from the box (its SHA-256 checked): the manifest and the files' sizes; with { bytes: true } also the archive as base64, which api.bundle.inspect({ base64 }) opens (its source.json holds the engine's sources).",
+      args: [IDNAME_ARG, { name: 'opts.bytes', type: 'boolean', required: false, description: 'include the archive as base64 (default false)' }],
+      returns: '{ ok, id, name, version, manifest: { id, name, version, abi, contentHash, ui: { web, watch }, watchLen }, sizes: { bundle, files: [{ name, bytes }] }, sha256, ms, kbps, base64? }',
+      example: "await api.device.get('race', { bytes: true })",
+      run: async (idOrName, opts = {}) => ({ ok: true, ...(await (await dev()).get(idOrName, opts ?? {})) }),
     },
   ];
 
@@ -1267,7 +1291,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
     { name: 'ui', summary: 'bundle the Kindle and watch clients in the browser (a Web Worker: rollup, Babel, terser); the last good build per project is what bundle.pack, sim.start and the previews carry' },
     { name: 'preview', summary: 'the Kindle page and the watch app of the last build, live on the sim host: open, read the text, press buttons, console errors' },
     { name: 'bundle', summary: 'pack the project into a bundle archive (the engine wasm\'s pack), and inspect one' },
-    { name: 'device', summary: 'bundles on the C6 over Web Bluetooth (not wired yet)' },
+    { name: 'device', summary: "bundles on the box over Web Bluetooth: connect (never the chooser), list, install the project, activate, delete, download" },
   ];
   const groupOf = (n) => (n.includes('.') ? n.split('.')[0] : 'core');
 
@@ -1301,7 +1325,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
         'Projects are stored in this browser only (IndexedDB, per origin). api.project.export() gives a ZIP (base64) to keep or move; api.project.import({ zipBase64 }) or ({ url }) brings one in.',
         'files.write replaces the whole file and saves at once; the page shows the change. The page autosaves what a person types the same way.',
         'Large results are paged (skill, files.read, engine.disassemble, sim.history): follow nextOffset.',
-        "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose once, then api.device.connect() works. Pairing with the C6 needs its pairing window, opened from the Kindle.",
+        "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose once, then api.device.connect() works, also after a reload. The first connection pairs: the box's pairing window must be open (the Kindle's Settings → Pair watch) and the person confirms macOS's prompt; a refusal's hint says what the person must do (pairing window, forgetting 'nacra' in macOS Bluetooth settings, chrome://flags). One device call at a time: another one meanwhile answers busy.",
         'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
         "The sim is the real common::Host (HostHandle). Each evaluation it makes is in its log (cause, accepted, the R-code, instruction and span of a failure, the state, view and wake after it): that log is the history, and sim.state().state is the engine's own state (the leaves the host keeps, decoded with the state schema). A rejected evaluation is in the result's errors[] (sim.gps, sim.advance, sim.event): the input still happened (a fix stays on the track), the state did not change. Checked on every call: W-WIRE (each envelope is one logged evaluation whose view changed; its bytes are the log's, and the vendored JS codec decodes and re-encodes them unchanged), W-HOST (the call's answer agrees with the log: wakes fired, an event accepted or refused; envelopes stamped with the evaluation's time; the pending wake is the last evaluation's). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
         "The sim's `gps` holds the newest 20,480 fixes, as the C6's track ring does (its maxItems); the C6 drops its oldest 128 at a time once full (a flash sector), the sim one at a time. The wasm keeps 24 bytes a fix, as they arrive (480 KB when full).",
@@ -1402,6 +1426,20 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, now = () 
   // The previews' controller (preview/index.js): the page sets it; without it api.preview.* says so.
   // (bundle.pack and sim.start read the UI build from toolchain/index.js getLastBuild: no hand-off.)
   Object.defineProperty(api, '_setPreview', { value: (c) => { previewImpl = c ?? null; } });
+  // The page's half of the device group: the chooser (only from a person's
+  // click on #device-choose, so not on the agent surface; serialised, logged
+  // and reported to _onCall like a device call) and the controller, for the
+  // #device panel's live status.
+  Object.defineProperty(api, '_device', {
+    value: {
+      choose: makeFn({
+        name: 'device.choose', kind: 'device', args: [], summary: '', returns: '', example: '',
+        // no await before requestDevice when the controller is loaded: a click's activation is short
+        run: async () => { const d = deviceImpl ?? (await dev()); return { ok: true, ...(await d.choose()) }; },
+      }),
+      controller: () => dev(),
+    },
+  });
   return api;
 }
 

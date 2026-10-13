@@ -86,7 +86,7 @@ const B7 = {
   bundle: ['pack', 'inspect'],
   device: ['status', 'connect', 'disconnect', 'list', 'install', 'activate', 'delete', 'get'],
 };
-const WIRED = new Set(['core', 'project', 'files', 'engine', 'sim', 'ui', 'bundle', 'preview']);
+const WIRED = new Set(['core', 'project', 'files', 'engine', 'sim', 'ui', 'bundle', 'preview', 'device']);
 const OTHERS = new Set([]);
 
 // ================================================================ describe
@@ -116,7 +116,7 @@ test('describe() lists exactly the functions that exist, from the registry', asy
   assert.deepEqual(d.skills.map((s) => s.name).sort(), ['expr-engine', 'kindle-ui', 'race-example', 'studio-api', 'watch-ui']);
 });
 
-test('describe() covers the whole B7 surface; all but device are wired', async () => {
+test('describe() covers the whole B7 surface; every group is wired', async () => {
   const { api } = await world();
   const d = okr(await api.describe());
   const byName = new Map(d.functions.map((f) => [f.name, f]));

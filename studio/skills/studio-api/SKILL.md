@@ -51,7 +51,8 @@ an agent calls shows on the page.
 | `sim.*`: `runSamples, start, reset, event, gps, advance, state, history, replay, stop` | wired (the real host in the wasm) |
 | `ui.build` | wired (a Web Worker in the page); the last good build per project is kept |
 | `bundle.*`: `pack, inspect` | wired; the Kindle page is a placeholder until `ui.build` has run |
-| `preview.*`, `device.*` | see `available` in `describe()` |
+| `preview.*`: `open, status, text, press, close` | wired (the Kindle page and the watch app on the sim) |
+| `device.*`: `status, connect, disconnect, list, install, activate, delete, get` | wired (Web Bluetooth to the box; "The box" below) |
 
 ## The bundle's name: `studio.json`
 
@@ -129,8 +130,44 @@ again (or pack with that name). A project without the file uses its own name.
 8. `api.bundle.pack()` (the settings' name and version; the version is an
    integer 0-65535; `{ name, version }` override them), `api.bundle.inspect()`.
 9. `api.device.connect()`, `api.device.install({ activate: true })`,
-   `api.device.list()`.
+   `api.device.list()` ("The box", below).
 10. On any `{ ok:false }`: `error` + `hint`, then `api.status()` and `api.log({ last: 50 })`.
+
+## The box (`device.*`)
+
+The C6 advertises as **`nacra`**; the studio talks to its bundle service over
+Web Bluetooth (BLE.md "Bundles"). Verified on the hardware on 2026-10-13 with
+the same protocol from Chrome on a Mac (the development page that preceded
+this group): List, Install (104,568 B in 10.8 s, about 9.7 kB/s), Activate
+and Get all work, and the Mac is bonded with the box, so a remembered device
+connects without the chooser. The studio's own client is tested against a
+fake of the box; it has not yet run against the hardware itself.
+
+- `api.device.connect()` — never opens the chooser. It finds the box among
+  the devices Chrome remembers for this page (after a reload it waits for
+  the box's advertisement first), connects, and subscribes. `already: true`
+  when it was connected. A dropped link reconnects by itself (3 tries;
+  `status().state` is `connecting` meanwhile).
+- `api.device.list()` → `bundles` (Choose, id 0, built in, first; `active`,
+  `boot`, `builtin`; `contentHash` and `ui` in hex), `free`, `largestFree`.
+- `api.device.install({ activate: true })` packs the open project exactly as
+  `api.bundle.pack()` does and uploads it. It refuses a project with no
+  Kindle UI build (run `api.ui.build({ target: 'both' })` first). The box
+  sets the chunk (240 B at its MTU) and the window (1920 B); a lost write
+  rewinds to where the box asks, silence resends, a dropped link reconnects
+  and resumes where the box is (the box keeps an upload 60 s). Commit makes
+  the box check the SHA-256 and validate the bundle: its refusals say why
+  (`Invalid` with the validator's reason, `OverLimit`, `NoSpace`, `Full`).
+  The same name replaces the bundle on the box; a UI-only change keeps a
+  running race. Progress: `api.device.status().progress` = `{ phase, sent,
+  total, kbps }` (kbps: thousands of bytes a second).
+- `api.device.activate(nameOrId)`, `api.device.delete(nameOrId)` (Choose
+  cannot be deleted: the box refuses), `api.device.get(nameOrId, { bytes:
+  true })` → manifest and sizes, and `base64`, which
+  `api.bundle.inspect({ base64 })` opens. A name is looked up in the box's
+  list.
+- One device call at a time: another one meanwhile answers `busy: …`.
+  `api.device.status()` never waits.
 
 ## Projects
 
@@ -145,22 +182,33 @@ again (or pack with that name). A project without the file uses its own name.
 
 ## What only a person can do
 
-- **Choose the C6.** Chrome opens the Bluetooth chooser only from a person's
-  click. `api.device.connect()` never opens it; when it reports that no
-  device was chosen, ask the person to click **Choose device…**
-  (`#device-choose`) once and pick the C6. After that `connect()` works from
-  script, also after a reload.
-- **Pair** *(unverified: written from reading the firmware's code; not yet
-  tried end to end with the studio, milestone D4)*. The C6 accepts bundle
-  commands only on an encrypted, bonded link. Pairing happens during the
-  C6's pairing window (`BleCommand::Pair`), which a person opens on the
-  Kindle: the Choose page's settings, **Pair watch** (the same window pairs
-  any device; the Kindle shows the time left). Ask them to open it, then
-  connect within it. The Kindle then shows "Paired …".
-- **Chrome flags** (desktop Chrome) *(unverified, as above)*: for remembered
-  devices to reconnect without the chooser,
+- **Choose the box.** Chrome opens the Bluetooth chooser only from a
+  person's click. `api.device.connect()` never opens it; when it answers
+  `no remembered 'nacra'`, ask the person to click **Choose device…**
+  (`#device-choose`, top right) once and pick `nacra`. After that
+  `connect()` works from script, also after a reload *(getDevices() and
+  connect without the chooser verified 2026-10-13 with the development page)*.
+- **Pair** *(verified 2026-10-13 with the development page; the Mac in use
+  is bonded already)*. The box serves bundles only on a link encrypted with
+  a bond it holds. A computer pairs only while the box's pairing window is
+  open: on the Kindle, Choose's **Settings → Pair watch** (120 s; the same
+  window pairs any device), or, with `dev-pairing` firmware, the 120 s after
+  the box boots. Ask the person to open it, then `api.device.connect()` and
+  ask them to confirm macOS's pairing prompt. A refusal answers
+  `not bonded with 'nacra'`, with all of this in its hint; on a Mac, Chrome
+  reports every refusal as "GATT operation failed for unknown reason".
+- **A stale pairing.** A Mac that paired before the box lost its bond
+  (provision, Forget all, or a pairing tried while the window was closed)
+  still holds keys the box does not have: the link drops while connecting
+  (`the link dropped while connecting`). The person must forget `nacra` in
+  macOS System Settings → Bluetooth (it may be listed only in the menu-bar
+  Bluetooth menu), then pair again within the window. If the box is not
+  found at all although it is on, turning the Mac's Bluetooth off and on
+  cleared that once.
+- **Chrome flags** (desktop Chrome): for a remembered device without the
+  chooser (`navigator.bluetooth.getDevices()`),
   `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
-  Enabled (then relaunch Chrome).
+  Enabled (then relaunch Chrome). Without it `connect()` says so.
 - Deleting a project or a file from the page asks inline; from `window.api`
   it does not ask: only delete what you were asked to.
 
@@ -179,8 +227,15 @@ shown has an `#editor-<path>` (find open files by their tabs; use
 `#sim-stop`, `#sim-adv-1s`, `#sim-adv-10s`, `#sim-adv-wake`, `#sim-status`,
 `#sim-event-<name>` per event, `#sim-gps-send`, `#sim-timeline` (one
 `button.tl` per evaluation, `data-n`), `#sim-view`, `#sim-state`,
-`#sim-findings`. Previews
-`#preview-kindle`, `#preview-watch`. No modals, no `alert`, no native pickers.
+`#sim-findings`. In `#device`: `#device-connect`, `#device-disconnect`,
+`#device-list`, `#device-install` with `#device-install-activate`,
+`#device-status` (the link as text), `#device-progress`, `#device-bundles`
+(a table: one row per bundle with `data-id` and `data-name`, buttons
+`#device-activate-<id>`, `#device-delete-<id>`, `#device-get-<id>`; an
+inline confirm `#device-confirm-yes` / `#device-confirm-no`), `#device-log`.
+Previews `#preview-kindle`, `#preview-watch`. No modals, no `alert`, no
+native pickers: Chrome's Bluetooth chooser, from `#device-choose`, is the
+one native dialog.
 
 ## Words
 
