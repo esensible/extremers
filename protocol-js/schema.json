@@ -20,6 +20,882 @@
       ]
     }
   },
+  "BundleRequest": {
+    "name": "BundleRequest",
+    "ty": {
+      "Enum": [
+        {
+          "name": "List",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "Begin",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "len",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "sha256",
+                "ty": {
+                  "name": "[T; N]",
+                  "ty": {
+                    "Tuple": [
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Commit",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "Abort",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "Delete",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Activate",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Get",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "from",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "BundleResponse": {
+    "name": "BundleResponse",
+    "ty": {
+      "Enum": [
+        {
+          "name": "Entry",
+          "ty": {
+            "NewtypeVariant": {
+              "name": "BundleEntry",
+              "ty": {
+                "Struct": [
+                  {
+                    "name": "manifest",
+                    "ty": {
+                      "name": "Manifest",
+                      "ty": {
+                        "Struct": [
+                          {
+                            "name": "id",
+                            "ty": {
+                              "name": "u32",
+                              "ty": "U32"
+                            }
+                          },
+                          {
+                            "name": "name",
+                            "ty": {
+                              "name": "heapless::String<N>",
+                              "ty": "String"
+                            }
+                          },
+                          {
+                            "name": "version",
+                            "ty": {
+                              "name": "u16",
+                              "ty": "U16"
+                            }
+                          },
+                          {
+                            "name": "abi",
+                            "ty": {
+                              "name": "u16",
+                              "ty": "U16"
+                            }
+                          },
+                          {
+                            "name": "content_hash",
+                            "ty": {
+                              "name": "[T; N]",
+                              "ty": {
+                                "Tuple": [
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  },
+                                  {
+                                    "name": "u8",
+                                    "ty": "U8"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "name": "ui",
+                            "ty": {
+                              "name": "UiHashes",
+                              "ty": {
+                                "Struct": [
+                                  {
+                                    "name": "web",
+                                    "ty": {
+                                      "name": "[T; N]",
+                                      "ty": {
+                                        "Tuple": [
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "name": "watch",
+                                    "ty": {
+                                      "name": "[T; N]",
+                                      "ty": {
+                                        "Tuple": [
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          },
+                                          {
+                                            "name": "u8",
+                                            "ty": "U8"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "name": "watch_len",
+                            "ty": {
+                              "name": "u32",
+                              "ty": "U32"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "len",
+                    "ty": {
+                      "name": "u32",
+                      "ty": "U32"
+                    }
+                  },
+                  {
+                    "name": "active",
+                    "ty": {
+                      "name": "bool",
+                      "ty": "Bool"
+                    }
+                  },
+                  {
+                    "name": "boot",
+                    "ty": {
+                      "name": "bool",
+                      "ty": "Bool"
+                    }
+                  },
+                  {
+                    "name": "builtin",
+                    "ty": {
+                      "name": "bool",
+                      "ty": "Bool"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "ListEnd",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "count",
+                "ty": {
+                  "name": "u8",
+                  "ty": "U8"
+                }
+              },
+              {
+                "name": "free_bytes",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "largest_free",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Ready",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "offset",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "chunk",
+                "ty": {
+                  "name": "u16",
+                  "ty": "U16"
+                }
+              },
+              {
+                "name": "window",
+                "ty": {
+                  "name": "u16",
+                  "ty": "U16"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Ack",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "offset",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Committed",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "content_hash",
+                "ty": {
+                  "name": "[T; N]",
+                  "ty": {
+                    "Tuple": [
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Aborted",
+          "ty": "UnitVariant"
+        },
+        {
+          "name": "Deleted",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Activated",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Sending",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "len",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              },
+              {
+                "name": "sha256",
+                "ty": {
+                  "name": "[T; N]",
+                  "ty": {
+                    "Tuple": [
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      },
+                      {
+                        "name": "u8",
+                        "ty": "U8"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "chunk",
+                "ty": {
+                  "name": "u16",
+                  "ty": "U16"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Sent",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "id",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Error",
+          "ty": {
+            "StructVariant": [
+              {
+                "name": "request",
+                "ty": {
+                  "name": "u8",
+                  "ty": "U8"
+                }
+              },
+              {
+                "name": "code",
+                "ty": {
+                  "name": "BundleError",
+                  "ty": {
+                    "Enum": [
+                      {
+                        "name": "Busy",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "NoUpload",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Sequence",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Length",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Hash",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Invalid",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "OverLimit",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "NoSpace",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Full",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "NotFound",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "NotAllowed",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Flash",
+                        "ty": "UnitVariant"
+                      },
+                      {
+                        "name": "Timeout",
+                        "ty": "UnitVariant"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "detail",
+                "ty": {
+                  "name": "u32",
+                  "ty": "U32"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
   "ChooseView": {
     "name": "ChooseView",
     "ty": {
@@ -515,6 +1391,238 @@
                   {
                     "name": "ForgetAll",
                     "ty": "UnitVariant"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "Bundle",
+          "ty": {
+            "NewtypeVariant": {
+              "name": "BundleRequest",
+              "ty": {
+                "Enum": [
+                  {
+                    "name": "List",
+                    "ty": "UnitVariant"
+                  },
+                  {
+                    "name": "Begin",
+                    "ty": {
+                      "StructVariant": [
+                        {
+                          "name": "id",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        },
+                        {
+                          "name": "len",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        },
+                        {
+                          "name": "sha256",
+                          "ty": {
+                            "name": "[T; N]",
+                            "ty": {
+                              "Tuple": [
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                },
+                                {
+                                  "name": "u8",
+                                  "ty": "U8"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "Commit",
+                    "ty": "UnitVariant"
+                  },
+                  {
+                    "name": "Abort",
+                    "ty": "UnitVariant"
+                  },
+                  {
+                    "name": "Delete",
+                    "ty": {
+                      "StructVariant": [
+                        {
+                          "name": "id",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "Activate",
+                    "ty": {
+                      "StructVariant": [
+                        {
+                          "name": "id",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "Get",
+                    "ty": {
+                      "StructVariant": [
+                        {
+                          "name": "id",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        },
+                        {
+                          "name": "from",
+                          "ty": {
+                            "name": "u32",
+                            "ty": "U32"
+                          }
+                        }
+                      ]
+                    }
                   }
                 ]
               }

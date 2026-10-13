@@ -12,20 +12,53 @@ can read (stable ids, a textual `#status`, no modals or native pickers).
 
 Licence: MIT (`LICENSE`).
 
-## Status (milestone S2: the shell)
+## Status
 
 | Group | State |
 |---|---|
 | core `describe, status, log, skills, skill` | wired |
-| `project.*` `list, create, open, delete, rename, export, import` | wired (IndexedDB) |
+| `project.*` `list, create, open, delete, rename, export, import, settings` | wired (IndexedDB); `settings` is `studio.json` (below) |
 | `files.*` `list, read, write, delete, rename` | wired, autosave |
-| `engine.*`, `sim.*`, `ui.build`, `preview.*`, `bundle.*`, `device.*` | registered with their final shape in `describe()`; answer `{ ok:false, error: "not available yet: …", hint }` |
+| `engine.*` `interface, compile, check, disassemble, layout, builtins` | wired (the engine wasm) |
+| `sim.*` `runSamples, start, reset, event, gps, advance, state, history, replay, stop` | wired (`common::Host` in the engine wasm: "The sim") |
+| `ui.build` | wired (`toolchain/`: a Web Worker; the last good build per project in its own IndexedDB) |
+| `preview.*` `open, status, text, press, close` | wired (S5: see "The previews") |
+| `bundle.*` `pack, inspect` | wired |
+| `device.*` | registered with their final shape in `describe()`; answer `{ ok:false, error: "not available yet: …", hint }` (milestone S7) |
+
+## A project's settings: `studio.json`
+
+`{"name": "race", "version": 1}` at the project's root: the **bundle's** name
+and the manifest's version. The name is the package's (its id is FNV-1a of
+it): the Kindle page loads from `/pkg/<id>/` and the clients import
+`'<name>-wire'`, so it is not the project's name. The Race template writes
+`race` (its clients import `race-wire`), `blank` the project's name. A plain
+file, so it exports and imports with the project and an agent sees it;
+`api.project.settings()` reads it and `({ name, version })` writes it.
+`ui.build`, `sim.start` and `bundle.pack` take their name (and `bundle.pack`
+its version) from it unless given one; `bundle.pack` and `sim.start` refuse a
+UI build made under another name. A project without it uses its own name and
+version 1.
+
+## The sim
+
+`sim/host.js` drives `HostHandle` (`engine/wasm/src/host.rs`): the real
+`common::Host` on a virtual clock. After every call it takes the host's log
+(`HostHandle.log()`: each evaluation with its cause, its outcome, an `R-…`
+code with the instruction and source span when it failed, and the state,
+view and wake after it) and the envelopes it sent (`poll()`); the state shown
+is the host's (`state_json()`, the leaves its engine keeps decoded with the
+state schema from the bundle's `source.json`). `W-WIRE`/`W-HOST` findings are
+where the host's answers, its log and its envelopes disagree, or the JS codec
+does not re-encode a published view to the same bytes. `gps` holds the newest
+20,480 fixes, as the C6's track (`engine/wasm/src/track.rs`: 24 bytes a fix,
+allocated as they arrive, 480 KB when full).
 
 ## Files
 
 | File | What |
 |---|---|
-| `index.html` | the page: header (`#project-select`, `#status`, `#device-choose`), files (`#files`), editor tabs (`#editor-<path>`), bottom panels (`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`), previews (`#preview-kindle`, `#preview-watch`) |
+| `index.html` | the page: header (`#project-select`, `#status`, `#device-choose`), files (`#files`), editor tabs (`#editor-tab-<path>`; `#editor-<path>` is the shown file's editor only), bottom panels (`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`), previews (`#preview-kindle`, `#preview-watch`) |
 | `app.js` | the human UI; every button calls `window.api`; `window.__selftest()` / `?selftest=1` |
 | `api.js` | `window.api`: the `FUNCTIONS` registry, `describe()` generated from it, `makeFn`, `withUnknownGuard` (from `dingo-cli/web/api.js`) |
 | `editor.js` | the centre pane: Monaco, one model per open file, the tabs, markers (see "The editor") |
@@ -35,11 +68,16 @@ Licence: MIT (`LICENSE`).
 | `ui.js` | DOM-free page logic (file tree, line/column, status text), tested in Node |
 | `store.js` | projects and files in IndexedDB, multi-record changes in one transaction |
 | `zip.js` | project export/import: a stored-entry ZIP writer, a reader that also inflates (`DecompressionStream`) |
-| `templates.js` | `blank` (a minimal engine) and `race` (from `vendor/examples/race/`) |
-| `engine/wasm.js` | the loader for `vendor/engine-wasm/engine_wasm.js` (lazy; not wired into the api yet) |
+| `templates.js` | `blank` (a minimal engine) and `race` (from `vendor/examples/race/`), each with its `studio.json` |
+| `engine/wasm.js` | the loader for `vendor/engine-wasm/engine_wasm.js` (lazy) |
+| `engine/project.js`, `engine/locate.js` | an engine's files through the engine wasm: interface, compile, sample runs, tables, bundle files; diagnostics with spans |
+| `sim/host.js`, `sim/nmea.js` | the sim on `HostHandle` (above); RMC sentences |
+| `toolchain/` | `ui.build`: the worker, its rollup/Babel/terser pipeline, the last build per project (`getLastBuild`) |
 | `skills/<name>/SKILL.md`, `skills/index.json` | `studio-api`, `expr-engine` (canonical copy), `kindle-ui`, `watch-ui`, `race-example` |
 | `sync-skills.mjs` | regenerates `skills/index.json` (`--check` for currency) |
 | `serve.py` | the dev server (static, no-store), port 5190 |
+| `sw.js` | the service worker (scope: the studio's root): serves the Kindle preview's sessions |
+| `preview/` | the Kindle and watch previews: `rewrite.js` (routes, the session page; pure), `shim.js` (the page's websocket bridge), `kindle.js`, `watch.js`, `index.js` (panels, the worker, what `api.preview.*` calls) |
 | `test/*.test.mjs` | `node:test`; `test/fake-indexeddb.mjs` is the IndexedDB fake |
 | `vendor/` | generated by `tools/studio-vendor/vendor.sh` (the engine wasm, runtimes, the Race example); not edited by hand |
 
@@ -96,6 +134,51 @@ severity: 'error'|'warning'|'info', rule}` (1-based), and
 `diagnosticToMarker` in `editor/lang.js` makes one from a compiler diagnostic.
 A rename moves the text to a new model (Monaco's URIs are fixed), so its undo
 history is lost.
+
+## The previews
+
+Both show the open project's last successful `ui.build`, connected to the sim
+host the way a device client is: the host's envelopes in, the client's
+`HostEvent`s out to `api._sim.send` (accepted, refused and evaluated by
+`common::Host` itself). Start the sim with the build's name
+(`api.sim.start({ name: 'race' })` after `ui.build({ name: 'race' })`): an
+envelope for another package makes the Kindle page reload.
+
+**Kindle** (`#preview-kindle`, the iframe `#preview-kindle-frame`). Each open
+is a session `<sid>`. The page (`preview/kindle.js`) writes the build to Cache
+Storage under `/preview/<sid>/`; `sw.js` serves it from there:
+
+| URL | What |
+|---|---|
+| `/preview/<sid>/index.html` | the built `index.html` with `/pkg/<id>/` → `/preview/<sid>/pkg/<id>/` (so `client-common/host.js` `ownPackage()` still reads the id from the script URL) and `<script src="/preview/shim.js" data-sid>` first in `<head>` |
+| `/preview/<sid>/pkg/<id>/<file>` | the built file, byte for byte (`api.preview.status().kindle.served` re-fetches each one through the worker and compares sha256 with the build's) |
+| `/` navigated in an iframe | the page called `reloadEntry()`: a notice that tells the studio, which says why (another package, another `ui.web`) and reopens the session (at most 3 times in 10 s) |
+
+`preview/shim.js` replaces `window.WebSocket` with a `postMessage` bridge to
+the studio (opens asynchronously, `binaryType`, `send`, `close`,
+`WebSocket.OPEN`…) and forwards `console.*`, uncaught errors and unhandled
+rejections. The studio sends every envelope the sim publishes, the current
+one (`api._sim.current()`) when the socket opens and every 5 s (the device's
+heartbeat; the page gives up after 15 s of silence). Sizes: 600×800 or
+758×1024 CSS px, or any `WxH`, scaled to fit the pane. Without a service
+worker (insecure origin, blocked site data) the Kindle preview says so in
+`preview.status().serviceWorker`; the watch preview does not need it.
+
+**Watch** (`#preview-watch`). `preview/watch.js` runs the built `watch.js`
+as `solid-watch/browser/harness.js` does: `vendor/watch-host/browser/dom-host.js`
+on yoga-layout (the import map in `index.html` maps the bare `yoga-layout` to
+`vendor/watch-host/yoga-layout/src/index.js`), the Inter font from
+`vendor/watch-host/fonts/`, the core schema plus the extremers fragment, a
+fresh hidden-iframe realm per mount (`realm.__host = host.api`,
+`realm.Function(watchJs)()`, `host.mount(realm.__app, { width, height })`).
+Envelopes → `host.state(bytes)`; the bundle's `send(bytes)` → the host;
+haptics, presses and errors → the panel's log and `preview.status().watch`.
+Cases: 41 mm 176×215, 45 mm 198×242, 49 mm 205×251 (pt).
+
+A successful `ui.build` reopens an open preview on the new build (a new
+session). `api.preview.press(target, { text } | { testid } | { selector })`
+clicks like a finger (`{ text: '' }`: the first button with no text, such as
+Race's confirm; `{ selector }` is a CSS selector, Kindle only).
 
 ## Conventions
 

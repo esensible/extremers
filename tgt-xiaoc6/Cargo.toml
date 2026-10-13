@@ -89,6 +89,10 @@ default = ["esp32c6"]
 # synthetic GPS fixes, every 30 s) and logs what happens; for measuring on
 # a box with no client and no GPS.
 selftest = ["dep:extreme-protocol", "dep:postcard"]
+# Opens the BLE pairing window for 120 s at boot, as "Pair watch" on the
+# Kindle does, so a browser can bond with no Kindle at hand (src/main.rs,
+# BLE.md "Bundles"). Development only: anyone in range can bond meanwhile.
+dev-pairing = []
 esp32c6 = [
     "esp-hal/esp32c6",
     "esp-rtos/esp32c6",

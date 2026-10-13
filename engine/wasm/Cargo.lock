@@ -79,6 +79,7 @@ dependencies = [
  "postcard",
  "postcard-schema",
  "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -307,6 +308,7 @@ dependencies = [
  "js-sys",
  "lang-bytecode",
  "lang-compiler",
+ "lang-vm",
  "postcard",
  "serde_json",
  "wasm-bindgen",
@@ -335,7 +337,6 @@ dependencies = [
  "lang-compiler",
  "postcard",
  "serde_json",
- "sha2",
 ]
 
 [[package]]

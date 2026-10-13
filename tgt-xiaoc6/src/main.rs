@@ -184,6 +184,8 @@ async fn main(spawner: Spawner) -> ! {
     let ble_config = esp_radio::ble::Config::default().with_max_connections(CONNECTIONS_MAX as u16);
     let connector = BleConnector::new(peripherals.BT, ble_config).unwrap();
     spawner.spawn(ble_task(ExternalController::new(connector), runtime, ble_address()).unwrap());
+    #[cfg(feature = "dev-pairing")]
+    spawner.spawn(dev_pairing::task(runtime).unwrap());
 
     // initialize wifi controller as an access point
     let controller_config = ControllerConfig::default()
@@ -450,6 +452,25 @@ async fn ble_task(controller: BleController, runtime: &'static Host, address: [u
         log_memory: memory::log,
     };
     serve_ble(controller, runtime, address, &FlashBonds, diagnostics).await
+}
+
+/// Feature `dev-pairing` (development only, off by default): the BLE
+/// pairing window opens once at boot, exactly as "Pair watch" on the
+/// Kindle opens it, so a browser can bond (and reach the encrypted
+/// characteristics, BLE.md "Bundles") on a box with no Kindle.
+#[cfg(feature = "dev-pairing")]
+mod dev_pairing {
+    use common::{ble_settings::BleCommand, config::BLE_PAIRING_WINDOW_SECS, host::Host};
+    use embassy_time::{Duration, Timer};
+
+    #[embassy_executor::task]
+    pub async fn task(runtime: &'static Host) {
+        // the BLE transport takes commands once it has published its status
+        while runtime.ble_command(BleCommand::Pair).is_err() {
+            Timer::after(Duration::from_millis(100)).await;
+        }
+        defmt::info!("ble: dev-pairing: window open for {=u64} s", BLE_PAIRING_WINDOW_SECS);
+    }
 }
 
 /// BLE bonds in the settings partition (storage.rs).

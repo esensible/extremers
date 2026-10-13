@@ -13,8 +13,9 @@ description: >-
 Create it with `await api.project.create('race', { template: 'race' })`. The
 files come from the studio's vendored copy (`vendor/examples/race/`) of the
 monorepo's `engine/race/`, `extreme-race/client-js/src/` and
-`extreme-race/watch-js/src/`, unchanged. The bundle is named `race`, so its
-id is `packageId("race")` (FNV-1a) and its wire module is `race-wire`.
+`extreme-race/watch-js/src/`, unchanged. The bundle is named `race` whatever
+the project is called (`studio.json`: `{"name": "race", "version": 1}`), so
+its id is `packageId("race")` (FNV-1a) and its wire module is `race-wire`.
 
 ## The engine (`engine/`)
 
@@ -75,7 +76,8 @@ and with the previews, `api.preview.press('kindle', { text: 'Stbd' })`.
 ## Starting a new bundle from Race
 
 Keep the shape: `api.js` per client (rename `race-wire` to `<name>-wire` and
-`packageId("race")` to your name), one page per variant of your view's phase,
+`packageId("race")` to your name, and set it as the bundle's name:
+`api.project.settings({ name })`), one page per variant of your view's phase,
 the store fed with `reconcile`, every time on the device clock. Replace the
 engine and schemas first, check them (`api.engine.check()`), then change the
 pages to read your view.

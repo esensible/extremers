@@ -11,8 +11,25 @@
 // The list of vendored example files comes from vendor/examples/race/index.json
 // (an array of paths relative to that directory) or, failing that, from the
 // per-file entries of vendor/SOURCES.json under examples/race/.
+//
+// Every template also writes studio.json, the project's settings: the
+// bundle's name (its package id, the Kindle page's /pkg/<id>/, the
+// '<name>-wire' module the clients import) and the manifest's version.
+// Race's clients import 'race-wire', so its bundle is 'race' whatever the
+// project is called; a blank project's bundle is the project's name.
 
 export const TEMPLATES = ['race', 'blank'];
+
+/** The project settings file, at the project's root. */
+export const SETTINGS_PATH = 'studio.json';
+
+/** studio.json's text for these settings (pretty, a trailing newline). */
+export const settingsText = (settings) => JSON.stringify(settings, null, 2) + '\n';
+
+/** The settings a template starts a project `project` with. */
+export function templateSettings(template, project) {
+  return { name: template === 'race' ? 'race' : project, version: 1 };
+}
 
 const BINARY = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|otf|bin|wasm|bundle)$/i;
 export const isBinaryPath = (p) => BINARY.test(p);
@@ -103,11 +120,19 @@ export async function raceFiles({ fetchText, fetchBytes }) {
   return out;
 }
 
-/** template name → files. Throws (with .hint) when a template can't be made. */
-export async function templateFiles(name, io) {
-  if (name === 'blank') return blankFiles();
-  if (name === 'race') return raceFiles(io);
-  const err = new Error(`no template named '${name}'`);
-  err.hint = `templates: ${TEMPLATES.join(', ')}`;
-  throw err;
+/**
+ * template name → files, studio.json among them (its bundle name from
+ * `project`, the new project's name). Throws (with .hint) when a template
+ * can't be made.
+ */
+export async function templateFiles(name, io, { project = name } = {}) {
+  let files;
+  if (name === 'blank') files = blankFiles();
+  else if (name === 'race') files = await raceFiles(io);
+  else {
+    const err = new Error(`no template named '${name}'`);
+    err.hint = `templates: ${TEMPLATES.join(', ')}`;
+    throw err;
+  }
+  return [...files.filter((f) => f.path !== SETTINGS_PATH), { path: SETTINGS_PATH, text: settingsText(templateSettings(name, project)) }];
 }

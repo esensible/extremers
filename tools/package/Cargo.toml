@@ -17,7 +17,6 @@ extreme-protocol = { path = "../../extreme-protocol" }
 heapless = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 serde_json = { workspace = true }
-sha2 = "0.10"
 # lang/ and engine/ are workspaces of their own (excluded from this one)
 compiler = { package = "lang-compiler", path = "../../lang/compiler" }
 engine-profile = { path = "../../engine/profile" }

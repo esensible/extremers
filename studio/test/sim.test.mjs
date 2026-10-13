@@ -2,9 +2,11 @@
 // engine wasm) with the Race template: a scripted race gives the evaluations
 // engine/race/tests/against_extreme_race.rs delivers (the gun is the wake,
 // fired at its time exactly, between two fixes; stale wakes don't fire),
-// publish only on change, refusals, NMEA and replay; and on every
-// evaluation the studio's W-WIRE cross-check holds: the view bytes in the
-// host's envelope == wire.encode(VIEW, plain view) by the vendored JS codec.
+// publish only on change, refusals, NMEA and replay; the state and the
+// R-codes are the host's own (HostHandle.state_json, HostHandle.log); its
+// gps is the C6's 20,480 fixes; and on every evaluation the studio's W-WIRE
+// cross-check holds: the view bytes in the host's envelope == wire.encode(VIEW,
+// the view the JS codec decodes from them).
 //
 //   podman exec -w /workspace/studio extremers-lang npm test
 
@@ -161,14 +163,16 @@ test('publish only on change: identical evaluations send one envelope', { skip }
   await everything(api);
 });
 
-test('refusals: the host\'s word, the mirror agrees; a bad event is explained', { skip }, async () => {
+test('refusals: the host\'s word, with its R-code; a bad event is explained', { skip }, async () => {
   const { api } = await race();
   const before = ok(assert, await api.sim.state());
   const r = ok(assert, await api.sim.event({ bump_seq: { seconds: 30, tapped_at: -1 } }));
   assert.equal(r.accepted, false);
   assert.equal(r.refused, 'Engine');
   assert.equal(r.evaluations[0].accepted, false);
-  assert.ok(r.evaluations[0].error.code, JSON.stringify(r.evaluations[0]));
+  assert.equal(r.evaluations[0].error.code, 'R-INPUT', JSON.stringify(r.evaluations[0]));
+  assert.equal(typeof r.evaluations[0].error.pc, 'number');
+  assert.deepEqual(r.errors.map((e) => [e.cause, e.code]), [['event', 'R-INPUT']]);
   assert.deepEqual(r.state, before.state, 'nothing changed');
   notOk(assert, await api.sim.event({ nope: {} }), /does not fit event.schema.json/);
   notOk(assert, await api.sim.event('line_stbd'), /event must be an object/);
@@ -252,6 +256,56 @@ test('a blank engine (no view, no events): the state is published; events are re
   assert.deepEqual(r.view, { count: 3 });
   const schema = JSON.parse(ok(assert, await w.api.files.read('engine/state.schema.json')).text);
   await everything(w.api, wire.load(bitwire.compile(schema)));
+});
+
+test('the state is the host\'s own: the history\'s last state, sim.state() and HostHandle.state_json agree', { skip }, async () => {
+  const { api } = await race();
+  ok(assert, await api.sim.gps(fix(...STBD, 4, 90, T0 + 500)));
+  ok(assert, await api.sim.event({ line_stbd: {} }));
+  const st = ok(assert, await api.sim.state());
+  assert.equal(st.engineRunning, true);
+  assert.deepEqual(st.state, { phase: { idle: {} }, line: { stbd: { t: T0 + 500, lat: STBD[0], lon: STBD[1] } }, velocity: { speed: 4, heading: 90 } });
+  const all = await everything(api);
+  assert.deepEqual(all[all.length - 1].state, st.state);
+  assert.equal(st.trackCapacity, 20_480);
+  assert.equal(st.track, 1);
+});
+
+test('a GPS update the engine rejects: errors[] has its R-code and where; the fix stays on the track, the state does not change', { skip }, async () => {
+  const w = await engineWorld();
+  ok(assert, await w.api.project.create('picky', { template: 'blank' }));
+  // a fix without a velocity: event.gps.velocity is nil → R-NIL
+  ok(assert, await w.api.files.write('engine/engine.expr', 'let c = (state ?? {count: 0}).count;\nlet v = event.gps?.fix == nil ? 0.0 : event.gps.velocity.speed;\n{state: {count: v > 1000.0 ? 0 : min(c + 1, 1000000)}}\n'));
+  ok(assert, await w.api.engine.compile());
+  const s = ok(assert, await w.api.sim.start());
+  assert.deepEqual(s.state, { count: 2 });
+  const r = ok(assert, await w.api.sim.gps({ t: T0 + 1000, lat: 1, lon: 2 }));
+  assert.equal(r.evaluations.length, 1);
+  assert.equal(r.evaluations[0].accepted, false);
+  assert.deepEqual(r.errors.map((e) => [e.cause, e.code]), [['gps', 'R-NIL']]);
+  assert.match(r.errors[0].at, /^engine\/engine\.expr:2:\d+$/);
+  assert.match(r.errors[0].help, /nil/);
+  assert.deepEqual(r.state, { count: 2 }, 'unchanged');
+  assert.equal(ok(assert, await w.api.sim.state()).track, 1, 'the fix is on the track all the same');
+  const g = ok(assert, await w.api.sim.gps({ t: T0 + 2000, lat: 1, lon: 2, speed: 3, heading: 4 }));
+  assert.equal(g.errors, undefined);
+  assert.deepEqual(g.state, { count: 3 });
+  assert.deepEqual(ok(assert, await w.api.sim.state()).findings, []);
+});
+
+test('gps is the C6\'s track: an engine sees more than 128 fixes', { skip }, async () => {
+  const w = await engineWorld();
+  ok(assert, await w.api.project.create('fixes', { template: 'blank' }));
+  ok(assert, await w.api.files.write('engine/engine.expr', '{state: {count: len(gps)}}\n'));
+  ok(assert, await w.api.sim.start());
+  const fixes = Array.from({ length: 200 }, (_, k) => ({ t: T0 + 1000 * (k + 1), lat: -33.85 + k * 1e-5, lon: 151.25 }));
+  ok(assert, await w.api.files.write('tracks/long.json', JSON.stringify(fixes)));
+  const r = ok(assert, await w.api.sim.replay({ path: 'tracks/long.json' }));
+  assert.equal(r.fixes, 200);
+  const st = ok(assert, await w.api.sim.state());
+  assert.deepEqual(st.state, { count: 200 });
+  assert.equal(st.track, 200);
+  assert.deepEqual(st.findings, []);
 });
 
 test('live clock: advance refused; a wake fires on wall time; stop makes it virtual', { skip }, async () => {

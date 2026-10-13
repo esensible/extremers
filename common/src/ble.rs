@@ -1,10 +1,12 @@
 //! BLE GATT transport for a [`Host`] (BLE.md).
 //!
-//! One service with three characteristics: `state` (read, notify) carries
+//! One service with five characteristics: `state` (read, notify) carries
 //! the host's envelope, `event` (write, write-without-response) takes host
 //! events, both postcard (README "Host protocol"), and `ui-psm` (read) names
 //! the L2CAP channel that serves watch bundles ([`UI_PSM`], BLE.md "Watch
-//! bundles"). Up to [`CONNECTIONS_MAX`] centrals at once, each
+//! bundles"); `bundle` (notify) answers bundle requests and `data`
+//! (write-without-response, notify) carries a bundle's bytes either way
+//! (BLE.md "Bundles", [`crate::ble_bundles`]). Up to [`CONNECTIONS_MAX`] centrals at once, each
 //! served by its own worker; a worker with no connection advertises, and
 //! only one advertises at a time, so the device is connectable exactly
 //! while a slot is free.
@@ -15,8 +17,8 @@
 //! is not the one it last saw (a firmware update) it is told: Service Changed
 //! if it subscribed, Database Out Of Sync errors if it uses robust caching.
 //!
-//! Security (BLE.md "Security"): both characteristics (and `state`'s CCCD)
-//! need a link encrypted with a bond this box holds. LE Secure Connections,
+//! Security (BLE.md "Security"): every characteristic (and every CCCD)
+//! needs a link encrypted with a bond this box holds. LE Secure Connections,
 //! Just Works (the box has no display or keys). New bonds are made only
 //! while the pairing window is open, which the Kindle's settings panel opens
 //! ([`BleCommand::Pair`], [`BLE_PAIRING_WINDOW_SECS`]); bonded devices
@@ -29,7 +31,7 @@
 use core::cell::{Cell, RefCell};
 
 use embassy_futures::{
-    join::{join3, join_array},
+    join::{join4, join_array},
     select::{Either, Either3, Either4, select, select3, select4},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex, signal::Signal};
@@ -39,14 +41,15 @@ use trouble_host::{
     prelude::*,
 };
 
-use extreme_protocol::ENVELOPE_MAX;
+use extreme_protocol::{BUNDLE_RESPONSE_MAX, BundleResponse, ENVELOPE_MAX, UPLOAD_IDLE_SECS};
 
 use crate::{
+    ble_bundles::{BleClient, BundleAnswer, Download},
     ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord, GattClientRecord},
     bulk::{self, Transfer},
     config::{BLE_NAME, BLE_PAIRING_WINDOW_SECS, MAX_BLE_BONDS, MAX_BLE_CONNECTIONS},
     fmt::{Dbg, Disp, Hex},
-    host::{Host, Refused, StateMessage, Transport},
+    host::{Host, Refused, StateMessage},
 };
 
 /// Concurrent BLE connections: the watch plus a phone or a debugging tool.
@@ -87,6 +90,8 @@ const SERVICE_UUID: u128 = 0xe4a1c000_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const STATE_UUID: u128 = 0xe4a1c001_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const EVENT_UUID: u128 = 0xe4a1c002_6b2f_4f77_9a0d_3c5e7b9d1f20;
 const UI_PSM_UUID: u128 = 0xe4a1c003_6b2f_4f77_9a0d_3c5e7b9d1f20;
+const BUNDLE_UUID: u128 = 0xe4a1c004_6b2f_4f77_9a0d_3c5e7b9d1f20;
+const DATA_UUID: u128 = 0xe4a1c005_6b2f_4f77_9a0d_3c5e7b9d1f20;
 
 /// Largest `state` value: an `Envelope` at its largest. A notification
 /// carries at most ATT MTU - 3 bytes, so a central must exchange a larger
@@ -100,6 +105,14 @@ const STATE_MAX: usize = ENVELOPE_MAX;
 /// `timestamp` at their longest, plus the package id), more than the
 /// default MTU's 20: a central must exchange a larger MTU (BLE.md).
 const EVENT_MAX: usize = 64;
+/// Largest `data` value: what a write or notification carries at the
+/// largest ATT MTU the host accepts (its packet pool's MTU less 4, 247),
+/// less 3: an offset and a chunk of 240 (BLE.md "Bundles").
+const DATA_MAX: usize = 247 - 3;
+/// How many times a notification that found the packet pool empty is tried
+/// again, a few ms apart, before a bundle's download gives up.
+const NOTIFY_TRIES: u32 = 50;
+const NOTIFY_RETRY: Duration = Duration::from_millis(5);
 
 /// Company identifier of the scan response's manufacturer data: 0xFFFF is
 /// the Bluetooth SIG's value for internal use and testing, i.e. no company.
@@ -107,6 +120,8 @@ const COMPANY_NONE: u16 = 0xffff;
 
 type StateValue = heapless09::Vec<u8, STATE_MAX>;
 type EventValue = heapless09::Vec<u8, EVENT_MAX>;
+type BundleValue = heapless09::Vec<u8, BUNDLE_RESPONSE_MAX>;
+type DataValue = heapless09::Vec<u8, DATA_MAX>;
 
 /// The attribute table: GAP, the GATT service with its caching
 /// characteristics, and ours.
@@ -140,6 +155,14 @@ struct RaceService {
     /// The bulk channel's LE PSM, u16 little-endian.
     #[characteristic(uuid = UI_PSM_UUID, read, value = UI_PSM, permissions(encrypted))]
     ui_psm: u16,
+    /// The answers to bundle requests: `BundleResponse`, postcard. Notified
+    /// only, never stored.
+    #[characteristic(uuid = BUNDLE_UUID, notify, value = heapless09::Vec::new(), permissions(encrypted))]
+    bundle: BundleValue,
+    /// A bundle's bytes, `offset u32 LE` then up to a chunk: an upload's
+    /// written, a download's notified. Never stored.
+    #[characteristic(uuid = DATA_UUID, write_without_response, notify, value = heapless09::Vec::new(), permissions(encrypted))]
+    data: DataValue,
 }
 
 /// Where the target keeps bonds across power cycles (the C6: its settings
@@ -344,9 +367,22 @@ where
     let workers: [_; CONNECTIONS_MAX] =
         core::array::from_fn(|me| worker(me, &context, &advertising, &unit));
 
-    join3(host, control(&shared, &stack, runtime, store), join_array(workers)).await;
-    // all three loop forever
+    join4(host, control(&shared, &stack, runtime, store), uploads(runtime), join_array(workers)).await;
+    // all four loop forever
     unreachable!()
+}
+
+/// Drops a bundle upload once it has been idle for [`UPLOAD_IDLE_SECS`]
+/// (BLE.md "Bundles"): its deadline only ever moves later, so waking at
+/// the one seen last and looking again is enough.
+async fn uploads(runtime: &Host) {
+    loop {
+        let at = runtime
+            .bundle_deadline()
+            .unwrap_or_else(|| Instant::now() + Duration::from_secs(UPLOAD_IDLE_SECS));
+        Timer::at(at).await;
+        runtime.bundle_expire(Instant::now()).await;
+    }
 }
 
 /// What every connection's worker uses.
@@ -673,6 +709,7 @@ async fn serve_gatt<C, S>(
         (ctx.shared, ctx.stack, ctx.server, ctx.runtime, ctx.store);
     let state = &server.race.state;
     let event = &server.race.event;
+    let (bundle, data) = (&server.race.bundle, &server.race.data);
     // set when the peer turned out to hold a bond this box does not
     let mut stale_deadline: Option<Instant> = None;
 
@@ -914,6 +951,11 @@ async fn serve_gatt<C, S>(
                     }
                 }
                 let trusted = link.trusted.get();
+                // a bundle request's answer, or a `data` write's: sent after
+                // the write's reply
+                let mut answer: Option<BundleAnswer<'_>> = None;
+                let mut data_answer: Option<BundleResponse> = None;
+                let client = BleClient::new(me, conn.raw().att_mtu());
                 let reply = match request {
                     // The host refused an access on the unencrypted link.
                     // Insufficient Authentication makes a central with a
@@ -968,29 +1010,62 @@ async fn serve_gatt<C, S>(
                                 }
                             });
                             let accepted = match &payload {
-                                Some(payload) => runtime.event(payload, Transport::Ble).await,
+                                Some(payload) => runtime.ble_event(payload, client).await,
                                 None => Err(Refused::Undecodable),
                             };
-                            if accepted.is_ok() {
-                                debug!("ble: connection {}: event {:?}", me, Dbg(&payload));
-                                write.accept()
-                            } else {
-                                warn!(
-                                    "ble: connection {}: event refused ({:?}): {:?}",
-                                    me,
-                                    Dbg(&accepted),
-                                    Dbg(&payload)
-                                );
-                                if command {
-                                    write.accept_unprocessed()
-                                } else {
-                                    write.reject(AttErrorCode::VALUE_NOT_ALLOWED)
+                            match accepted {
+                                Ok(a) => {
+                                    debug!("ble: connection {}: event {:?}", me, Dbg(&payload));
+                                    answer = a;
+                                    write.accept()
+                                }
+                                Err(refused) => {
+                                    warn!(
+                                        "ble: connection {}: event refused ({:?}): {:?}",
+                                        me,
+                                        Dbg(&refused),
+                                        Dbg(&payload)
+                                    );
+                                    if command {
+                                        write.accept_unprocessed()
+                                    } else {
+                                        write.reject(AttErrorCode::VALUE_NOT_ALLOWED)
+                                    }
                                 }
                             }
                         }
                     }
+                    // An upload's bytes: answered on `bundle`, never with an
+                    // ATT error (a write command gets none).
+                    GattEvent::Write(write) if write.handle() == data.handle => {
+                        if !trusted {
+                            warn!("ble: connection {}: bundle data refused: link not bonded", me);
+                            if command {
+                                write.accept_unprocessed()
+                            } else {
+                                write.reject(AttErrorCode::INSUFFICIENT_AUTHORISATION)
+                            }
+                        } else {
+                            let value = write.with_data(|offset, bytes| match offset {
+                                0 => DataValue::from_slice(bytes).ok(),
+                                _ => None,
+                            });
+                            data_answer = match value {
+                                Some(value) => runtime.bundle_data(client, &value).await,
+                                // longer than any chunk: no offset to go by
+                                None => Some(BundleResponse::Error {
+                                    request: extreme_protocol::REQUEST_DATA,
+                                    code: extreme_protocol::BundleError::Length,
+                                    detail: 0,
+                                }),
+                            };
+                            write.accept_unprocessed()
+                        }
+                    }
                     // Subscribing is reading too.
-                    GattEvent::Write(write) if Some(write.handle()) == state.cccd_handle => {
+                    GattEvent::Write(write)
+                        if [state.cccd_handle, bundle.cccd_handle, data.cccd_handle].contains(&Some(write.handle())) =>
+                    {
                         if trusted {
                             write.accept()
                         } else {
@@ -1052,6 +1127,18 @@ async fn serve_gatt<C, S>(
                 }
                 if configures && trusted {
                     save_gatt_client(ctx, conn, link).await;
+                }
+                if let Some(response) = data_answer {
+                    notify_bundle(me, server, conn, &response).await;
+                }
+                match answer {
+                    Some(BundleAnswer::Responses(responses)) => {
+                        for response in &responses {
+                            notify_bundle(me, server, conn, response).await;
+                        }
+                    }
+                    Some(BundleAnswer::Download(download)) => send_download(me, server, conn, download).await,
+                    None => {}
                 }
             }
             _ => {}
@@ -1187,6 +1274,110 @@ async fn save_gatt_client<C: Controller, S: BondStore>(
         warn!("ble: bond slot {}: GATT record not saved", slot);
     }
     ctx.shared.gatt.borrow_mut()[slot] = Some(record);
+}
+
+/// Notifies `value` on `characteristic`, trying again while the packet pool
+/// is empty (a download outruns it); whether it went (or the client is not
+/// subscribed, which notifies nothing).
+async fn notify_raw<T: trouble_host::types::gatt_traits::AsGatt + ?Sized>(
+    characteristic: &Characteristic<T>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    value: &[u8],
+) -> Result<(), trouble_host::Error> {
+    let mut tries = 0;
+    loop {
+        match characteristic.notify_raw(conn, value, false).await {
+            Err(trouble_host::Error::OutOfMemory) if tries < NOTIFY_TRIES => {
+                tries += 1;
+                Timer::after(NOTIFY_RETRY).await;
+            }
+            done => return done,
+        }
+    }
+}
+
+/// Notifies a bundle response on `bundle` (BLE.md "Bundles"); logged if it
+/// can't go.
+async fn notify_bundle(
+    me: usize,
+    server: &Server<'_>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    response: &BundleResponse,
+) {
+    let bundle = &server.race.bundle;
+    if !bundle.should_notify(conn) {
+        warn!("ble: connection {}: bundles: {:?} not sent: not subscribed to `bundle`", me, Dbg(response));
+        return;
+    }
+    let mut out = [0u8; BUNDLE_RESPONSE_MAX];
+    // cannot fail: sized for the largest
+    let Ok(value) = postcard::to_slice(response, &mut out) else {
+        return;
+    };
+    let room = conn.raw().att_mtu() as usize - 3;
+    if value.len() > room {
+        warn!(
+            "ble: connection {}: bundles: {:?} is {} bytes but the ATT MTU allows {}: not sent",
+            me,
+            Dbg(response),
+            value.len(),
+            room
+        );
+        return;
+    }
+    match notify_raw(bundle, conn, value).await {
+        Ok(()) => debug!("ble: connection {}: bundles: {:?}", me, Dbg(response)),
+        Err(e) => warn!("ble: connection {}: bundles: {:?} not sent: {:?}", me, Dbg(response), Dbg(&e)),
+    }
+}
+
+/// A `Get`: `Sending`, the archive on `data`, `Sent`; the bundle's lease
+/// is held until the end (dropping `download`).
+async fn send_download(
+    me: usize,
+    server: &Server<'_>,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    download: Download<'_>,
+) {
+    let data = &server.race.data;
+    if !data.should_notify(conn) {
+        warn!("ble: connection {}: bundles: download of {} not sent: not subscribed to `data`", me, Disp(&Hex(&download.id.to_be_bytes())));
+        return;
+    }
+    notify_bundle(me, server, conn, &download.sending()).await;
+    let start = Instant::now();
+    let mut sent = 0usize;
+    for packet in download.packets() {
+        let mut value = [0u8; DATA_MAX];
+        let Some(n) = packet.write(&mut value) else {
+            // the chunk is sized from the MTU, which is at most 247
+            error!("ble: connection {}: bundles: a {} B chunk does not fit `data`", me, packet.bytes.len());
+            return;
+        };
+        if let Err(e) = notify_raw(data, conn, &value[..n]).await {
+            warn!(
+                "ble: connection {}: bundles: download stopped after {} of {} B: {:?}",
+                me,
+                sent,
+                download.bytes.len() as u32 - download.from,
+                Dbg(&e)
+            );
+            return;
+        }
+        sent += packet.bytes.len();
+    }
+    notify_bundle(me, server, conn, &download.sent()).await;
+    let ms = start.elapsed().as_millis();
+    info!(
+        "ble: connection {}: bundles: sent {} B of bundle {} from {} in {} ms ({} B/s), chunks of {}",
+        me,
+        sent,
+        Disp(&Hex(&download.id.to_be_bytes())),
+        download.from,
+        ms,
+        bulk::throughput(sent, ms),
+        download.chunk
+    );
 }
 
 /// The bulk half of a connection (BLE.md "Watch bundles"): an L2CAP
@@ -1546,11 +1737,24 @@ mod tests {
             (STATE_UUID, 0x01),
             (EVENT_UUID, 0x02),
             (UI_PSM_UUID, 0x03),
+            (BUNDLE_UUID, 0x04),
+            (DATA_UUID, 0x05),
         ] {
             let bytes = uuid.to_be_bytes();
             assert_eq!(bytes[..4], [0xe4, 0xa1, 0xc0, n]);
             assert_eq!(bytes[4..], tail);
         }
+    }
+
+    /// A bundle request fits `event`; a chunk at the host's largest ATT
+    /// MTU (247) fits `data`, and a response `bundle`.
+    #[test]
+    fn bundle_values_fit() {
+        use extreme_protocol::{BUNDLE_EVENT_MAX, DATA_HEADER, data_chunk};
+        assert!(BUNDLE_EVENT_MAX <= EVENT_MAX);
+        assert_eq!(DATA_HEADER + data_chunk(247) as usize, DATA_MAX);
+        assert!(BUNDLE_RESPONSE_MAX <= 247 - 3);
+        assert_eq!(<DefaultPacketPool as PacketPool>::MTU - 4, 247);
     }
 
     /// The bulk channel's PSM is an LE PSM from the dynamic range, which

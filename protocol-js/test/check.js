@@ -102,7 +102,8 @@ export function runRefusals() {
   check("package id past u32 refused", throws(() => D([0, 0x80, 0x80, 0x80, 0x80, 0x10].concat(H, [0]))), "decoded");
   check("varint too long refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0].concat(H, [0]))), "decoded");
   check("state longer than the bytes refused", throws(() => D([0, 0].concat(H, [2, 1]))), "decoded");
-  check("unknown host event refused", throws(() => host.decodeHostEvent([4])), "decoded");
+  check("unknown host event refused", throws(() => host.decodeHostEvent([5])), "decoded");
+  check("unknown bundle request refused", throws(() => host.decodeHostEvent([4, 7])), "decoded");
   check("bad Option tag refused", throws(() => host.decodeChooseView([0, 2])), "decoded");
   check("not bytes refused", throws(() => D(42)), "decoded");
   // the encoders refuse values they cannot write exactly
@@ -124,6 +125,10 @@ export function runRefusals() {
   // a unit variant needs no value
   check("unit variant without value", toHex(host.encodeHostEvent({ tag: "SelectDefault" })) === "01", "");
   check("race events in wire order", race.VARIANTS.RaceEvent.join() === "LineStbd,LinePort,BumpSeq,RaceFinish", race.VARIANTS.RaceEvent.join());
-  check("host events in wire order", host.VARIANTS.HostEvent.join() === "Select,SelectDefault,Engine,Ble", host.VARIANTS.HostEvent.join());
+  check("host events in wire order", host.VARIANTS.HostEvent.join() === "Select,SelectDefault,Engine,Ble,Bundle", host.VARIANTS.HostEvent.join());
+  check("bundle requests in wire order", host.VARIANTS.BundleRequest.join() === "List,Begin,Commit,Abort,Delete,Activate,Get", host.VARIANTS.BundleRequest.join());
+  const begin = (sha256) => host.encodeHostEvent({ tag: "Bundle", value: { tag: "Begin", value: { id: 1, len: 2, sha256 } } });
+  check("a Begin's SHA-256 is 32 bytes", begin(new Array(32).fill(7)).length === 2 + 1 + 1 + 32, "");
+  check("short SHA-256 refused", throws(() => begin([1, 2, 3])), "encoded");
   return results;
 }

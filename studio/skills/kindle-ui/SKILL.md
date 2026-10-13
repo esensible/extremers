@@ -108,7 +108,7 @@ plugin order. The entry is `kindle/src/index.jsx` (else `kindle/src/index.js`).
 | `../../../client-common/host.js`, `confirm.js`, `confirm-place.js` | packageId/ownPackage/staleness/reloadEntry/engineEvent/backEvent; the confirm logic |
 | `../../../wire/js/codec.js` | the bitwire codec (default export: `load`, `decode`, `encode`) |
 | `solid-js`, `solid-js/store`, `solid-js/web` | solid-js 1.9.17, the browser build |
-| `<name>-wire`, `engine-wire` | the descriptors: `VIEW` (or `STATE` when there is no `engine/view.schema.json`), and `EVENT` when there is an `engine/event.schema.json`; `Uint8Array`s. `<name>` is the bundle name: build with the name you pack with (`api.ui.build({ name })`, default the project's), or import `engine-wire` |
+| `<name>-wire`, `engine-wire` | the descriptors: `VIEW` (or `STATE` when there is no `engine/view.schema.json`), and `EVENT` when there is an `engine/event.schema.json`; `Uint8Array`s. `<name>` is the bundle name, `studio.json`'s (`api.project.settings()`), which `api.ui.build()` and `api.bundle.pack()` both use; or import `engine-wire` |
 | `./style.css` | collected into the CSS file |
 | `./a.svg` etc. | a data URL string |
 

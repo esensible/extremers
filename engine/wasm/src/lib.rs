@@ -14,6 +14,8 @@
 
 pub mod clock;
 pub mod host;
+pub mod inspect;
+pub mod track;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bundle::Archive;

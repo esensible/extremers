@@ -45,12 +45,27 @@ an agent calls shows on the page.
 | Group | State |
 |---|---|
 | core: `describe, status, log, skills, skill` | wired |
-| `project.*`: `list, create, open, delete, rename, export, import` | wired (IndexedDB in this browser) |
+| `project.*`: `list, create, open, delete, rename, export, import, settings` | wired (IndexedDB in this browser) |
 | `files.*`: `list, read, write, delete, rename` | wired; writes save at once |
 | `engine.*`: `interface, compile, check, disassemble, layout, builtins` | wired (the engine wasm) |
 | `sim.*`: `runSamples, start, reset, event, gps, advance, state, history, replay, stop` | wired (the real host in the wasm) |
+| `ui.build` | wired (a Web Worker in the page); the last good build per project is kept |
 | `bundle.*`: `pack, inspect` | wired; the Kindle page is a placeholder until `ui.build` has run |
-| `ui.build`, `preview.*`, `device.*` | see `available` in `describe()` |
+| `preview.*`, `device.*` | see `available` in `describe()` |
+
+## The bundle's name: `studio.json`
+
+The project's settings are a file at its root, `studio.json`:
+`{"name": "race", "version": 1}`. `name` is the **bundle's** name, not the
+project's: its package id (FNV-1a of it) is where the Kindle page loads from
+(`/pkg/<id>/`), and the clients import its wire module as `'<name>-wire'`. The
+Race template sets `race` whatever you call the project (its clients import
+`'race-wire'`); `blank` sets the project's name. `api.ui.build()`,
+`api.sim.start()` and `api.bundle.pack()` use it when no `{ name }` is given;
+`api.project.settings()` reads it, `api.project.settings({ name, version })`
+writes it (as does `files.write('studio.json', …)`). `bundle.pack` and
+`sim.start` refuse when the last `ui.build` was made under another name: build
+again (or pack with that name). A project without the file uses its own name.
 
 ## The engine and the host
 
@@ -72,16 +87,20 @@ an agent calls shows on the page.
   heading })` or NMEA text, `api.sim.advance(ms)` / `advance('wake')`,
   `api.sim.replay({ path })` for a track file in the project (NMEA, or JSON
   updates). Each returns `evaluations`: `{n, t, cause: start|gps|event|wake,
-  event, accepted, state, view, wake, published, publishedHex, error?}`.
+  event, accepted, state, view, wake, published, publishedHex, error?}`, the
+  host's own log of what it evaluated; when the host rejected one, also
+  `errors: [{n, cause, code, at, help}]` (`code` `R-…`, `at`
+  `engine/engine.expr:line:col`).
 - The host publishes a view only when its bytes change: `published: false`
   is the C6's behaviour, not a bug.
-- The host doesn't expose the engine's state; the studio mirrors every
-  evaluation with the same program and checks itself against the host on
-  every call (`W-WIRE`: the published bytes equal the JS codec's encoding of
-  the view; `W-HOST`: refusals, wakes and the pending wake agree).
+- `state` is the engine's own state, read from the host (the leaves it
+  keeps, decoded with the state schema). The studio checks the host on every
+  call (`W-WIRE`: each envelope is a logged evaluation whose view changed,
+  and the JS codec decodes and re-encodes its bytes unchanged; `W-HOST`: the
+  host's answers, wakes and pending wake agree with its log).
   `api.sim.state().findings` must stay empty; report it if it isn't.
-- The sim's `gps` input holds the newest 128 fixes (the wasm host's RAM
-  track); the C6 holds up to 20,480.
+- The sim's `gps` input holds the newest 20,480 fixes, as the C6's track
+  does (`sim.state().track`, `trackCapacity`).
 - `api.sim.history({ offset, limit })` pages the last 2,000 evaluations;
   the #sim panel shows the timeline, the view and the state, with buttons
   for each event, a GPS fix, +1 s, +10 s and the next wake.
@@ -93,7 +112,8 @@ an agent calls shows on the page.
    and `race-example` for the clients. Read each to the end.
 3. `api.project.list()`, then `api.project.create('my-race', { template: 'race' })`
    (the Race example) or `{ template: 'blank' }` (a minimal engine), or
-   `api.project.open(name)`.
+   `api.project.open(name)`. `api.project.settings()`: the bundle's name and
+   version (`studio.json`, above).
 4. `api.files.list()`, `api.files.read(path)`, `api.files.write(path, text)`:
    `files.write` replaces the whole file. The page shows the change.
 5. `api.engine.check()` — compile, the smoke runs and `engine/samples.json`
@@ -102,10 +122,12 @@ an agent calls shows on the page.
    `api.sim.event({ line_stbd: {} })`, `api.sim.advance(ms)`,
    `api.sim.state()`, `api.sim.history()`: the engine on the real host,
    with its refusals, publish rules and wake timer (below).
-7. `api.ui.build({ target: 'both' })`, `api.preview.open({ target: 'kindle' })`,
-   `api.preview.text('kindle')`, `api.preview.press('kindle', { text: 'Stbd' })`.
-8. `api.bundle.pack({ name: 'race', version: 1 })` (the manifest's version is
-   an integer 0-65535), `api.bundle.inspect()`.
+7. `api.ui.build({ target: 'both' })` (under the settings' name; a failed
+   build keeps the last good one, and says so in `kept`),
+   `api.preview.open({ target: 'kindle' })`, `api.preview.text('kindle')`,
+   `api.preview.press('kindle', { text: 'Stbd' })`.
+8. `api.bundle.pack()` (the settings' name and version; the version is an
+   integer 0-65535; `{ name, version }` override them), `api.bundle.inspect()`.
 9. `api.device.connect()`, `api.device.install({ activate: true })`,
    `api.device.list()`.
 10. On any `{ ok:false }`: `error` + `hint`, then `api.status()` and `api.log({ last: 50 })`.
@@ -128,14 +150,17 @@ an agent calls shows on the page.
   device was chosen, ask the person to click **Choose device…**
   (`#device-choose`) once and pick the C6. After that `connect()` works from
   script, also after a reload.
-- **Pair.** The C6 accepts bundle commands only on an encrypted, bonded link.
-  Pairing happens during the C6's pairing window (`BleCommand::Pair`), which a
-  person opens on the Kindle: the Choose page's settings, **Pair watch** (the
-  same window pairs any device; the Kindle shows the time left). Ask them to
-  open it, then connect within it. The Kindle then shows "Paired …".
-- **Chrome flags** (desktop Chrome): for remembered devices to reconnect
-  without the chooser, `chrome://flags/#enable-web-bluetooth-new-permissions-backend`
-  must be Enabled (then relaunch Chrome).
+- **Pair** *(unverified: written from reading the firmware's code; not yet
+  tried end to end with the studio, milestone D4)*. The C6 accepts bundle
+  commands only on an encrypted, bonded link. Pairing happens during the
+  C6's pairing window (`BleCommand::Pair`), which a person opens on the
+  Kindle: the Choose page's settings, **Pair watch** (the same window pairs
+  any device; the Kindle shows the time left). Ask them to open it, then
+  connect within it. The Kindle then shows "Paired …".
+- **Chrome flags** (desktop Chrome) *(unverified, as above)*: for remembered
+  devices to reconnect without the chooser,
+  `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
+  Enabled (then relaunch Chrome).
 - Deleting a project or a file from the page asks inline; from `window.api`
   it does not ask: only delete what you were asked to.
 
@@ -143,8 +168,10 @@ an agent calls shows on the page.
 
 Stable ids: `#project-select`, `#status` (the last result as text,
 `aria-live`), `#device-choose`; `#files` (one button per file,
-`data-path`); editor tabs `#editor-tab-<path>` and editors `#editor-<path>`
-(use `document.getElementById`, the path is verbatim); bottom panels
+`data-path`); editor tabs `#editor-tab-<path>`, one per open file, and the
+editor `#editor-<path>`: Monaco shows one file at a time, so only the file
+shown has an `#editor-<path>` (find open files by their tabs; use
+`document.getElementById`, the path is verbatim); bottom panels
 `#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`. In `#diagnostics`:
 `#engine-check`, `#engine-state` (the compile state as text) and one
 `button.diag` per diagnostic with `data-rule`, `data-path` and `data-span`

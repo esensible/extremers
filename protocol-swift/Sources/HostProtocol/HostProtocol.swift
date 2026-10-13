@@ -240,6 +240,7 @@ public enum HostEvent: Equatable, PostcardCodable {
     case selectDefault
     case engine(package: UInt32, bytes: [UInt8])
     case ble(BleCommand)
+    case bundle(BundleRequest)
 
     public init(from r: inout PostcardReader) throws {
         let tag = try r.u32()
@@ -248,6 +249,7 @@ public enum HostEvent: Equatable, PostcardCodable {
         case 1: self = .selectDefault
         case 2: self = .engine(package: try r.u32(), bytes: try r.seq { r in try r.u8() })
         case 3: self = .ble(try BleCommand(from: &r))
+        case 4: self = .bundle(try BundleRequest(from: &r))
         default: throw PostcardError.unknownVariant("HostEvent", tag)
         }
     }
@@ -258,6 +260,7 @@ public enum HostEvent: Equatable, PostcardCodable {
         case .selectDefault: w.u32(1)
         case .engine(let package, let bytes): w.u32(2); w.u32(package); w.seq(bytes) { w, v in w.u8(v) }
         case .ble(let v0): w.u32(3); v0.encode(to: &w)
+        case .bundle(let v0): w.u32(4); v0.encode(to: &w)
         }
     }
 }
@@ -282,6 +285,42 @@ public enum BleCommand: Equatable, PostcardCodable {
         case .pair: w.u32(0)
         case .cancel: w.u32(1)
         case .forgetAll: w.u32(2)
+        }
+    }
+}
+
+public enum BundleRequest: Equatable, PostcardCodable {
+    case list
+    case begin(id: UInt32, len: UInt32, sha256: [UInt8])
+    case commit
+    case abort
+    case delete(id: UInt32)
+    case activate(id: UInt32)
+    case get(id: UInt32, from: UInt32)
+
+    public init(from r: inout PostcardReader) throws {
+        let tag = try r.u32()
+        switch tag {
+        case 0: self = .list
+        case 1: self = .begin(id: try r.u32(), len: try r.u32(), sha256: try r.array(32) { r in try r.u8() })
+        case 2: self = .commit
+        case 3: self = .abort
+        case 4: self = .delete(id: try r.u32())
+        case 5: self = .activate(id: try r.u32())
+        case 6: self = .get(id: try r.u32(), from: try r.u32())
+        default: throw PostcardError.unknownVariant("BundleRequest", tag)
+        }
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        switch self {
+        case .list: w.u32(0)
+        case .begin(let id, let len, let sha256): w.u32(1); w.u32(id); w.u32(len); w.array(sha256, 32) { w, v in w.u8(v) }
+        case .commit: w.u32(2)
+        case .abort: w.u32(3)
+        case .delete(let id): w.u32(4); w.u32(id)
+        case .activate(let id): w.u32(5); w.u32(id)
+        case .get(let id, let from): w.u32(6); w.u32(id); w.u32(from)
         }
     }
 }
@@ -481,6 +520,140 @@ public struct AssetHeader: Equatable, PostcardCodable {
     }
 }
 
+public enum BundleResponse: Equatable, PostcardCodable {
+    case entry(BundleEntry)
+    case listEnd(count: UInt8, free_bytes: UInt32, largest_free: UInt32)
+    case ready(offset: UInt32, chunk: UInt16, window: UInt16)
+    case ack(offset: UInt32)
+    case committed(id: UInt32, content_hash: [UInt8])
+    case aborted
+    case deleted(id: UInt32)
+    case activated(id: UInt32)
+    case sending(id: UInt32, len: UInt32, sha256: [UInt8], chunk: UInt16)
+    case sent(id: UInt32)
+    case error(request: UInt8, code: BundleError, detail: UInt32)
+
+    public init(from r: inout PostcardReader) throws {
+        let tag = try r.u32()
+        switch tag {
+        case 0: self = .entry(try BundleEntry(from: &r))
+        case 1: self = .listEnd(count: try r.u8(), free_bytes: try r.u32(), largest_free: try r.u32())
+        case 2: self = .ready(offset: try r.u32(), chunk: try r.u16(), window: try r.u16())
+        case 3: self = .ack(offset: try r.u32())
+        case 4: self = .committed(id: try r.u32(), content_hash: try r.array(8) { r in try r.u8() })
+        case 5: self = .aborted
+        case 6: self = .deleted(id: try r.u32())
+        case 7: self = .activated(id: try r.u32())
+        case 8: self = .sending(id: try r.u32(), len: try r.u32(), sha256: try r.array(32) { r in try r.u8() }, chunk: try r.u16())
+        case 9: self = .sent(id: try r.u32())
+        case 10: self = .error(request: try r.u8(), code: try BundleError(from: &r), detail: try r.u32())
+        default: throw PostcardError.unknownVariant("BundleResponse", tag)
+        }
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        switch self {
+        case .entry(let v0): w.u32(0); v0.encode(to: &w)
+        case .listEnd(let count, let free_bytes, let largest_free): w.u32(1); w.u8(count); w.u32(free_bytes); w.u32(largest_free)
+        case .ready(let offset, let chunk, let window): w.u32(2); w.u32(offset); w.u16(chunk); w.u16(window)
+        case .ack(let offset): w.u32(3); w.u32(offset)
+        case .committed(let id, let content_hash): w.u32(4); w.u32(id); w.array(content_hash, 8) { w, v in w.u8(v) }
+        case .aborted: w.u32(5)
+        case .deleted(let id): w.u32(6); w.u32(id)
+        case .activated(let id): w.u32(7); w.u32(id)
+        case .sending(let id, let len, let sha256, let chunk): w.u32(8); w.u32(id); w.u32(len); w.array(sha256, 32) { w, v in w.u8(v) }; w.u16(chunk)
+        case .sent(let id): w.u32(9); w.u32(id)
+        case .error(let request, let code, let detail): w.u32(10); w.u8(request); code.encode(to: &w); w.u32(detail)
+        }
+    }
+}
+
+public struct BundleEntry: Equatable, PostcardCodable {
+    public var manifest: Manifest
+    public var len: UInt32
+    public var active: Bool
+    public var boot: Bool
+    public var builtin: Bool
+
+    public init(manifest: Manifest, len: UInt32, active: Bool, boot: Bool, builtin: Bool) {
+        self.manifest = manifest
+        self.len = len
+        self.active = active
+        self.boot = boot
+        self.builtin = builtin
+    }
+
+    public init(from r: inout PostcardReader) throws {
+        self.manifest = try Manifest(from: &r)
+        self.len = try r.u32()
+        self.active = try r.bool()
+        self.boot = try r.bool()
+        self.builtin = try r.bool()
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        self.manifest.encode(to: &w)
+        w.u32(self.len)
+        w.bool(self.active)
+        w.bool(self.boot)
+        w.bool(self.builtin)
+    }
+}
+
+public enum BundleError: Equatable, PostcardCodable {
+    case busy
+    case noUpload
+    case sequence
+    case length
+    case hash
+    case invalid
+    case overLimit
+    case noSpace
+    case full
+    case notFound
+    case notAllowed
+    case flash
+    case timeout
+
+    public init(from r: inout PostcardReader) throws {
+        let tag = try r.u32()
+        switch tag {
+        case 0: self = .busy
+        case 1: self = .noUpload
+        case 2: self = .sequence
+        case 3: self = .length
+        case 4: self = .hash
+        case 5: self = .invalid
+        case 6: self = .overLimit
+        case 7: self = .noSpace
+        case 8: self = .full
+        case 9: self = .notFound
+        case 10: self = .notAllowed
+        case 11: self = .flash
+        case 12: self = .timeout
+        default: throw PostcardError.unknownVariant("BundleError", tag)
+        }
+    }
+
+    public func encode(to w: inout PostcardWriter) {
+        switch self {
+        case .busy: w.u32(0)
+        case .noUpload: w.u32(1)
+        case .sequence: w.u32(2)
+        case .length: w.u32(3)
+        case .hash: w.u32(4)
+        case .invalid: w.u32(5)
+        case .overLimit: w.u32(6)
+        case .noSpace: w.u32(7)
+        case .full: w.u32(8)
+        case .notFound: w.u32(9)
+        case .notAllowed: w.u32(10)
+        case .flash: w.u32(11)
+        case .timeout: w.u32(12)
+        }
+    }
+}
+
 // ---- messages ----
 
 /// A message from the host: the websocket's binary frames, BLE's `state` characteristic. Throws unless `bytes` is exactly one Envelope.
@@ -568,6 +741,36 @@ public func decodeAssetHeader(_ bytes: [UInt8]) throws -> AssetHeader {
 
 /// BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset.
 public func encodeAssetHeader(_ value: AssetHeader) -> [UInt8] {
+    var w = PostcardWriter()
+    value.encode(to: &w)
+    return w.bytes
+}
+
+/// A bundle request (BLE only): a HostEvent Bundle's value, written to `event`. Throws unless `bytes` is exactly one BundleRequest.
+public func decodeBundleRequest(_ bytes: [UInt8]) throws -> BundleRequest {
+    var r = PostcardReader(bytes)
+    let v = try BundleRequest(from: &r)
+    try r.done()
+    return v
+}
+
+/// A bundle request (BLE only): a HostEvent Bundle's value, written to `event`.
+public func encodeBundleRequest(_ value: BundleRequest) -> [UInt8] {
+    var w = PostcardWriter()
+    value.encode(to: &w)
+    return w.bytes
+}
+
+/// BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes. Throws unless `bytes` is exactly one BundleResponse.
+public func decodeBundleResponse(_ bytes: [UInt8]) throws -> BundleResponse {
+    var r = PostcardReader(bytes)
+    let v = try BundleResponse(from: &r)
+    try r.done()
+    return v
+}
+
+/// BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes.
+public func encodeBundleResponse(_ value: BundleResponse) -> [UInt8] {
     var w = PostcardWriter()
     value.encode(to: &w)
     return w.bytes

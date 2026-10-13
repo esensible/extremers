@@ -4,8 +4,9 @@
 
 use extreme_protocol::{
     ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, BleCommand, BleNote,
-    BleStatusView, CHOOSE, ChooseView, Envelope, GetAsset, HostEvent, Manifest, NO_WATCH_BUNDLE,
-    Name, PackageInfo, UiHashes, package_id,
+    BleStatusView, BundleEntry, BundleError, BundleRequest, BundleResponse, CHOOSE, ChooseView,
+    Envelope, GetAsset, HostEvent, Manifest, NO_WATCH_BUNDLE, Name, PackageInfo, REQUEST_DATA,
+    UiHashes, package_id,
 };
 use extreme_race::{LineView, Phase, RaceEvent, RaceView};
 use extreme_tune::TuneView;
@@ -202,6 +203,13 @@ pub fn host_vectors() -> Value {
     for (what, event) in events {
         all.push(vector("HostEvent", what, &event));
     }
+    for (what, request) in bundle_requests() {
+        all.push(vector("HostEvent", &format!("bundle: {what}"), &HostEvent::Bundle(request)));
+        all.push(vector("BundleRequest", what, &request));
+    }
+    for (what, response) in bundle_responses() {
+        all.push(vector("BundleResponse", what, &response));
+    }
     for (what, m) in [
         ("race", Manifest { id: RACE, name: Name::try_from("race").unwrap(), version: 1, abi: 1, content_hash: HASH, ui: UI, watch_len: 21_345 }),
         ("longest name", Manifest { id: package_id("sixteen-chars-xx"), name: Name::try_from("sixteen-chars-xx").unwrap(), version: u16::MAX, abi: 1, content_hash: [0xff; 8], ui: UiHashes { web: [0xff; 8], watch: [0; 8] }, watch_len: u32::MAX }),
@@ -225,6 +233,62 @@ pub fn host_vectors() -> Value {
         all.push(vector("AssetHeader", what, &header));
     }
     file("The host protocol.", all)
+}
+
+/// A SHA-256 for the vectors.
+const SHA: [u8; 32] = [
+    0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+    0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
+];
+
+/// Every bundle request, named.
+pub fn bundle_requests() -> Vec<(&'static str, BundleRequest)> {
+    vec![
+        ("list", BundleRequest::List),
+        ("begin race, 101504 bytes", BundleRequest::Begin { id: RACE, len: 101_504, sha256: SHA }),
+        ("begin, largest", BundleRequest::Begin { id: u32::MAX, len: u32::MAX, sha256: [0xff; 32] }),
+        ("commit", BundleRequest::Commit),
+        ("abort", BundleRequest::Abort),
+        ("delete race", BundleRequest::Delete { id: RACE }),
+        ("activate choose", BundleRequest::Activate { id: CHOOSE }),
+        ("get race from 0", BundleRequest::Get { id: RACE, from: 0 }),
+        ("get race from 9600", BundleRequest::Get { id: RACE, from: 9600 }),
+    ]
+}
+
+/// Every kind of bundle response, named.
+pub fn bundle_responses() -> Vec<(&'static str, BundleResponse)> {
+    let manifest = Manifest { id: RACE, name: Name::try_from("race").unwrap(), version: 1, abi: 2, content_hash: HASH, ui: UI, watch_len: 21_345 };
+    let choose = Manifest { id: CHOOSE, name: Name::try_from("choose").unwrap(), version: 1, abi: 0, content_hash: HASH, ui: UI, watch_len: 300 };
+    let error = |request, code, detail| BundleResponse::Error { request, code, detail };
+    vec![
+        ("entry: race, active", BundleResponse::Entry(BundleEntry { manifest, len: 101_504, active: true, boot: false, builtin: false })),
+        ("entry: choose, built in, boot", BundleResponse::Entry(BundleEntry { manifest: choose, len: 49_864, active: false, boot: true, builtin: true })),
+        ("list end", BundleResponse::ListEnd { count: 2, free_bytes: 393_216, largest_free: 393_152 }),
+        ("ready at 0, MTU 247", BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 }),
+        ("ready, resumed", BundleResponse::Ready { offset: 4800, chunk: 176, window: 1408 }),
+        ("ack", BundleResponse::Ack { offset: 960 }),
+        ("committed", BundleResponse::Committed { id: RACE, content_hash: HASH }),
+        ("aborted", BundleResponse::Aborted),
+        ("deleted", BundleResponse::Deleted { id: RACE }),
+        ("activated", BundleResponse::Activated { id: CHOOSE }),
+        ("sending", BundleResponse::Sending { id: RACE, len: 101_504, sha256: SHA, chunk: 240 }),
+        ("sent", BundleResponse::Sent { id: RACE }),
+        ("busy", error(1, BundleError::Busy, 0)),
+        ("no upload", error(REQUEST_DATA, BundleError::NoUpload, 0)),
+        ("sequence: from 240", error(REQUEST_DATA, BundleError::Sequence, 240)),
+        ("length: commit at 2400", error(2, BundleError::Length, 2400)),
+        ("hash", error(2, BundleError::Hash, 0)),
+        ("invalid: manifest content hash", error(2, BundleError::Invalid, 2 | 2 << 8)),
+        ("over limit: code bytes", error(2, BundleError::OverLimit, 1)),
+        ("no space", error(1, BundleError::NoSpace, 0)),
+        ("full", error(1, BundleError::Full, 0)),
+        ("not found", error(6, BundleError::NotFound, 0)),
+        ("not allowed: choose", error(4, BundleError::NotAllowed, 0)),
+        ("flash", error(REQUEST_DATA, BundleError::Flash, 0)),
+        ("timeout", error(2, BundleError::Timeout, 0)),
+        ("largest detail", error(u8::MAX, BundleError::Invalid, u32::MAX)),
+    ]
 }
 
 /// The race package's vectors.

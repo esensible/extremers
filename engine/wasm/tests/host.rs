@@ -290,6 +290,129 @@ fn bad_bundles_are_reported() {
     assert_eq!(parse(&empty.state())["name"], "nothing");
 }
 
+fn log(h: &mut HostHandle) -> Vec<Json> {
+    match parse(&h.log()) {
+        Json::Array(entries) => entries,
+        other => panic!("log: {other}"),
+    }
+}
+
+fn state_json(h: &mut HostHandle) -> Json {
+    let r = parse(&h.state_json());
+    assert_eq!(r["ok"], true, "{r}");
+    r["state"].clone()
+}
+
+/// The log: every evaluation the host made, with its cause, its outcome and
+/// the state after it; the state is the engine's own.
+#[test]
+fn the_log_and_the_state() {
+    let mut h = host();
+    let start = log(&mut h);
+    assert_eq!(start.len(), 1);
+    let s = &start[0];
+    assert_eq!((s["t"].clone(), s["cause"].clone(), s["event"].clone(), s["accepted"].clone(), s["changed"].clone()), (json!(0), json!("start"), json!({"gps": {}}), json!(true), json!(true)));
+    assert_eq!(s["state"], json!({"phase": {"idle": {}}, "line": {}}));
+    assert_eq!(s["wake"], Json::Null);
+    assert!(s["instructions"].as_u64().unwrap() > 0);
+    assert_eq!(state_json(&mut h), s["state"]);
+
+    // a fix: the event the engine got, its t the track's
+    gps(&mut h, json!({"t": T0, "lat": -33.85, "lon": 151.252, "speed": 5.0, "heading": 90.0}));
+    let g = log(&mut h);
+    assert_eq!(g.len(), 1);
+    assert_eq!(g[0]["cause"], "gps");
+    assert_eq!(g[0]["t"], T0);
+    assert_eq!(g[0]["event"], json!({"gps": {"fix": {"t": T0, "lat": -33.85, "lon": 151.252}, "velocity": {"speed": 5.0, "heading": 90.0}}}));
+    assert_eq!(g[0]["state"]["velocity"], json!({"speed": 5.0, "heading": 90.0}));
+    assert_eq!(g[0]["view_hex"], parse(&h.state())["view_hex"]);
+
+    // the same velocity again: evaluated, nothing changed
+    gps(&mut h, json!({"speed": 5.0, "heading": 90.0}));
+    let again = log(&mut h);
+    assert_eq!((again[0]["accepted"].clone(), again[0]["changed"].clone()), (json!(true), json!(false)));
+
+    // a client's event; then the gun, from the timer task
+    let tap = h.now() as i64;
+    race_event(&mut h, json!({"line_stbd": {}}));
+    race_event(&mut h, json!({"bump_seq": {"seconds": 1, "tapped_at": tap}}));
+    let c = log(&mut h);
+    assert_eq!(c.iter().map(|e| e["cause"].as_str().unwrap()).collect::<Vec<_>>(), ["client", "client"]);
+    assert!(c[0].get("event").is_none(), "a client's event is the caller's");
+    assert_eq!(c[0]["state"]["line"]["stbd"], json!({"t": T0, "lat": -33.85, "lon": 151.252}));
+    assert_eq!(c[1]["state"]["phase"], json!({"countdown": {"gun": tap + 1000}}));
+    assert_eq!(c[1]["wake"], tap + 1000);
+    assert_eq!(advance(&mut h, 5_000.0)["fired"], 1);
+    let w = log(&mut h);
+    assert_eq!(w.len(), 1);
+    assert_eq!((w[0]["cause"].clone(), w[0]["event"].clone(), w[0]["t"].clone()), (json!("wake"), json!({"wake": {}}), json!(tap + 1000)));
+    assert_eq!(w[0]["state"]["phase"], json!({"racing": {"gun": tap + 1000}}));
+    assert_eq!(state_json(&mut h), w[0]["state"]);
+    assert!(log(&mut h).is_empty(), "taken");
+}
+
+/// A rejected evaluation is logged with its R-code, the instruction and its
+/// span in engine.expr; nothing changed.
+#[test]
+fn a_rejected_evaluation_is_logged_with_its_code() {
+    let mut h = host();
+    log(&mut h);
+    let before = state_json(&mut h);
+    assert_eq!(race_event(&mut h, json!({"bump_seq": {"seconds": 30, "tapped_at": -1}}))["refused"], "Engine");
+    let r = log(&mut h);
+    assert_eq!(r.len(), 1);
+    assert_eq!((r[0]["cause"].clone(), r[0]["accepted"].clone(), r[0]["changed"].clone()), (json!("client"), json!(false), json!(false)));
+    let e = &r[0]["error"];
+    assert_eq!(e["code"], "R-INPUT", "{e}");
+    assert!(e["pc"].is_u64(), "{e}");
+    assert!(e["help"].as_str().is_some_and(|h| !h.is_empty()), "{e}");
+    assert_eq!(r[0]["state"], before, "nothing changed");
+    // bytes that are not one of its events
+    let junk = host_event(&HostEvent::Engine { package: RACE, bytes: &[0xff, 0xff, 0xff, 0xff] });
+    assert_eq!(parse(&h.event(&junk))["refused"], "Engine");
+    let r = log(&mut h);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(r[0]["accepted"], false);
+    assert_eq!(r[0]["error"], json!({"code": "undecodable", "pc": null, "span": null, "help": "the client's bytes are not one of the engine's events (they do not decode with its event.desc)"}));
+}
+
+/// A restarted engine's first evaluation is a start; Choose has no state.
+#[test]
+fn select_starts_again() {
+    let mut h = host();
+    log(&mut h);
+    assert_eq!(parse(&h.event(&host_event(&HostEvent::SelectDefault))), json!({"ok": true}));
+    assert!(log(&mut h).is_empty());
+    let s = parse(&h.state());
+    assert_eq!((s["active"].clone(), s["running"].clone()), (json!(CHOOSE), json!(false)));
+    assert_eq!(parse(&h.state_json())["ok"], false);
+    assert_eq!(parse(&h.event(&host_event(&HostEvent::Select(RACE)))), json!({"ok": true}));
+    let r = log(&mut h);
+    assert_eq!(r.iter().map(|e| e["cause"].as_str().unwrap()).collect::<Vec<_>>(), ["start"]);
+    assert_eq!(parse(&h.state())["evaluations"], 1);
+}
+
+/// The track holds what the C6 holds (20,480 fixes) unless told otherwise;
+/// the oldest go first.
+#[test]
+fn the_track_is_the_devices() {
+    let mut h = host();
+    gps(&mut h, json!({"t": T0}));
+    for k in 0..300 {
+        gps(&mut h, json!({"lat": -33.85 + k as f64 * 1e-5, "lon": 151.25}));
+    }
+    let s = parse(&h.state());
+    assert_eq!((s["track"].clone(), s["track_capacity"].clone()), (json!(300), json!(20_480)));
+    let mut small = HostHandle::with_track_capacity(vec![race()], Some(choose()), 5);
+    for k in 0..9 {
+        assert_eq!(parse(&small.gps(&json!({"lat": -33.85 + k as f64 * 1e-5, "lon": 151.25}).to_string())), json!({"ok": true}));
+    }
+    assert_eq!(parse(&small.state())["track"], 5);
+    // each fix's t strictly after the last, the clock not having moved
+    let fixes: Vec<i64> = log(&mut small).iter().filter_map(|e| e["event"]["gps"]["fix"]["t"].as_i64()).collect();
+    assert_eq!(fixes, (0..9).collect::<Vec<_>>());
+}
+
 /// Two hosts keep their own clocks.
 #[test]
 fn hosts_keep_their_own_time() {

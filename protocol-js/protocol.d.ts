@@ -10,12 +10,22 @@ export type HostEvent =
   | { tag: "Select"; value: number }
   | { tag: "SelectDefault"; value: null }
   | { tag: "Engine"; value: { package: number; bytes: Array<number> } }
-  | { tag: "Ble"; value: BleCommand };
+  | { tag: "Ble"; value: BleCommand }
+  | { tag: "Bundle"; value: BundleRequest };
 
 export type BleCommand =
   | { tag: "Pair"; value: null }
   | { tag: "Cancel"; value: null }
   | { tag: "ForgetAll"; value: null };
+
+export type BundleRequest =
+  | { tag: "List"; value: null }
+  | { tag: "Begin"; value: { id: number; len: number; sha256: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] } }
+  | { tag: "Commit"; value: null }
+  | { tag: "Abort"; value: null }
+  | { tag: "Delete"; value: { id: number } }
+  | { tag: "Activate"; value: { id: number } }
+  | { tag: "Get"; value: { id: number; from: number } };
 
 export type ChooseView = { packages: Array<PackageInfo>; ble: BleStatusView | null };
 
@@ -38,6 +48,36 @@ export type Manifest = { id: number; name: string; version: number; abi: number;
 export type GetAsset = { package: number; hash: [number, number, number, number, number, number, number, number] };
 
 export type AssetHeader = { status: number; len: number };
+
+export type BundleResponse =
+  | { tag: "Entry"; value: BundleEntry }
+  | { tag: "ListEnd"; value: { count: number; free_bytes: number; largest_free: number } }
+  | { tag: "Ready"; value: { offset: number; chunk: number; window: number } }
+  | { tag: "Ack"; value: { offset: number } }
+  | { tag: "Committed"; value: { id: number; content_hash: [number, number, number, number, number, number, number, number] } }
+  | { tag: "Aborted"; value: null }
+  | { tag: "Deleted"; value: { id: number } }
+  | { tag: "Activated"; value: { id: number } }
+  | { tag: "Sending"; value: { id: number; len: number; sha256: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number]; chunk: number } }
+  | { tag: "Sent"; value: { id: number } }
+  | { tag: "Error"; value: { request: number; code: BundleError; detail: number } };
+
+export type BundleEntry = { manifest: Manifest; len: number; active: boolean; boot: boolean; builtin: boolean };
+
+export type BundleError =
+  | { tag: "Busy"; value: null }
+  | { tag: "NoUpload"; value: null }
+  | { tag: "Sequence"; value: null }
+  | { tag: "Length"; value: null }
+  | { tag: "Hash"; value: null }
+  | { tag: "Invalid"; value: null }
+  | { tag: "OverLimit"; value: null }
+  | { tag: "NoSpace"; value: null }
+  | { tag: "Full"; value: null }
+  | { tag: "NotFound"; value: null }
+  | { tag: "NotAllowed"; value: null }
+  | { tag: "Flash"; value: null }
+  | { tag: "Timeout"; value: null };
 
 /** Bytes as received: a Uint8Array, an ArrayBuffer or an array of numbers. */
 export type Bytes = Uint8Array | ArrayBuffer | ArrayLike<number>;
@@ -72,9 +112,22 @@ export function decodeAssetHeader(bytes: Bytes): AssetHeader;
 /** BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset. */
 export function encodeAssetHeader(value: AssetHeader): number[];
 
+/** A bundle request (BLE only): a HostEvent Bundle's value, written to `event`. */
+export function decodeBundleRequest(bytes: Bytes): BundleRequest;
+/** A bundle request (BLE only): a HostEvent Bundle's value, written to `event`. */
+export function encodeBundleRequest(value: BundleRequest): number[];
+
+/** BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes. */
+export function decodeBundleResponse(bytes: Bytes): BundleResponse;
+/** BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes. */
+export function encodeBundleResponse(value: BundleResponse): number[];
+
 /** Every enum's variant names, in wire order. */
 export const VARIANTS: {
   HostEvent: Array<HostEvent["tag"]>;
   BleCommand: Array<BleCommand["tag"]>;
+  BundleRequest: Array<BundleRequest["tag"]>;
   BleNote: Array<BleNote["tag"]>;
+  BundleResponse: Array<BundleResponse["tag"]>;
+  BundleError: Array<BundleError["tag"]>;
 };

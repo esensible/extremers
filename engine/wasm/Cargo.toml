@@ -20,6 +20,8 @@ bundle = { package = "extreme-bundle", path = "../../bundle", features = ["std"]
 extreme-protocol = { path = "../../extreme-protocol" }
 extreme-pack = { path = "../../tools/package" }
 common = { path = "../../common" }
+# the VM's values: the engine's state leaves, read through common's host
+vm = { package = "lang-vm", path = "../../lang/vm" }
 postcard = { version = "1.1", features = ["use-std"] }
 serde_json = "1"
 base64 = "0.22"

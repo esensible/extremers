@@ -25,7 +25,8 @@ export class Compiled {
 
 /**
  * A host and what runs it. Fields drop in order: the timer task and the
- * subscription borrow the host; the host borrows the memory and bundles.
+ * subscription borrow the host; the host borrows the memory, the bundles
+ * and the track.
  */
 export class HostHandle {
     free(): void;
@@ -60,9 +61,28 @@ export class HostHandle {
      */
     loaded(): string;
     /**
-     * [`from_bytes`](Self::from_bytes), from JS.
+     * The evaluations the host made since the last call, oldest first, as
+     * JSON: `[{t, cause: "start" | "gps" | "wake" | "client", event?,
+     * accepted, changed, error?: {code, pc, span: {start, end} | null,
+     * help}, instructions?, stack_high?, state, view_hex, wake,
+     * unobserved?}]`. `t` the device time it was made at; `event` the
+     * engine's event (not for "client": the client's bytes are the
+     * caller's); `changed` whether the published value's bytes changed
+     * (an envelope went out); `error.code` an `R-…` run-time error (`pc`
+     * the instruction, `span` its bytes in engine.expr), or "undecodable"
+     * (a client's bytes that are not one of the engine's events) or
+     * "output" (an output that can't be published); `state` (plain JSON,
+     * null if it can't be read), `view_hex` and `wake` as after it.
+     * `unobserved: n`: n evaluations before this one were made between two
+     * looks (not expected; this one is the last of them).
      */
-    constructor(bundles: Uint8Array[], choose?: Uint8Array | null);
+    log(): string;
+    /**
+     * [`with_track_capacity`](Self::with_track_capacity), from JS:
+     * `new HostHandle(bundles, choose, trackCapacity?)` (default the C6's,
+     * [`DEVICE_FIXES`]).
+     */
+    constructor(bundles: Uint8Array[], choose?: Uint8Array | null, track_capacity?: number | null);
     /**
      * NMEA text: each RMC sentence in it with a valid checksum and a valid
      * fix is a GPS update, as from the receiver: `{ok: true, updates: n}`.
@@ -77,12 +97,22 @@ export class HostHandle {
      */
     poll(): Uint8Array[];
     /**
-     * `{active, name, ui: {web, watch}, view_hex, wake, now}`: the active
-     * package (0 Choose), its UI hashes (hex), its view (bitwire, hex;
-     * empty for Choose), when its wake is due and the time now (device
-     * clock, epoch ms; `wake` null without one).
+     * `{active, name, ui: {web, watch}, view_hex, wake, now, running,
+     * evaluations, track, track_capacity}`: the active package (0 Choose),
+     * its UI hashes (hex), its view (bitwire, hex; empty for Choose), when
+     * its wake is due and the time now (device clock, epoch ms; `wake` null
+     * without one); whether its engine runs (false for Choose, or an engine
+     * whose first evaluation failed) and how many evaluations it has made;
+     * the fixes in `gps` and the most it holds.
      */
     state(): string;
+    /**
+     * The active engine's state, decoded from the leaves it keeps with the
+     * state schema in its bundle's `source.json`: `{ok: true, state}`
+     * (`state` null before the first evaluation, or for Choose) or `{ok:
+     * false, error}` (no engine running, or no `source.json`).
+     */
+    state_json(): string;
 }
 
 /**
@@ -220,11 +250,13 @@ export interface InitOutput {
     readonly hosthandle_gps: (a: number, b: number, c: number) => [number, number];
     readonly hosthandle_heartbeat: (a: number) => [number, number];
     readonly hosthandle_loaded: (a: number) => [number, number];
-    readonly hosthandle_new: (a: number, b: number, c: number) => number;
+    readonly hosthandle_log: (a: number) => [number, number];
+    readonly hosthandle_new: (a: number, b: number, c: number, d: number) => number;
     readonly hosthandle_nmea: (a: number, b: number, c: number) => [number, number];
     readonly hosthandle_now: (a: number) => number;
     readonly hosthandle_poll: (a: number) => [number, number];
     readonly hosthandle_state: (a: number) => [number, number];
+    readonly hosthandle_state_json: (a: number) => [number, number];
     readonly layout: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pack: (a: number, b: number, c: any) => number;
     readonly package_id: (a: number, b: number) => number;

@@ -60,7 +60,8 @@ if (Symbol.dispose) Compiled.prototype[Symbol.dispose] = Compiled.prototype.free
 
 /**
  * A host and what runs it. Fields drop in order: the timer task and the
- * subscription borrow the host; the host borrows the memory and bundles.
+ * subscription borrow the host; the host borrows the memory, the bundles
+ * and the track.
  */
 export class HostHandle {
     __destroy_into_raw() {
@@ -164,14 +165,46 @@ export class HostHandle {
         }
     }
     /**
-     * [`from_bytes`](Self::from_bytes), from JS.
+     * The evaluations the host made since the last call, oldest first, as
+     * JSON: `[{t, cause: "start" | "gps" | "wake" | "client", event?,
+     * accepted, changed, error?: {code, pc, span: {start, end} | null,
+     * help}, instructions?, stack_high?, state, view_hex, wake,
+     * unobserved?}]`. `t` the device time it was made at; `event` the
+     * engine's event (not for "client": the client's bytes are the
+     * caller's); `changed` whether the published value's bytes changed
+     * (an envelope went out); `error.code` an `R-…` run-time error (`pc`
+     * the instruction, `span` its bytes in engine.expr), or "undecodable"
+     * (a client's bytes that are not one of the engine's events) or
+     * "output" (an output that can't be published); `state` (plain JSON,
+     * null if it can't be read), `view_hex` and `wake` as after it.
+     * `unobserved: n`: n evaluations before this one were made between two
+     * looks (not expected; this one is the last of them).
+     * @returns {string}
+     */
+    log() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.hosthandle_log(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * [`with_track_capacity`](Self::with_track_capacity), from JS:
+     * `new HostHandle(bundles, choose, trackCapacity?)` (default the C6's,
+     * [`DEVICE_FIXES`]).
      * @param {Uint8Array[]} bundles
      * @param {Uint8Array | null} [choose]
+     * @param {number | null} [track_capacity]
      */
-    constructor(bundles, choose) {
+    constructor(bundles, choose, track_capacity) {
         const ptr0 = passArrayJsValueToWasm0(bundles, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.hosthandle_new(ptr0, len0, isLikeNone(choose) ? 0 : addToExternrefTable0(choose));
+        const ret = wasm.hosthandle_new(ptr0, len0, isLikeNone(choose) ? 0 : addToExternrefTable0(choose), isLikeNone(track_capacity) ? Number.MAX_SAFE_INTEGER : (track_capacity) >>> 0);
         this.__wbg_ptr = ret;
         HostHandleFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -215,10 +248,13 @@ export class HostHandle {
         return v1;
     }
     /**
-     * `{active, name, ui: {web, watch}, view_hex, wake, now}`: the active
-     * package (0 Choose), its UI hashes (hex), its view (bitwire, hex;
-     * empty for Choose), when its wake is due and the time now (device
-     * clock, epoch ms; `wake` null without one).
+     * `{active, name, ui: {web, watch}, view_hex, wake, now, running,
+     * evaluations, track, track_capacity}`: the active package (0 Choose),
+     * its UI hashes (hex), its view (bitwire, hex; empty for Choose), when
+     * its wake is due and the time now (device clock, epoch ms; `wake` null
+     * without one); whether its engine runs (false for Choose, or an engine
+     * whose first evaluation failed) and how many evaluations it has made;
+     * the fixes in `gps` and the most it holds.
      * @returns {string}
      */
     state() {
@@ -226,6 +262,25 @@ export class HostHandle {
         let deferred1_1;
         try {
             const ret = wasm.hosthandle_state(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The active engine's state, decoded from the leaves it keeps with the
+     * state schema in its bundle's `source.json`: `{ok: true, state}`
+     * (`state` null before the first evaluation, or for Choose) or `{ok:
+     * false, error}` (no engine running, or no `source.json`).
+     * @returns {string}
+     */
+    state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.hosthandle_state_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);

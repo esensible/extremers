@@ -2519,6 +2519,853 @@
       "what": "forget all"
     },
     {
+      "hex": "0400",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "List",
+          "value": null
+        }
+      },
+      "what": "bundle: list"
+    },
+    {
+      "hex": "00",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "List",
+        "value": null
+      },
+      "what": "list"
+    },
+    {
+      "hex": "04019885eff508809906ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Begin",
+          "value": {
+            "id": 2394669720,
+            "len": 101504,
+            "sha256": [
+              186,
+              120,
+              22,
+              191,
+              143,
+              1,
+              207,
+              234,
+              65,
+              65,
+              64,
+              222,
+              93,
+              174,
+              34,
+              35,
+              176,
+              3,
+              97,
+              163,
+              150,
+              23,
+              122,
+              156,
+              180,
+              16,
+              255,
+              97,
+              242,
+              0,
+              21,
+              173
+            ]
+          }
+        }
+      },
+      "what": "bundle: begin race, 101504 bytes"
+    },
+    {
+      "hex": "019885eff508809906ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Begin",
+        "value": {
+          "id": 2394669720,
+          "len": 101504,
+          "sha256": [
+            186,
+            120,
+            22,
+            191,
+            143,
+            1,
+            207,
+            234,
+            65,
+            65,
+            64,
+            222,
+            93,
+            174,
+            34,
+            35,
+            176,
+            3,
+            97,
+            163,
+            150,
+            23,
+            122,
+            156,
+            180,
+            16,
+            255,
+            97,
+            242,
+            0,
+            21,
+            173
+          ]
+        }
+      },
+      "what": "begin race, 101504 bytes"
+    },
+    {
+      "hex": "0401ffffffff0fffffffff0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Begin",
+          "value": {
+            "id": 4294967295,
+            "len": 4294967295,
+            "sha256": [
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255,
+              255
+            ]
+          }
+        }
+      },
+      "what": "bundle: begin, largest"
+    },
+    {
+      "hex": "01ffffffff0fffffffff0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Begin",
+        "value": {
+          "id": 4294967295,
+          "len": 4294967295,
+          "sha256": [
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255
+          ]
+        }
+      },
+      "what": "begin, largest"
+    },
+    {
+      "hex": "0402",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Commit",
+          "value": null
+        }
+      },
+      "what": "bundle: commit"
+    },
+    {
+      "hex": "02",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Commit",
+        "value": null
+      },
+      "what": "commit"
+    },
+    {
+      "hex": "0403",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Abort",
+          "value": null
+        }
+      },
+      "what": "bundle: abort"
+    },
+    {
+      "hex": "03",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Abort",
+        "value": null
+      },
+      "what": "abort"
+    },
+    {
+      "hex": "04049885eff508",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Delete",
+          "value": {
+            "id": 2394669720
+          }
+        }
+      },
+      "what": "bundle: delete race"
+    },
+    {
+      "hex": "049885eff508",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Delete",
+        "value": {
+          "id": 2394669720
+        }
+      },
+      "what": "delete race"
+    },
+    {
+      "hex": "040500",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Activate",
+          "value": {
+            "id": 0
+          }
+        }
+      },
+      "what": "bundle: activate choose"
+    },
+    {
+      "hex": "0500",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Activate",
+        "value": {
+          "id": 0
+        }
+      },
+      "what": "activate choose"
+    },
+    {
+      "hex": "04069885eff50800",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Get",
+          "value": {
+            "from": 0,
+            "id": 2394669720
+          }
+        }
+      },
+      "what": "bundle: get race from 0"
+    },
+    {
+      "hex": "069885eff50800",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Get",
+        "value": {
+          "from": 0,
+          "id": 2394669720
+        }
+      },
+      "what": "get race from 0"
+    },
+    {
+      "hex": "04069885eff508804b",
+      "type": "HostEvent",
+      "value": {
+        "tag": "Bundle",
+        "value": {
+          "tag": "Get",
+          "value": {
+            "from": 9600,
+            "id": 2394669720
+          }
+        }
+      },
+      "what": "bundle: get race from 9600"
+    },
+    {
+      "hex": "069885eff508804b",
+      "type": "BundleRequest",
+      "value": {
+        "tag": "Get",
+        "value": {
+          "from": 9600,
+          "id": 2394669720
+        }
+      },
+      "what": "get race from 9600"
+    },
+    {
+      "hex": "009885eff508047261636501025e1f00ff01807f423c00ff80017fa55a9a01fe007f8012c3e1a601809906010000",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Entry",
+        "value": {
+          "active": true,
+          "boot": false,
+          "builtin": false,
+          "len": 101504,
+          "manifest": {
+            "abi": 2,
+            "content_hash": [
+              94,
+              31,
+              0,
+              255,
+              1,
+              128,
+              127,
+              66
+            ],
+            "id": 2394669720,
+            "name": "race",
+            "ui": {
+              "watch": [
+                154,
+                1,
+                254,
+                0,
+                127,
+                128,
+                18,
+                195
+              ],
+              "web": [
+                60,
+                0,
+                255,
+                128,
+                1,
+                127,
+                165,
+                90
+              ]
+            },
+            "version": 1,
+            "watch_len": 21345
+          }
+        }
+      },
+      "what": "entry: race, active"
+    },
+    {
+      "hex": "00000663686f6f736501005e1f00ff01807f423c00ff80017fa55a9a01fe007f8012c3ac02c88503000101",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Entry",
+        "value": {
+          "active": false,
+          "boot": true,
+          "builtin": true,
+          "len": 49864,
+          "manifest": {
+            "abi": 0,
+            "content_hash": [
+              94,
+              31,
+              0,
+              255,
+              1,
+              128,
+              127,
+              66
+            ],
+            "id": 0,
+            "name": "choose",
+            "ui": {
+              "watch": [
+                154,
+                1,
+                254,
+                0,
+                127,
+                128,
+                18,
+                195
+              ],
+              "web": [
+                60,
+                0,
+                255,
+                128,
+                1,
+                127,
+                165,
+                90
+              ]
+            },
+            "version": 1,
+            "watch_len": 300
+          }
+        }
+      },
+      "what": "entry: choose, built in, boot"
+    },
+    {
+      "hex": "0102808018c0ff17",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "ListEnd",
+        "value": {
+          "count": 2,
+          "free_bytes": 393216,
+          "largest_free": 393152
+        }
+      },
+      "what": "list end"
+    },
+    {
+      "hex": "0200f001800f",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Ready",
+        "value": {
+          "chunk": 240,
+          "offset": 0,
+          "window": 1920
+        }
+      },
+      "what": "ready at 0, MTU 247"
+    },
+    {
+      "hex": "02c025b001800b",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Ready",
+        "value": {
+          "chunk": 176,
+          "offset": 4800,
+          "window": 1408
+        }
+      },
+      "what": "ready, resumed"
+    },
+    {
+      "hex": "03c007",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Ack",
+        "value": {
+          "offset": 960
+        }
+      },
+      "what": "ack"
+    },
+    {
+      "hex": "049885eff5085e1f00ff01807f42",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Committed",
+        "value": {
+          "content_hash": [
+            94,
+            31,
+            0,
+            255,
+            1,
+            128,
+            127,
+            66
+          ],
+          "id": 2394669720
+        }
+      },
+      "what": "committed"
+    },
+    {
+      "hex": "05",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Aborted",
+        "value": null
+      },
+      "what": "aborted"
+    },
+    {
+      "hex": "069885eff508",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Deleted",
+        "value": {
+          "id": 2394669720
+        }
+      },
+      "what": "deleted"
+    },
+    {
+      "hex": "0700",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Activated",
+        "value": {
+          "id": 0
+        }
+      },
+      "what": "activated"
+    },
+    {
+      "hex": "089885eff508809906ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015adf001",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Sending",
+        "value": {
+          "chunk": 240,
+          "id": 2394669720,
+          "len": 101504,
+          "sha256": [
+            186,
+            120,
+            22,
+            191,
+            143,
+            1,
+            207,
+            234,
+            65,
+            65,
+            64,
+            222,
+            93,
+            174,
+            34,
+            35,
+            176,
+            3,
+            97,
+            163,
+            150,
+            23,
+            122,
+            156,
+            180,
+            16,
+            255,
+            97,
+            242,
+            0,
+            21,
+            173
+          ]
+        }
+      },
+      "what": "sending"
+    },
+    {
+      "hex": "099885eff508",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Sent",
+        "value": {
+          "id": 2394669720
+        }
+      },
+      "what": "sent"
+    },
+    {
+      "hex": "0a010000",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Busy",
+            "value": null
+          },
+          "detail": 0,
+          "request": 1
+        }
+      },
+      "what": "busy"
+    },
+    {
+      "hex": "0aff0100",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "NoUpload",
+            "value": null
+          },
+          "detail": 0,
+          "request": 255
+        }
+      },
+      "what": "no upload"
+    },
+    {
+      "hex": "0aff02f001",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Sequence",
+            "value": null
+          },
+          "detail": 240,
+          "request": 255
+        }
+      },
+      "what": "sequence: from 240"
+    },
+    {
+      "hex": "0a0203e012",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Length",
+            "value": null
+          },
+          "detail": 2400,
+          "request": 2
+        }
+      },
+      "what": "length: commit at 2400"
+    },
+    {
+      "hex": "0a020400",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Hash",
+            "value": null
+          },
+          "detail": 0,
+          "request": 2
+        }
+      },
+      "what": "hash"
+    },
+    {
+      "hex": "0a02058204",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Invalid",
+            "value": null
+          },
+          "detail": 514,
+          "request": 2
+        }
+      },
+      "what": "invalid: manifest content hash"
+    },
+    {
+      "hex": "0a020601",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "OverLimit",
+            "value": null
+          },
+          "detail": 1,
+          "request": 2
+        }
+      },
+      "what": "over limit: code bytes"
+    },
+    {
+      "hex": "0a010700",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "NoSpace",
+            "value": null
+          },
+          "detail": 0,
+          "request": 1
+        }
+      },
+      "what": "no space"
+    },
+    {
+      "hex": "0a010800",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Full",
+            "value": null
+          },
+          "detail": 0,
+          "request": 1
+        }
+      },
+      "what": "full"
+    },
+    {
+      "hex": "0a060900",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "NotFound",
+            "value": null
+          },
+          "detail": 0,
+          "request": 6
+        }
+      },
+      "what": "not found"
+    },
+    {
+      "hex": "0a040a00",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "NotAllowed",
+            "value": null
+          },
+          "detail": 0,
+          "request": 4
+        }
+      },
+      "what": "not allowed: choose"
+    },
+    {
+      "hex": "0aff0b00",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Flash",
+            "value": null
+          },
+          "detail": 0,
+          "request": 255
+        }
+      },
+      "what": "flash"
+    },
+    {
+      "hex": "0a020c00",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Timeout",
+            "value": null
+          },
+          "detail": 0,
+          "request": 2
+        }
+      },
+      "what": "timeout"
+    },
+    {
+      "hex": "0aff05ffffffff0f",
+      "type": "BundleResponse",
+      "value": {
+        "tag": "Error",
+        "value": {
+          "code": {
+            "tag": "Invalid",
+            "value": null
+          },
+          "detail": 4294967295,
+          "request": 255
+        }
+      },
+      "what": "largest detail"
+    },
+    {
       "hex": "9885eff508047261636501015e1f00ff01807f423c00ff80017fa55a9a01fe007f8012c3e1a601",
       "type": "Manifest",
       "value": {

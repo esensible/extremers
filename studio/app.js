@@ -14,6 +14,8 @@ import { toBase64, fromBase64 } from './zip.js';
 import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml } from './ui.js';
 import { createEditor } from './editor.js';
 import { mountPanels } from './panels.js';
+import { mountPreviews } from './preview/index.js';
+import { getLastBuild } from './toolchain/index.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -403,6 +405,14 @@ async function onCall({ name, result: r }) {
 // editor's markers, the Check button, and the #sim panel.
 
 mountPanels({ api, callApi: window.api, editor, openFile, logger });
+
+// ---------------------------------------------------------------- previews ----
+// preview/index.js: registers the service worker (sw.js, scope: the studio),
+// the #preview-kindle and #preview-watch panels, and what api.preview.* calls.
+
+const previews = mountPreviews({ api, callApi: window.api, getLastBuild });
+api._setPreview(previews.controller);
+window.__previews = previews;
 
 // ---------------------------------------------------------------- selftest ----
 // window.__selftest(): a round trip through the api in a scratch project

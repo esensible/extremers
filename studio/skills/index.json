@@ -4,7 +4,7 @@
     "dir": "expr-engine",
     "description": "Write or fix an extremers engine in the studio - one `engine/engine.expr` (a subset of Go's expr language) plus `engine/state.schema.json`, an optional `view.schema.json` and an optional `event.schema.json`, evaluated once per event as `(state, event, timestamp, gps) → {state, view?, wake?}`. Covers the contract, events and variants, nil narrowing, the idioms, the sailing builtins, what the compiler accepts today, the diagnostics, and checking an engine with api.engine.* and api.sim.*.",
     "path": "skills/expr-engine/SKILL.md",
-    "chars": 49898,
+    "chars": 50382,
     "assets": []
   },
   {
@@ -12,7 +12,7 @@
     "dir": "kindle-ui",
     "description": "Write the Kindle page of a bundle (kindle/src/ in a studio project): Solid JSX compiled to ES5 for the Kindle's old WebKit, the api.js pattern (one websocket, the host Envelope, the engine's view decoded with the wire codec, events encoded the same way), the <name>-wire virtual module with the view/event descriptors, ownPackage/staleness and reloading `/`, the 15 s silence timeout, and the build the studio runs.",
     "path": "skills/kindle-ui/SKILL.md",
-    "chars": 8639,
+    "chars": 8655,
     "assets": []
   },
   {
@@ -20,7 +20,7 @@
     "dir": "race-example",
     "description": "A walkthrough of the Race project (the 'race' template): the start countdown, the start line and when the boat reaches it. Which file does what in engine/, kindle/src/ and watch/src/, how an event travels from a button to the engine and the view back to both screens, and what to copy when starting a new bundle from it.",
     "path": "skills/race-example/SKILL.md",
-    "chars": 5573,
+    "chars": 5721,
     "assets": []
   },
   {
@@ -28,7 +28,7 @@
     "dir": "studio-api",
     "description": "How to drive the extremers studio from window.api in Chrome: the calling convention, the workflow from an empty browser to a bundle running on the C6 (describe → skill → project.create → engine.check → ui.build → preview → bundle.pack → device.*), what a person must do (the Bluetooth chooser, pairing at the Kindle, Chrome flags), and which groups are wired today. Read this first.",
     "path": "skills/studio-api/SKILL.md",
-    "chars": 9238,
+    "chars": 10926,
     "assets": []
   },
   {

@@ -167,6 +167,10 @@ pub struct VmEngine {
     view_len: usize,
     wake: Option<i64>,
     stats: Stats,
+    /// Evaluations so far, accepted or not (the first included).
+    evaluations: u32,
+    /// The last evaluation's outcome.
+    last: Option<Result<Evaluated, Rejected>>,
 }
 
 impl VmEngine {
@@ -225,6 +229,8 @@ impl VmEngine {
             view_len: 0,
             wake: None,
             stats: Stats::default(),
+            evaluations: 0,
+            last: None,
         })
     }
 
@@ -245,6 +251,24 @@ impl VmEngine {
         self.stats
     }
 
+    /// The state the last accepted evaluation left, as the program's leaves
+    /// (`layout.state_leaves` of them, the state schema's in leaf order);
+    /// `None` before the first.
+    pub fn state<'m>(&self, memory: &'m EngineMemory) -> Option<&'m [Value<'static>]> {
+        self.has_state.then(|| &memory.state[..self.layout.state_leaves as usize])
+    }
+
+    /// Evaluations so far, accepted or not (the first, at the start,
+    /// included).
+    pub fn evaluations(&self) -> u32 {
+        self.evaluations
+    }
+
+    /// The last evaluation's outcome; `None` before the first.
+    pub fn last(&self) -> Option<Result<Evaluated, Rejected>> {
+        self.last
+    }
+
     /// The program's size, bytes.
     pub fn program_bytes(&self) -> usize {
         self.program.code.len() + self.program.consts.len()
@@ -258,7 +282,16 @@ impl VmEngine {
 
     /// Evaluates `event` at `now` (device clock, epoch ms) with `track` as
     /// `gps`. On `Ok` the state, the view and the wake are the new ones.
+    /// Counted, and its outcome kept ([`evaluations`](Self::evaluations),
+    /// [`last`](Self::last)).
     pub fn evaluate(&mut self, memory: &mut EngineMemory, track: &dyn Track, now: i64, event: Event) -> Result<Evaluated, Rejected> {
+        let outcome = self.run(memory, track, now, event);
+        self.evaluations = self.evaluations.wrapping_add(1);
+        self.last = Some(outcome);
+        outcome
+    }
+
+    fn run(&mut self, memory: &mut EngineMemory, track: &dyn Track, now: i64, event: Event) -> Result<Evaluated, Rejected> {
         let l = self.layout;
         let EngineMemory { stack, locals, output, inputs, state, view, scratch_view, .. } = memory;
         let inputs = &mut inputs[..l.input_count as usize];

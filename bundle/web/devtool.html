@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bundle devtool</title>
+<style>
+  :root { --bg: #fff; --fg: #111; --muted: #666; --line: #ddd; --bad: #b00020; --warn: #8a5a00; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #999; --line: #333; --bad: #ff6b81; --warn: #e0b050; } }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 960px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.note { color: var(--muted); margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; padding: 4px 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; font-variant-numeric: tabular-nums; }
+  #status { font-weight: 600; }
+  #log { border: 1px solid var(--line); padding: 8px; height: 360px; overflow: auto; white-space: pre-wrap; font: 12px/1.35 ui-monospace, monospace; margin: 8px 0; }
+  .warn { color: var(--warn); } .error { color: var(--bad); } .debug { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Bundles on the C6 (BLE)</h1>
+<p class="note">Development tool for BLE.md "Bundles". The first connection must pair: open the pairing window first (Kindle "Pair watch", or firmware built with <code>--features dev-pairing</code>, open for 120 s after boot).</p>
+
+<div class="row">
+  <button id="choose">Choose device…</button>
+  <button id="connect">Connect remembered</button>
+  <button id="disconnect">Disconnect</button>
+  <span id="status">disconnected</span>
+</div>
+<div class="row">
+  <button id="list">List</button>
+  <input id="file" type="file" accept=".bundle,application/octet-stream">
+  <label><input id="activate-after" type="checkbox"> activate after install</label>
+  <button id="install">Install</button>
+  <button id="abort">Abort upload</button>
+</div>
+<table>
+  <thead><tr><th>name</th><th>id</th><th>v</th><th>bytes</th><th>content</th><th>flags</th><th></th></tr></thead>
+  <tbody id="bundles"></tbody>
+</table>
+<div id="space" class="note"></div>
+<div id="log" aria-live="polite"></div>
+
+<script type="module">
+import { createBundleClient, hex } from "../js/client.js";
+
+const $ = (id) => document.getElementById(id);
+function log(level, text) {
+  const line = document.createElement("div");
+  line.className = level;
+  line.textContent = `${new Date().toISOString().slice(11, 23)} ${level.padEnd(5)} ${text}`;
+  $("log").append(line);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+const client = createBundleClient({ log });
+
+function status() {
+  $("status").textContent = client.connected ? `connected to ${client.device?.name ?? "?"}` : "disconnected";
+}
+setInterval(status, 1000);
+
+// every button: run, log a failure, refresh the status
+function on(id, fn) {
+  $(id).addEventListener("click", async () => {
+    try {
+      await fn();
+    } catch (e) {
+      log("error", e.message || String(e));
+    }
+    status();
+  });
+}
+
+async function refresh() {
+  const { entries, count, free_bytes, largest_free } = await client.list();
+  log("info", `${count} bundles; ${free_bytes} B free, largest bundle that fits ${largest_free} B`);
+  $("space").textContent = `${free_bytes} B free; the largest bundle that fits: ${largest_free} B`;
+  const rows = entries.map((e) => {
+    const m = e.manifest;
+    const tr = document.createElement("tr");
+    const flags = [e.active && "active", e.boot && "boot", e.builtin && "built in"].filter(Boolean).join(", ");
+    for (const text of [m.name, m.id, m.version, e.len, hex(m.content_hash), flags]) {
+      const td = document.createElement("td");
+      td.textContent = String(text);
+      tr.append(td);
+    }
+    const td = document.createElement("td");
+    const button = (label, fn) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.addEventListener("click", async () => {
+        try {
+          await fn();
+        } catch (err) {
+          log("error", err.message || String(err));
+        }
+      });
+      td.append(b, " ");
+    };
+    button("Activate", async () => {
+      await client.activate(m.id);
+      log("info", `${m.name} active (and the boot package)`);
+      await refresh();
+    });
+    if (!e.builtin) {
+      button("Delete", async () => {
+        await client.remove(m.id);
+        log("info", `${m.name} deleted`);
+        await refresh();
+      });
+    }
+    button("Get", async () => {
+      const bytes = await client.get(m.id, { onProgress: (p) => log("debug", `get: ${p.got} of ${p.len} B`) });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+      a.download = `${m.name}.bundle`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    });
+    tr.append(td);
+    return tr;
+  });
+  $("bundles").replaceChildren(...rows);
+}
+
+on("choose", () => client.choose());
+on("connect", () => client.connect());
+on("disconnect", () => client.disconnect());
+on("list", refresh);
+on("abort", async () => {
+  await client.abort();
+  log("info", "upload aborted");
+});
+on("install", async () => {
+  const file = $("file").files[0];
+  if (!file) throw new Error("pick a .bundle file first");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { id } = await client.install(bytes, {
+    onProgress: (p) => log("debug", `upload: ${p.acked} of ${p.len} B (${Math.round(p.kbps * 1000)} B/s)`),
+  });
+  if ($("activate-after").checked) {
+    await client.activate(id);
+    log("info", "activated");
+  }
+  await refresh();
+});
+log("info", "ready: Choose device… (or Connect remembered), then List");
+</script>
+</body>
+</html>

@@ -6,7 +6,10 @@
 //! Transports ([`crate::http`], [`crate::ble`]) only move bytes; everything
 //! that touches the selection or an engine goes through [`Host`].
 
-use core::{cell::RefCell, sync::atomic::Ordering};
+use core::{
+    cell::{Cell, RefCell},
+    sync::atomic::Ordering,
+};
 
 use embassy_sync::{
     blocking_mutex::{Mutex as BlockingMutex, raw::CriticalSectionRawMutex},
@@ -25,13 +28,14 @@ use extreme_protocol::{
 };
 
 use crate::{
+    ble_bundles::{BleClient, BundleAnswer, Session},
     ble_settings::{BleCommand, BleStatus, BleStatusView},
     config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS, TRACK_FIXES},
     engine::{EngineMemory, Evaluated, Event, LIMITS, Rejected, VmEngine},
     fmt::Dbg,
     nmea::GpsUpdate,
     package::Package,
-    store::{Bundles, Error as StoreError, Space},
+    store::{Bundles, Error as StoreError, Space, Uploading},
     track::{RamTrack, Track, TrackFix, TrackLog},
 };
 
@@ -53,6 +57,9 @@ pub enum InstallError {
     Id,
     /// The registry is full.
     Full,
+    /// Its manifest's hashes aren't its files' (`bundle::hash::check`):
+    /// checked when it is uploaded ([`Host::bundle_commit`]).
+    Invalid(bundle::Invalid),
 }
 
 impl Registry {
@@ -144,6 +151,11 @@ impl Registry {
         }
     }
 
+    /// Every package: Choose (if installed), then the apps in order.
+    pub fn all(&self) -> heapless::Vec<Package, REGISTRY_MAX> {
+        self.choose.iter().chain(self.apps.iter()).copied().collect()
+    }
+
     /// Choose's list: every app, in order.
     pub fn infos(&self) -> heapless::Vec<PackageInfo, REGISTRY_MAX> {
         self.apps
@@ -172,7 +184,8 @@ pub struct StateMessage {
     pub view: heapless::Vec<u8, STATE_MAX>,
 }
 
-/// Which transport an event came over: BLE takes no `Ble` commands.
+/// Which transport an event came over: BLE takes no `Ble` commands, the
+/// websocket no `Bundle` requests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
     WebSocket,
@@ -193,8 +206,9 @@ pub enum Refused {
     /// The engine did not take the bytes: not one of its events, outside
     /// its declaration, or its evaluation failed.
     Engine,
-    /// A `Ble` command over BLE, or on a host without BLE, or while one is
-    /// still queued.
+    /// A command its transport doesn't carry: a `Ble` command over BLE, or
+    /// on a host without BLE, or while one is still queued; a `Bundle`
+    /// request other than through [`Host::ble_event`] (the websocket).
     Ble,
 }
 
@@ -263,7 +277,7 @@ impl Active {
 
 pub struct Host {
     active: Mutex<CriticalSectionRawMutex, Active>,
-    registry: BlockingMutex<CriticalSectionRawMutex, RefCell<Registry>>,
+    pub(crate) registry: BlockingMutex<CriticalSectionRawMutex, RefCell<Registry>>,
     /// Added to uptime to get epoch milliseconds; 0 until the first GPS time.
     tick_offset: AtomicU64,
     /// Timer instructions for [`run_timer`](Self::run_timer). Only ever
@@ -293,6 +307,9 @@ pub struct Host {
     /// The boot package [`activate`](Self::activate) chose last, for the
     /// target to keep ([`next_boot_change`](Self::next_boot_change)).
     boot_changes: Signal<CriticalSectionRawMutex, PackageId>,
+    /// The upload in progress as BLE bundle requests see it: its connection
+    /// and its last activity ([`crate::ble_bundles`]).
+    pub(crate) upload: BlockingMutex<CriticalSectionRawMutex, Cell<Option<Session>>>,
 }
 
 /// A reader of bundle bytes ([`Host::lease`]); dropping it ends the read.
@@ -363,6 +380,7 @@ impl Host {
             store: Mutex::new(store),
             leases: AtomicU32::new(0),
             boot_changes: Signal::new(),
+            upload: BlockingMutex::new(Cell::new(None)),
         };
         if let Ok(mut active) = host.active.try_lock() {
             host.start(&mut active, boot);
@@ -520,7 +538,8 @@ impl Host {
         }
     }
 
-    /// Ends the upload ([`Bundles::commit`]): once it is validated and the
+    /// Ends the upload ([`Bundles::commit`]): once it is validated, its
+    /// manifest's hashes are its files' ([`InstallError::Invalid`]) and the
     /// registry takes it, it is installed, and if it replaces the active
     /// package that restarts (keeping its state if the interface is
     /// unchanged); every client is told.
@@ -530,7 +549,11 @@ impl Host {
         let Some(store) = store.as_deref_mut() else {
             return Err(StoreError::NoUpload);
         };
-        let package = store.commit(&LIMITS, &mut active.memory.scratch, &mut |p| self.registry.lock(|r| r.borrow().check(p)))?;
+        let accept = &mut |p: &Package| {
+            bundle::hash::check(&p.archive, &p.manifest()).map_err(InstallError::Invalid)?;
+            self.registry.lock(|r| r.borrow().check(p))
+        };
+        let package = store.commit(&LIMITS, &mut active.memory.scratch, accept)?;
         // checked, so it can't fail; the store has it either way, for the
         // next boot
         if let Err(e) = self.registry.lock(|r| r.borrow_mut().install(package)) {
@@ -565,16 +588,34 @@ impl Host {
         self.store.lock().await.as_deref().map(|s| s.space())
     }
 
+    /// The upload in progress, if any.
+    pub async fn bundle_uploading(&self) -> Option<Uploading> {
+        self.store.lock().await.as_deref().and_then(|s| s.uploading())
+    }
+
     // ---- inputs ----
 
     /// A client's message: a postcard [`HostEvent`] (README "Host
-    /// protocol").
+    /// protocol"). A `Bundle` request is refused here
+    /// ([`Refused::Ble`]): it needs [`ble_event`](Self::ble_event)'s
+    /// answer.
     pub async fn event(&self, bytes: &[u8], transport: Transport) -> Result<(), Refused> {
+        self.dispatch(bytes, transport, None).await.map(|_| ())
+    }
+
+    /// A BLE client's message ([`event`](Self::event)) from `client`; a
+    /// `Bundle` request is answered with what to send back
+    /// ([`crate::ble_bundles`], BLE.md "Bundles").
+    pub async fn ble_event(&self, bytes: &[u8], client: BleClient) -> Result<Option<BundleAnswer<'_>>, Refused> {
+        self.dispatch(bytes, Transport::Ble, Some(client)).await
+    }
+
+    async fn dispatch(&self, bytes: &[u8], transport: Transport, client: Option<BleClient>) -> Result<Option<BundleAnswer<'_>>, Refused> {
         let event = match postcard::take_from_bytes::<HostEvent>(bytes) {
             Ok((event, [])) => event,
             _ => return Err(Refused::Undecodable),
         };
-        match event {
+        let done = match event {
             HostEvent::Select(id) => self.select(Some(id)).await,
             HostEvent::SelectDefault => self.select(None).await,
             HostEvent::Engine { package, bytes } => {
@@ -591,7 +632,14 @@ impl Host {
                 }
                 self.ble_command(command).map_err(|()| Refused::Ble)
             }
-        }
+            HostEvent::Bundle(request) => {
+                let Some(client) = client.filter(|_| transport == Transport::Ble) else {
+                    return Err(Refused::Ble);
+                };
+                return Ok(Some(self.bundle_request(request, client).await));
+            }
+        };
+        done.map(|()| None)
     }
 
     /// Makes `id` active (`None`: the default). The active package again
@@ -652,6 +700,14 @@ impl Host {
     /// the timer task was last told to wait for; `None` without one.
     pub async fn wake(&self) -> Option<u64> {
         self.active.lock().await.timer
+    }
+
+    /// Reads the active package, its engine (`None` for Choose, or one that
+    /// did not start) and the engine's memory, changing nothing: for a host
+    /// that shows what the engine holds (the studio's, engine/wasm).
+    pub async fn inspect<R>(&self, f: impl FnOnce(Option<Package>, Option<&VmEngine>, &EngineMemory) -> R) -> R {
+        let active = self.active.lock().await;
+        f(active.package, active.engine.as_ref(), &*active.memory)
     }
 
     /// Subscribes to changes. Subscribe before reading

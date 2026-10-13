@@ -77,18 +77,17 @@ const fnOf = (api, name) => name.split('.').reduce((o, k) => o[k], api);
 // The plan's B7 table, verbatim: every one of these must be in describe().
 const B7 = {
   core: ['describe', 'status', 'log', 'skills', 'skill'],
-  project: ['list', 'create', 'open', 'delete', 'rename', 'export', 'import'],
+  project: ['list', 'create', 'open', 'delete', 'rename', 'export', 'import', 'settings'], // + settings: the bundle's name (studio.json)
   files: ['list', 'read', 'write', 'delete', 'rename'],
   engine: ['interface', 'compile', 'check', 'disassemble', 'layout', 'builtins'],
   sim: ['runSamples', 'start', 'reset', 'event', 'gps', 'advance', 'state', 'history', 'replay', 'stop'],
   ui: ['build'],
-  preview: ['open', 'status', 'text', 'press'],
+  preview: ['open', 'status', 'text', 'press', 'close'], // + close: the S5 brief
   bundle: ['pack', 'inspect'],
   device: ['status', 'connect', 'disconnect', 'list', 'install', 'activate', 'delete', 'get'],
 };
-const WIRED = new Set(['core', 'project', 'files', 'engine', 'sim', 'bundle']);
-// ui.build is wired by the toolchain milestone (S4, its own tests); not asserted here.
-const OTHERS = new Set(['ui']);
+const WIRED = new Set(['core', 'project', 'files', 'engine', 'sim', 'ui', 'bundle', 'preview']);
+const OTHERS = new Set([]);
 
 // ================================================================ describe
 
@@ -117,7 +116,7 @@ test('describe() lists exactly the functions that exist, from the registry', asy
   assert.deepEqual(d.skills.map((s) => s.name).sort(), ['expr-engine', 'kindle-ui', 'race-example', 'studio-api', 'watch-ui']);
 });
 
-test('describe() covers the whole B7 surface; core/project/files/engine/sim/bundle are wired', async () => {
+test('describe() covers the whole B7 surface; all but device are wired', async () => {
   const { api } = await world();
   const d = okr(await api.describe());
   const byName = new Map(d.functions.map((f) => [f.name, f]));
@@ -231,7 +230,8 @@ test('project CRUD round trip: create → list → write → rename → delete',
 
   const c = okr(await api.project.create('alpha', { template: 'blank' }));
   assert.equal(c.template, 'blank');
-  assert.deepEqual(c.files.map((f) => f.path), ['engine/engine.expr', 'engine/samples.json', 'engine/state.schema.json']);
+  assert.deepEqual(c.files.map((f) => f.path), ['engine/engine.expr', 'engine/samples.json', 'engine/state.schema.json', 'studio.json']);
+  assert.deepEqual(c.settings, { name: 'alpha', version: 1, file: 'studio.json' }, "a blank project's bundle is the project's name");
   assert.equal(okr(await api.status()).project, 'alpha');
   fail(await api.project.create('alpha'), /already exists/);
   fail(await api.project.create('bad/name'), /not a project name/);
@@ -264,16 +264,43 @@ test('project CRUD round trip: create → list → write → rename → delete',
 
   fail(await api.project.rename('alpha', 'beta'), /already exists/);
   const rn = okr(await api.project.rename('alpha', 'gamma'));
-  assert.equal(rn.files, 4);
+  assert.equal(rn.files, 5);
+  assert.equal(okr(await api.project.settings()).name, 'alpha', 'the bundle name is a setting: a rename keeps it');
   assert.equal(okr(await api.status()).project, 'gamma', 'the open project follows its rename');
   assert.equal(okr(await api.files.read('kindle/src/index.jsx')).text, 'export default 1;\n');
   fail(await api.project.open('alpha'), /no project named 'alpha'/);
 
   const del = okr(await api.project.delete('gamma'));
-  assert.equal(del.files, 4); assert.equal(del.current, null);
+  assert.equal(del.files, 5); assert.equal(del.current, null);
   fail(await api.files.list(), /no project is open/);
   assert.deepEqual(okr(await api.project.list()).projects.map((p) => p.name), ['beta']);
   fail(await api.project.delete('gamma'), /no project named 'gamma'/);
+});
+
+test('project.settings: studio.json holds the bundle name and version; read, written, validated; a project without it uses its own name', async () => {
+  const { api } = await world();
+  okr(await api.project.create('delta'));
+  assert.deepEqual(okr(await api.project.settings()), { ok: true, project: 'delta', name: 'delta', version: 1, file: 'studio.json', changed: false });
+  const w = okr(await api.project.settings({ name: 'race', version: 3 }));
+  assert.deepEqual([w.name, w.version, w.changed], ['race', 3, true]);
+  assert.equal(okr(await api.files.read('studio.json')).text, '{\n  "name": "race",\n  "version": 3\n}\n', 'pretty, one trailing newline');
+  assert.deepEqual(okr(await api.project.open('delta')).settings, { name: 'race', version: 3, file: 'studio.json' });
+  assert.deepEqual(okr(await api.project.list()).projects[0].settings, { name: 'race', version: 3, file: 'studio.json' });
+  assert.equal(okr(await api.project.settings({ version: 4 })).name, 'race', 'one setting at a time');
+  fail(await api.project.settings({ name: '' }), /bundle name is 1-64 characters/);
+  fail(await api.project.settings({ name: 'x'.repeat(65) }), /bundle name is 1-64 characters/);
+  fail(await api.project.settings({ version: 70000 }), /version 70000 out of range/);
+  fail(await api.project.settings({ nmae: 'x' }), /no option 'nmae'/);
+  // a broken file: reading says what is wrong, writing repairs it; summaries still list the project
+  okr(await api.files.write('studio.json', '{"name": 5}'));
+  const bad = fail(await api.project.settings(), /studio\.json: name \(the bundle's name\) is 1-64 characters, got 5/);
+  assert.match(bad.hint, /api\.project\.settings/);
+  assert.match(okr(await api.project.open('delta')).settings.error, /name/);
+  assert.deepEqual(okr(await api.project.settings({ name: 'fixed' })).name, 'fixed');
+  // no studio.json (made before it existed, or imported without one): the project's name, version 1
+  okr(await api.files.delete('studio.json'));
+  assert.deepEqual(okr(await api.project.settings()), { ok: true, project: 'delta', name: 'delta', version: 1, file: null, changed: false });
+  fail(await (await world()).api.project.settings(), /no project is open/);
 });
 
 test('files.read pages text and binary; files.write takes { base64 }', async () => {
@@ -323,12 +350,14 @@ test('the race template: a clear error while vendor/ is absent (nothing created)
   };
   const b = await world({ vendor });
   const c = okr(await b.api.project.create('race', { template: 'race' }));
-  assert.deepEqual(c.files.map((f) => f.path), ['engine/engine.expr', 'engine/state.schema.json', 'kindle/src/api.js', 'watch/src/index.jsx']);
+  assert.deepEqual(c.files.map((f) => f.path), ['engine/engine.expr', 'engine/state.schema.json', 'kindle/src/api.js', 'studio.json', 'watch/src/index.jsx']);
   assert.equal(okr(await b.api.files.read('kindle/src/api.js')).text, '// kindle');
 
   // SOURCES.json fallback (per-file entries under examples/race/)
   const c2 = await world({ vendor: { 'SOURCES.json': JSON.stringify({ files: { 'examples/race/engine.expr': 'sha', 'examples/race/client-js/src/x.jsx': 'sha' } }), 'examples/race/engine.expr': 'e', 'examples/race/client-js/src/x.jsx': 'x' } });
-  assert.deepEqual(okr(await c2.api.project.create('r2', { template: 'race' })).files.map((f) => f.path), ['engine/engine.expr', 'kindle/src/x.jsx']);
+  const r2 = okr(await c2.api.project.create('r2', { template: 'race' }));
+  assert.deepEqual(r2.files.map((f) => f.path), ['engine/engine.expr', 'kindle/src/x.jsx', 'studio.json']);
+  assert.deepEqual(r2.settings, { name: 'race', version: 1, file: 'studio.json' }, "the Race template's bundle is 'race' whatever the project is called (its clients import 'race-wire')");
 
   assert.equal(racePath('engine/interface.json'), null, 'generated files are not project files');
   assert.equal(racePath('engine/view.desc'), null);
@@ -375,15 +404,16 @@ test('export → import round trip (text + binary); export is deterministic; nam
   const e1 = okr(await api.project.export());
   const e2 = okr(await api.project.export({ name: 'src' }));
   assert.equal(e1.zipBase64, e2.zipBase64, 'same files → same bytes');
-  assert.equal(e1.fileName, 'src.zip'); assert.equal(e1.files, 5);
+  assert.equal(e1.fileName, 'src.zip'); assert.equal(e1.files, 6);
 
   const entries = await unzip(fromBase64(e1.zipBase64));
-  assert.deepEqual(entries.map((x) => x.name), ['studio-project.json', 'engine/engine.expr', 'engine/samples.json', 'engine/state.schema.json', 'kindle/src/assets/x.png', 'kindle/src/index.jsx']);
+  assert.deepEqual(entries.map((x) => x.name), ['studio-project.json', 'engine/engine.expr', 'engine/samples.json', 'engine/state.schema.json', 'kindle/src/assets/x.png', 'kindle/src/index.jsx', 'studio.json']);
   assert.deepEqual(JSON.parse(new TextDecoder().decode(entries[0].bytes)), { name: 'src', template: 'blank', format: 1 });
 
   fail(await api.project.import({ zipBase64: e1.zipBase64 }), /already exists/); // its manifest names 'src'
   const im = okr(await api.project.import({ zipBase64: e1.zipBase64 }, { name: 'copy' }));
   assert.equal(im.template, 'blank');
+  assert.deepEqual(im.settings, { name: 'src', version: 1, file: 'studio.json' }, 'the settings travel with the project: the bundle keeps its name');
   assert.equal(okr(await api.status()).project, 'copy');
   assert.equal(okr(await api.files.read('kindle/src/index.jsx')).text, 'const a = "é ✓";\n');
   const rb = okr(await api.files.read('kindle/src/assets/x.png'));

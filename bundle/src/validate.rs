@@ -27,7 +27,9 @@ pub enum Invalid {
 pub mod reason {
     /// The archive doesn't parse; detail: [`crate::archive::Error`] as u32.
     pub const ARCHIVE: u8 = 1;
-    /// `manifest.bin` doesn't decode, or its `abi` isn't [`crate::validate::ABI`] (detail 1).
+    /// `manifest.bin` doesn't decode, or its `abi` isn't [`crate::validate::ABI`] (detail 1),
+    /// or (checked at an upload, [`crate::hash::check`]) its `content_hash`, `ui.web` or
+    /// `ui.watch` isn't the files' (detail 2, 3, 4).
     pub const MANIFEST: u8 = 2;
     /// A required file is missing (or one of a pair); detail: a [`super::file`] code.
     pub const MISSING: u8 = 3;

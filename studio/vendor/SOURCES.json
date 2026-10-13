@@ -1,5 +1,5 @@
 {
-  "source_sha": "3313702",
+  "source_sha": "41c6046",
   "toolchain": {
     "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "wasm-bindgen": "wasm-bindgen 0.2.129",
@@ -8,19 +8,19 @@
   },
   "files": {
     "engine-wasm/engine_wasm.d.ts": {
-      "sha256": "0408ede83d941fb4038300977d629f02d9261da689ce891fa4a74e28e798e0f8",
+      "sha256": "61f84b7ebddec557f4c1570bf9edc113679a6fcf5553e5214443000d3ca1e6e1",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm.js": {
-      "sha256": "ef197bd2d4a0f07f64c596616ff8cfa0434b79095453d1f242cb10428470874c",
+      "sha256": "f3b3ed8e443bf815bda30c87d7b9e344434ba85ac3ca15fd88a4e8aaddd9bb3b",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm": {
-      "sha256": "17f814b4fbd5c567382a6e706f4d06958942b45129f460f22ba29f4258fec7e9",
+      "sha256": "ae4b24c68e6e27e9a09e3ef3c1a665f61596b8f2d9820509046997ff9b5740f7",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm.d.ts": {
-      "sha256": "93539bf055f660b873a34f49e65a8841f607ab72adf8445c681d806c64f7266a",
+      "sha256": "df319f4638a855e7bf30f8eb8ae099f02b1d6c56edfb3b667aff1a2c040d2064",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "examples/race/client-js/src/api.js": {
@@ -140,7 +140,7 @@
       "from": "extreme-race/watch-js/src/style.jsx"
     },
     "fixtures/race.bundle": {
-      "sha256": "481e77797c5d1df5078d32cdc228a6f37e107a307a29ecb2c8e376e5673e6659",
+      "sha256": "9579adab4fd2791e73c565d4d0713f8d9c17db4268c17ab5f1241179c01f6fb0",
       "from": "target/packages/race.bundle"
     },
     "fixtures/race.layout.json": {
@@ -164,7 +164,7 @@
       "from": "target/packages/race/layout.bin"
     },
     "fixtures/race.pack/manifest.bin": {
-      "sha256": "a45fb653ca7ccc126182a40fc084cc899a6ad49ecd89a251fea4de94c5345baa",
+      "sha256": "0beb7362967dc09d5289d50fed6b96e2bc78a4b3fef4f4d345c65debf0e1f4cf",
       "from": "target/packages/race/manifest.bin"
     },
     "fixtures/race.pack/source.json": {
@@ -180,19 +180,19 @@
       "from": "target/packages/race/view.map"
     },
     "fixtures/race.pack/watch.js": {
-      "sha256": "44fc88afbfe28663ea2cf63a8e59aada4495a27c0d3dc59eaf68409f8a4aaa33",
+      "sha256": "c9f1ebde79396c21d420a289988f6e41f0f384afc919f6f58a0b0af13f60f312",
       "from": "target/packages/race/watch.js"
     },
-    "fixtures/race.pack/web/bundle-e1510e35.css": {
+    "fixtures/race.pack/web/bundle-6bfc240c.css": {
       "sha256": "6bd3a5c8da9d2c76cfbbb93241334bbb288f703dfecd775c0b9aaea655446173",
-      "from": "target/packages/race/web/bundle-e1510e35.css"
+      "from": "target/packages/race/web/bundle-6bfc240c.css"
     },
-    "fixtures/race.pack/web/bundle-e1510e35.js": {
-      "sha256": "329e60e5e80986cb30adbbf1410a42656c3a16ff84dc1436fff8a4401ac698bb",
-      "from": "target/packages/race/web/bundle-e1510e35.js"
+    "fixtures/race.pack/web/bundle-6bfc240c.js": {
+      "sha256": "85cf0037740ed029f2eb45da8b0afa53b9271cfae1f6ae2ec426b0cf751d8da9",
+      "from": "target/packages/race/web/bundle-6bfc240c.js"
     },
     "fixtures/race.pack/web/index.html": {
-      "sha256": "e71c513f48e25c546b5b5a3e6f85ab197aa2c40974f43789dd5778d5f5afcd1b",
+      "sha256": "c748418841c62caaa9d5dfd04a00d5ecd3d78fbc45ae8ec90ed852a628131e4b",
       "from": "target/packages/race/web/index.html"
     },
     "fixtures/race.samples.expected.json": {
@@ -212,7 +212,7 @@
       "from": "client-common/host.js"
     },
     "runtimes/protocol-js/protocol.js": {
-      "sha256": "578bf69faf8d790bfb04f69b631d790974293ce81f8e7a56ba41a5060362b760",
+      "sha256": "47d88dca573f9a4ee1233496c6e2b35d73fcfd1864bd844cb98962d6862a76af",
       "from": "protocol-js/protocol.js"
     },
     "runtimes/solid-watch/js/index.js": {

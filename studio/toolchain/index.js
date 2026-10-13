@@ -12,13 +12,18 @@
 //     targets: { kindle?: { ok, files: [{ name, size, sha256, bytes }], checks, diagnostics, ms, stats }, watch?: … } }
 //
 // getLastBuild(project) → null, or
-//   { project, name, packageId, publicPath, toolchain, at,
+//   { project, name, packageId, publicPath, toolchain, at, target,
 //     targets: { kindle?: T, watch?: T } }
-//   T = { ok, at, ms, sourceSha256, files: [{ name, size, sha256, bytes: Uint8Array }], checks, diagnostics }
-// Each target is the latest build of it (a failed one has ok: false and no
-// files); a build of one target keeps the other's, unless the bundle name
-// changed (the Kindle's public path is the name's package id). sourceSha256
-// is core.sourceSha256 over the project's files when that target was built:
+//   T = { ok, at, ms, sourceSha256, files: [{ name, size, sha256, bytes: Uint8Array }], checks, diagnostics,
+//         failed: { at, ms, sourceSha256, checks, diagnostics } | null }
+// Each target is its last *good* build under this bundle name (ok: true,
+// its files), or, when it has never built under it, its latest failure
+// (ok: false, no files). `failed` is a failure since the good build: a
+// failed build keeps the last good files (bundle.pack and the previews go on
+// using them) and says so there. A build of one target keeps the other's,
+// unless the bundle name changed (the Kindle's public path is the name's
+// package id): then everything before it goes. sourceSha256 is
+// core.sourceSha256 over the project's files when that target was built:
 // equal to sourceSha256(files now) means the build is current.
 
 // (nothing here loads the bundler's libraries: they load in the worker)
@@ -89,7 +94,11 @@ export function createToolchain({ worker, db, now = () => Date.now() } = {}) {
     const keep = prev && prev.name === r.name ? prev.targets : {};
     const targets = { ...keep };
     for (const [t, x] of Object.entries(r.targets)) {
-      targets[t] = { ok: x.ok, at, ms: x.ms, sourceSha256: r.sourceSha256, files: x.ok ? x.files : [], checks: x.checks, diagnostics: x.diagnostics };
+      const attempt = { at, ms: x.ms, sourceSha256: r.sourceSha256, checks: x.checks, diagnostics: x.diagnostics };
+      const good = keep[t]?.ok ? keep[t] : null;
+      if (x.ok) targets[t] = { ok: true, ...attempt, files: x.files, failed: null };
+      else if (good) targets[t] = { ...good, failed: attempt };
+      else targets[t] = { ok: false, ...attempt, files: [], failed: attempt };
     }
     const rec = { project, name: r.name, packageId: r.packageId, publicPath: r.publicPath, toolchain: r.toolchain, at, target, targets };
     await d.putBuild(rec);
@@ -116,6 +125,16 @@ export function createToolchain({ worker, db, now = () => Date.now() } = {}) {
       try { return await (await database()).getBuild(project); } catch { return null; }
     },
     async forget(project) { try { await (await database()).deleteBuild(project); } catch { /* none */ } },
+    /** The last build follows its project to a new name. */
+    async rename(from, to) {
+      try {
+        const d = await database();
+        const rec = await d.getBuild(from);
+        if (!rec) return;
+        await d.putBuild({ ...rec, project: to });
+        await d.deleteBuild(from);
+      } catch { /* none */ }
+    },
     version: () => request('version'),
     status: () => ({ started: state.started, building: state.building ? { ...state.building, sinceMs: now() - state.building.since } : null, lastMs: state.lastMs, lastError: state.lastError, builds: state.builds }),
     terminate() { if (w) { try { w.terminate(); } catch { /* gone */ } w = null; failAll('the toolchain worker was stopped'); } },

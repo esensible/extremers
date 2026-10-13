@@ -56,8 +56,9 @@ which box it found and match it to the Kindle's "This box".
 ## Security
 
 The link must be **encrypted with a bond this box holds** before anything in
-the service can be used: reading `state`, subscribing to it (its CCCD) and
-writing `event` all need it. LE Secure Connections, **Just Works** (the box
+the service can be used: reading `state`, subscribing to it (its CCCD),
+writing `event`, and everything of `bundle` and `data` ("Bundles") all need
+it. LE Secure Connections, **Just Works** (the box
 has no display or buttons, so no passkey; iOS/watchOS shows a plain "Pair"
 confirmation). Advertising, connecting and service discovery stay open.
 
@@ -154,6 +155,8 @@ heartbeat.
 | `state` | `…001` | read, notify (bonded link only) | 22–289 | the host's `Envelope`, sent on every change |
 | `event` | `…002` | write, write-without-response (bonded link only) | 1–64 | a `HostEvent` |
 | `ui-psm` | `…003` | read (bonded link only) | 2 | the bulk channel's LE PSM, u16 little-endian: `81 00` (0x0081; "Watch bundles") |
+| `bundle` | `…004` | notify (bonded link only) | 1–66 | a `BundleResponse`: the answers to bundle requests ("Bundles") |
+| `data` | `…005` | write-without-response, notify (bonded link only) | 4–244 | a bundle's bytes, `offset u32 LE` then up to a chunk ("Bundles") |
 
 `state` is pushed on every change (the same moments the websocket clients
 get a message) and can be read at any time; a read captures the state
@@ -223,6 +226,187 @@ transfer: `bulk channel open: peer MTU … MPS … credits …`, then `bulk: rac
 watch bundle … asked for: status 0, N B in K SDUs of up to S B`, then `bulk:
 sent N B of race in T ms (R B/s); waited for credits W times; heap free …`.
 
+## Bundles
+
+A bundle (an engine and its UIs as one archive, `extreme-bundle`; Race is
+about 100 KB) is installed, replaced, deleted, activated and downloaded
+over GATT, from a browser (Web Bluetooth) as from anything else: never over
+the hotspot. Firmware: `common/src/ble_bundles.rs` (what a request does),
+`common/src/ble.rs` (the characteristics), `common/src/store.rs` (the
+flash). Messages: `extreme-protocol/src/bundle.rs`, generated into
+`protocol-js` and `protocol-swift`. A development page:
+`bundle/web/devtool.html` ("The devtool" below).
+
+Three characteristics of the service, all on a bonded link only (like
+everything else, "Security"):
+
+- **`event`** takes the requests: a `HostEvent::Bundle(BundleRequest)`
+  (tag `04`), postcard, at most 44 bytes (a `Begin`). Use write requests
+  (with response): the first one is what makes a fresh central pair. The
+  write itself succeeds (unless it is not a `HostEvent`); what the request
+  did, refusals included, comes on `bundle`, after the write's response.
+- **`bundle`** (notify) carries every answer: a `BundleResponse`, postcard,
+  at most 66 bytes (an `Entry`), one per notification. Subscribe first.
+- **`data`** carries a bundle's bytes: `offset u32 LE` then the bytes,
+  written (write without response) for an upload, notified for a download.
+  The bytes per value (the *chunk*) are `((ATT MTU − 3 − 4) / 4) × 4`:
+  240 at the box's MTU of 247, 176 at CoreBluetooth's usual 185. Web
+  Bluetooth does not tell a page the MTU, so the box says it (`Ready`,
+  `Sending`).
+
+### Requests and responses
+
+| tag | `BundleRequest` | answered with |
+|---|---|---|
+| 0 | `List` | one `Entry` per bundle (Choose first), then `ListEnd` |
+| 1 | `Begin { id: u32, len: u32, sha256: [u8; 32] }` | `Ready` |
+| 2 | `Commit` | `Committed` |
+| 3 | `Abort` | `Aborted` |
+| 4 | `Delete { id: u32 }` | `Deleted` |
+| 5 | `Activate { id: u32 }` | `Activated` |
+| 6 | `Get { id: u32, from: u32 }` | `Sending`, the bytes on `data`, `Sent` |
+
+| tag | `BundleResponse` | meaning |
+|---|---|---|
+| 0 | `Entry(BundleEntry { manifest: Manifest, len: u32, active: bool, boot: bool, builtin: bool })` | a bundle: its manifest, its archive's length, whether it is the active package, the one the box boots with, built into the firmware (Choose: activated and downloaded, never deleted or replaced) |
+| 1 | `ListEnd { count: u8, free_bytes: u32, largest_free: u32 }` | the end of a list; the store's free space and the largest bundle that fits now (0 and 0 on a host without a store) |
+| 2 | `Ready { offset: u32, chunk: u16, window: u16 }` | send from `offset` (0, or where a resumed upload is) |
+| 3 | `Ack { offset: u32 }` | every byte before `offset` is written to flash |
+| 4 | `Committed { id: u32, content_hash: [u8; 8] }` | installed |
+| 5 | `Aborted` | |
+| 6 | `Deleted { id: u32 }` | |
+| 7 | `Activated { id: u32 }` | |
+| 8 | `Sending { id: u32, len: u32, sha256: [u8; 32], chunk: u16 }` | a download: the archive's length and SHA-256; `chunk` bytes per `data` notification |
+| 9 | `Sent { id: u32 }` | the download's last bytes went |
+| 10 | `Error { request: u8, code: BundleError, detail: u32 }` | `request` refused: the request's tag, or `255` for a `data` write |
+
+`id` is a package's id: FNV-1a of its name (`race` 2394669720), Choose 0.
+
+**`Activate`** makes the bundle active (as `Select`) and the one the box
+boots with (kept in the settings, `KEY_BOOT`). **`Delete`** of the active
+bundle goes back to Choose; the bundle's sectors are reused by a later
+upload (once nothing reads them any more). A **`Commit`** that replaces the
+active bundle restarts it, keeping its state when its interface is
+unchanged (a UI-only change keeps a race going).
+
+### An upload
+
+1. Subscribe to `bundle` and `data`.
+2. `Begin { id, len, sha256 }`: `id` is the manifest's (the box checks),
+   `sha256` the whole archive's. The box finds room, writes the extent's
+   record and answers `Ready { offset, chunk, window }`.
+3. Write the archive from `offset` to `data`, in order, `chunk` bytes per
+   write (the last may be shorter; every other is a multiple of 4), with at
+   most `window` bytes past the last `Ack` (or `offset`). `window` is
+   2048 or 8 chunks, whichever is less (1920 at MTU 247): the box queues 8
+   writes per connection and drops a ninth. The box writes as they come,
+   erasing a sector before its first write, hashing as it goes, and answers
+   `Ack { offset }` every 1 KiB or half a window, whichever is less (960 at
+   MTU 247), and at the end.
+4. On the final `Ack { len }`: `Commit`. The box checks the length, the
+   SHA-256, validates the bundle in place (the archive, the tables, the
+   program, the host's limits), checks the manifest's hashes against the
+   files, and that the registry takes it; then marks it committed, the
+   bundle it replaces deleted, installs it and tells every client (Choose's
+   list changes). `Committed { id, content_hash }`.
+
+A **gap** (a write lost, or one that overtook another): the box answers the
+first write past it with `Error { request: 255, code: Sequence, detail:
+expected }` and ignores the rest until the client writes from `expected`
+again; a write of bytes it already has is ignored. A client that hears
+nothing for a few seconds while the window is full writes again from its
+last `Ack`.
+
+**Resume.** An upload outlives its connection. A `Begin` with the same id,
+length and SHA-256 within **60 s** of the upload's last request or write
+(`UPLOAD_IDLE_SECS`), from any connection, answers `Ready { offset }` with
+what the box has, and that connection owns the upload from then on. The
+same connection's `Begin` of something else drops its own upload and starts
+the new one; another connection's is refused with `Busy` while the upload
+is live (and so are its `Commit` and `Abort`, and its writes to `data`).
+After 60 s with nothing, the box drops the upload (`bundles: upload of …
+idle for 60 s: dropped`); its connection's next request or write gets
+`Timeout`, once.
+
+`Abort` drops the upload; so does any `Commit` that fails, except `Length`
+(the upload goes on). An upload cut off by a reboot is gone.
+
+### Errors
+
+| code | `BundleError` | when; `detail` |
+|---|---|---|
+| 0 | `Busy` | another connection's upload is live; or a deleted bundle's sectors are still being read after 10 s |
+| 1 | `NoUpload` | `Commit`, `Abort` or a write with no upload in progress |
+| 2 | `Sequence` | a write past a gap; `detail` = the offset to write from |
+| 3 | `Length` | `Begin` of 0 bytes; a write past the length, or a non-last write not a multiple of 4, or without a whole offset; `Commit` before every byte is in (`detail` = bytes so far); `Get` from past the end (`detail` = the archive's length) |
+| 4 | `Hash` | the bytes' SHA-256 is not `Begin`'s |
+| 5 | `Invalid` | the bundle does not validate: `detail` = `reason \| reason_detail << 8` (`bundle/src/validate.rs` `reason`, the reason's own detail truncated to 24 bits); `2 \| 2 << 8`: the manifest's `content_hash` is not the files' (3: `ui.web`, 4: `ui.watch`) |
+| 6 | `OverLimit` | the engine needs more than the box has: `detail` = `validate::limit` (1 code bytes, 2 stack, 3 locals, 4 inputs, 5 outputs, 6 state leaves, 7 imports, 8 view bytes) |
+| 7 | `NoSpace` | no run of free sectors holds it (`ListEnd.largest_free` says what does) |
+| 8 | `Full` | the box holds 7 bundles besides Choose: delete one |
+| 9 | `NotFound` | no bundle with that id (also: a host without a store) |
+| 10 | `NotAllowed` | `detail` 0: Choose's id (uploaded or deleted), an id that is not the hash of the manifest's name, a manifest whose id is not `Begin`'s; 1: a bundle without an engine |
+| 11 | `Flash` | a flash write or erase failed (logged on the box) |
+| 12 | `Timeout` | the upload was dropped after 60 s idle |
+
+### A download
+
+`Get { id, from }` answers `Sending { id, len, sha256, chunk }`, then the
+archive from `from` as `data` notifications of `chunk` bytes (the last
+shorter), each `offset u32 LE` then the bytes, then `Sent { id }`. The box
+reads the bundle in place and holds a lease meanwhile, so a `Delete` during
+a download does not erase what is being sent. Check the SHA-256 of the whole
+archive. The box logs each one: `bundles: sent N B of bundle … from F in T
+ms (R B/s), chunks of C`.
+
+### Bytes
+
+| | bytes |
+|---|---|
+| `event`: `Bundle(List)` | `04 00` |
+| `event`: `Bundle(Begin)` race, 101504 bytes, SHA-256 `ba7816bf…` | `04 01 9885eff508 809906 ba7816bf…15ad` (44 at most) |
+| `event`: `Bundle(Commit)` | `04 02` |
+| `event`: `Bundle(Get)` race from 9600 | `04 06 9885eff508 804b` |
+| `bundle`: `Ready { 0, 240, 1920 }` | `02 00 f001 800f` |
+| `bundle`: `Ack { 960 }` | `03 c007` |
+| `bundle`: `Error { data, Sequence, 240 }` | `0a ff 02 f001` |
+| `bundle`: `Error { Commit, Invalid, 2 \| 2 << 8 }` | `0a 02 05 8204` |
+| `data`: bytes 960.. | `c0030000` then the bytes |
+
+(All of them, and every `BundleResponse`, in `protocol-js/test/vectors.json`.)
+
+### The box's side
+
+The box logs every step: `store: upload of … begun: N B in sectors …`,
+`bundles: upload of … resumed by connection C at O of N B`, `bundles: race
+v1 uploaded and installed: N B in T ms (R B/s)`, `store: race v1 committed
+in sectors …`, and why anything was refused. Validating at a commit takes
+the `active` lock, so GPS updates and events wait for it (not yet measured
+on the device).
+
+### The devtool
+
+`bundle/web/devtool.html` (with `bundle/js/client.js`, plain ES modules,
+the generated `protocol-js/protocol.js`): Choose device / List / Install
+(a `.bundle`, e.g. `target/packages/race.bundle`, with throughput in the
+log) / Activate / Delete / Get (downloads the archive after checking its
+SHA-256) / Abort. Web Bluetooth needs Chrome and a secure origin; serve the
+repository root from a container, e.g.
+
+    podman run -d --name bundle-devtool -p 127.0.0.1:5191:5191 \
+      -v "$PWD":/workspace:ro -w /workspace localhost/hilux-dev:latest \
+      python3 -m http.server 5191 --bind 0.0.0.0
+
+and open `http://localhost:5191/bundle/web/devtool.html`.
+
+**Pairing without a Kindle.** Firmware built with `--features dev-pairing`
+(`tgt-xiaoc6`, off by default) opens the pairing window for 120 s after
+boot, exactly as **Pair watch** does (`ble: dev-pairing: window open for
+120 s`): connect from the devtool within that time and confirm the OS's
+pairing prompt. Development only: anyone in range can bond meanwhile. A
+computer that was paired before the box lost its bond (provision, Forget
+all) must forget `nacra` in its Bluetooth settings first.
+
 ## GATT caching
 
 The box's GATT service (`0x1801`) has **Service Changed** (`0x2A05`,
@@ -251,7 +435,10 @@ changed (a firmware update that changed the table):
 changed shape: the GATT service gained its three characteristics, so every
 handle of the box's service moved. A watch bonded before it has cached the
 old table without Service Changed, and cannot be told: forget `nacra` on
-the watch and pair again once. From then on it is told about changes.
+the watch and pair again once. From then on it is told about changes: the
+firmware that added `bundle` and `data` changed the table again, and a
+bonded watch that subscribed to Service Changed is told so when it
+reconnects.
 
 ## State: `Envelope`
 
@@ -334,6 +521,7 @@ bytes (a Race bump is 16–24) needs the larger MTU too.
 | 1 | `SelectDefault` | — | back: Choose (or the only app without Choose) |
 | 2 | `Engine` | `package: u32`, `bytes` | an event for the active package's engine: its own `Event` as postcard; refused unless `package` is the active one and the engine takes the bytes |
 | 3 | `Ble` | `BleCommand` | the Kindle's pairing settings: refused over BLE |
+| 4 | `Bundle` | `BundleRequest` | the bundles on the box ("Bundles"): BLE only, refused on the websocket |
 
 Race's events (`RaceEvent`, inside `Engine.bytes`): `0 LineStbd` (set the
 starboard end of the line at the current position), `1 LinePort`,

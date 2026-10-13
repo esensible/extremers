@@ -50,7 +50,6 @@ use std::{
 
 use extreme_protocol::{Manifest, Name, PackageId, UiHashes, package_id};
 use serde_json::{Value as Json, json};
-use sha2::{Digest, Sha256};
 
 /// The engine ABI of a package with an engine: lang bytecode.
 pub const ABI: u16 = 2;
@@ -227,49 +226,27 @@ pub fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// See the module docs.
+/// See the module docs. The hashes are defined once, in `extreme-bundle`
+/// ([`bundle::hash`]), which the device checks an upload with.
 pub fn content_hash(engine: &[u8], web: &[(String, Vec<u8>)], watch: &[u8]) -> [u8; 8] {
-    let mut h = Sha256::new();
-    h.update(engine);
-    hash_web(&mut h, web);
-    h.update(watch);
-    prefix(h)
+    bundle::hash::content_hash(engine, web_refs(web), watch)
 }
 
 /// The Kindle page's own hash ([`UiHashes::web`]): its files as the content
 /// hash takes them, nothing else.
 pub fn web_hash(web: &[(String, Vec<u8>)]) -> [u8; 8] {
-    let mut h = Sha256::new();
-    hash_web(&mut h, web);
-    prefix(h)
+    bundle::hash::web_hash(web_refs(web))
 }
 
 /// The watch bundle's own hash ([`UiHashes::watch`]): its bytes, so a watch
 /// can check what it fetched against it; all zeros for a package without
 /// one ([`extreme_protocol::NO_WATCH_BUNDLE`]).
 pub fn watch_hash(watch: &[u8]) -> [u8; 8] {
-    if watch.is_empty() {
-        return extreme_protocol::NO_WATCH_BUNDLE;
-    }
-    let mut h = Sha256::new();
-    h.update(watch);
-    prefix(h)
+    bundle::hash::watch_hash(watch)
 }
 
-fn hash_web(h: &mut Sha256, web: &[(String, Vec<u8>)]) {
-    for (name, contents) in web {
-        h.update(name.as_bytes());
-        h.update([0]);
-        h.update((contents.len() as u32).to_le_bytes());
-        h.update(contents);
-    }
-}
-
-fn prefix(h: Sha256) -> [u8; 8] {
-    let digest = h.finalize();
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
+fn web_refs(web: &[(String, Vec<u8>)]) -> impl Iterator<Item = (&str, &[u8])> {
+    web.iter().map(|(n, c)| (n.as_str(), c.as_slice()))
 }
 
 /// Builds `spec`: its engine, its bundles, its manifest.

@@ -3,7 +3,8 @@
 //! Rust encoder for the JS tests:
 //!
 //! - the host protocol (extreme-protocol: `Envelope`, `HostEvent`,
-//!   `ChooseView`, `Manifest`): `protocol-js/` (JS, TypeScript, vectors,
+//!   `ChooseView`, `Manifest`, the bulk channel's and the bundles'
+//!   messages): `protocol-js/` (JS, TypeScript, vectors,
 //!   schema.json) and `protocol-swift/` (Swift, for the watch app);
 //! - each package's own view and events: `<package>/protocol-js/`.
 //!
@@ -21,7 +22,7 @@ mod vectors;
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use extreme_protocol::{AssetHeader, ChooseView, Envelope, GetAsset, HostEvent, Manifest};
+use extreme_protocol::{AssetHeader, BundleRequest, BundleResponse, ChooseView, Envelope, GetAsset, HostEvent, Manifest};
 use extreme_race::{RaceEvent, RaceView};
 use extreme_tune::TuneView;
 use postcard_schema::{Schema, schema::owned::OwnedNamedType};
@@ -69,6 +70,16 @@ fn host_exports() -> Vec<Export> {
             schema: AssetHeader::SCHEMA,
             doc: "BLE bulk channel, host to client: the answer to a GetAsset, then `len` bytes of the asset.",
         },
+        Export {
+            name: "BundleRequest",
+            schema: BundleRequest::SCHEMA,
+            doc: "A bundle request (BLE only): a HostEvent Bundle's value, written to `event`.",
+        },
+        Export {
+            name: "BundleResponse",
+            schema: BundleResponse::SCHEMA,
+            doc: "BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes.",
+        },
     ]
 }
 
@@ -97,6 +108,8 @@ fn files() -> Vec<(String, String)> {
             "Manifest": schema_json(Manifest::SCHEMA),
             "GetAsset": schema_json(GetAsset::SCHEMA),
             "AssetHeader": schema_json(AssetHeader::SCHEMA),
+            "BundleRequest": schema_json(BundleRequest::SCHEMA),
+            "BundleResponse": schema_json(BundleResponse::SCHEMA),
         })),
     ));
     out.push((

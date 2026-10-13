@@ -175,6 +175,53 @@ test("HostHandle runs a race on the virtual clock", () => {
   }
 });
 
+test("HostHandle's log and state: each evaluation with its cause and outcome; the engine's own state; the C6's track", () => {
+  const host = new engine.HostHandle([bytes("fixtures/race.bundle")], null);
+  try {
+    const log = () => JSON.parse(host.log());
+    const start = log();
+    assert.deepEqual(start.map((e) => [e.t, e.cause, e.accepted, e.changed]), [[0, "start", true, true]]);
+    assert.deepEqual(start[0].event, { gps: {} });
+    assert.deepEqual(start[0].state, { phase: { idle: {} }, line: {} });
+    assert.deepEqual(JSON.parse(host.state_json()), { ok: true, state: start[0].state });
+
+    host.gps(JSON.stringify({ t: T0, lat: -33.85, lon: 151.252, speed: 5, heading: 90 }));
+    const [g] = log();
+    assert.deepEqual([g.cause, g.t, g.event], ["gps", T0, { gps: { fix: { t: T0, lat: -33.85, lon: 151.252 }, velocity: { speed: 5, heading: 90 } } }]);
+    assert.equal(g.view_hex, JSON.parse(host.state()).view_hex);
+
+    // rejected: the R-code, the instruction, the help; nothing changed
+    assert.deepEqual(send(host, { bump_seq: { seconds: 30, tapped_at: -1 } }), { ok: false, refused: "Engine" });
+    const [bad] = log();
+    assert.deepEqual([bad.cause, bad.accepted, bad.changed, bad.error.code], ["client", false, false, "R-INPUT"]);
+    assert.equal(typeof bad.error.pc, "number");
+    assert.ok(bad.error.help.length > 0);
+    assert.deepEqual(bad.state, g.state);
+
+    // the gun: a wake, from the timer task, at its time
+    send(host, { bump_seq: { seconds: 1, tapped_at: T0 } });
+    log();
+    host.advance(5000);
+    const [w] = log();
+    assert.deepEqual([w.cause, w.t, w.event, w.state.phase], ["wake", T0 + 1000, { wake: {} }, { racing: { gun: T0 + 1000 } }]);
+    assert.deepEqual(log(), [], "taken");
+
+    const s = JSON.parse(host.state());
+    // start, gps, the rejected bump, the bump, the wake
+    assert.deepEqual([s.running, s.evaluations, s.track, s.track_capacity], [true, 5, 1, 20_480]);
+  } finally {
+    host.free();
+  }
+  // a track capacity of its own: the newest fixes
+  const small = new engine.HostHandle([bytes("fixtures/race.bundle")], null, 3);
+  try {
+    for (let k = 0; k < 5; k++) small.gps(JSON.stringify({ lat: k, lon: k }));
+    assert.equal(JSON.parse(small.state()).track, 3);
+  } finally {
+    small.free();
+  }
+});
+
 test("HostHandle reports what doesn't load", () => {
   const host = new engine.HostHandle([new Uint8Array([1, 2, 3])], bytes("fixtures/race.bundle"));
   try {

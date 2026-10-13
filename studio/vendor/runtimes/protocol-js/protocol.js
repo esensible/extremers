@@ -252,6 +252,7 @@ function r_HostEvent(r) {
     case 1: return { tag: "SelectDefault", value: null };
     case 2: return { tag: "Engine", value: { package: ru32(r), bytes: rseq(r, ru8) } };
     case 3: return { tag: "Ble", value: r_BleCommand(r) };
+    case 4: return { tag: "Bundle", value: r_BundleRequest(r) };
     default: throw new Error("HostEvent: no variant " + i);
   }
 }
@@ -262,6 +263,7 @@ function w_HostEvent(w, v) {
     case "SelectDefault": wtag(w, 1); return;
     case "Engine": wtag(w, 2); wobj(v.value, "HostEvent::Engine"); wu32(w, v.value.package); wseq(w, v.value.bytes, wu8); return;
     case "Ble": wtag(w, 3); w_BleCommand(w, v.value); return;
+    case "Bundle": wtag(w, 4); w_BundleRequest(w, v.value); return;
     default: throw new Error("HostEvent: no variant " + v.tag);
   }
 }
@@ -282,6 +284,33 @@ function w_BleCommand(w, v) {
     case "Cancel": wtag(w, 1); return;
     case "ForgetAll": wtag(w, 2); return;
     default: throw new Error("BleCommand: no variant " + v.tag);
+  }
+}
+
+function r_BundleRequest(r) {
+  var i = rtag(r);
+  switch (i) {
+    case 0: return { tag: "List", value: null };
+    case 1: return { tag: "Begin", value: { id: ru32(r), len: ru32(r), sha256: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] } };
+    case 2: return { tag: "Commit", value: null };
+    case 3: return { tag: "Abort", value: null };
+    case 4: return { tag: "Delete", value: { id: ru32(r) } };
+    case 5: return { tag: "Activate", value: { id: ru32(r) } };
+    case 6: return { tag: "Get", value: { id: ru32(r), from: ru32(r) } };
+    default: throw new Error("BundleRequest: no variant " + i);
+  }
+}
+function w_BundleRequest(w, v) {
+  wobj(v, "BundleRequest");
+  switch (v.tag) {
+    case "List": wtag(w, 0); return;
+    case "Begin": wtag(w, 1); wobj(v.value, "BundleRequest::Begin"); wu32(w, v.value.id); wu32(w, v.value.len); wlen(v.value.sha256, 32, "[T; N]"); wu8(w, v.value.sha256[0]); wu8(w, v.value.sha256[1]); wu8(w, v.value.sha256[2]); wu8(w, v.value.sha256[3]); wu8(w, v.value.sha256[4]); wu8(w, v.value.sha256[5]); wu8(w, v.value.sha256[6]); wu8(w, v.value.sha256[7]); wu8(w, v.value.sha256[8]); wu8(w, v.value.sha256[9]); wu8(w, v.value.sha256[10]); wu8(w, v.value.sha256[11]); wu8(w, v.value.sha256[12]); wu8(w, v.value.sha256[13]); wu8(w, v.value.sha256[14]); wu8(w, v.value.sha256[15]); wu8(w, v.value.sha256[16]); wu8(w, v.value.sha256[17]); wu8(w, v.value.sha256[18]); wu8(w, v.value.sha256[19]); wu8(w, v.value.sha256[20]); wu8(w, v.value.sha256[21]); wu8(w, v.value.sha256[22]); wu8(w, v.value.sha256[23]); wu8(w, v.value.sha256[24]); wu8(w, v.value.sha256[25]); wu8(w, v.value.sha256[26]); wu8(w, v.value.sha256[27]); wu8(w, v.value.sha256[28]); wu8(w, v.value.sha256[29]); wu8(w, v.value.sha256[30]); wu8(w, v.value.sha256[31]); return;
+    case "Commit": wtag(w, 2); return;
+    case "Abort": wtag(w, 3); return;
+    case "Delete": wtag(w, 4); wobj(v.value, "BundleRequest::Delete"); wu32(w, v.value.id); return;
+    case "Activate": wtag(w, 5); wobj(v.value, "BundleRequest::Activate"); wu32(w, v.value.id); return;
+    case "Get": wtag(w, 6); wobj(v.value, "BundleRequest::Get"); wu32(w, v.value.id); wu32(w, v.value.from); return;
+    default: throw new Error("BundleRequest: no variant " + v.tag);
   }
 }
 
@@ -377,6 +406,92 @@ function w_AssetHeader(w, v) {
   wu32(w, v.len);
 }
 
+function r_BundleResponse(r) {
+  var i = rtag(r);
+  switch (i) {
+    case 0: return { tag: "Entry", value: r_BundleEntry(r) };
+    case 1: return { tag: "ListEnd", value: { count: ru8(r), free_bytes: ru32(r), largest_free: ru32(r) } };
+    case 2: return { tag: "Ready", value: { offset: ru32(r), chunk: ru16(r), window: ru16(r) } };
+    case 3: return { tag: "Ack", value: { offset: ru32(r) } };
+    case 4: return { tag: "Committed", value: { id: ru32(r), content_hash: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] } };
+    case 5: return { tag: "Aborted", value: null };
+    case 6: return { tag: "Deleted", value: { id: ru32(r) } };
+    case 7: return { tag: "Activated", value: { id: ru32(r) } };
+    case 8: return { tag: "Sending", value: { id: ru32(r), len: ru32(r), sha256: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], chunk: ru16(r) } };
+    case 9: return { tag: "Sent", value: { id: ru32(r) } };
+    case 10: return { tag: "Error", value: { request: ru8(r), code: r_BundleError(r), detail: ru32(r) } };
+    default: throw new Error("BundleResponse: no variant " + i);
+  }
+}
+function w_BundleResponse(w, v) {
+  wobj(v, "BundleResponse");
+  switch (v.tag) {
+    case "Entry": wtag(w, 0); w_BundleEntry(w, v.value); return;
+    case "ListEnd": wtag(w, 1); wobj(v.value, "BundleResponse::ListEnd"); wu8(w, v.value.count); wu32(w, v.value.free_bytes); wu32(w, v.value.largest_free); return;
+    case "Ready": wtag(w, 2); wobj(v.value, "BundleResponse::Ready"); wu32(w, v.value.offset); wu16(w, v.value.chunk); wu16(w, v.value.window); return;
+    case "Ack": wtag(w, 3); wobj(v.value, "BundleResponse::Ack"); wu32(w, v.value.offset); return;
+    case "Committed": wtag(w, 4); wobj(v.value, "BundleResponse::Committed"); wu32(w, v.value.id); wlen(v.value.content_hash, 8, "[T; N]"); wu8(w, v.value.content_hash[0]); wu8(w, v.value.content_hash[1]); wu8(w, v.value.content_hash[2]); wu8(w, v.value.content_hash[3]); wu8(w, v.value.content_hash[4]); wu8(w, v.value.content_hash[5]); wu8(w, v.value.content_hash[6]); wu8(w, v.value.content_hash[7]); return;
+    case "Aborted": wtag(w, 5); return;
+    case "Deleted": wtag(w, 6); wobj(v.value, "BundleResponse::Deleted"); wu32(w, v.value.id); return;
+    case "Activated": wtag(w, 7); wobj(v.value, "BundleResponse::Activated"); wu32(w, v.value.id); return;
+    case "Sending": wtag(w, 8); wobj(v.value, "BundleResponse::Sending"); wu32(w, v.value.id); wu32(w, v.value.len); wlen(v.value.sha256, 32, "[T; N]"); wu8(w, v.value.sha256[0]); wu8(w, v.value.sha256[1]); wu8(w, v.value.sha256[2]); wu8(w, v.value.sha256[3]); wu8(w, v.value.sha256[4]); wu8(w, v.value.sha256[5]); wu8(w, v.value.sha256[6]); wu8(w, v.value.sha256[7]); wu8(w, v.value.sha256[8]); wu8(w, v.value.sha256[9]); wu8(w, v.value.sha256[10]); wu8(w, v.value.sha256[11]); wu8(w, v.value.sha256[12]); wu8(w, v.value.sha256[13]); wu8(w, v.value.sha256[14]); wu8(w, v.value.sha256[15]); wu8(w, v.value.sha256[16]); wu8(w, v.value.sha256[17]); wu8(w, v.value.sha256[18]); wu8(w, v.value.sha256[19]); wu8(w, v.value.sha256[20]); wu8(w, v.value.sha256[21]); wu8(w, v.value.sha256[22]); wu8(w, v.value.sha256[23]); wu8(w, v.value.sha256[24]); wu8(w, v.value.sha256[25]); wu8(w, v.value.sha256[26]); wu8(w, v.value.sha256[27]); wu8(w, v.value.sha256[28]); wu8(w, v.value.sha256[29]); wu8(w, v.value.sha256[30]); wu8(w, v.value.sha256[31]); wu16(w, v.value.chunk); return;
+    case "Sent": wtag(w, 9); wobj(v.value, "BundleResponse::Sent"); wu32(w, v.value.id); return;
+    case "Error": wtag(w, 10); wobj(v.value, "BundleResponse::Error"); wu8(w, v.value.request); w_BundleError(w, v.value.code); wu32(w, v.value.detail); return;
+    default: throw new Error("BundleResponse: no variant " + v.tag);
+  }
+}
+
+function r_BundleEntry(r) {
+  return { manifest: r_Manifest(r), len: ru32(r), active: rbool(r), boot: rbool(r), builtin: rbool(r) };
+}
+function w_BundleEntry(w, v) {
+  wobj(v, "BundleEntry");
+  w_Manifest(w, v.manifest);
+  wu32(w, v.len);
+  wbool(w, v.active);
+  wbool(w, v.boot);
+  wbool(w, v.builtin);
+}
+
+function r_BundleError(r) {
+  var i = rtag(r);
+  switch (i) {
+    case 0: return { tag: "Busy", value: null };
+    case 1: return { tag: "NoUpload", value: null };
+    case 2: return { tag: "Sequence", value: null };
+    case 3: return { tag: "Length", value: null };
+    case 4: return { tag: "Hash", value: null };
+    case 5: return { tag: "Invalid", value: null };
+    case 6: return { tag: "OverLimit", value: null };
+    case 7: return { tag: "NoSpace", value: null };
+    case 8: return { tag: "Full", value: null };
+    case 9: return { tag: "NotFound", value: null };
+    case 10: return { tag: "NotAllowed", value: null };
+    case 11: return { tag: "Flash", value: null };
+    case 12: return { tag: "Timeout", value: null };
+    default: throw new Error("BundleError: no variant " + i);
+  }
+}
+function w_BundleError(w, v) {
+  wobj(v, "BundleError");
+  switch (v.tag) {
+    case "Busy": wtag(w, 0); return;
+    case "NoUpload": wtag(w, 1); return;
+    case "Sequence": wtag(w, 2); return;
+    case "Length": wtag(w, 3); return;
+    case "Hash": wtag(w, 4); return;
+    case "Invalid": wtag(w, 5); return;
+    case "OverLimit": wtag(w, 6); return;
+    case "NoSpace": wtag(w, 7); return;
+    case "Full": wtag(w, 8); return;
+    case "NotFound": wtag(w, 9); return;
+    case "NotAllowed": wtag(w, 10); return;
+    case "Flash": wtag(w, 11); return;
+    case "Timeout": wtag(w, 12); return;
+    default: throw new Error("BundleError: no variant " + v.tag);
+  }
+}
+
 // ---- messages ----
 
 /** A message from the host: the websocket's binary frames, BLE's `state` characteristic. Throws on bytes that are not exactly one Envelope. */
@@ -463,9 +578,40 @@ export function encodeAssetHeader(value) {
   return w.b;
 }
 
+/** A bundle request (BLE only): a HostEvent Bundle's value, written to `event`. Throws on bytes that are not exactly one BundleRequest. */
+export function decodeBundleRequest(bytes) {
+  var r = reader(bytes);
+  var v = r_BundleRequest(r);
+  done(r, "BundleRequest");
+  return v;
+}
+/** A bundle request (BLE only): a HostEvent Bundle's value, written to `event`. As an array of byte values. */
+export function encodeBundleRequest(value) {
+  var w = writer();
+  w_BundleRequest(w, value);
+  return w.b;
+}
+
+/** BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes. Throws on bytes that are not exactly one BundleResponse. */
+export function decodeBundleResponse(bytes) {
+  var r = reader(bytes);
+  var v = r_BundleResponse(r);
+  done(r, "BundleResponse");
+  return v;
+}
+/** BLE's `bundle` characteristic, host to client: the answer to a bundle request or to `data` writes. As an array of byte values. */
+export function encodeBundleResponse(value) {
+  var w = writer();
+  w_BundleResponse(w, value);
+  return w.b;
+}
+
 /** Every enum's variant names, in wire order. */
 export var VARIANTS = {
-  HostEvent: ["Select", "SelectDefault", "Engine", "Ble"],
+  HostEvent: ["Select", "SelectDefault", "Engine", "Ble", "Bundle"],
   BleCommand: ["Pair", "Cancel", "ForgetAll"],
+  BundleRequest: ["List", "Begin", "Commit", "Abort", "Delete", "Activate", "Get"],
   BleNote: ["None", "Paired", "PairedNotSaved", "Rejected", "Failed", "Expired", "StaleBond", "Forgotten"],
+  BundleResponse: ["Entry", "ListEnd", "Ready", "Ack", "Committed", "Aborted", "Deleted", "Activated", "Sending", "Sent", "Error"],
+  BundleError: ["Busy", "NoUpload", "Sequence", "Length", "Hash", "Invalid", "OverLimit", "NoSpace", "Full", "NotFound", "NotAllowed", "Flash", "Timeout"],
 };

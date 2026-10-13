@@ -6,6 +6,7 @@
 //! - [`map`]: the node maps and enums, and [`ViewSource`]/[`EventSink`], which encode the
 //!   published value from the VM's output leaves and decode an event into its input leaves.
 //! - [`validate`]: the install check; tables are validated, never trusted.
+//! - [`hash`]: the manifest's content and UI hashes, as the packer writes them and a host checks them.
 //! - [`store`]: the store's record; [`store::store_image`] (std) builds a partition image.
 //!
 //! `engine/profile` writes the tables; this crate reads them. `no_std`, no
@@ -14,6 +15,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod archive;
+pub mod hash;
 pub mod layout;
 pub mod map;
 pub mod store;

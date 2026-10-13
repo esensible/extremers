@@ -119,8 +119,21 @@
 
   .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; }
   .previews h2 { margin: 0; font: 700 16px var(--f-head); }
-  #preview-kindle { width: 100%; aspect-ratio: 3 / 4; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
-  #preview-watch { width: 198px; height: 242px; border-radius: 36px; background: #000000; color: #8A8F96; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; padding: 20px; align-self: center; }
+  .pv { display: flex; flex-direction: column; gap: 6px; }
+  .pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .pv-head h2 { margin-right: auto; }
+  .pv-head .btn { min-height: 28px; padding: 0 8px; font-size: 13px; }
+  .pv-head select, .pv-head input { min-height: 28px; font-size: 13px; }
+  .pv-viewport { width: 100%; min-height: 120px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
+  #preview-kindle-frame { border: 0; display: block; background: #FFFFFF; }
+  .pv-bezel { align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 5px #2A2A28; }
+  #preview-watch-screen { width: 198px; height: 242px; background: #000000; color: #FFFFFF; overflow: hidden; }
+  .pv-status { font-size: 12px; overflow-wrap: anywhere; }
+  .pv-status.err { color: var(--danger); }
+  .pv-log { max-height: 120px; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; background: var(--raised); }
+  .pv-log:empty { display: none; }
+  .pv-line { overflow-wrap: anywhere; border-bottom: 1px dotted var(--line-2); }
+  .pv-line.error { color: var(--danger); } .pv-line.warn { color: var(--warn); }
 </style>
 </head>
 <body>
@@ -236,13 +249,32 @@
     </section>
 
     <aside class="pane previews" aria-label="Previews">
-      <h2>Kindle</h2>
-      <iframe id="preview-kindle" title="Kindle preview" data-testid="preview-kindle" srcdoc="&lt;p style='font:14px system-ui;color:#5A626B;padding:16px'&gt;The Kindle preview arrives with milestone S5.&lt;/p&gt;"></iframe>
-      <h2>Watch</h2>
-      <div id="preview-watch" data-testid="preview-watch">The watch preview arrives with milestone S5.</div>
+      <section id="preview-kindle" class="pv" data-testid="preview-kindle" aria-label="Kindle preview">
+        <div class="pv-head"><h2>Kindle</h2>
+          <select id="preview-kindle-size" aria-label="Kindle size, CSS px"><option value="600x800">600×800</option><option value="758x1024">758×1024</option></select>
+          <input id="preview-kindle-custom" placeholder="WxH" aria-label="Custom Kindle size, CSS px (WxH)" size="7">
+          <button type="button" class="btn pri" id="preview-kindle-open" data-testid="preview-kindle-open">Open</button>
+          <button type="button" class="btn" id="preview-kindle-close" data-testid="preview-kindle-close" disabled>Close</button>
+        </div>
+        <div class="pv-viewport" id="preview-kindle-viewport"><div id="preview-kindle-screen" data-testid="preview-kindle-screen"><p class="hint" style="padding:12px">Build (Build log tab), start the sim with the build's name, then Open: the built page runs here on the sim host.</p></div></div>
+        <div class="pv-status hint" id="preview-kindle-status" data-testid="preview-kindle-status" aria-live="polite"></div>
+        <div class="pv-log" id="preview-kindle-log" data-testid="preview-kindle-log"></div>
+      </section>
+      <section id="preview-watch" class="pv" data-testid="preview-watch" aria-label="Watch preview">
+        <div class="pv-head"><h2>Watch</h2>
+          <select id="preview-watch-size" aria-label="Watch case"><option value="41mm">41 mm</option><option value="45mm" selected>45 mm</option><option value="49mm">49 mm</option></select>
+          <button type="button" class="btn pri" id="preview-watch-open" data-testid="preview-watch-open">Open</button>
+          <button type="button" class="btn" id="preview-watch-close" data-testid="preview-watch-close" disabled>Close</button>
+        </div>
+        <div class="pv-bezel" id="preview-watch-bezel"><div id="preview-watch-screen" data-testid="preview-watch-screen"></div></div>
+        <div class="pv-status hint" id="preview-watch-status" data-testid="preview-watch-status" aria-live="polite"></div>
+        <div class="pv-log" id="preview-watch-log" data-testid="preview-watch-log"></div>
+      </section>
     </aside>
   </main>
 
+  <!-- the watch preview: vendor/watch-host/browser/shadow.js imports the bare 'yoga-layout' -->
+  <script type="importmap">{ "imports": { "yoga-layout": "./vendor/watch-host/yoga-layout/src/index.js" } }</script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -19,6 +19,9 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
+mod bundle;
+pub use bundle::*;
+
 /// A package's identity: [`package_id`] of its name, stable across
 /// versions. [`CHOOSE`] is the built-in chooser.
 pub type PackageId = u32;
@@ -194,6 +197,9 @@ pub enum HostEvent<'a> {
     Engine { package: PackageId, bytes: &'a [u8] },
     /// The Kindle's pairing settings: the websocket only.
     Ble(BleCommand),
+    /// The bundles the host holds (BLE.md "Bundles"): BLE only, answered
+    /// on `bundle`.
+    Bundle(BundleRequest),
 }
 
 /// What the Kindle's settings panel asks of the BLE transport (BLE.md
@@ -301,6 +307,8 @@ mod tests {
         assert_eq!(b(&HostEvent::SelectDefault), [1]);
         assert_eq!(b(&HostEvent::Engine { package: 5, bytes: &[3] }), [2, 5, 1, 3]);
         assert_eq!(b(&HostEvent::Ble(BleCommand::ForgetAll)), [3, 2]);
+        assert_eq!(b(&HostEvent::Bundle(BundleRequest::List)), [4, 0]);
+        assert_eq!(b(&HostEvent::Bundle(BundleRequest::Get { id: 300, from: 5 })), [4, 6, 0xac, 0x02, 5]);
         let worst = HostEvent::Engine {
             package: u32::MAX,
             bytes: &[0; EVENT_MAX],
@@ -374,5 +382,86 @@ mod tests {
         assert_eq!(postcard::to_stdvec(&refused).unwrap(), [2, 0]);
         let worst = AssetHeader { status: 0xff, len: u32::MAX };
         assert_eq!(postcard::to_stdvec(&worst).unwrap().len(), ASSET_HEADER_MAX);
+    }
+
+    /// A `Begin` fits BLE's 64-byte `event` value; every response one
+    /// notification at the C6's ATT MTU (247), and at CoreBluetooth's usual
+    /// one (185).
+    #[test]
+    fn bundle_messages_on_the_wire() {
+        let b = |e: &HostEvent| postcard::to_stdvec(e).unwrap();
+        let begin = HostEvent::Bundle(BundleRequest::Begin { id: 300, len: 1000, sha256: [7; 32] });
+        let bytes = b(&begin);
+        assert_eq!(bytes[..6], [4, 1, 0xac, 0x02, 0xe8, 0x07]);
+        assert_eq!(bytes[6..], [7; 32]);
+        let worst = HostEvent::Bundle(BundleRequest::Begin { id: u32::MAX, len: u32::MAX, sha256: [0xff; 32] });
+        assert_eq!(b(&worst).len(), BUNDLE_EVENT_MAX);
+        assert!(BUNDLE_EVENT_MAX <= 64);
+        assert_eq!(postcard::from_bytes::<HostEvent>(&b(&worst)).unwrap(), worst);
+
+        let entry = BundleResponse::Entry(BundleEntry {
+            manifest: Manifest {
+                id: u32::MAX,
+                name: Name::try_from("sixteen-chars-xx").unwrap(),
+                version: u16::MAX,
+                abi: u16::MAX,
+                content_hash: [0xff; 8],
+                ui: UiHashes { web: [0xff; 8], watch: [0xff; 8] },
+                watch_len: u32::MAX,
+            },
+            len: u32::MAX,
+            active: true,
+            boot: true,
+            builtin: false,
+        });
+        assert_eq!(postcard::to_stdvec(&entry).unwrap().len(), BUNDLE_RESPONSE_MAX);
+        let others = [
+            BundleResponse::ListEnd { count: u8::MAX, free_bytes: u32::MAX, largest_free: u32::MAX },
+            BundleResponse::Ready { offset: u32::MAX, chunk: u16::MAX, window: u16::MAX },
+            BundleResponse::Sending { id: u32::MAX, len: u32::MAX, sha256: [0xff; 32], chunk: u16::MAX },
+            BundleResponse::Error { request: REQUEST_DATA, code: BundleError::Timeout, detail: u32::MAX },
+        ];
+        for r in others {
+            assert!(postcard::to_stdvec(&r).unwrap().len() <= BUNDLE_RESPONSE_MAX, "{r:?}");
+        }
+        assert!(BUNDLE_RESPONSE_MAX <= 185 - 3);
+
+        let ack = BundleResponse::Ack { offset: 1024 };
+        assert_eq!(postcard::to_stdvec(&ack).unwrap(), [3, 0x80, 0x08]);
+        let error = BundleResponse::Error { request: 1, code: BundleError::Sequence, detail: 960 };
+        assert_eq!(postcard::to_stdvec(&error).unwrap(), [10, 1, 2, 0xc0, 0x07]);
+        // request codes are the variant indices
+        let get = BundleRequest::Get { id: 1, from: 0 };
+        assert_eq!(postcard::to_stdvec(&get).unwrap()[0], get.code());
+    }
+
+    #[test]
+    fn data_chunks_and_windows() {
+        assert_eq!(data_chunk(247), 240);
+        assert_eq!(data_chunk(185), 176);
+        assert_eq!(data_chunk(23), 16);
+        assert_eq!(data_chunk(0), 0);
+        // 8 chunks at most, never past 2 KiB; an ack before the window fills
+        assert_eq!(window(240), 1920);
+        assert_eq!(window(256), 2048);
+        assert_eq!(window(16), 128);
+        assert_eq!(ack_every(1920), 960);
+        assert_eq!(ack_every(2048), 1024);
+        assert_eq!(ack_every(128), 64);
+        for mtu in [23u16, 100, 185, 247, 517] {
+            let chunk = data_chunk(mtu);
+            assert_eq!(chunk % 4, 0);
+            assert!(DATA_HEADER + chunk as usize <= mtu as usize - 3);
+            let w = window(chunk);
+            assert!(w / chunk <= WINDOW_CHUNKS && ack_every(w) + chunk as u32 <= w as u32, "{mtu}");
+        }
+
+        let mut out = [0u8; 8];
+        let n = DataPacket { offset: 0x0102_0304, bytes: &[9, 8] }.write(&mut out).unwrap();
+        assert_eq!(out[..n], [4, 3, 2, 1, 9, 8]);
+        assert_eq!(DataPacket::parse(&out[..n]), Some(DataPacket { offset: 0x0102_0304, bytes: &[9, 8] }));
+        assert_eq!(DataPacket::parse(&[1, 2, 3]), None);
+        assert_eq!(DataPacket::parse(&[1, 0, 0, 0]).unwrap().bytes, &[] as &[u8]);
+        assert_eq!(DataPacket { offset: 0, bytes: &[0; 5] }.write(&mut out), None);
     }
 }

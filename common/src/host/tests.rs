@@ -677,3 +677,340 @@ fn uploads_the_registry_would_refuse_are_refused() {
     // but a new version of one installed is fine
     block_on(host.bundle_begin(package_id("app3"), 100, &sha)).unwrap();
 }
+
+// ---- bundles over BLE (ble_bundles.rs, BLE.md "Bundles") ----
+
+use crate::ble_bundles::{BleClient, BundleAnswer, Download};
+use extreme_protocol::{BundleEntry, BundleError, BundleRequest, BundleResponse, REQUEST_DATA, UPLOAD_IDLE_SECS};
+
+/// Two connections at the C6's ATT MTU: chunks of 240 bytes.
+const C0: BleClient = BleClient { id: 0, chunk: 240 };
+const C1: BleClient = BleClient { id: 1, chunk: 240 };
+const BEGIN: u8 = 1;
+const COMMIT: u8 = 2;
+
+fn answer<'h>(host: &'h Host, client: BleClient, request: BundleRequest) -> BundleAnswer<'h> {
+    match block_on(host.ble_event(&bytes(&HostEvent::Bundle(request)), client)) {
+        Ok(Some(answer)) => answer,
+        other => panic!("{request:?}: {:?}", other.map(|a| a.is_some())),
+    }
+}
+
+/// A request's responses.
+fn ask(host: &Host, client: BleClient, request: BundleRequest) -> Vec<BundleResponse> {
+    match answer(host, client, request) {
+        BundleAnswer::Responses(r) => r.to_vec(),
+        BundleAnswer::Download(_) => panic!("{request:?}: a download"),
+    }
+}
+
+/// A request's one response.
+fn ask1(host: &Host, client: BleClient, request: BundleRequest) -> BundleResponse {
+    let r = ask(host, client, request);
+    assert_eq!(r.len(), 1, "{request:?}: {r:?}");
+    r[0].clone()
+}
+
+fn begin_of(id: PackageId, archive: &[u8]) -> BundleRequest {
+    BundleRequest::Begin { id, len: archive.len() as u32, sha256: Sha256::digest(archive).into() }
+}
+
+/// A `data` write of `archive` from `offset` (a chunk's worth).
+fn data(host: &Host, client: BleClient, archive: &[u8], offset: usize) -> Option<BundleResponse> {
+    let end = (offset + client.chunk as usize).min(archive.len());
+    let mut value = (offset as u32).to_le_bytes().to_vec();
+    value.extend_from_slice(&archive[offset..end]);
+    block_on(host.bundle_data(client, &value))
+}
+
+/// Every chunk of `archive` from `from`, in order: what came back.
+fn send(host: &Host, client: BleClient, archive: &[u8], from: usize) -> Vec<BundleResponse> {
+    (from..archive.len()).step_by(client.chunk as usize).filter_map(|o| data(host, client, archive, o)).collect()
+}
+
+fn err(request: u8, code: BundleError, detail: u32) -> BundleResponse {
+    BundleResponse::Error { request, code, detail }
+}
+
+fn entries(list: &[BundleResponse]) -> Vec<BundleEntry> {
+    list.iter()
+        .filter_map(|r| match r {
+            BundleResponse::Entry(e) => Some(e.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Begin, every chunk, commit: acknowledged every 960 bytes (half the
+/// window) and at the end; installed, listed, and the clients told.
+#[test]
+fn a_bundle_is_uploaded_over_ble() {
+    let (host, nor) = stored(&[], None);
+    let list = ask(&host, C0, BundleRequest::List);
+    let choose = choose();
+    assert_eq!(
+        list,
+        [
+            BundleResponse::Entry(BundleEntry { manifest: choose.manifest(), len: choose.archive.bytes().len() as u32, active: true, boot: true, builtin: true }),
+            BundleResponse::ListEnd { count: 1, free_bytes: (MAX_SECTORS * SECTOR) as u32, largest_free: (MAX_SECTORS * SECTOR - 64) as u32 },
+        ]
+    );
+
+    let race = race_bytes();
+    assert_eq!(ask1(&host, C0, begin_of(RACE, race)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    let acks = send(&host, C0, race, 0);
+    let (last, rest) = acks.split_last().unwrap();
+    assert_eq!(*last, BundleResponse::Ack { offset: race.len() as u32 });
+    for (i, ack) in rest.iter().enumerate() {
+        assert_eq!(*ack, BundleResponse::Ack { offset: (i as u32 + 1) * 960 });
+    }
+    let mut updates = host.subscribe().unwrap();
+    let p = load(race);
+    assert_eq!(ask1(&host, C0, BundleRequest::Commit), BundleResponse::Committed { id: RACE, content_hash: p.content_hash });
+    assert!(updates.try_next_message_pure().is_some());
+    assert_eq!(host.package(RACE).unwrap().version, 1);
+    assert_eq!(host.bundle_deadline(), None);
+
+    // Choose stays active; Race, the only app, is what the host boots with
+    let list = ask(&host, C0, BundleRequest::List);
+    let e = entries(&list);
+    assert_eq!(e.iter().map(|e| (e.manifest.id, e.active, e.boot, e.builtin)).collect::<Vec<_>>(), [(CHOOSE, true, false, true), (RACE, false, true, false)]);
+    assert_eq!((e[1].manifest.clone(), e[1].len), (p.manifest(), race.len() as u32));
+    // every response fits a notification at MTU 247
+    for r in &list {
+        assert!(postcard::to_stdvec(r).unwrap().len() <= 244, "{r:?}");
+    }
+    assert!(matches!(list.last(), Some(BundleResponse::ListEnd { count: 2, .. })));
+    // and it is there after a reboot
+    assert!(boot_from(nor, None).package(RACE).is_some());
+}
+
+/// A gap is told once, with the offset to go back to; bytes the host has
+/// are ignored. A connection that drops leaves the upload for another to
+/// resume; the other is refused meanwhile.
+#[test]
+fn an_upload_survives_gaps_and_a_new_connection() {
+    let (host, _) = stored(&[], None);
+    let race = race_bytes();
+    ask1(&host, C0, begin_of(RACE, race));
+    assert_eq!(data(&host, C0, race, 0), None);
+    // chunk 1 lost: told where to go back to, once
+    assert_eq!(data(&host, C0, race, 480), Some(err(REQUEST_DATA, BundleError::Sequence, 240)));
+    assert_eq!(data(&host, C0, race, 720), None);
+    // a repeat: nothing
+    assert_eq!(data(&host, C0, race, 0), None);
+    // back from 240
+    assert_eq!(send(&host, C0, race, 240)[0], BundleResponse::Ack { offset: 960 });
+    // a write without a whole offset
+    assert_eq!(block_on(host.bundle_data(C0, &[1, 2])), Some(err(REQUEST_DATA, BundleError::Length, 0)));
+
+    // the same Begin while it is live resumes it, at the end now
+    assert_eq!(ask1(&host, C0, begin_of(RACE, race)), BundleResponse::Ready { offset: race.len() as u32, chunk: 240, window: 1920 });
+    assert_eq!(ask1(&host, C0, BundleRequest::Abort), BundleResponse::Aborted);
+
+    // a fresh upload, then connection 0 goes away mid-way
+    assert_eq!(ask1(&host, C0, begin_of(RACE, race)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    send(&host, C0, &race[..4800], 0);
+    // another connection may not start another upload, or end this one
+    let r2 = race_archive("race2", 1, true);
+    assert_eq!(ask1(&host, C1, begin_of(RACE2, &r2)), err(BEGIN, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C1, BundleRequest::Commit), err(COMMIT, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C1, BundleRequest::Abort), err(3, BundleError::Busy, 0));
+    // but resumes it where it is
+    assert_eq!(ask1(&host, C1, begin_of(RACE, race)), BundleResponse::Ready { offset: 4800, chunk: 240, window: 1920 });
+    // now the other's
+    assert_eq!(data(&host, C0, race, 4800), Some(err(REQUEST_DATA, BundleError::Busy, 0)));
+    assert_eq!(send(&host, C1, race, 4800).last(), Some(&BundleResponse::Ack { offset: race.len() as u32 }));
+    assert!(matches!(ask1(&host, C1, BundleRequest::Commit), BundleResponse::Committed { id: RACE, .. }));
+    // nothing in progress
+    assert_eq!(data(&host, C1, race, 0), Some(err(REQUEST_DATA, BundleError::NoUpload, 0)));
+    assert_eq!(ask1(&host, C1, BundleRequest::Abort), err(3, BundleError::NoUpload, 0));
+    // a client changing its mind: its own upload makes way for its new one
+    ask1(&host, C0, begin_of(RACE, race));
+    send(&host, C0, &race[..960], 0);
+    assert_eq!(ask1(&host, C0, begin_of(RACE2, &r2)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    assert_eq!(block_on(host.bundle_uploading()).map(|u| (u.id, u.written)), Some((RACE2, 0)));
+    assert_eq!(ask1(&host, C0, BundleRequest::Abort), BundleResponse::Aborted);
+}
+
+/// Two connections beginning at once: one gets the upload, the other
+/// `Busy`, and the winner's upload is untouched by the loser.
+#[test]
+fn one_upload_at_a_time() {
+    let (host, _) = stored(&[], None);
+    let race = race_bytes();
+    let r2 = race_archive("race2", 1, true);
+    let ev = |r: BundleRequest| bytes(&HostEvent::Bundle(r));
+    let (a, b) = (ev(begin_of(RACE, race)), ev(begin_of(RACE2, &r2)));
+    let first = |answer: Result<Option<BundleAnswer<'_>>, Refused>| match answer {
+        Ok(Some(BundleAnswer::Responses(r))) => r[0].clone(),
+        _ => panic!("not a response"),
+    };
+    let (a, b) = block_on(embassy_futures::join::join(host.ble_event(&a, C0), host.ble_event(&b, C1)));
+    let (a, b) = (first(a), first(b));
+    let ready = BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 };
+    let (winner, archive) = match (a, b) {
+        (r, e) if r == ready && e == err(BEGIN, BundleError::Busy, 0) => (C0, race),
+        (e, r) if r == ready && e == err(BEGIN, BundleError::Busy, 0) => (C1, &r2[..]),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(send(&host, winner, archive, 0).last(), Some(&BundleResponse::Ack { offset: archive.len() as u32 }));
+    assert!(matches!(ask1(&host, winner, BundleRequest::Commit), BundleResponse::Committed { .. }));
+}
+
+/// An upload idle for a minute is dropped; its client hears `Timeout` once,
+/// and a new one starts from 0.
+#[test]
+fn an_idle_upload_is_dropped() {
+    let (host, _) = stored(&[], None);
+    let race = race_bytes();
+    ask1(&host, C0, begin_of(RACE, race));
+    send(&host, C0, &race[..2400], 0);
+    let deadline = host.bundle_deadline().unwrap();
+    let idle = Duration::from_secs(UPLOAD_IDLE_SECS);
+    assert!(deadline > Instant::now() + idle - Duration::from_secs(1) && deadline <= Instant::now() + idle);
+    assert!(!block_on(host.bundle_expire(Instant::now())));
+    assert!(block_on(host.bundle_expire(deadline)));
+    assert_eq!(block_on(host.bundle_uploading()), None);
+    assert_eq!(host.bundle_deadline(), None);
+    assert!(!block_on(host.bundle_expire(deadline + idle)));
+    // its connection is told, once; another just finds nothing
+    assert_eq!(data(&host, C1, race, 2400), Some(err(REQUEST_DATA, BundleError::NoUpload, 0)));
+    assert_eq!(data(&host, C0, race, 2400), Some(err(REQUEST_DATA, BundleError::Timeout, 0)));
+    assert_eq!(data(&host, C0, race, 2400), Some(err(REQUEST_DATA, BundleError::NoUpload, 0)));
+    // a commit hears it too
+    ask1(&host, C0, begin_of(RACE, race));
+    assert!(block_on(host.bundle_expire(host.bundle_deadline().unwrap())));
+    assert_eq!(ask1(&host, C0, BundleRequest::Commit), err(COMMIT, BundleError::Timeout, 0));
+    // and the same Begin starts afresh
+    assert_eq!(ask1(&host, C0, begin_of(RACE, race)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    send(&host, C0, race, 0);
+    assert!(matches!(ask1(&host, C0, BundleRequest::Commit), BundleResponse::Committed { .. }));
+}
+
+/// A commit refuses a bundle whose bytes, archive or manifest are wrong,
+/// saying why; one that comes too early leaves the upload going.
+#[test]
+fn a_commit_says_why_it_refuses() {
+    let (host, _) = stored(&[], None);
+    let race = race_bytes();
+    let upload = |id: PackageId, archive: &[u8], begin: BundleRequest| {
+        assert!(matches!(ask1(&host, C0, begin), BundleResponse::Ready { offset: 0, .. }));
+        send(&host, C0, archive, 0);
+        let r = ask1(&host, C0, BundleRequest::Commit);
+        assert_eq!(block_on(host.bundle_uploading()), None, "{id}");
+        r
+    };
+    // not the SHA-256 declared
+    let mut wrong = begin_of(RACE, race);
+    if let BundleRequest::Begin { sha256, .. } = &mut wrong {
+        sha256[0] ^= 1;
+    }
+    assert_eq!(upload(RACE, race, wrong), err(COMMIT, BundleError::Hash, 0));
+    // not an archive: reason 1 (ARCHIVE), detail 0 (Magic)
+    let mut corrupt = race.to_vec();
+    corrupt[0] ^= 1;
+    assert_eq!(upload(RACE, &corrupt, begin_of(RACE, &corrupt)), err(COMMIT, BundleError::Invalid, 1));
+    // a file changed under its manifest: reason 2 (MANIFEST), detail 2 (content_hash)
+    let mut edited = race.to_vec();
+    let at = race.windows(15).position(|w| w == b"<!doctype html>").unwrap();
+    edited[at + 2] = b'D';
+    assert_eq!(upload(RACE, &edited, begin_of(RACE, &edited)), err(COMMIT, BundleError::Invalid, 2 | 2 << 8));
+    // the watch bundle left out, the content hash as it was
+    let no_watch = race_archive("race", 1, false);
+    assert_eq!(upload(RACE, &no_watch, begin_of(RACE, &no_watch)), err(COMMIT, BundleError::Invalid, 2 | 2 << 8));
+    // Choose's bundle as Race: not the id it said
+    let choose_bytes = extreme_packages::CHOOSE;
+    assert_eq!(upload(RACE, choose_bytes, begin_of(RACE, choose_bytes)), err(COMMIT, BundleError::NotAllowed, extreme_protocol::NOT_ALLOWED_ID));
+    // nor may anything be uploaded as Choose
+    assert_eq!(ask1(&host, C0, begin_of(CHOOSE, choose_bytes)), err(BEGIN, BundleError::NotAllowed, extreme_protocol::NOT_ALLOWED_ID));
+    assert_eq!(ask1(&host, C0, BundleRequest::Begin { id: RACE, len: 0, sha256: [0; 32] }), err(BEGIN, BundleError::Length, 0));
+    assert_eq!(ask1(&host, C0, BundleRequest::Begin { id: RACE, len: 1 << 20, sha256: [0; 32] }), err(BEGIN, BundleError::NoSpace, 0));
+    // too early: the bytes so far, and the upload goes on
+    ask1(&host, C0, begin_of(RACE, race));
+    send(&host, C0, &race[..2400], 0);
+    assert_eq!(ask1(&host, C0, BundleRequest::Commit), err(COMMIT, BundleError::Length, 2400));
+    send(&host, C0, race, 2400);
+    assert!(matches!(ask1(&host, C0, BundleRequest::Commit), BundleResponse::Committed { id: RACE, .. }));
+    assert!(host.package(RACE).is_some());
+}
+
+/// Activate selects and is kept; Delete of the active bundle goes back to
+/// Choose; Choose can be neither deleted nor replaced.
+#[test]
+fn bundles_are_activated_and_deleted_over_ble() {
+    let r2 = race_archive("race2", 1, true);
+    let (host, _) = stored(&[race_bytes(), &r2], None);
+    assert_eq!(state(&host).active, CHOOSE);
+    assert_eq!(ask1(&host, C0, BundleRequest::Activate { id: RACE2 }), BundleResponse::Activated { id: RACE2 });
+    assert_eq!(state(&host).active, RACE2);
+    assert_eq!(block_on(host.next_boot_change()), RACE2);
+    let e = entries(&ask(&host, C0, BundleRequest::List));
+    assert_eq!(e.iter().map(|e| (e.manifest.id, e.active, e.boot)).collect::<Vec<_>>(), [(CHOOSE, false, false), (RACE, false, false), (RACE2, true, true)]);
+    assert_eq!(ask1(&host, C0, BundleRequest::Activate { id: 12345 }), err(5, BundleError::NotFound, 0));
+
+    assert_eq!(ask1(&host, C1, BundleRequest::Delete { id: RACE2 }), BundleResponse::Deleted { id: RACE2 });
+    assert_eq!(state(&host).active, CHOOSE);
+    assert_eq!(ask1(&host, C1, BundleRequest::Delete { id: RACE2 }), err(4, BundleError::NotFound, 0));
+    assert_eq!(ask1(&host, C1, BundleRequest::Delete { id: CHOOSE }), err(4, BundleError::NotAllowed, 0));
+    assert_eq!(ask1(&host, C1, BundleRequest::Activate { id: CHOOSE }), BundleResponse::Activated { id: CHOOSE });
+    assert_eq!(entries(&ask(&host, C0, BundleRequest::List)).len(), 2);
+}
+
+fn download(host: &Host, client: BleClient, id: PackageId, from: u32) -> Download<'_> {
+    match answer(host, client, BundleRequest::Get { id, from }) {
+        BundleAnswer::Download(d) => d,
+        BundleAnswer::Responses(r) => panic!("{r:?}"),
+    }
+}
+
+/// `Get` gives a bundle's archive back byte for byte, from any offset, under
+/// a lease.
+#[test]
+fn a_bundle_is_downloaded_over_ble() {
+    let (host, _) = stored(&[race_bytes()], None);
+    let race = race_bytes();
+    let d = download(&host, C0, RACE, 0);
+    assert_eq!(host.leases(), 1);
+    assert_eq!(d.sending(), BundleResponse::Sending { id: RACE, len: race.len() as u32, sha256: Sha256::digest(race).into(), chunk: 240 });
+    let mut got = Vec::new();
+    for p in d.packets() {
+        assert_eq!(p.offset as usize, got.len());
+        assert!(p.bytes.len() <= 240);
+        got.extend_from_slice(p.bytes);
+    }
+    assert_eq!(got, race);
+    assert_eq!(d.sent(), BundleResponse::Sent { id: RACE });
+    drop(d);
+    assert_eq!(host.leases(), 0);
+    // resumed from an offset
+    let d = download(&host, C1, RACE, 1000);
+    let first = d.packets().next().unwrap();
+    assert_eq!((first.offset, first.bytes), (1000, &race[1000..1240]));
+    assert_eq!(d.packets().map(|p| p.bytes.len()).sum::<usize>(), race.len() - 1000);
+    drop(d);
+    // Choose's, built in
+    assert_eq!(download(&host, C0, CHOOSE, 0).bytes, extreme_packages::CHOOSE);
+    let past = BundleRequest::Get { id: RACE, from: race.len() as u32 + 1 };
+    assert_eq!(ask1(&host, C0, past), err(6, BundleError::Length, race.len() as u32));
+    assert_eq!(ask1(&host, C0, BundleRequest::Get { id: 12345, from: 0 }), err(6, BundleError::NotFound, 0));
+    assert_eq!(host.leases(), 0);
+}
+
+/// Bundle requests need BLE's answer path: the websocket, and `event`
+/// without one, refuse them; other events go through `ble_event` as ever.
+#[test]
+fn bundle_requests_only_over_ble() {
+    let host = full();
+    let list = bytes(&HostEvent::Bundle(BundleRequest::List));
+    assert_eq!(block_on(host.event(&list, Transport::WebSocket)), Err(Refused::Ble));
+    assert_eq!(block_on(host.event(&list, Transport::Ble)), Err(Refused::Ble));
+    assert!(matches!(block_on(host.ble_event(&bytes(&HostEvent::Select(RACE)), C0)), Ok(None)));
+    assert_eq!(state(&host).active, RACE);
+    let pair = bytes(&HostEvent::Ble(BleCommand::Pair));
+    assert!(matches!(block_on(host.ble_event(&pair, C0)), Err(Refused::Ble)));
+    // a host without a store lists what it runs, with no free space
+    let list = ask(&host, C0, BundleRequest::List);
+    assert_eq!(list.last(), Some(&BundleResponse::ListEnd { count: 3, free_bytes: 0, largest_free: 0 }));
+    assert_eq!(ask1(&host, C0, begin_of(RACE, race_bytes())), err(BEGIN, BundleError::NotFound, 0));
+}
