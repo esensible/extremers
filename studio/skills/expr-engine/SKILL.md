@@ -422,7 +422,7 @@ A studio project with all four (`marks` ≤ 8, `closest` ≤ 3, `recent` ≤ 5 F
 - **Lists inside lists**, except straight inside `flatten`: `[xs, ys]` anywhere else, `map(xs, [#])` not under `flatten` ("a `map` that gives lists is supported only straight inside `flatten`"), and `flatten` of lists nested more than one deep.
 - **Walking two lists in lockstep** (zip), and **comparing lists** with `==` ("comparing lists isn't implemented yet" / "compare their lengths or items"). Index one from the other instead: `map(w[1:], distance(w[#index], #))`.
 - **A list as a `reduce` accumulator** (`E-ACC-GROWS` "a `reduce` accumulator can't be a list").
-- **`xs?.[i]`** ("test the list first, or use `get(xs, i)`").
+- **`xs?.[a:b]`**, the nil-safe slice ("test the list first: `xs != nil ? xs[a:b] : nil`"). The nil-safe index `xs?.[i]` is built: nil when `xs` is nil (its index isn't evaluated), else `xs[i]` (out of range `R-INDEX`).
 - **`uniq` of records** ("`uniq` doesn't compare records").
 
 **Numbers**
@@ -438,7 +438,7 @@ A studio project with all four (`marks` ≤ 8, `closest` ≤ 3, `recent` ≤ 5 F
 - An absent field reads as nil.
 - On nil, `.f` fails (`R-NIL`). So do arithmetic, comparisons other than `==`/`!=`, `!`, `len`, `int`, `map`, `filter`, `sum`, `concat`, `reverse`, `flatten`, `uniq`, `median` and `sortBy`. `sort(nil)` is `[]`, as in Go.
 - `first(nil)` and `last(nil)` give nil, and `x in nil` is false.
-- `== nil`, `!= nil`, `?.` and `??` are always safe.
+- `== nil`, `!= nil`, `?.` and `??` are always safe. `xs?.[i]` is nil for a nil `xs`; field steps after it are skipped too (`ps?.[0].lat` is nil).
 
 ## 8. Checking an engine
 

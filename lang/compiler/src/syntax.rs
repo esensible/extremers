@@ -274,6 +274,10 @@ pub enum ExprKind {
     List(Vec<Expr>),
     /// `xs[i]` with a computed index.
     Index(Box<Expr>, Box<Expr>),
+    /// `xs?.[i]`: nil when `xs` is nil, else `xs[i]`. As the base of a
+    /// [`ExprKind::Path`], the field steps after it are in its chain: they
+    /// are skipped too when `xs` is nil (probe: `ps?.[0].lat` is nil).
+    SafeIndex(Box<Expr>, Box<Expr>),
     /// `xs[a:b]`, either bound left out.
     Slice(Box<Expr>, Option<Box<Expr>>, Option<Box<Expr>>),
     /// `a..b`: the ints from `a` to `b`.
@@ -597,7 +601,8 @@ impl Parser {
         self.postfix(e)
     }
 
-    /// Member access: `.f`, `?.f`, `["f"]`. Steps after a parenthesised path
+    /// Member access: `.f`, `?.f`, `["f"]`, and indexing: `[i]`, `[a:b]`,
+    /// `?.[i]`. Steps after a parenthesised path
     /// continue that path's chain, as in expr (probe: `(r.o?.x).y` is nil).
     fn postfix(&mut self, mut e: Expr) -> Result<Expr, Diag> {
         loop {
@@ -605,8 +610,21 @@ impl Parser {
             let step = if self.is_op(".") || self.is_op("?.") {
                 let optional = self.is_op("?.");
                 self.next();
-                if self.is_op("[") {
-                    return Err(self.unsupported(self.peek().span, "optional indexes (`xs?.[i]`)", "test the list first: `xs != nil ? xs[i] : …`, or use `get(xs, i)`"));
+                if optional && self.is_op("[") {
+                    // `xs?.[i]`: nil if `xs` is nil (`i` isn't evaluated then),
+                    // else `xs[i]`. Field steps after it continue its chain.
+                    let open = self.next();
+                    if self.is_op(":") {
+                        return Err(self.unsupported(open.span, "nil-safe slices (`xs?.[a:b]`)", "test the list first: `xs != nil ? xs[a:b] : nil`"));
+                    }
+                    let i = self.expr()?;
+                    if self.is_op(":") {
+                        return Err(self.unsupported(open.span, "nil-safe slices (`xs?.[a:b]`)", "test the list first: `xs != nil ? xs[a:b] : nil`"));
+                    }
+                    let close = self.expect_op("]", None)?;
+                    let span = e.span.to(close.span);
+                    e = Expr { kind: ExprKind::SafeIndex(Box::new(e), Box::new(i)), span };
+                    continue;
                 }
                 let name = self.next();
                 let Tok::Ident(field) = name.tok else {

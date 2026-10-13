@@ -220,7 +220,8 @@ fn lists_written_to_the_output_are_counted_exactly() {
     // The stack peaks at 2: an item and its index, for the store.
     exact(&iface, "filter(xs, # > 1)", &runs, 2, 24);
     // 21 reserved (20 held, 1 for the literal), then 7: the count, the
-    // window's counter, the concat's length (a replay) and the window's
+    // window's counter, the concat's length (its parts' lengths added up,
+    // with no loop) and the window's
     // start, and one loop's handle, length and position at a time.
     exact(&iface, "concat(xs, [1])[-20:]", &runs, 3, 28);
     // Records: 3 leaves an item.
@@ -252,6 +253,57 @@ fn a_window_on_a_list_visits_only_the_window() {
             .collect();
         assert_eq!(steps[0], steps[1], "`{src}`: the work grows with the list ({steps:?})");
     }
+}
+
+/// `len`, `first`, `last`, `xs[i]` and `get` over a `concat` of lists,
+/// ranges and windows of them read the item where it lies: the work
+/// doesn't depend on `i` within a part, nor on the lists' lengths (a whole
+/// list passed over costs 3 instructions: compare, then take its count off
+/// `i`; a window of one costs its position's few more). Before, `concat(a, b)[i]` walked to item `i`: 39
+/// instructions for `i` 0, 390 for 20, 713 for 39 and 1,261 for -1 (a
+/// count first) with 20 items in each. `xs?.[i]` is `xs[i]`'s read.
+#[test]
+fn indexing_a_concat_reads_the_item_where_it_lies() {
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20});
+    let iface = json!({"inputs": [
+        {"name": "a", "schema": ints}, {"name": "b", "schema": ints},
+        {"name": "n", "schema": ints, "nullable": true},
+        {"name": "i", "schema": {"type": "integer", "format": "int32"}}
+    ], "output": {"type": "integer"}});
+    let list = |from: i32, len: i32| json!((from..from + len).collect::<Vec<i32>>());
+    let steps = |src: &str, len: i32, i: i32| -> u32 {
+        let c = compile(src, &iface, &Options::default()).unwrap_or_else(|d| panic!("{src}: {d:?}"));
+        let inputs = json!({"a": list(0, len), "b": list(100, len), "n": list(200, len), "i": i});
+        match run(&c.bytes, &iface, inputs.as_object().unwrap(), &[]).unwrap() {
+            RunResult::Ok { steps, .. } => steps,
+            RunResult::Failed { code, .. } => panic!("`{src}` failed with {code} at {i}"),
+        }
+    };
+    for src in ["concat(a, b)[i]", "get(concat(a, b), i) ?? -1", "concat(a[1:], reverse(b), 0..3)[i]", "get(reverse(concat(a, b))[2:], i) ?? -1"] {
+        // With 20 items in each list: the start, middle and end of the
+        // first part, then of the second.
+        let first: Vec<u32> = [0, 5, 15].iter().map(|&i| steps(src, 20, i)).collect();
+        let second: Vec<u32> = [21, 30, 36].iter().map(|&i| steps(src, 20, i)).collect();
+        if std::env::var("SHOW_MEMORY").is_ok() {
+            eprintln!("{src:45} first part {first:?} second part {second:?}");
+        }
+        assert!(first.iter().all(|&s| s == first[0]), "`{src}`: the work grows with `i` in the first part ({first:?})");
+        assert!(second.iter().all(|&s| s == second[0]), "`{src}`: the work grows with `i` in the second part ({second:?})");
+        if src.starts_with("concat(a, b)") || src.starts_with("get(concat(a, b)") {
+            assert_eq!(second[0], first[0] + 3, "`{src}`: a whole list passed over costs 3 instructions");
+        }
+        // And not with the lists' lengths.
+        assert_eq!(steps(src, 8, 2), first[0], "`{src}`: the work grows with the lists");
+    }
+    // The same for a negative `i` (counted from the end first).
+    assert_eq!(steps("concat(a, b)[i]", 20, -1), steps("concat(a, b)[i]", 20, -20));
+    assert_eq!(steps("concat(a, b)[i]", 20, -21), steps("concat(a, b)[i]", 20, -40));
+    for src in ["len(concat(a, b, 0..3))", "first(concat(a, b)) ?? -1", "last(concat(a, b)) ?? -1"] {
+        assert_eq!(steps(src, 20, 3), steps(src, 5, 3), "`{src}`: the work grows with the lists");
+    }
+    // `n?.[i]` reads as `n[i]` does, after its nil test.
+    assert_eq!(steps("n?.[i] ?? -1", 20, 0), steps("n?.[i] ?? -1", 20, 19));
+    assert_eq!(steps("n?.[i] ?? -1", 20, 0), steps("n?.[i] ?? -1", 5, 0));
 }
 
 /// Compiles `src`, checks the locals it holds for lists (`held_slots`), and

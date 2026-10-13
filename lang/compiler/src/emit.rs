@@ -143,6 +143,31 @@ enum StageState {
     Window { counter: Option<u16>, start: Option<u16>, end: Option<u16> },
 }
 
+/// A window's bounds for `direct`, each in a local (and whether it may be
+/// negative).
+enum Cut {
+    Slice(Option<(u16, bool)>, Option<(u16, bool)>),
+    Take(u16),
+}
+
+/// Where `direct` reads items: a list (its handle in `pre`) or a range (its
+/// start and count from `pre`), or a `concat`'s parts.
+enum Addr {
+    Leaf { pre: u16, range: bool },
+    Concat(Vec<Part>),
+}
+
+/// A `concat` part `direct` reads: its list or range, stored as `item`,
+/// the span `(lo, hi, rev)` of it the part sees (`[lo, hi)`, backwards when
+/// `rev`; `None`: all of it, forwards), and its count, in `m`.
+struct Part {
+    pre: u16,
+    range: bool,
+    item: Ty,
+    span: Option<(u16, u16, bool)>,
+    m: u16,
+}
+
 /// A stage an item goes through after its own pipeline's: one of an
 /// enclosing pipeline's (with that pipeline's level), or a `concat` part's
 /// conversion to the whole's layout.
@@ -941,7 +966,7 @@ impl Emitter<'_> {
             }
         }
         // Through windows and reverses only: the items are still addressable.
-        if collect.is_none() && self.direct(&pipe, sink, f, e) {
+        if collect.is_none() && self.direct(&mut pipe, sink, f, e) {
             return self.finish(mark, end_jumps);
         }
 
@@ -1248,38 +1273,144 @@ impl Emitter<'_> {
         }
     }
 
-    /// `len`, `first`, `last`, `xs[k]` and `get` over a list or a range
-    /// seen only through windows (slices, `take`) and `reverse`s: every
-    /// item is still where it was in the source, so the window is worked
-    /// out as a span `[lo, hi)` of the source's positions (by the rules a
-    /// loop over it applies: a negative bound counts from the end, and each
-    /// bound is clamped to the items there are), and the item is read where
-    /// it lies. No loop: the same few instructions whatever the length.
-    /// Whether `sink` over `pipe` is one of them (its result is then on the
-    /// stack).
-    fn direct(&mut self, pipe: &Pipeline, sink: Sink, f: Option<&TExpr>, e: &TExpr) -> bool {
+    /// `len`, `first`, `last`, `xs[k]` and `get` over items that are all
+    /// still where they lie: a list or a range, or a `concat` whose parts
+    /// are each one of those (through their own windows and `reverse`s),
+    /// seen only through windows (slices, `take`) and `reverse`s. A window
+    /// is worked out as a span `[lo, hi)` of the positions it sees (by the
+    /// rules a loop over it applies: a negative bound counts from the end,
+    /// and each bound is clamped to the items there are), and the item is
+    /// read where it lies. A `concat`'s positions are its parts' items in
+    /// turn: its length is the sum of theirs, and its item `k` is in the
+    /// first part whose count exceeds what is left of `k`. No loop: the
+    /// same few instructions whatever the length (a few more per `concat`
+    /// part). Whether `sink` over `pipe` is one of them (its result is then
+    /// on the stack).
+    fn direct(&mut self, pipe: &mut Pipeline, sink: Sink, f: Option<&TExpr>, e: &TExpr) -> bool {
+        let windows = |stages: &[Stage]| stages.iter().all(|s| matches!(s, Stage::Window(_) | Stage::Reverse(_)));
         if !matches!(sink, Sink::Len | Sink::First | Sink::Last | Sink::At | Sink::Get)
             || matches!(pipe.item, Ty::Never)
-            || !pipe.stages.iter().all(|s| matches!(s, Stage::Window(_) | Stage::Reverse(_)))
+            || !windows(&pipe.stages)
         {
             return false;
         }
-        let Some(pre) = pipe.pre else { return false };
-        let range = match pipe.source {
-            Source::List(_) => false,
-            Source::Range(_) => true,
-            _ => return false,
-        };
-        // A window's bounds, each in a local (and whether it may be
-        // negative); `None` for a `reverse`.
-        enum Cut {
-            Slice(Option<(u16, bool)>, Option<(u16, bool)>),
-            Take(u16),
+        // Where the items are read from, and the span over them.
+        let addr;
+        let (lo, hi, m);
+        let rev;
+        match &mut pipe.source {
+            Source::List(_) | Source::Range(_) => {
+                let Some(pre) = pipe.pre else { return false };
+                let range = matches!(pipe.source, Source::Range(_));
+                // Every window's bounds, innermost first, before anything
+                // else (as the loop evaluates them).
+                let cuts = self.cuts(&pipe.stages);
+                (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
+                self.source_span(pre, range, lo, hi, e);
+                rev = self.narrow(cuts, lo, hi, m);
+                addr = Addr::Leaf { pre, range };
+            }
+            Source::Concat(ps) => {
+                if !ps.iter().all(|p| matches!(p.source, Source::List(_) | Source::Range(_) | Source::Hold(_)) && windows(&p.stages)) {
+                    return false;
+                }
+                // Each part's list or range, then its windows' bounds, in
+                // turn (as expr evaluates `concat`'s arguments). A part with
+                // no items (`[]`) has nothing to read.
+                let mut each = Vec::new();
+                for p in ps.iter_mut() {
+                    self.resolve_hold(p);
+                    let src = match (&p.source, &p.item) {
+                        (_, Ty::Never) => None,
+                        (Source::List(s), _) => Some(match p.pre {
+                            Some(h) => (h, false),
+                            None => {
+                                self.emit(s);
+                                (self.store_new(1), false)
+                            }
+                        }),
+                        (Source::Range(r), _) => Some((self.range_bounds(r), true)),
+                        _ => unreachable!("a part's hold is resolved"),
+                    };
+                    let cuts = self.cuts(&p.stages);
+                    each.push((src, cuts, p.item.clone()));
+                }
+                // Each part's span and count (a nil list fails here, R-NIL,
+                // as `concat` does in expr). For `len` of the concat itself,
+                // the counts are only added up, on the stack.
+                let sum = sink == Sink::Len && pipe.stages.is_empty();
+                let mut parts = Vec::new();
+                for (src, cuts, item) in each {
+                    let Some((pre, range)) = src else { continue };
+                    // The count: pushed (`sum`), or into `m`.
+                    let (span, m) = if cuts.is_empty() {
+                        // The whole list or range: its length.
+                        if range {
+                            self.op(Op::Load(pre + 1));
+                        } else {
+                            self.op(Op::Load(pre));
+                            self.op_at(Op::ListLen, e);
+                        }
+                        (None, if sum { u16::MAX } else { self.store_new(1) })
+                    } else {
+                        let (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
+                        self.source_span(pre, range, lo, hi, e);
+                        let rev = self.narrow(cuts, lo, hi, m);
+                        if sum {
+                            self.op(Op::Load(hi));
+                            self.op(Op::Load(lo));
+                            self.op(Op::Sub);
+                        } else {
+                            self.span_count(lo, hi, m);
+                        }
+                        (Some((lo, hi, rev)), m)
+                    };
+                    if sum && !parts.is_empty() {
+                        self.op(Op::Add);
+                    }
+                    parts.push(Part { pre, range, item, span, m });
+                }
+                if sum {
+                    if parts.is_empty() {
+                        self.op(Op::PushInt(0));
+                    }
+                    return true;
+                }
+                // The concat's own windows, over [0, the parts' total).
+                let cuts = self.cuts(&pipe.stages);
+                (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
+                self.op(Op::PushInt(0));
+                self.op(Op::Store(lo));
+                if parts.is_empty() {
+                    self.op(Op::PushInt(0));
+                }
+                for (n, p) in parts.iter().enumerate() {
+                    self.op(Op::Load(p.m));
+                    if n > 0 {
+                        self.op(Op::Add);
+                    }
+                }
+                self.op(Op::Store(hi));
+                rev = self.narrow(cuts, lo, hi, m);
+                addr = Addr::Concat(parts);
+            }
+            Source::Hold(_) => return false,
         }
-        // Every window's bounds, innermost first, before anything else (as
-        // the loop evaluates them).
+        if sink == Sink::Len {
+            self.op(Op::Load(hi));
+            self.op(Op::Load(lo));
+            self.op(Op::Sub);
+            return true;
+        }
+        self.direct_read(&addr, &pipe.item, lo, hi, m, rev, sink, f, e);
+        true
+    }
+
+    /// A window's bounds (each into a local), innermost first; `None` for a
+    /// `reverse`. A negative `take` fails (R-ARG), as in expr.
+    fn cuts(&mut self, stages: &[Stage]) -> Vec<Option<Cut>> {
         let mut cuts = Vec::new();
-        for s in &pipe.stages {
+        for s in stages {
             let st = s.node();
             match (s, &st.kind) {
                 (Stage::Reverse(_), _) => cuts.push(None),
@@ -1311,8 +1442,12 @@ impl Emitter<'_> {
                 _ => unreachable!("stage {:?}", st.kind),
             }
         }
-        // The span: the whole source, then each window of what's left.
-        let (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
+        cuts
+    }
+
+    /// The span `[lo, hi)` of a whole list (handle in `pre`) or range
+    /// (start and count from `pre`): `[0, its length)`.
+    fn source_span(&mut self, pre: u16, range: bool, lo: u16, hi: u16, e: &TExpr) {
         self.op(Op::PushInt(0));
         self.op(Op::Store(lo));
         if range {
@@ -1322,25 +1457,35 @@ impl Emitter<'_> {
             self.op_at(Op::ListLen, e);
         }
         self.op(Op::Store(hi));
-        let count = |me: &mut Self| {
-            me.op(Op::Load(hi));
-            me.op(Op::Load(lo));
-            me.op(Op::Sub);
-            me.op(Op::Store(m));
-        };
-        // A bound on top of the stack, counted from the end if negative.
-        let from_end = |me: &mut Self| {
-            me.op(Op::Dup);
-            me.op(Op::PushInt(0));
-            me.op(Op::Lt);
-            let pos = me.jump_plain(Op::JumpIfFalse);
-            me.op(Op::Load(m));
-            me.op(Op::Add);
-            let here = me.pc();
-            me.patch(pos, here);
-        };
-        // Whether the items reach the end of the window so far backwards:
-        // its first item is then the source's at `hi - 1`.
+    }
+
+    /// `m = hi - lo`: the items in the span.
+    fn span_count(&mut self, lo: u16, hi: u16, m: u16) {
+        self.op(Op::Load(hi));
+        self.op(Op::Load(lo));
+        self.op(Op::Sub);
+        self.op(Op::Store(m));
+    }
+
+    /// A bound on top of the stack, counted from the end of the `m` items
+    /// if negative.
+    fn from_end(&mut self, m: u16) {
+        self.op(Op::Dup);
+        self.op(Op::PushInt(0));
+        self.op(Op::Lt);
+        let pos = self.jump_plain(Op::JumpIfFalse);
+        self.op(Op::Load(m));
+        self.op(Op::Add);
+        let here = self.pc();
+        self.patch(pos, here);
+    }
+
+    /// Narrows the span `[lo, hi)` by each window of what's left, in turn
+    /// (`m` is scratch). Whether the items then reach the end of the span
+    /// backwards: its first item is then the one at `hi - 1`.
+    fn narrow(&mut self, cuts: Vec<Option<Cut>>, lo: u16, hi: u16, m: u16) -> bool {
+        let count = |me: &mut Self| me.span_count(lo, hi, m);
+        let from_end = |me: &mut Self| me.from_end(m);
         let mut rev = false;
         for cut in cuts {
             let Some(cut) = cut else {
@@ -1402,13 +1547,15 @@ impl Emitter<'_> {
                 self.op(Op::Store(near));
             }
         }
-        if sink == Sink::Len {
-            self.op(Op::Load(hi));
-            self.op(Op::Load(lo));
-            self.op(Op::Sub);
-            return true;
-        }
+        rev
+    }
 
+    /// `first`, `last`, `xs[k]` or `get` of the items in the span
+    /// `[lo, hi)` (backwards when `rev`) of `addr` (`m` is scratch).
+    #[allow(clippy::too_many_arguments)]
+    fn direct_read(&mut self, addr: &Addr, item: &Ty, lo: u16, hi: u16, m: u16, rev: bool, sink: Sink, f: Option<&TExpr>, e: &TExpr) {
+        let count = |me: &mut Self| me.span_count(lo, hi, m);
+        let from_end = |me: &mut Self| me.from_end(m);
         // The position `k` within the window (a negative index counts from
         // its end), then whether it is inside: `xs[k]` fails if not (R-INDEX),
         // the others give nil.
@@ -1466,30 +1613,57 @@ impl Emitter<'_> {
             self.op(Op::Lt);
             Some(self.jump_plain(Op::JumpIfFalse))
         };
-        // The source's position: `lo + k`, or backwards `hi - 1 - k`.
-        if rev {
-            self.op(Op::Load(hi));
-            self.op(Op::PushInt(1));
-            self.op(Op::Sub);
-            self.op(Op::Load(k));
-            self.op(Op::Sub);
-        } else {
-            self.op(Op::Load(lo));
-            self.op(Op::Load(k));
-            self.op(Op::Add);
+        // The position in the span's source: `lo + k`, or backwards `hi - 1 - k`.
+        self.position(lo, hi, k, rev);
+        match addr {
+            Addr::Leaf { pre, range } => self.read_leaf(*pre, *range, k, item, e),
+            Addr::Concat(parts) => {
+                // The part it is in: the first whose count is more than
+                // what is left of `k`, less the counts before it. (`k` is
+                // below the total, so it is in the last part if not before.)
+                // The position within a part, where it isn't `k` itself.
+                let j = if parts.iter().any(|p| p.span.is_some() || p.range) { self.alloc(1) } else { u16::MAX };
+                let mut found = Vec::new();
+                if parts.is_empty() {
+                    // No items: never reached (`k` is never inside).
+                    self.push_nils(out);
+                }
+                for (n, p) in parts.iter().enumerate() {
+                    let next = (n + 1 < parts.len()).then(|| {
+                        self.op(Op::Load(k));
+                        self.op(Op::Load(p.m));
+                        self.op(Op::Lt);
+                        self.jump_plain(Op::JumpIfFalse)
+                    });
+                    match p.span {
+                        // A whole list: `k` is its position.
+                        None if !p.range => self.read_leaf(p.pre, false, k, &p.item, e),
+                        _ => {
+                            self.op(Op::Load(k));
+                            self.op(Op::Store(j));
+                            if let Some((lo, hi, rev)) = p.span {
+                                self.position(lo, hi, j, rev);
+                            }
+                            self.read_leaf(p.pre, p.range, j, &p.item, e);
+                        }
+                    }
+                    if let Some(next) = next {
+                        found.push(self.jump_plain(Op::Jump));
+                        self.depth -= out;
+                        let here = self.pc();
+                        self.patch(next, here);
+                        self.op(Op::Load(k));
+                        self.op(Op::Load(p.m));
+                        self.op(Op::Sub);
+                        self.op(Op::Store(k));
+                    }
+                }
+                let here = self.pc();
+                for x in found {
+                    self.patch(x, here);
+                }
+            }
         }
-        self.op(Op::Store(k));
-        let p = if range {
-            // A range's item: its start plus the position.
-            self.op(Op::Load(pre));
-            self.op(Op::Load(k));
-            self.op(Op::Add);
-            self.op(Op::Store(k));
-            Place { root: Root::Local(k), off: 0 }
-        } else {
-            Place { root: Root::Item { h: pre, i: k }, off: 0 }
-        };
-        self.load_as(p, &pipe.item, &e.ty);
         if let Some(below) = below {
             ends.push(self.jump_plain(Op::Jump));
             self.depth -= out;
@@ -1504,7 +1678,39 @@ impl Emitter<'_> {
         for j in ends {
             self.patch(j, here);
         }
-        true
+    }
+
+    /// `k = lo + k`, or backwards `k = hi - 1 - k`: position `k` of the
+    /// span `[lo, hi)` as a position in its source.
+    fn position(&mut self, lo: u16, hi: u16, k: u16, rev: bool) {
+        if rev {
+            self.op(Op::Load(hi));
+            self.op(Op::PushInt(1));
+            self.op(Op::Sub);
+            self.op(Op::Load(k));
+            self.op(Op::Sub);
+        } else {
+            self.op(Op::Load(lo));
+            self.op(Op::Load(k));
+            self.op(Op::Add);
+        }
+        self.op(Op::Store(k));
+    }
+
+    /// Pushes item `k` (in that local) of a list (handle in `pre`) or a
+    /// range (start in `pre`), stored as `item`, laid out as `e`'s type.
+    fn read_leaf(&mut self, pre: u16, range: bool, k: u16, item: &Ty, e: &TExpr) {
+        let p = if range {
+            // A range's item: its start plus the position.
+            self.op(Op::Load(pre));
+            self.op(Op::Load(k));
+            self.op(Op::Add);
+            self.op(Op::Store(k));
+            Place { root: Root::Local(k), off: 0 }
+        } else {
+            Place { root: Root::Item { h: pre, i: k }, off: 0 }
+        };
+        self.load_as(p, item, &e.ty);
     }
 
     fn new_level(&mut self) -> usize {
@@ -1532,6 +1738,20 @@ impl Emitter<'_> {
             let whole = pipe.item.clone();
             for part in parts.iter_mut() {
                 self.resolve_hold(part);
+                // A nil list fails `concat` (R-NIL) before any item is
+                // taken, as in expr, even when the sink is done before
+                // this part's loop (`first`, `any`, …).
+                if let (Source::List(s), None) = (&part.source, part.pre)
+                    && s.ty.may_be_nil()
+                    && !matches!(part.item, Ty::Never)
+                {
+                    self.emit(s);
+                    let h = self.store_new(1);
+                    self.op(Op::Load(h));
+                    self.op_at(Op::ListLen, s);
+                    self.op(Op::Pop);
+                    part.pre = Some(h);
+                }
                 self.init_stages(part, all_rev);
                 let from = part.out_item();
                 if !matches!(from, Ty::Never) && !same_layout(&from, &whole) {

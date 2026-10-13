@@ -6073,6 +6073,1489 @@
       ]
     },
     {
+      "name": "nil-safe index: a nil list, in range, from the end, out of range",
+      "results": [
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "10",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "30",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "30",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "10",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:9)"
+        },
+        {
+          "error": "index out of range: -1 (array length is 3) (1:9)"
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:9)"
+        }
+      ]
+    },
+    {
+      "name": "nil-safe index: a nil index",
+      "results": [
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "error": "invalid operation: int(\u003cnil\u003e) (1:9)"
+        },
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "20",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nil-safe index: the field steps after it are in its chain",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "e": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "e": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 1 (array length is 1) (1:9)"
+        }
+      ]
+    },
+    {
+      "name": "nil-safe index: the index isn't evaluated for a nil list",
+      "results": [
+        {
+          "ok": {
+            "fields": {},
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "v": {
+                "int": "20",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:12)"
+        }
+      ]
+    },
+    {
+      "name": "nil-safe index: a list that can't be nil, a field, a pipeline, a branch",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "1",
+                "kind": "int"
+              },
+              "c": {
+                "int": "1",
+                "kind": "int"
+              },
+              "d": {
+                "int": "1",
+                "kind": "int"
+              },
+              "e": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "3",
+                "kind": "int"
+              },
+              "b": {
+                "int": "5",
+                "kind": "int"
+              },
+              "c": {
+                "int": "9",
+                "kind": "int"
+              },
+              "e": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "2",
+                "kind": "int"
+              },
+              "b": {
+                "int": "5",
+                "kind": "int"
+              },
+              "c": {
+                "int": "2",
+                "kind": "int"
+              },
+              "d": {
+                "int": "2",
+                "kind": "int"
+              },
+              "e": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:28)"
+        }
+      ]
+    },
+    {
+      "name": "nil-safe index inside a map body",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "0000000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 2 (array length is 2) (1:17)"
+        }
+      ]
+    },
+    {
+      "name": "indexing a concat of two: each part, from either end, out of range",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 5 (array length is 5) (1:13)"
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: -1 (array length is 5) (1:13)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:13)"
+        },
+        {
+          "ok": {
+            "int": "7",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "indexing a concat of three: each part, from either end, out of range",
+      "results": [
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 6 (array length is 6) (1:16)"
+        },
+        {
+          "ok": {
+            "int": "6",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: -1 (array length is 6) (1:16)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat: get, first, last and len, through windows and reverses of its parts",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "l": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "0",
+                "kind": "int"
+              },
+              "u": {
+                "int": "0",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "1",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "2",
+                "kind": "int"
+              },
+              "t": {
+                "int": "1",
+                "kind": "int"
+              },
+              "u": {
+                "int": "5",
+                "kind": "int"
+              },
+              "v": {
+                "int": "40",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "40",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "700",
+                "kind": "int"
+              },
+              "t": {
+                "int": "8",
+                "kind": "int"
+              },
+              "u": {
+                "int": "3",
+                "kind": "int"
+              },
+              "v": {
+                "int": "3",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "700",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "700",
+                "kind": "int"
+              },
+              "t": {
+                "int": "7",
+                "kind": "int"
+              },
+              "u": {
+                "int": "5",
+                "kind": "int"
+              },
+              "v": {
+                "int": "2",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "800",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "8",
+                "kind": "int"
+              },
+              "u": {
+                "int": "5",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "u": {
+                "int": "5",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "l": {
+                "int": "40",
+                "kind": "int"
+              },
+              "n": {
+                "int": "8",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "u": {
+                "int": "12",
+                "kind": "int"
+              },
+              "v": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "w": {
+                "int": "50",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "g": {
+                "int": "5",
+                "kind": "int"
+              },
+              "l": {
+                "int": "5",
+                "kind": "int"
+              },
+              "n": {
+                "int": "1",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "t": {
+                "int": "8",
+                "kind": "int"
+              },
+              "u": {
+                "int": "1",
+                "kind": "int"
+              },
+              "v": {
+                "int": "5",
+                "kind": "int"
+              },
+              "w": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat: windows and reverses over it",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "2",
+                "kind": "int"
+              },
+              "b": {
+                "int": "5",
+                "kind": "int"
+              },
+              "c": {
+                "int": "3",
+                "kind": "int"
+              },
+              "d": {
+                "int": "4",
+                "kind": "int"
+              },
+              "e": {
+                "int": "4",
+                "kind": "int"
+              },
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "4",
+                "kind": "int"
+              },
+              "b": {
+                "int": "3",
+                "kind": "int"
+              },
+              "c": {
+                "int": "3",
+                "kind": "int"
+              },
+              "d": {
+                "int": "4",
+                "kind": "int"
+              },
+              "e": {
+                "int": "4",
+                "kind": "int"
+              },
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "g": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "5",
+                "kind": "int"
+              },
+              "b": {
+                "int": "1",
+                "kind": "int"
+              },
+              "c": {
+                "int": "5",
+                "kind": "int"
+              },
+              "d": {
+                "int": "5",
+                "kind": "int"
+              },
+              "e": {
+                "int": "5",
+                "kind": "int"
+              },
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "g": {
+                "int": "5",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "5",
+                "kind": "int"
+              },
+              "b": {
+                "int": "2",
+                "kind": "int"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "d": {
+                "int": "1",
+                "kind": "int"
+              },
+              "e": {
+                "int": "2",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "5",
+                "kind": "int"
+              },
+              "c": {
+                "int": "2",
+                "kind": "int"
+              },
+              "d": {
+                "int": "2",
+                "kind": "int"
+              },
+              "e": {
+                "int": "5",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "indexing a concat with a window part: out of range fails",
+      "results": [
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 4 (array length is 4) (1:18)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: -1 (array length is 4) (1:18)"
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat with a filter part (walked)",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "int": "3",
+                "kind": "int"
+              },
+              "l": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              },
+              "x": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "l": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              },
+              "x": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "int": "4",
+                "kind": "int"
+              },
+              "l": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              },
+              "x": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "l": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              },
+              "x": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 4 (array length is 4) (1:32)"
+        },
+        {
+          "error": "index out of range: -1 (array length is 4) (1:32)"
+        }
+      ]
+    },
+    {
+      "name": "concat with a nil list fails, wherever the item is",
+      "results": [
+        {
+          "error": "cannot concat invalid (1:9)"
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "2",
+                "kind": "int"
+              },
+              "x": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "1",
+                "kind": "int"
+              },
+              "x": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat with a nil list fails, wherever the item is, walked",
+      "results": [
+        {
+          "error": "cannot concat invalid (1:11)"
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "2",
+                "kind": "int"
+              },
+              "y": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "z": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "1",
+                "kind": "int"
+              },
+              "y": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "z": {
+                "int": "10",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concat: parts laid out differently",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "1",
+                "kind": "int"
+              },
+              "b": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "2",
+                "kind": "int"
+              },
+              "b": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "4004000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "4022000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "1",
+                "kind": "int"
+              },
+              "b": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
       "name": "reverse: a list, a window, a map",
       "results": [
         {

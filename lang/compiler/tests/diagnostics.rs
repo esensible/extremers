@@ -138,6 +138,9 @@ fn cases() -> Vec<(&'static str, &'static str, Json, Options)> {
         ("E-TYPE", "sum(xs) + len(i)", iface(json!([{"name": "xs", "schema": ints()}, {"name": "i", "schema": int()}]), int()), none),
         ("E-TYPE", "filter(xs, # + 1)[0]", iface(ints_in(), int()), none),
         ("E-TYPE", "xs[1.5]", iface(ints_in(), int()), none),
+        ("E-TYPE", "xs?.[1.5]", iface(ints_in(), int()), none),
+        ("E-UNSUPPORTED", "len(xs?.[1:])", iface(ints_in(), int()), none),
+        ("E-PARSE", "xs.[0]", iface(ints_in(), int()), none),
         ("E-TYPE", "b ? filter(xs, # > 1) : xs", iface(json!([{"name": "b", "schema": {"type": "boolean"}}, {"name": "xs", "schema": ints()}]), int()), none),
         // Lists inside lists: only straight inside `flatten`, one deep
         ("E-UNSUPPORTED", "len([xs, xs])", iface(ints_in(), int()), none),

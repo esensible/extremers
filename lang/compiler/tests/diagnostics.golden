@@ -205,6 +205,17 @@ program.expr:1:12: error[E-TYPE]: `filter`'s predicate must be a bool, but this 
 program.expr:1:4: error[E-TYPE]: an index must be an integer, but this is a float
   help: e.g. `xs[int(n / 2)]`
 
+── xs?.[1.5]
+program.expr:1:6: error[E-TYPE]: an index must be an integer, but this is a float
+  help: e.g. `xs[int(n / 2)]`
+
+── len(xs?.[1:])
+program.expr:1:9: error[E-UNSUPPORTED]: nil-safe slices (`xs?.[a:b]`) aren't implemented yet
+  help: test the list first: `xs != nil ? xs[a:b] : nil`
+
+── xs.[0]
+program.expr:1:4: error[E-PARSE]: expected a field name, found `[`
+
 ── b ? filter(xs, # > 1) : xs
 program.expr:1:1: error[E-TYPE]: the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
 

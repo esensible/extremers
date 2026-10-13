@@ -472,6 +472,7 @@ impl Checker<'_> {
                 let i = self.expr(i);
                 self.list_sink(Sink::At, base, Some(i), None, span)
             }
+            ExprKind::SafeIndex(..) => self.safe_index(e, &[], span),
             ExprKind::Slice(base, lo, hi) => {
                 let src = self.expr(base);
                 let lo = lo.as_ref().map(|e| self.expr(e));
@@ -1018,11 +1019,77 @@ impl Checker<'_> {
     /// `base.f?.g…` (spec §2.2): `.` on nil fails at run time; a `?.` whose
     /// target is nil makes the whole rest of the chain nil.
     fn path(&mut self, base: &Expr, steps: &[Step], span: Span) -> TExpr {
-        let mut what = match &base.kind {
+        if let ExprKind::SafeIndex(..) = base.kind {
+            return self.safe_index(base, steps, span);
+        }
+        let what = match &base.kind {
             ExprKind::Name(n) => format!("`{n}`"),
             _ => "this".to_string(),
         };
-        let mut base = self.expr(base);
+        let base = self.expr(base);
+        self.steps_on(base, what, steps, span)
+    }
+
+    /// `xs?.[i]` (`at`), then the field `steps` in its chain (spec §2.2),
+    /// as in expr: nil when `xs` is nil, and then neither `i` nor the steps
+    /// are evaluated; else `xs[i]` (out of range is `R-INDEX`, a negative
+    /// `i` counts from the end) and the steps. It is checked as
+    /// `xs != nil ? xs[i]… : nil`, with `xs` narrowed in the first branch,
+    /// so the read is the same as `xs[i]`'s; a list that can't be nil is
+    /// just `xs[i]…`. A list that isn't a name or a path is bound first, so
+    /// it is evaluated once.
+    fn safe_index(&mut self, at: &Expr, steps: &[Step], span: Span) -> TExpr {
+        let ExprKind::SafeIndex(list, index) = &at.kind else { unreachable!() };
+        let errors = self.diags.len();
+        let l = self.expr(list);
+        if !l.ty.may_be_nil() || self.diags.len() > errors {
+            let i = self.expr(index);
+            let read = self.list_sink(Sink::At, l, Some(i), None, at.span);
+            return self.steps_on(read, "this".to_string(), steps, span);
+        }
+        let nil = |s| node(TKind::Nil, Ty::Nil, s);
+        let then = |m: &mut Self, l: TExpr| {
+            let i = m.expr(index);
+            let read = m.list_sink(Sink::At, l, Some(i), None, at.span);
+            m.steps_on(read, "this".to_string(), steps, span)
+        };
+        let guarded = |test: TExpr, a: TExpr| {
+            let ty = unify(&a.ty, &Ty::Nil).unwrap_or_else(|| a.ty.clone().nullable());
+            node(TKind::Cond(Box::new(test), Box::new(a), Box::new(nil(span))), ty, span)
+        };
+        let test = |l: TExpr| node(TKind::Binary(BinOp::Ne, Box::new(l), Box::new(nil(at.span))), Ty::Bool, at.span);
+        match key(&l) {
+            // A name or a path: tested, then read again narrowed.
+            Some(k) => {
+                let a = self.narrowed(&with_prefixes(k), |m| {
+                    let l = m.expr(list);
+                    then(m, l)
+                });
+                guarded(test(l), a)
+            }
+            // Anything else: bound, then tested and read through the binding.
+            None => {
+                let id = self.next_id;
+                self.next_id += 1;
+                self.let_names.insert(id, "the list".into());
+                let ty = l.ty.clone();
+                let local = || node(TKind::Local(id), ty.clone(), list.span);
+                let a = self.narrowed(&with_prefixes((Root::Local(id), Vec::new())), |m| {
+                    let l = m.narrow_read(local());
+                    then(m, l)
+                });
+                let body = guarded(test(local()), a);
+                let bty = body.ty.clone();
+                node(TKind::Let { id, value: Box::new(l), body: Box::new(body) }, bty, span)
+            }
+        }
+    }
+
+    /// Field `steps` read from `base` (spec §2.2); `what` names `base` in messages.
+    fn steps_on(&mut self, mut base: TExpr, mut what: String, steps: &[Step], span: Span) -> TExpr {
+        if steps.is_empty() {
+            return base;
+        }
         // A narrowed name: start from the name itself; the prefixes are
         // narrowed below, the name among them.
         if let TKind::Path { base: inner, steps, .. } = &base.kind
