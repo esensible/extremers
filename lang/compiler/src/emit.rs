@@ -13,9 +13,16 @@
 //! The emitter owns all slot numbering. Locals are allocated like a stack:
 //! a `let` takes its value's leaves for the length of its body, then gives
 //! them back, so sibling scopes reuse the same slots.
+//!
+//! Lists are lowered from the pipeline IR (plan.rs): `consume` plans a
+//! sink's list, and `lower` emits it by one routine: each hold's loop into
+//! its block first, then each stage's state, then one loop per list or
+//! range the items come from (backwards under a `reverse`; nested at a
+//! `flatten`), with the stages inlined and the sink last (spec §7.6).
 
 use crate::check::{Ptr, Sink, TExpr, TKind, children, is_pipeline};
 use crate::diag::{Diag, Span};
+use crate::plan::{self, HoldKind, Pipeline, Source, Stage};
 use crate::schema::{GroupCheck, Interface, LeafCheck, group_checks, leaf_checks};
 use crate::syntax::{BinOp, Step, UnOp};
 use crate::types::{Ty, field_offset, int_to_float, leaves, list_converts, same_layout, unopt};
@@ -90,13 +97,14 @@ struct Emitter<'i> {
     /// can be copied freely, and stays good after the evaluation): the
     /// next free one. Everything else is allocated above them.
     perm_next: u32,
-    /// Each block: where its list is written, its items, the leaves per
-    /// item, and its slots (for the diagnostics).
-    held: Vec<(Span, u32, u16, u32)>,
+    /// Each block, for the diagnostics.
+    held: Vec<Held>,
     /// Each list literal's block, by node.
     lits: HashMap<*const TExpr, u16>,
+    /// Each hold's block, by node and capacity.
+    hold_blocks: HashMap<(*const TExpr, u32), u16>,
     /// The state of each stage of the sink being emitted.
-    stages: HashMap<*const TExpr, Stage>,
+    stages: HashMap<*const TExpr, StageState>,
     /// The jumps that leave each pipeline's loops (a window past its end;
     /// for a sink's whole pipeline, also the sink leaving early), by level.
     levels: Vec<Vec<usize>>,
@@ -114,49 +122,21 @@ struct Emitter<'i> {
 pub const MAX_HELD_SLOTS: u32 = 32_768;
 
 /// Writing a sink's items into a held list's block of locals.
-struct Collect {
+struct Collect<'e> {
     base: u16,
     cap: u16,
     /// The items' type, as the block lays them out.
     item: Ty,
-}
-
-/// Where a pipeline's items come from: a list value, or the parts of a
-/// `concat`, each a pipeline of its own.
-enum Src<'e> {
-    List(&'e TExpr),
-    Concat(Vec<Pipe<'e>>),
-}
-
-/// A sink's source as the list its items come from and the stages applied
-/// to them (`map`, `filter`, slices, `take`), innermost first.
-struct Pipe<'e> {
-    src: Src<'e>,
-    stages: Vec<&'e TExpr>,
-    /// The source's items' type.
-    item: Ty,
-    /// A `concat` part whose items are laid out differently from the
-    /// whole's: (its items' type, the whole's, the local the converted
-    /// item goes in).
-    convert: Option<(Ty, Ty, u16)>,
-}
-
-impl Pipe<'_> {
-    /// The type of the items that come out of the stages.
-    fn out_item(&self) -> Ty {
-        self.stages.iter().fold(self.item.clone(), |t, s| match &s.kind {
-            TKind::Map { body, .. } => body.ty.clone(),
-            _ => t,
-        })
-    }
+    /// How items are kept: in arrival order, sorted, or first occurrences.
+    mode: HoldKind<'e>,
 }
 
 /// A stage's state, in locals.
 #[derive(Clone, Debug)]
-enum Stage {
-    Filter,
-    /// The mapped value, and the `#index` counter if the body reads it.
-    Map { tmp: u16, counter: Option<u16> },
+enum StageState {
+    /// The mapped value (a flat-map has none), and the `#index` counter if
+    /// the body reads it; `down`: it counts down (the items arrive backwards).
+    Map { tmp: u16, counter: Option<u16>, down: bool },
     /// A slice or `take`: the items before `start` are skipped, and those
     /// from `end` on leave. `counter` counts the items that reached it; a
     /// window straight on a list has none: its loop visits only the window.
@@ -168,7 +148,7 @@ enum Stage {
 /// conversion to the whole's layout.
 #[derive(Clone)]
 enum Down<'e> {
-    Node(&'e TExpr, usize),
+    Node(Stage<'e>, usize),
     Convert(Ty, Ty, u16),
 }
 
@@ -182,6 +162,8 @@ struct SinkLocals {
     acc_ty: Ty,
     /// The level of the sink's whole pipeline.
     top: usize,
+    /// `median`'s block of values, kept sorted: its first local and capacity.
+    block: Option<(u16, u16)>,
 }
 
 /// Emits the program. The first pass measures the blocks of locals the
@@ -191,17 +173,22 @@ struct SinkLocals {
 pub fn emit(e: &TExpr, iface: &Interface) -> Result<Emitted, Diag> {
     let first = pass(e, iface, 0);
     if first.perm_next > MAX_HELD_SLOTS {
-        let &(span, bound, stride, slots) = first.held.iter().max_by_key(|h| h.3).unwrap();
+        let h = first.held.iter().max_by_key(|h| h.slots).unwrap();
+        let (what, help) = h.why.words();
         return Err(Diag::error(
             "E-HOLD",
-            span,
+            h.span,
             format!(
-                "this list is held: up to {bound} items of {stride} slots, {slots} slots ({} bytes); a program's lists can hold at most {MAX_HELD_SLOTS} slots in all, and these need {}",
-                slots as u64 * vm::SLOT_BYTES as u64,
+                "{what}: up to {} items of {} slot{}, {} slots ({} bytes); a program's lists can hold at most {MAX_HELD_SLOTS} slots in all, and these need {}",
+                h.bound,
+                h.stride,
+                if h.stride == 1 { "" } else { "s" },
+                h.slots,
+                h.slots as u64 * vm::SLOT_BYTES as u64,
                 first.perm_next
             ),
         )
-        .help("slice it first (`(…)[-N:]`, `take(…, N)`), or keep only what you need (`first`, `last`, `sum`, `count`, …)"));
+        .help(help));
     }
     let m = pass(e, iface, first.perm_next as u16);
     assert_eq!(m.perm_next, first.perm_next, "the passes reserve the same blocks");
@@ -228,6 +215,7 @@ fn pass<'i>(e: &TExpr, iface: &'i Interface, perm: u16) -> Emitter<'i> {
         perm_next: 0,
         held: Vec::new(),
         lits: HashMap::new(),
+        hold_blocks: HashMap::new(),
         stages: HashMap::new(),
         levels: Vec::new(),
         floats: false,
@@ -652,7 +640,7 @@ impl Emitter<'_> {
                 self.op(Op::MakeList { base, len: items.len() as u16, stride });
             }
             // A list the program builds, where a value is needed: held.
-            TKind::Map { .. } | TKind::Filter { .. } | TKind::Slice { .. } | TKind::Take { .. } | TKind::Concat(_) => {
+            _ if is_pipeline(e) => {
                 let Some(Ty::List(item, _)) = e.ty.non_nil() else { unreachable!("{:?}", e.ty) };
                 self.hold(e, &item);
             }
@@ -780,6 +768,16 @@ impl Emitter<'_> {
                     self.op(if *negate { Op::PushTrue } else { Op::PushFalse });
                 }
             }
+            TKind::Map { .. }
+            | TKind::Filter { .. }
+            | TKind::Slice { .. }
+            | TKind::Take { .. }
+            | TKind::Concat(_)
+            | TKind::Range { .. }
+            | TKind::Reverse { .. }
+            | TKind::SortBy { .. }
+            | TKind::Uniq { .. }
+            | TKind::Flatten { .. } => unreachable!("a pipeline is held above"),
         }
     }
 
@@ -814,9 +812,21 @@ impl Emitter<'_> {
             self.op(Op::MakeList { base: 0, len: 0, stride });
             return;
         }
+        let cap = bound.min(u16::MAX as u32) as u16;
+        let mut pipe = plan::for_write(e);
+        // A held list with no stages after it (`sortBy(…)` kept as a
+        // value): its block is the list's.
+        if pipe.stages.is_empty()
+            && let Source::Hold(h) = pipe.source
+        {
+            let base = self.perm_block_why(bound, stride + key_slots(&h.kind, &h.inner.out_item(), item), e.span, HoldWhy::of(&h.kind));
+            let c = Collect { base, cap, item: item.clone(), mode: h.kind };
+            return self.lower_hold(*h, Some(&c));
+        }
         let base = self.perm_block(bound, stride, e.span);
-        let c = Collect { base, cap: bound.min(u16::MAX as u32) as u16, item: item.clone() };
-        self.consume(Sink::Len, e, None, None, e, Some(&c), None);
+        let c = Collect { base, cap, item: item.clone(), mode: HoldKind::Plain };
+        pipe.pre = None;
+        self.lower(pipe, e, Sink::Len, None, None, e, Some(&c));
     }
 
     /// The list handle on top of the stack, typed `src`, as a handle to a
@@ -841,7 +851,7 @@ impl Emitter<'_> {
             self.op(Op::MakeList { base: 0, len: 0, stride });
         } else {
             let base = self.perm_block(bound, stride, at.span);
-            let c = Collect { base, cap: bound.min(u16::MAX as u32) as u16, item: (**di).clone() };
+            let c = Collect { base, cap: bound.min(u16::MAX as u32) as u16, item: (**di).clone(), mode: HoldKind::Plain };
             let list = TExpr { kind: TKind::Nil, ty: Ty::List(si, bound), span: at.span };
             self.consume(Sink::Len, &list, None, None, &list, Some(&c), Some(h));
         }
@@ -855,10 +865,14 @@ impl Emitter<'_> {
     /// Reserves a block of `bound × stride` locals for the whole evaluation
     /// (a list literal's items, or a held list's), giving its first local.
     fn perm_block(&mut self, bound: u32, stride: u16, span: Span) -> u16 {
+        self.perm_block_why(bound, stride, span, HoldWhy::Value)
+    }
+
+    fn perm_block_why(&mut self, bound: u32, stride: u16, span: Span, why: HoldWhy) -> u16 {
         let slots = (bound as u64 * stride as u64).min(u32::MAX as u64) as u32;
         let base = self.perm_next;
         self.perm_next = self.perm_next.saturating_add(slots);
-        self.held.push((span, bound, stride, slots));
+        self.held.push(Held { span, bound, stride, slots, why });
         // Past the limit only in the measuring pass, whose code is dropped.
         base.min(u16::MAX as u32) as u16
     }
@@ -866,23 +880,50 @@ impl Emitter<'_> {
     /// `sink` over `src`, or the items written into a held list's block
     /// (`collect`, with `sink` `Len`: the count is the list's length).
     /// `handle`: the source list's handle, already in that local.
+    ///
+    /// `src` is planned (plan.rs: its source, stages and holds, for this
+    /// sink), then lowered by `lower`.
     #[allow(clippy::too_many_arguments)]
     fn consume(&mut self, sink: Sink, src: &TExpr, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>, handle: Option<u16>) {
+        let mut pipe = match collect {
+            Some(_) => plan::for_write(src),
+            None => plan::for_sink(sink, f, src),
+        };
+        pipe.pre = handle;
+        self.lower(pipe, src, sink, f, init, e, collect);
+    }
+
+    /// Lowers a pipeline: its holds first (each a loop of its own, writing
+    /// its block), then one loop per list its items come from, with the
+    /// stages inlined and the sink's state in locals. Nothing else is held:
+    /// a stage's value lives only for the item being processed.
+    #[allow(clippy::too_many_arguments)]
+    fn lower(&mut self, mut pipe: Pipeline, src: &TExpr, sink: Sink, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
         let mark = self.mark();
-        let mut pipe = pipeline(src);
         let out = leaves(&e.ty);
         let mut end_jumps = Vec::new();
 
+        // A hold's block is the list the rest of the pipeline reads.
+        let held = self.resolve_hold(&mut pipe);
         // A plain list's handle, read once.
-        let mut pre = handle;
-        if let (Src::List(source), None) = (&pipe.src, handle) {
+        if let (Source::List(source), None) = (&pipe.source, pipe.pre) {
             self.emit(source);
-            pre = Some(self.store_new(1));
+            pipe.pre = Some(self.store_new(1));
         }
-        if let (Src::List(_), Some(h), None) = (&pipe.src, pre, collect) {
+        // A range's start and count, worked out once.
+        if let (Source::Range(r), None) = (&pipe.source, pipe.pre) {
+            pipe.pre = Some(self.range_bounds(r));
+            if pipe.stages.is_empty() && sink == Sink::Len && collect.is_none() {
+                self.op(Op::Load(pipe.pre.unwrap() + 1));
+                return self.finish(mark, end_jumps);
+            }
+        }
+        let pre = pipe.pre;
+        if let (Source::List(_), Some(h), None) = (&pipe.source, pre, collect) {
             let item0 = pipe.item.clone();
             // These give nil (or false) for a nil list; the rest fail, as in expr.
-            if matches!(sink, Sink::First | Sink::Last | Sink::Get | Sink::In) {
+            // (A hold's block is never nil.)
+            if !held && matches!(sink, Sink::First | Sink::Last | Sink::Get | Sink::In) {
                 self.op(Op::Load(h));
                 let have = self.jump(Op::JumpIfNotNil, e);
                 if sink == Sink::In {
@@ -919,8 +960,20 @@ impl Emitter<'_> {
         let aux = if matches!(sink, Sink::Mean | Sink::In | Sink::At | Sink::Get | Sink::Reduce) { self.alloc(1) } else { u16::MAX };
         // `xs[k]`/`get` over a pipeline: k.
         let target = if matches!(sink, Sink::At | Sink::Get) { self.alloc(1) } else { u16::MAX };
+        // `median`'s values, held as floats, sorted as they arrive.
+        let mut block = None;
         match sink {
             Sink::Len | Sink::Count | Sink::One | Sink::Sum => {
+                self.op(Op::PushInt(0));
+                self.op(Op::Store(r));
+            }
+            Sink::Median => {
+                let n = match src.ty.non_nil() {
+                    Some(Ty::List(_, n)) => n,
+                    _ => 0,
+                };
+                let base = self.hold_block(e, n, 1, HoldWhy::Median);
+                block = Some((base, n.min(u16::MAX as u32) as u16));
                 self.op(Op::PushInt(0));
                 self.op(Op::Store(r));
             }
@@ -960,10 +1013,10 @@ impl Emitter<'_> {
                 self.op(Op::PushInt(0));
                 self.op_at(Op::Lt, e);
                 let pos_ok = self.jump(Op::JumpIfFalse, e);
-                // The same pipeline, counted (a replay: it is never held).
+                // The same pipeline, counted (a replay, planned for a count).
                 let as_int = TExpr { kind: TKind::Nil, ty: Ty::Int(crate::types::Range::FULL), span: e.span };
                 self.op(Op::Load(target));
-                self.consume(Sink::Len, src, None, None, &as_int, None, pre);
+                self.consume(Sink::Len, src, None, None, &as_int, None, if held { None } else { pre });
                 self.op(Op::Add);
                 self.op(Op::Store(target));
                 let here = self.pc();
@@ -987,10 +1040,10 @@ impl Emitter<'_> {
         // The table is this sink's: a sink run inside it (a replay, or one
         // in a predicate) sets up its own and gives this one back.
         let outer = std::mem::take(&mut self.stages);
-        self.init_stages(&mut pipe, src, pre);
+        self.init_stages(&mut pipe, false);
         let top = self.new_level();
-        let sl = SinkLocals { sink, r, aux, pos, target, acc_ty: acc_ty.clone(), top };
-        self.loops(&pipe, top, &[], pre, &sl, f, init, e, collect);
+        let sl = SinkLocals { sink, r, aux, pos, target, acc_ty: acc_ty.clone(), top, block };
+        self.loops(&pipe, top, &[], &sl, f, init, e, collect);
         self.stages = outer;
         let end = self.pc();
         for b in std::mem::take(&mut self.levels[top]) {
@@ -1000,11 +1053,66 @@ impl Emitter<'_> {
         // The result.
         if let Some(c) = collect {
             self.op(Op::Load(r));
+            // A sorted hold that stopped taking items counts one past its capacity.
+            if let HoldKind::Sorted { tail: false, .. } = c.mode {
+                self.op(Op::PushInt(c.cap as i64));
+                self.op(Op::Call(bytecode::Builtin::Min, 2));
+            }
             self.op(Op::ListMake { base: c.base, cap: c.cap, stride: leaves(&c.item) });
             return self.finish(mark, end_jumps);
         }
         match sink {
             Sink::Len | Sink::Count | Sink::Sum | Sink::Any | Sink::All | Sink::NoneOf | Sink::In => self.op(Op::Load(r)),
+            Sink::Median => {
+                // 0.0 for an empty list; else the middle value, or the mean
+                // of the middle two (as expr does).
+                let (base, cap) = block.unwrap();
+                let (hl, m) = (self.alloc(1), self.alloc(1));
+                self.op(Op::Load(r));
+                self.op(Op::PushInt(0));
+                self.op(Op::Eq);
+                let some = self.jump(Op::JumpIfFalse, e);
+                self.op(Op::PushFloat(0.0));
+                let done = self.jump(Op::Jump, e);
+                self.depth -= 1;
+                let here = self.pc();
+                self.patch(some, here);
+                self.op(Op::Load(r));
+                self.op(Op::ListMake { base, cap, stride: 1 });
+                self.op(Op::Store(hl));
+                self.op(Op::Load(r));
+                self.op(Op::PushInt(2));
+                self.op(Op::Div);
+                self.op(Op::Call(bytecode::Builtin::Int, 1));
+                self.op(Op::Store(m));
+                self.op(Op::Load(r));
+                self.op(Op::PushInt(2));
+                self.op(Op::Mod);
+                self.op(Op::PushInt(0));
+                self.op(Op::Eq);
+                let odd = self.jump(Op::JumpIfFalse, e);
+                self.op(Op::Load(hl));
+                self.op(Op::Load(m));
+                self.op(Op::PushInt(1));
+                self.op(Op::Sub);
+                self.op(Op::ListRead(0));
+                self.op(Op::Load(hl));
+                self.op(Op::Load(m));
+                self.op(Op::ListRead(0));
+                self.op(Op::Add);
+                self.op(Op::PushInt(2));
+                self.op(Op::Div);
+                let done2 = self.jump(Op::Jump, e);
+                self.depth -= 1;
+                let here = self.pc();
+                self.patch(odd, here);
+                self.op(Op::Load(hl));
+                self.op(Op::Load(m));
+                self.op(Op::ListRead(0));
+                let here = self.pc();
+                self.patch(done, here);
+                self.patch(done2, here);
+            }
             Sink::One => {
                 self.op(Op::Load(r));
                 self.op(Op::PushInt(1));
@@ -1144,15 +1252,24 @@ impl Emitter<'_> {
     /// Allocates and sets up every stage's state in `pipe`, before any of
     /// its loops: a map's value (and its `#index` counter if its body reads
     /// it), a window's counter and bounds, and for a `concat` part laid out
-    /// differently from the whole, the converted item. `src` is the
-    /// expression `pipe` came from; `pre` its list's handle, if read.
-    fn init_stages(&mut self, pipe: &mut Pipe, src: &TExpr, pre: Option<u16>) {
+    /// differently from the whole, the converted item. A `concat` part's
+    /// hold is lowered here too, before any loop.
+    ///
+    /// `rev_after`: the items reach the end of `pipe` backwards (an odd
+    /// number of `reverse`s follow it). A stage the items reach backwards
+    /// counts from the end: a map's `#index` counts down from the number of
+    /// items that reach it, less one, and a window's bounds are turned
+    /// around, both from that number (the list's length, or a replay that
+    /// counts them).
+    fn init_stages(&mut self, pipe: &mut Pipeline, rev_after: bool) {
         let depth = self.ctx.len();
-        if let Src::Concat(parts) = &mut pipe.src {
-            let TKind::Concat(exprs) = &concat_of(src).kind else { unreachable!() };
+        let pre = pipe.pre;
+        let all_rev = rev_after ^ (pipe.stages.iter().filter(|s| matches!(s, Stage::Reverse(_))).count() % 2 == 1);
+        if let Source::Concat(parts) = &mut pipe.source {
             let whole = pipe.item.clone();
-            for (part, x) in parts.iter_mut().zip(exprs) {
-                self.init_stages(part, x, None);
+            for part in parts.iter_mut() {
+                self.resolve_hold(part);
+                self.init_stages(part, all_rev);
                 let from = part.out_item();
                 if !matches!(from, Ty::Never) && !same_layout(&from, &whole) {
                     let tmp = self.alloc(leaves(&whole));
@@ -1160,37 +1277,74 @@ impl Emitter<'_> {
                 }
             }
         }
-        for (k, st) in pipe.stages.clone().into_iter().enumerate() {
-            let state = match &st.kind {
-                TKind::Map { body, .. } => {
-                    let tmp = self.alloc(leaves(&body.ty));
-                    let counter = if uses_index(body, depth) {
-                        let c = self.alloc(1);
-                        self.op(Op::PushInt(0));
-                        self.op(Op::Store(c));
-                        Some(c)
-                    } else {
-                        None
-                    };
-                    Stage::Map { tmp, counter }
+        let random = matches!(pipe.source, Source::List(_) | Source::Range(_));
+        let is_range = matches!(pipe.source, Source::Range(_));
+        let mut rev = all_rev;
+        for (k, stage) in pipe.stages.clone().into_iter().enumerate() {
+            // Whether the items reach this stage backwards.
+            let back = rev;
+            if let Stage::Reverse(_) = stage {
+                rev = !rev;
+            }
+            let st = stage.node();
+            let as_int = TExpr { kind: TKind::Nil, ty: Ty::Int(crate::types::Range::FULL), span: st.span };
+            // The number of items that reach this stage, into a local.
+            let count = |m: &mut Self, inner: &TExpr| -> u16 {
+                match (k, pre) {
+                    // Straight on a list or range: its length.
+                    (0, Some(h)) if random => {
+                        if is_range {
+                            m.op(Op::Load(h + 1));
+                        } else {
+                            m.op(Op::Load(h));
+                            m.op_at(Op::ListLen, &as_int);
+                        }
+                    }
+                    _ => m.consume(Sink::Len, inner, None, None, &as_int, None, None),
                 }
-                TKind::Filter { .. } => Stage::Filter,
-                TKind::Slice { src: inner, lo, hi } => {
-                    // The count before the window, where a bound may be negative.
-                    let neg = |b: &Option<Box<TExpr>>| b.as_ref().is_some_and(|b| may_be_negative(b));
-                    let total = if neg(lo) || neg(hi) {
-                        let as_int = TExpr { kind: TKind::Nil, ty: Ty::Int(crate::types::Range::FULL), span: st.span };
-                        let h = if k == 0 { pre } else { None };
-                        self.consume(Sink::Len, inner, None, None, &as_int, None, h);
-                        Some(self.store_new(1))
+                m.store_new(1)
+            };
+            let state = match (&stage, &st.kind) {
+                (Stage::Map(_) | Stage::FlatMap(_), TKind::Map { src: inner, body }) => {
+                    let tmp = if let Stage::Map(_) = stage { self.alloc(leaves(&body.ty)) } else { u16::MAX };
+                    let counter = if uses_index(body, depth) {
+                        if back {
+                            let n = count(self, inner);
+                            self.op(Op::Load(n));
+                            self.op(Op::PushInt(1));
+                            self.op(Op::Sub);
+                            self.op(Op::Store(n));
+                            Some(n)
+                        } else {
+                            let c = self.alloc(1);
+                            self.op(Op::PushInt(0));
+                            self.op(Op::Store(c));
+                            Some(c)
+                        }
                     } else {
                         None
                     };
+                    StageState::Map { tmp, counter, down: back }
+                }
+                (Stage::Filter { .. } | Stage::Reverse(_) | Stage::Flatten(_), _) => continue,
+                (Stage::Window(_), TKind::Slice { src: inner, lo, hi }) => {
+                    // The count before the window, where a bound may be
+                    // negative, or where the items arrive backwards.
+                    let neg = |b: &Option<Box<TExpr>>| b.as_ref().is_some_and(|b| may_be_negative(b));
+                    let total = if neg(lo) || neg(hi) || back { Some(count(self, inner)) } else { None };
                     let start = lo.as_ref().map(|b| self.window_bound(b, total));
                     let end = hi.as_ref().map(|b| self.window_bound(b, total));
-                    self.window(start, end, k == 0 && matches!(pipe.src, Src::List(_)))
+                    let folded = k == 0 && random;
+                    if back && !folded {
+                        let (start, end) = self.turn_around(start, end, total.unwrap());
+                        self.window(start, end, false)
+                    } else {
+                        self.window(start, end, folded)
+                    }
                 }
-                TKind::Take { k: count, .. } => {
+                (Stage::Window(_), TKind::Take { src: inner, k: count_e }) => {
+                    let total = if back && !(k == 0 && random) { Some(count(self, inner)) } else { None };
+                    let count = count_e;
                     // A negative count fails (R-ARG), as in expr.
                     self.emit(count);
                     let end = self.store_new(1);
@@ -1202,7 +1356,13 @@ impl Emitter<'_> {
                     self.op(Op::Error(3));
                     let here = self.pc();
                     self.patch(ok, here);
-                    self.window(None, Some(end), k == 0 && matches!(pipe.src, Src::List(_)))
+                    match total {
+                        Some(n) => {
+                            let (start, end) = self.turn_around(None, Some(end), n);
+                            self.window(start, end, false)
+                        }
+                        None => self.window(None, Some(end), k == 0 && random),
+                    }
                 }
                 _ => unreachable!("stage {:?}", st.kind),
             };
@@ -1210,9 +1370,74 @@ impl Emitter<'_> {
         }
     }
 
+    /// Lowers `pipe`'s hold, if its source is one: the held pipeline runs
+    /// into the hold's block, and `pipe` reads the block as a list. Whether
+    /// there was one.
+    fn resolve_hold(&mut self, pipe: &mut Pipeline) -> bool {
+        let Source::Hold(_) = pipe.source else { return false };
+        let Source::Hold(h) = std::mem::replace(&mut pipe.source, Source::Concat(Vec::new())) else { unreachable!() };
+        let node = h.node;
+        // A block that holds nothing (`take(sort(xs), 0)`) has no loop.
+        if h.cap == 0 {
+            pipe.item = Ty::Never;
+        }
+        self.lower_hold(*h, None);
+        pipe.pre = Some(self.store_new(1));
+        pipe.source = Source::List(node);
+        true
+    }
+
+    /// A hold (plan.rs): its pipeline runs into its block (`into`, or a
+    /// block of its own, reserved for the whole evaluation), and the block's
+    /// handle is pushed. A sorted block keeps each item's key beside it
+    /// (after the items), unless the key is one of the item's own leaves.
+    fn lower_hold(&mut self, h: plan::Hold, into: Option<&Collect>) {
+        let item = h.inner.out_item();
+        let c = match into {
+            Some(c) => Collect { base: c.base, cap: c.cap, item: c.item.clone(), mode: h.kind },
+            None => {
+                let stride = leaves(&item);
+                let cap = h.cap.min(u16::MAX as u32);
+                let base = self.hold_block(h.node, cap, stride + key_slots(&h.kind, &item, &item), HoldWhy::of(&h.kind));
+                Collect { base, cap: cap as u16, item, mode: h.kind }
+            }
+        };
+        if c.cap == 0 || matches!(h.inner.item, Ty::Never) {
+            self.op(Op::MakeList { base: 0, len: 0, stride: leaves(&c.item) });
+            return;
+        }
+        self.lower(h.inner, h.node, Sink::Len, None, None, h.node, Some(&c));
+    }
+
+    /// A hold's block of `cap` items of `per_item` slots, reserved for the
+    /// whole evaluation; the same node held again (a replay) reuses it.
+    fn hold_block(&mut self, node: &TExpr, cap: u32, per_item: u16, why: HoldWhy) -> u16 {
+        let key = (node as *const TExpr, cap);
+        if let Some(&b) = self.hold_blocks.get(&key) {
+            return b;
+        }
+        let b = self.perm_block_why(cap, per_item, node.span, why);
+        self.hold_blocks.insert(key, b);
+        b
+    }
+
+    /// A window `[start:end)` over `n` items, as the window over the same
+    /// items counted from the end: `[n - end:n - start)`.
+    fn turn_around(&mut self, start: Option<u16>, end: Option<u16>, n: u16) -> (Option<u16>, Option<u16>) {
+        let from_end = |m: &mut Self, b: u16| {
+            m.op(Op::Load(n));
+            m.op(Op::Load(b));
+            m.op(Op::Sub);
+            m.store_new(1)
+        };
+        let new_start = end.map(|b| from_end(self, b));
+        let new_end = start.map(|b| from_end(self, b));
+        (new_start, new_end)
+    }
+
     /// A window's state: its counter (unless it is folded into the loop
     /// over the list it slices, which then visits only the window).
-    fn window(&mut self, start: Option<u16>, end: Option<u16>, folded: bool) -> Stage {
+    fn window(&mut self, start: Option<u16>, end: Option<u16>, folded: bool) -> StageState {
         let counter = if folded {
             None
         } else {
@@ -1221,7 +1446,7 @@ impl Emitter<'_> {
             self.op(Op::Store(c));
             Some(c)
         };
-        Stage::Window { counter, start, end }
+        StageState::Window { counter, start, end }
     }
 
     /// A slice bound in a local: a negative one counts from the end of the
@@ -1258,31 +1483,34 @@ impl Emitter<'_> {
     /// then the sink. `level` is `pipe`'s: a window of it that has passed
     /// its end leaves every loop of it.
     #[allow(clippy::too_many_arguments)]
-    fn loops(&mut self, pipe: &Pipe, level: usize, down: &[Down], pre: Option<u16>, sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
-        let mut mine: Vec<Down> = pipe.stages.iter().map(|s| Down::Node(s, level)).collect();
+    fn loops(&mut self, pipe: &Pipeline, level: usize, down: &[Down], sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
+        let mut mine: Vec<Down> = pipe.stages.iter().map(|s| Down::Node(*s, level)).collect();
         mine.extend(down.iter().cloned());
-        match &pipe.src {
-            Src::List(source) => {
+        match &pipe.source {
+            Source::List(_) | Source::Range(_) => {
                 // A list with no items (`[]`) has no loop.
                 if !matches!(pipe.item, Ty::Never) {
-                    self.leaf_loop(source, pipe, &mine, pre, sl, f, init, e, collect);
+                    self.leaf_loop(pipe, &mine, sl, f, init, e, collect);
                 }
             }
-            Src::Concat(parts) => {
-                for part in parts {
+            Source::Concat(parts) => {
+                // Walked backwards, the last part comes first.
+                let order: Vec<&Pipeline> = if reversed(&mine) { parts.iter().rev().collect() } else { parts.iter().collect() };
+                for part in order {
                     let sub = self.new_level();
                     let mut part_down: Vec<Down> = Vec::new();
                     if let Some((from, to, tmp)) = &part.convert {
                         part_down.push(Down::Convert(from.clone(), to.clone(), *tmp));
                     }
                     part_down.extend(mine.iter().cloned());
-                    self.loops(part, sub, &part_down, None, sl, f, init, e, collect);
+                    self.loops(part, sub, &part_down, sl, f, init, e, collect);
                     let here = self.pc();
                     for b in std::mem::take(&mut self.levels[sub]) {
                         self.patch(b, here);
                     }
                 }
             }
+            Source::Hold(_) => unreachable!("a hold is lowered before the loops"),
         }
         if level != sl.top {
             let here = self.pc();
@@ -1292,25 +1520,67 @@ impl Emitter<'_> {
         }
     }
 
-    /// The loop over one list (`source`, or the handle in `pre`).
+    /// A range's start and count (`b - a + 1`, or 0), in two locals from
+    /// the one given. Its ends are evaluated left to right, once.
+    fn range_bounds(&mut self, r: &TExpr) -> u16 {
+        let TKind::Range { a, b } = &r.kind else { unreachable!("range {:?}", r.kind) };
+        let base = self.alloc(2);
+        self.emit(a);
+        self.op(Op::Store(base));
+        // The count can't overflow: the checker bounds it by 65,535.
+        self.emit(b);
+        self.op(Op::Load(base));
+        self.op(Op::Sub);
+        self.op(Op::PushInt(1));
+        self.op(Op::Add);
+        self.op(Op::Dup);
+        self.op(Op::PushInt(0));
+        self.op(Op::Lt);
+        let keep = self.jump(Op::JumpIfFalse, r);
+        self.op(Op::Pop);
+        self.op(Op::PushInt(0));
+        let here = self.pc();
+        self.patch(keep, here);
+        self.op(Op::Store(base + 1));
+        base
+    }
+
+    /// The loop over one list (the source's handle, read here or already in
+    /// `pipe.pre`) or one range. Backwards when a `reverse` follows.
     #[allow(clippy::too_many_arguments)]
-    fn leaf_loop(&mut self, source: &TExpr, pipe: &Pipe, stages: &[Down], pre: Option<u16>, sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
+    fn leaf_loop(&mut self, pipe: &Pipeline, stages: &[Down], sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
         let mark = self.mark();
-        let h = match pre {
-            Some(h) => h,
-            None => {
-                self.emit(source);
-                self.store_new(1)
+        // A list's handle, or a range's start; and the count, in `n`.
+        let (h, start_of_range) = match &pipe.source {
+            Source::List(source) => {
+                let h = match pipe.pre {
+                    Some(h) => h,
+                    None => {
+                        self.emit(source);
+                        self.store_new(1)
+                    }
+                };
+                (h, None)
             }
+            Source::Range(r) => {
+                let base = match pipe.pre {
+                    Some(b) => b,
+                    None => self.range_bounds(r),
+                };
+                (base + 1, Some(base))
+            }
+            _ => unreachable!(),
         };
         let n = self.alloc(1);
         self.op(Op::Load(h));
-        self.op_at(Op::ListLen, e);
+        if start_of_range.is_none() {
+            self.op_at(Op::ListLen, e);
+        }
         self.op(Op::Store(n));
         let i = self.alloc(1);
         // A window straight on the list: visit only its items.
-        match pipe.stages.first().map(|s| &self.stages[&(*s as *const TExpr)]) {
-            Some(&Stage::Window { counter: None, start, end }) => {
+        match pipe.stages.first().and_then(|s| self.stages.get(&(s.node() as *const TExpr))) {
+            Some(&StageState::Window { counter: None, start, end }) => {
                 match start {
                     Some(s) => self.op(Op::Load(s)),
                     None => self.op(Op::PushInt(0)),
@@ -1332,6 +1602,21 @@ impl Emitter<'_> {
                 self.op(Op::Store(i));
             }
         }
+        // Backwards: `i` still runs up from the first index to the last,
+        // and the item read is `first + last - i`.
+        let back = if reversed(stages) {
+            let s = self.alloc(2);
+            self.op(Op::Load(i));
+            self.op(Op::Load(n));
+            self.op(Op::Add);
+            self.op(Op::PushInt(1));
+            self.op(Op::Sub);
+            self.op(Op::Store(s));
+            Some((s, s + 1))
+        } else {
+            None
+        };
+        let tmp = start_of_range.map(|_| self.alloc(1));
 
         // L: while i < n
         let head = self.pc();
@@ -1339,60 +1624,29 @@ impl Emitter<'_> {
         self.op(Op::Load(n));
         self.op(Op::Lt);
         let exit = self.jump(Op::JumpIfFalse, e);
-        let mut conts = Vec::new();
-        let mut item = Place { root: Root::Item { h, i }, off: 0 };
-        let mut item_ty = pipe.item.clone();
-        for d in stages {
-            match d {
-                Down::Convert(from, to, tmp) => {
-                    self.load_as(item, from, to);
-                    self.store_into(*tmp, to);
-                    item = Place { root: Root::Local(*tmp), off: 0 };
-                    item_ty = to.clone();
-                }
-                Down::Node(st, level) => match (&st.kind, self.stages[&(*st as *const TExpr)].clone()) {
-                    (TKind::Filter { pred, .. }, _) => {
-                        self.in_ctx(pred, Ctx { item, index: None, acc: None }, None);
-                        conts.push(self.jump(Op::JumpIfFalse, pred));
-                    }
-                    (TKind::Map { body, .. }, Stage::Map { tmp, counter }) => {
-                        self.in_ctx(body, Ctx { item, index: counter, acc: None }, None);
-                        self.store_into(tmp, &body.ty);
-                        if let Some(c) = counter {
-                            self.incr(c);
-                        }
-                        item = Place { root: Root::Local(tmp), off: 0 };
-                        item_ty = body.ty.clone();
-                    }
-                    // Folded into the loop's bounds.
-                    (_, Stage::Window { counter: None, .. }) => {}
-                    // Before the window: skip the item. Past it: no item of this
-                    // pipeline will pass again.
-                    (_, Stage::Window { counter: Some(c), start, end }) => {
-                        if let Some(s) = start {
-                            self.op(Op::Load(c));
-                            self.op(Op::Load(s));
-                            self.op(Op::Lt);
-                            let inside = self.jump(Op::JumpIfFalse, st);
-                            self.incr(c);
-                            conts.push(self.jump(Op::Jump, st));
-                            let here = self.pc();
-                            self.patch(inside, here);
-                        }
-                        if let Some(end) = end {
-                            self.op(Op::Load(c));
-                            self.op(Op::Load(end));
-                            self.op(Op::Lt);
-                            let past = self.jump(Op::JumpIfFalse, st);
-                            self.levels[*level].push(past);
-                        }
-                        self.incr(c);
-                    }
-                    other => unreachable!("stage {other:?}"),
-                },
+        let at = match back {
+            Some((s, k)) => {
+                self.op(Op::Load(s));
+                self.op(Op::Load(i));
+                self.op(Op::Sub);
+                self.op(Op::Store(k));
+                k
             }
-        }
-        let leaves_now = self.take_item(sl, f, init, e, collect, item, &item_ty);
+            None => i,
+        };
+        // A range's item: its start plus the index.
+        let item = match (start_of_range, tmp) {
+            (Some(a), Some(t)) => {
+                self.op(Op::Load(a));
+                self.op(Op::Load(at));
+                self.op(Op::Add);
+                self.op(Op::Store(t));
+                Place { root: Root::Local(t), off: 0 }
+            }
+            _ => Place { root: Root::Item { h, i: at }, off: 0 },
+        };
+        let mut conts = Vec::new();
+        let leaves_now = self.through(item, pipe.item.clone(), stages, &mut conts, sl, f, init, e, collect);
         // CONT: the next item in the list. (Nothing reaches it when the
         // first item to arrive always leaves and none is skipped.)
         if !(leaves_now && conts.is_empty()) {
@@ -1408,6 +1662,134 @@ impl Emitter<'_> {
         self.release(mark);
     }
 
+    /// An item (at `item`, typed `item_ty`) through `stages`, then the sink.
+    /// A filter or window that drops it jumps to `conts` (the next item).
+    /// At a `flatten`, the item is a list: a loop over it runs the rest of
+    /// the stages and the sink, nested. Whether the sink always leaves.
+    #[allow(clippy::too_many_arguments)]
+    fn through(&mut self, mut item: Place, mut item_ty: Ty, stages: &[Down], conts: &mut Vec<usize>, sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) -> bool {
+        for (j, d) in stages.iter().enumerate() {
+            let (stage, level) = match d {
+                Down::Convert(from, to, tmp) => {
+                    self.load_as(item, from, to);
+                    self.store_into(*tmp, to);
+                    item = Place { root: Root::Local(*tmp), off: 0 };
+                    item_ty = to.clone();
+                    continue;
+                }
+                Down::Node(s, level) => (*s, *level),
+            };
+            let st = stage.node();
+            match stage {
+                Stage::Filter { pred, .. } => {
+                    self.in_ctx(pred, Ctx { item, index: None, acc: None }, None);
+                    conts.push(self.jump(Op::JumpIfFalse, pred));
+                }
+                Stage::Map(_) => {
+                    let (TKind::Map { body, .. }, StageState::Map { tmp, counter, down }) = (&st.kind, self.stages[&(st as *const TExpr)].clone()) else {
+                        unreachable!()
+                    };
+                    self.in_ctx(body, Ctx { item, index: counter, acc: None }, None);
+                    self.store_into(tmp, &body.ty);
+                    if let Some(c) = counter {
+                        self.next_index(c, down);
+                    }
+                    item = Place { root: Root::Local(tmp), off: 0 };
+                    item_ty = body.ty.clone();
+                }
+                Stage::Window(_) => match self.stages[&(st as *const TExpr)].clone() {
+                    // Folded into the loop's bounds.
+                    StageState::Window { counter: None, .. } => {}
+                    // Before the window: skip the item. Past it: no item of this
+                    // pipeline will pass again.
+                    StageState::Window { counter: Some(c), start, end } => {
+                        if let Some(s) = start {
+                            self.op(Op::Load(c));
+                            self.op(Op::Load(s));
+                            self.op(Op::Lt);
+                            let inside = self.jump(Op::JumpIfFalse, st);
+                            self.incr(c);
+                            conts.push(self.jump(Op::Jump, st));
+                            let here = self.pc();
+                            self.patch(inside, here);
+                        }
+                        if let Some(end) = end {
+                            self.op(Op::Load(c));
+                            self.op(Op::Load(end));
+                            self.op(Op::Lt);
+                            let past = self.jump(Op::JumpIfFalse, st);
+                            self.levels[level].push(past);
+                        }
+                        self.incr(c);
+                    }
+                    other => unreachable!("window {other:?}"),
+                },
+                // The loop already runs backwards.
+                Stage::Reverse(_) => {}
+                // The item is a list: its handle, looped over.
+                Stage::Flatten(_) => {
+                    let mark = self.mark();
+                    self.load_leaf(item);
+                    let h = self.store_new(1);
+                    let mut inner = Pipeline::new(Source::List(st), plan::item_of(&item_ty));
+                    inner.pre = Some(h);
+                    self.nested(inner, &stages[j + 1..], sl, f, init, e, collect);
+                    self.release(mark);
+                    return false;
+                }
+                // The map's body is a pipeline: it runs here, per item, with
+                // `#` (and `#index`) the item's.
+                Stage::FlatMap(_) => {
+                    let StageState::Map { counter, down, .. } = self.stages[&(st as *const TExpr)].clone() else { unreachable!() };
+                    let (lets, body) = plan::flat_map_body(st).unwrap();
+                    let mark = self.mark();
+                    self.ctx.push(Ctx { item, index: counter, acc: None });
+                    for l in lets {
+                        let TKind::Let { id, value, .. } = &l.kind else { unreachable!() };
+                        self.emit(value);
+                        let base = self.store_new(leaves(&value.ty));
+                        self.bindings.insert(*id, Root::Local(base));
+                    }
+                    self.nested(plan::for_write(body), &stages[j + 1..], sl, f, init, e, collect);
+                    self.ctx.pop();
+                    self.release(mark);
+                    if let Some(c) = counter {
+                        self.next_index(c, down);
+                    }
+                    return false;
+                }
+            }
+        }
+        self.take_item(sl, f, init, e, collect, item, &item_ty)
+    }
+
+    /// A pipeline nested in an item (`flatten`): its hold and stages set up
+    /// for this item, then its loops, each running `rest` and the sink.
+    #[allow(clippy::too_many_arguments)]
+    fn nested(&mut self, mut inner: Pipeline, rest: &[Down], sl: &SinkLocals, f: Option<&TExpr>, init: Option<&TExpr>, e: &TExpr, collect: Option<&Collect>) {
+        self.resolve_hold(&mut inner);
+        if let Source::Range(r) = inner.source
+            && inner.pre.is_none()
+        {
+            inner.pre = Some(self.range_bounds(r));
+        }
+        self.init_stages(&mut inner, reversed(rest));
+        let sub = self.new_level();
+        self.loops(&inner, sub, rest, sl, f, init, e, collect);
+    }
+
+    /// `#index` for the next item: one more, or one less when the items
+    /// arrive backwards.
+    fn next_index(&mut self, c: u16, down: bool) {
+        if !down {
+            return self.incr(c);
+        }
+        self.op(Op::Load(c));
+        self.op(Op::PushInt(1));
+        self.op(Op::Sub);
+        self.op(Op::Store(c));
+    }
+
     /// What the sink does with an item that reached it (at `item`, typed
     /// `item_ty`). Leaving early (`find`, `any`, …) jumps past every loop.
     /// Whether it always leaves (`first` with no predicate).
@@ -1417,13 +1799,79 @@ impl Emitter<'_> {
         let acc_ty = &sl.acc_ty;
         let pred_ctx = Ctx { item, index: None, acc: None };
         if let Some(c) = collect {
-            // Into the block as item r, converted to the block's layout.
-            self.floats = true;
-            self.load_as(item, item_ty, &c.item);
-            self.floats = false;
-            self.op(Op::Load(r));
-            self.op(Op::ListStore { base: c.base, cap: c.cap, stride: leaves(&c.item) });
-            self.incr(r);
+            let stride = leaves(&c.item);
+            match c.mode {
+                // Into the block as item r, converted to the block's layout.
+                HoldKind::Plain => {
+                    self.floats = true;
+                    self.load_as(item, item_ty, &c.item);
+                    self.floats = false;
+                    self.op(Op::Load(r));
+                    self.op(Op::ListStore { base: c.base, cap: c.cap, stride });
+                    self.incr(r);
+                }
+                // The item, its key unless the key is one of its leaves, and
+                // the block's state (its count): the VM inserts it in order.
+                HoldKind::Sorted { key, desc, tail } => {
+                    let at = key_leaf(key, item_ty, &c.item);
+                    self.floats = true;
+                    self.load_as(item, item_ty, &c.item);
+                    self.floats = false;
+                    if at.is_none() {
+                        match key {
+                            Some(k) => self.in_ctx(k, Ctx { item, index: None, acc: None }, None),
+                            None => self.load_as(item, item_ty, item_ty),
+                        }
+                    }
+                    self.op(Op::Load(r));
+                    let mode = bytecode::hold_mode(desc, tail, false, at);
+                    self.op_at(Op::HoldInsert { base: c.base, cap: c.cap, stride, mode }, e);
+                    self.op(Op::Store(r));
+                }
+                // A value not in the block yet goes in at the end; once the
+                // block is full, no other item matters.
+                HoldKind::Unique => {
+                    let mark = self.mark();
+                    let (h, j) = (self.alloc(1), self.alloc(1));
+                    self.op(Op::Load(r));
+                    self.op(Op::ListMake { base: c.base, cap: c.cap, stride: 1 });
+                    self.op(Op::Store(h));
+                    self.op(Op::PushInt(0));
+                    self.op(Op::Store(j));
+                    let head = self.pc();
+                    self.op(Op::Load(j));
+                    self.op(Op::Load(r));
+                    self.op(Op::Lt);
+                    let new = self.jump(Op::JumpIfFalse, e);
+                    self.op(Op::Load(h));
+                    self.op(Op::Load(j));
+                    self.op(Op::ListRead(0));
+                    self.load_as(item, item_ty, item_ty);
+                    self.op(Op::Eq);
+                    let differs = self.jump(Op::JumpIfFalse, e);
+                    let seen = self.jump(Op::Jump, e);
+                    let here = self.pc();
+                    self.patch(differs, here);
+                    self.incr(j);
+                    self.op(Op::Jump(head));
+                    let here = self.pc();
+                    self.patch(new, here);
+                    self.floats = true;
+                    self.load_as(item, item_ty, &c.item);
+                    self.floats = false;
+                    self.op(Op::Load(r));
+                    self.op(Op::ListStore { base: c.base, cap: c.cap, stride });
+                    self.incr(r);
+                    self.op(Op::Load(r));
+                    self.op(Op::PushInt(c.cap as i64));
+                    self.op(Op::Lt);
+                    let room = self.jump(Op::JumpIfFalse, e);
+                    self.levels[top].push(room);
+                    let here = self.pc();
+                    self.patch(seen, here);
+                    self.release(mark);
+                }
+            }
             return false;
         }
         let mut breaks = Vec::new();
@@ -1432,6 +1880,17 @@ impl Emitter<'_> {
         let always_leaves = sink == Sink::First && f.is_none();
         match sink {
             Sink::Len => self.incr(r),
+            // As a float, into the block in order (NaN first, as Go's
+            // `sort.Float64s` puts it).
+            Sink::Median => {
+                let (base, cap) = sl.block.unwrap();
+                self.load_as(item, item_ty, item_ty);
+                self.op_at(Op::Call(bytecode::Builtin::Float, 1), e);
+                self.op(Op::Load(r));
+                let mode = bytecode::hold_mode(false, false, true, Some(0));
+                self.op_at(Op::HoldInsert { base, cap, stride: 1, mode }, e);
+                self.op(Op::Store(r));
+            }
             Sink::Count | Sink::One => {
                 match f {
                     Some(p) => self.in_ctx(p, pred_ctx.clone(), None),
@@ -1795,34 +2254,92 @@ fn uses_index(e: &TExpr, depth: usize) -> bool {
     }
 }
 
-/// A sink's source as the list its items come from (or a `concat`'s parts)
-/// and the stages applied to them, innermost first.
-fn pipeline(e: &TExpr) -> Pipe<'_> {
-    match &e.kind {
-        TKind::Map { src, .. } | TKind::Filter { src, .. } | TKind::Slice { src, .. } | TKind::Take { src, .. } => {
-            let mut p = pipeline(src);
-            p.stages.push(e);
-            p
+/// Whether a loop running these stages runs backwards: an odd number of
+/// `reverse`s among them.
+fn reversed(stages: &[Down]) -> bool {
+    stages.iter().filter(|d| matches!(d, Down::Node(Stage::Reverse(_), _))).count() % 2 == 1
+}
+
+/// A block of locals reserved for the whole evaluation, for the diagnostics.
+struct Held {
+    span: Span,
+    bound: u32,
+    /// Slots per item (a sorted block's separate key included).
+    stride: u16,
+    slots: u32,
+    why: HoldWhy,
+}
+
+/// Why a block is held.
+#[derive(Clone, Copy)]
+enum HoldWhy {
+    /// A list literal, or a list kept as a value.
+    Value,
+    Sort,
+    Unique,
+    Median,
+    /// A list reversed again.
+    Reverse,
+}
+
+impl HoldWhy {
+    fn of(k: &HoldKind) -> HoldWhy {
+        match k {
+            HoldKind::Sorted { .. } => HoldWhy::Sort,
+            HoldKind::Unique => HoldWhy::Unique,
+            HoldKind::Plain => HoldWhy::Reverse,
         }
-        TKind::Concat(parts) => Pipe { src: Src::Concat(parts.iter().map(pipeline).collect()), stages: Vec::new(), item: item_of(&e.ty), convert: None },
-        _ => Pipe { src: Src::List(e), stages: Vec::new(), item: item_of(&e.ty), convert: None },
+    }
+
+    /// For `E-HOLD`: what is held, and the fix.
+    fn words(self) -> (&'static str, &'static str) {
+        match self {
+            HoldWhy::Value => (
+                "this list is held",
+                "slice it first (`(…)[-N:]`, `take(…, N)`), or keep only what you need (`first`, `last`, `sum`, `count`, …)",
+            ),
+            HoldWhy::Sort => (
+                "this sort holds its whole input",
+                "take only what you need of it (`first(sortBy(…))`, `last(…)`, `take(sortBy(…), k)`, `sortBy(…)[-k:]`: k items), aggregate it (`sum`, `count`, `max`, …: nothing held), or slice its input first (`xs[-N:]`)",
+            ),
+            HoldWhy::Unique => (
+                "`uniq` holds the values it has kept",
+                "take only what you need of it (`take(uniq(…), k)`: k items), or slice its input first (`xs[-N:]`)",
+            ),
+            HoldWhy::Median => ("`median` holds every value", "slice its input first (`xs[-N:]`)"),
+            HoldWhy::Reverse => ("this list is held to be reversed again", "reverse it once: `reverse(reverse(xs))` is `xs`"),
+        }
     }
 }
 
-/// A list type's items' type (`Never` for nothing known).
-fn item_of(t: &Ty) -> Ty {
-    match t.non_nil() {
-        Some(Ty::List(item, _)) => *item,
-        _ => Ty::Never,
+/// The slots a sorted block keeps per item beside the item's own: 1 for
+/// its key, unless the key is one of the item's leaves.
+fn key_slots(kind: &HoldKind, item: &Ty, block: &Ty) -> u16 {
+    match kind {
+        HoldKind::Sorted { key, .. } if key_leaf(*key, item, block).is_none() => 1,
+        _ => 0,
     }
 }
 
-/// The `concat` at the bottom of a pipeline's stages.
-fn concat_of(e: &TExpr) -> &TExpr {
-    match &e.kind {
-        TKind::Map { src, .. } | TKind::Filter { src, .. } | TKind::Slice { src, .. } | TKind::Take { src, .. } => concat_of(src),
-        _ => e,
+/// The leaf of a block item that is its sort key, when the key is the item
+/// itself (`sort`) or a field path into it (`sortBy(xs, .t)`) to a number
+/// that can't be nil, and the block keeps the item's own layout.
+fn key_leaf(key: Option<&TExpr>, item: &Ty, block: &Ty) -> Option<u16> {
+    if !same_layout(item, block) || int_to_float(item, block) {
+        return None;
     }
+    let leaf = match key {
+        None => matches!(item, Ty::Int(_) | Ty::Float).then_some(0)?,
+        Some(k) => match &k.kind {
+            TKind::Path { base, steps, nonnil } if matches!(base.kind, TKind::Pointer { which: Ptr::Item, .. }) => {
+                let (t, off) = walk(&base.ty, steps, nonnil)?;
+                let (t, off) = strip(&t, off, *nonnil.last().unwrap());
+                matches!(t, Ty::Int(_) | Ty::Float).then_some(off)?
+            }
+            _ => return None,
+        },
+    };
+    (leaf < bytecode::HOLD_KEY_MAX).then_some(leaf)
 }
 
 /// Whether an index may be negative (counting from the end).

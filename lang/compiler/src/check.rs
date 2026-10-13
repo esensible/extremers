@@ -71,6 +71,17 @@ pub enum TKind {
     Take { src: Box<TExpr>, k: Box<TExpr> },
     /// `concat(a, b, …)`: a pipeline source, each part's items in turn.
     Concat(Vec<TExpr>),
+    /// `a..b`: a pipeline source, the ints from `a` to `b` (none if `b < a`).
+    Range { a: Box<TExpr>, b: Box<TExpr> },
+    /// `reverse(src)`: a pipeline stage.
+    Reverse { src: Box<TExpr> },
+    /// `sortBy(src, key[, dir])`, or `sort(src[, dir])` (`key` is `None`:
+    /// the item itself). Held, or a k-selection, or dropped (plan.rs).
+    SortBy { src: Box<TExpr>, key: Option<Box<TExpr>>, desc: bool },
+    /// `uniq(src)`: held, or dropped (plan.rs).
+    Uniq { src: Box<TExpr> },
+    /// `flatten(src)`: a pipeline stage (a nested loop).
+    Flatten { src: Box<TExpr> },
     /// A builtin that consumes a list (or a pipeline) and gives one value.
     /// `f` is the predicate, the mapped expression, the index or the needle,
     /// as the sink needs; `init` is `reduce`'s initial value.
@@ -109,6 +120,7 @@ pub enum Sink {
     /// `x in xs`.
     In,
     Reduce,
+    Median,
 }
 
 impl Sink {
@@ -134,6 +146,7 @@ impl Sink {
             Sink::Get => "get",
             Sink::In => "in",
             Sink::Reduce => "reduce",
+            Sink::Median => "median",
         }
     }
 }
@@ -152,7 +165,19 @@ struct Pred {
 /// record field, a branch) it is held, built into its own block of locals.
 /// A `let` of one isn't stored: each use re-runs it.
 pub fn is_pipeline(e: &TExpr) -> bool {
-    matches!(e.kind, TKind::Map { .. } | TKind::Filter { .. } | TKind::Slice { .. } | TKind::Take { .. } | TKind::Concat(_))
+    matches!(
+        e.kind,
+        TKind::Map { .. }
+            | TKind::Filter { .. }
+            | TKind::Slice { .. }
+            | TKind::Take { .. }
+            | TKind::Concat(_)
+            | TKind::Range { .. }
+            | TKind::Reverse { .. }
+            | TKind::SortBy { .. }
+            | TKind::Uniq { .. }
+            | TKind::Flatten { .. }
+    )
 }
 
 /// The most items `src[lo:hi]` can have, from `src`'s bound `n` and the
@@ -236,6 +261,8 @@ pub fn check(ast: &Expr, iface: &Interface) -> Result<TExpr, Vec<Diag>> {
         narrow: Vec::new(),
         let_facts: HashMap::new(),
         let_names: HashMap::new(),
+        nested_next: false,
+        nested_here: false,
     };
     let e = c.expr(ast);
     c.output(Some(&e), &e.ty, &iface.output, e.span, "");
@@ -274,6 +301,9 @@ pub fn children(e: &TExpr) -> Vec<&TExpr> {
         TKind::Call(_, args) | TKind::HostCall { args, .. } | TKind::ListLit(args) | TKind::Concat(args) => args.iter().collect(),
         TKind::Slice { src, lo, hi } => std::iter::once(&**src).chain(lo.as_deref()).chain(hi.as_deref()).collect(),
         TKind::Take { src, k } => vec![src, k],
+        TKind::Range { a, b } => vec![a, b],
+        TKind::Reverse { src } | TKind::Uniq { src } | TKind::Flatten { src } => vec![src],
+        TKind::SortBy { src, key, .. } => std::iter::once(&**src).chain(key.as_deref()).collect(),
         TKind::Record(fields) => fields.iter().map(|(_, e)| e).collect(),
         TKind::Path { base, .. } => vec![base],
         TKind::Map { src, body: f } | TKind::Filter { src, pred: f } => vec![src, f],
@@ -282,9 +312,6 @@ pub fn children(e: &TExpr) -> Vec<&TExpr> {
 }
 
 use crate::schema::EXPR_BUILTINS;
-
-/// Builtins the language will have, but this build doesn't yet.
-const LATER: &[&str] = &["sortBy", "median", "sort", "flatten", "uniq", "reverse"];
 
 struct Checker<'a> {
     iface: &'a Interface,
@@ -301,6 +328,11 @@ struct Checker<'a> {
     let_facts: HashMap<u32, Facts>,
     /// Each `let`'s name, by id (for messages).
     let_names: HashMap<u32, String>,
+    /// The next expression checked is `flatten`'s list (`nested_next`), and
+    /// so is this one (`nested_here`): a list literal or `map` there may
+    /// give lists.
+    nested_next: bool,
+    nested_here: bool,
 }
 
 fn node(kind: TKind, ty: Ty, span: Span) -> TExpr {
@@ -314,6 +346,7 @@ impl Checker<'_> {
 
     fn expr(&mut self, e: &Expr) -> TExpr {
         let span = e.span;
+        self.nested_here = std::mem::take(&mut self.nested_next);
         match &e.kind {
             ExprKind::Nil => node(TKind::Nil, Ty::Nil, span),
             ExprKind::Bool(b) => node(TKind::Bool(*b), Ty::Bool, span),
@@ -406,12 +439,18 @@ impl Checker<'_> {
                 self.narrow_read(p)
             }
             ExprKind::List(items) => {
+                // Straight inside `flatten`, the items may be lists.
+                let nested = std::mem::take(&mut self.nested_here);
                 let mut titems = Vec::new();
                 let mut item = Ty::Never;
                 for it in items {
                     let t = self.expr(it);
-                    if crate::schema::contains_list(&t.ty) {
-                        self.err(Diag::error("E-UNSUPPORTED", t.span, "lists inside lists aren't supported yet"));
+                    // (Lists nested deeper are `flatten`'s to report.)
+                    if crate::schema::contains_list(&t.ty) && !(nested && matches!(t.ty, Ty::List(..))) {
+                        self.err(
+                            Diag::error("E-UNSUPPORTED", t.span, "lists inside lists are supported only straight inside `flatten`")
+                                .help("flatten it: `flatten([xs, ys])`, or join them: `concat(xs, ys)`"),
+                        );
                     }
                     item = match unify(&item, &t.ty) {
                         Some(u) if matches!(item, Ty::Never) || crate::types::same_layout(&item, &t.ty) => u,
@@ -445,7 +484,37 @@ impl Checker<'_> {
                 let kind = TKind::Slice { src: Box::new(src), lo: lo.map(Box::new), hi: hi.map(Box::new) };
                 node(kind, Ty::List(Box::new(item), bound), span)
             }
+            ExprKind::Range(a, b) => self.range(a, b, span),
         }
+    }
+
+    /// `a..b` (spec §4.2): ints from `a` to `b`, at most `hi(b) - lo(a) + 1`
+    /// of them. A range is a loop, so that bound must be a list's (65,535):
+    /// a range whose ends have no useful bounds is refused.
+    fn range(&mut self, a: &Expr, b: &Expr, span: Span) -> TExpr {
+        let a = self.expr(a);
+        let b = self.expr(b);
+        let ra = self.index_range(&a, "a range's start");
+        let rb = self.index_range(&b, "a range's end");
+        let (Some(ra), Some(rb)) = (ra, rb) else {
+            return node(TKind::Nil, Ty::Unknown, span);
+        };
+        let n = (rb.hi - ra.lo + 1).max(0);
+        if n > crate::schema::MAX_LIST_ITEMS as i128 {
+            let unbounded: Vec<String> = [(&a, ra), (&b, rb)]
+                .iter()
+                .filter(|(_, r)| r.hi - r.lo >= crate::schema::MAX_LIST_ITEMS as i128)
+                .map(|(e, r)| format!("`{}` is {}", self.render(e).unwrap_or_else(|| "one end".into()), Ty::Int(*r).describe()))
+                .collect();
+            let why = if unbounded.is_empty() { String::new() } else { format!(" ({})", unbounded.join(", ")) };
+            self.err(
+                Diag::error("E-UNBOUNDED", span, format!("this range can have up to {n} items{why}; a range is a loop, and can have at most {}", crate::schema::MAX_LIST_ITEMS))
+                    .help("bound its ends: give the inputs `minimum` and `maximum` in their schemas, or clamp them, e.g. `max(a, 0)..min(b, 1000)`"),
+            );
+            return node(TKind::Nil, Ty::Unknown, span);
+        }
+        let item = if ra.lo <= rb.hi { Range { lo: ra.lo, hi: rb.hi } } else { ra };
+        node(TKind::Range { a: Box::new(a), b: Box::new(b) }, Ty::List(Box::new(Ty::Int(item)), n as u32), span)
     }
 
     /// `#`, `#index`, `#acc`: from the innermost predicate in scope.
@@ -508,6 +577,8 @@ impl Checker<'_> {
 
     /// A list builtin: `name(args…)` where `args[0]` is the list.
     fn list_call(&mut self, name: &str, args: &[Expr], span: Span) -> TExpr {
+        // This call is `flatten`'s list (a `map` there may give lists).
+        let nested = std::mem::take(&mut self.nested_here);
         let (want, sink) = match name {
             "len" => (1..=1, Some(Sink::Len)),
             "count" => (1..=2, Some(Sink::Count)),
@@ -527,7 +598,11 @@ impl Checker<'_> {
             "last" => (1..=1, Some(Sink::Last)),
             "get" => (2..=2, Some(Sink::Get)),
             "reduce" => (2..=3, Some(Sink::Reduce)),
+            "median" => (1..=1, Some(Sink::Median)),
             "map" | "filter" | "take" => (2..=2, None),
+            "reverse" | "uniq" | "flatten" => (1..=1, None),
+            "sortBy" => (2..=3, None),
+            "sort" => (1..=2, None),
             "concat" => (1..=usize::MAX, None),
             _ => unreachable!(),
         };
@@ -543,7 +618,13 @@ impl Checker<'_> {
         if name == "concat" {
             return self.concat(args, span);
         }
+        // `flatten`'s list may hold lists: a literal of lists, or a `map`
+        // whose items are lists (nowhere else, yet).
+        if name == "flatten" {
+            self.nested_next = true;
+        }
         let src = self.expr(&args[0]);
+        self.nested_next = false;
         let Some((item, n)) = self.list_of(&src, name) else {
             return node(TKind::Nil, Ty::Unknown, span);
         };
@@ -551,8 +632,11 @@ impl Checker<'_> {
         match (name, sink) {
             ("map", _) => {
                 let body = self.in_pred(&args[1], &item, index, None);
-                if crate::schema::contains_list(&body.ty) {
-                    self.err(Diag::error("E-UNSUPPORTED", body.span, "a `map` that gives lists isn't supported yet"));
+                if crate::schema::contains_list(&body.ty) && !(nested && matches!(body.ty, Ty::List(..))) {
+                    self.err(
+                        Diag::error("E-UNSUPPORTED", body.span, "a `map` that gives lists is supported only straight inside `flatten`")
+                            .help("flatten it: `flatten(map(xs, …))`; lists inside lists aren't implemented yet"),
+                    );
                 }
                 let ty = Ty::List(Box::new(body.ty.clone()), n);
                 node(TKind::Map { src: Box::new(src), body: Box::new(body) }, ty, span)
@@ -570,6 +654,72 @@ impl Checker<'_> {
                     None => n,
                 };
                 node(TKind::Take { src: Box::new(src), k: Box::new(k) }, Ty::List(Box::new(item), bound), span)
+            }
+            ("reverse", _) => node(TKind::Reverse { src: Box::new(src) }, Ty::List(Box::new(item), n), span),
+            // First occurrences, compared with `==`: not on records (spec §2.6).
+            ("uniq", _) => {
+                if is_record(&item) {
+                    self.err(Diag::error("E-UNSUPPORTED", span, "`uniq` doesn't compare records").help("keep the first of each by a field instead, e.g. with `reduce`"));
+                }
+                node(TKind::Uniq { src: Box::new(src) }, Ty::List(Box::new(item), n), span)
+            }
+            // One level of lists inside the list: the items of each, in turn.
+            ("flatten", _) => {
+                let (inner, bound) = match &item {
+                    Ty::List(inner, m) => {
+                        if crate::schema::contains_list(inner) {
+                            self.err(Diag::error("E-UNSUPPORTED", span, "`flatten` of lists nested more than one deep isn't implemented yet"));
+                        }
+                        // A literal of lists: the sum of their bounds; else n × m.
+                        let bound = match &src.kind {
+                            TKind::ListLit(items) => items.iter().map(|i| match i.ty.non_nil() {
+                                Some(Ty::List(_, k)) => k,
+                                _ => 0,
+                            }).fold(0u32, u32::saturating_add),
+                            _ => n.saturating_mul(*m),
+                        };
+                        ((**inner).clone(), bound)
+                    }
+                    // Items that aren't lists are given as they are.
+                    t => (t.clone(), n),
+                };
+                if bound > crate::schema::MAX_LIST_ITEMS {
+                    self.err(
+                        Diag::error("E-UNBOUNDED", span, format!("`flatten` here can give up to {bound} items; a list can have at most {}", crate::schema::MAX_LIST_ITEMS))
+                            .help("slice the lists first: `flatten(map(xs[-N:], …))`"),
+                    );
+                }
+                node(TKind::Flatten { src: Box::new(src) }, Ty::List(Box::new(inner), bound.min(crate::schema::MAX_LIST_ITEMS)), span)
+            }
+            // `sortBy(xs, key[, dir])`, `sort(xs[, dir])`: keys are numbers
+            // that can't be nil; `dir` is the literal "asc" or "desc".
+            ("sortBy" | "sort", _) => {
+                let (key, dir) = if name == "sortBy" {
+                    let k = self.in_pred(&args[1], &item, None, None);
+                    self.sort_key(&k.ty, k.span, "`sortBy`'s key");
+                    (Some(k), args.get(2))
+                } else {
+                    self.sort_key(&item, src.span, "`sort`'s items");
+                    (None, args.get(1))
+                };
+                let desc = match dir.map(|d| self.expr(d)) {
+                    None => false,
+                    Some(TExpr { kind: TKind::Str(s), .. }) if s == "asc" || s == "desc" => s == "desc",
+                    Some(d) => {
+                        self.err(Diag::error("E-TYPE", d.span, "the sort direction must be the literal \"asc\" or \"desc\"").help(format!("`{name}(…, \"desc\")`")));
+                        false
+                    }
+                };
+                // expr's `sort` gives `[]` for nil (`sortBy` fails): read it as `xs ?? []`.
+                let src = if name == "sort" && src.ty.may_be_nil() {
+                    let ty = Ty::List(Box::new(item.clone()), n);
+                    let empty = node(TKind::ListLit(Vec::new()), Ty::List(Box::new(Ty::Never), 0), src.span);
+                    let span = src.span;
+                    node(TKind::Coalesce(Box::new(src), Box::new(empty)), ty, span)
+                } else {
+                    src
+                };
+                node(TKind::SortBy { src: Box::new(src), key: key.map(Box::new), desc }, Ty::List(Box::new(item), n), span)
             }
             (_, Some(Sink::Reduce)) => {
                 let init = args.get(2).map(|a| self.expr(a));
@@ -694,7 +844,7 @@ impl Checker<'_> {
                     None => Ty::Unknown,
                 }
             }
-            Sink::Mean => {
+            Sink::Mean | Sink::Median => {
                 numeric(self, &item, src.span);
                 Ty::Float
             }
@@ -726,6 +876,21 @@ impl Checker<'_> {
             }
         }
         node(TKind::Sink { sink, src: Box::new(src), f: f.map(Box::new), init: init.map(Box::new) }, ty, span)
+    }
+
+    /// A sort key (or a sorted item) must be a number that can't be nil.
+    fn sort_key(&mut self, t: &Ty, span: Span, what: &str) {
+        match t {
+            Ty::Int(_) | Ty::Float | Ty::Unknown | Ty::Never => {}
+            Ty::Opt(inner) if inner.is_number() => self.err(
+                Diag::error("E-TYPE", span, format!("{what} may be nil, but a sort key can't be"))
+                    .help("give it a default: `(…) ?? 0`, or filter first: `sortBy(filter(xs, .v != nil), .v ?? 0)`"),
+            ),
+            other => self.err(
+                Diag::error("E-TYPE", span, format!("{what} must be numbers, but this is {}", other.describe()))
+                    .help("sort by a number, e.g. `sortBy(xs, .t)`"),
+            ),
+        }
     }
 
     /// Checks `f` with the paths `keys` known not to be nil.
@@ -988,7 +1153,8 @@ impl Checker<'_> {
                 None
             }
             other => {
-                self.err(Diag::error("E-TYPE", t.span, format!("{what} must be an integer, but this is {}", other.describe())).help("e.g. `xs[int(n / 2):]`"));
+                let example = if what.starts_with("a range") { "e.g. `0..int(n / 2)`" } else { "e.g. `xs[int(n / 2):]`" };
+                self.err(Diag::error("E-TYPE", t.span, format!("{what} must be an integer, but this is {}", other.describe())).help(example));
                 None
             }
         }
@@ -1190,8 +1356,8 @@ impl Checker<'_> {
         }
         let list_builtin = matches!(
             name,
-            "len" | "count" | "sum" | "mean" | "any" | "all" | "none" | "one" | "find" | "findLast" | "findIndex" | "findLastIndex"
-                | "first" | "last" | "get" | "reduce" | "map" | "filter" | "take" | "concat"
+            "len" | "count" | "sum" | "mean" | "median" | "any" | "all" | "none" | "one" | "find" | "findLast" | "findIndex" | "findLastIndex"
+                | "first" | "last" | "get" | "reduce" | "map" | "filter" | "take" | "concat" | "reverse" | "uniq" | "flatten" | "sortBy" | "sort"
         ) || (matches!(name, "min" | "max") && args.len() == 1);
         if list_builtin {
             return self.list_call(name, args, span);
@@ -1206,10 +1372,7 @@ impl Checker<'_> {
             "min" => Builtin::Min,
             "max" => Builtin::Max,
             _ => {
-                let d = if LATER.contains(&name) {
-                    Diag::error("E-UNSUPPORTED", name_span, format!("`{name}` isn't implemented yet"))
-                        .help("not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`")
-                } else if matches!(name, "now" | "date" | "duration" | "timezone") {
+                let d = if matches!(name, "now" | "date" | "duration" | "timezone") {
                     Diag::error("E-UNSUPPORTED", name_span, format!("`{name}` isn't available: a program is pure"))
                         .help("pass time in as an input")
                 } else if EXPR_BUILTINS.contains(&name) {

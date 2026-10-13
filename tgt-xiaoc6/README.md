@@ -91,6 +91,25 @@ bundle it finds (`store: sectors 0+25: committed, seq 1, id 0x8ebbc298:
 race v1, 101504 B`) and the free space; with one app and no boot package
 kept, that app starts. An erased region gives Choose alone.
 
+A bundle that isn't one of the repo's packages (one authored in the studio
+and saved as a `.bundle` file) goes in the same way when BLE isn't
+available: build the image from bundle files instead, with `--from` once
+per file:
+
+    cargo run -p extreme-pack -- --store-image target/packages/bundles.img --from my-app.bundle --from race.bundle
+
+No package is built then: the image holds exactly those files, in that
+order (seq 1, 2, …). Each must be an app bundle (not Choose) whose manifest
+reads and matches its files; anything else is refused, naming the file.
+It prints a line per bundle (name, id, version, length) and the space left
+in the region, then flash it as above:
+
+    probe-rs download --chip esp32c6 --binary-format bin --base-address 0x200000 target/packages/bundles.img
+
+As before, it replaces every bundle in the region: to keep the repo's
+apps, list their bundles (`--bundle` writes `target/packages/<name>.bundle`)
+too.
+
 ## WiFi credentials
 
 At boot the app reads the SSID and WPA2 password from `settings`. If none are

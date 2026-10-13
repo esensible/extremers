@@ -276,6 +276,8 @@ pub enum ExprKind {
     Index(Box<Expr>, Box<Expr>),
     /// `xs[a:b]`, either bound left out.
     Slice(Box<Expr>, Option<Box<Expr>>, Option<Box<Expr>>),
+    /// `a..b`: the ints from `a` to `b`.
+    Range(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -310,7 +312,7 @@ struct Parser {
 const BP_OR: u8 = 1;
 const BP_AND: u8 = 2;
 const BP_CMP: u8 = 3;
-// 4 is `..` (not in this slice).
+const BP_RANGE: u8 = 4;
 const BP_ADD: u8 = 5;
 const BP_MUL: u8 = 6;
 const BP_POW: u8 = 8; // a unary operand is parsed at this level, so ** and ?? bind tighter than unary
@@ -498,8 +500,16 @@ impl Parser {
     fn binary(&mut self, min: u8) -> Result<Expr, Diag> {
         let mut lhs = self.unary()?;
         loop {
+            // `a..b` binds looser than `+` and tighter than comparisons.
             if self.is_op("..") {
-                return Err(self.unsupported(self.peek().span, "ranges (`a..b`)", "write the list out, e.g. `[1, 2, 3]`, or slice a list: `xs[a:b]`"));
+                if BP_RANGE <= min {
+                    break;
+                }
+                self.next();
+                let rhs = self.binary(BP_RANGE)?;
+                let span = lhs.span.to(rhs.span);
+                lhs = Expr { kind: ExprKind::Range(Box::new(lhs), Box::new(rhs)), span };
+                continue;
             }
             // `x not in xs`: `!(x in xs)`.
             if self.is_word("not") && self.peek_word_at(1, "in") && BP_CMP > min {

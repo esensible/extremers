@@ -332,6 +332,18 @@ pub fn run<'a>(
                 Value::Int(n) if n >= 0 && n <= cap as i64 => push!(Value::List(ListRef::Local { base, len: n as u16, stride })),
                 _ => return Err(fail(ErrorCode::Type, at)),
             },
+            // An item into a sorted block; the operands were checked at load.
+            Op::HoldInsert { base, cap, stride, mode } => {
+                let state = pop!();
+                let key = match bytecode::hold_key_leaf(mode) {
+                    None => pop!(),
+                    Some(l) => stack[sp - stride as usize + l as usize],
+                };
+                sp -= stride as usize;
+                let block = Block { base: base as usize, cap: cap as usize, stride: stride as usize, mode };
+                let n = hold_insert(&block, locals, &stack[sp..sp + stride as usize], key, state).map_err(|c| fail(c, at))?;
+                push!(Value::Int(n));
+            }
             Op::ListLen => {
                 let n = list_len(p, lists, pop!()).map_err(|c| fail(c, at))?;
                 push!(Value::Int(n as i64));
@@ -401,6 +413,107 @@ pub fn run<'a>(
             }
         }
     }
+}
+
+/// A sorted block in the locals (`HoldInsert`): `cap` items of `stride`
+/// leaves from `base`, then (when the key isn't one of an item's leaves)
+/// `cap` keys.
+struct Block {
+    base: usize,
+    cap: usize,
+    stride: usize,
+    mode: u16,
+}
+
+impl Block {
+    fn key<'a>(&self, locals: &[Value<'a>], i: usize) -> Value<'a> {
+        match bytecode::hold_key_leaf(self.mode) {
+            Some(l) => locals[self.base + i * self.stride + l as usize],
+            None => locals[self.base + self.cap * self.stride + i],
+        }
+    }
+
+    /// Item `from` (and its key) copied over item `to`.
+    fn copy(&self, locals: &mut [Value], from: usize, to: usize) {
+        for k in 0..self.stride {
+            locals[self.base + to * self.stride + k] = locals[self.base + from * self.stride + k];
+        }
+        if bytecode::hold_key_leaf(self.mode).is_none() {
+            let keys = self.base + self.cap * self.stride;
+            locals[keys + to] = locals[keys + from];
+        }
+    }
+
+    fn put<'a>(&self, locals: &mut [Value<'a>], at: usize, item: &[Value<'a>], key: Value<'a>) {
+        locals[self.base + at * self.stride..self.base + (at + 1) * self.stride].copy_from_slice(item);
+        if bytecode::hold_key_leaf(self.mode).is_none() {
+            locals[self.base + self.cap * self.stride + at] = key;
+        }
+    }
+
+    /// Whether key `a` sorts before key `b`: expr's `Less` (`<`, reversed
+    /// for a descending sort), and with `HOLD_TOTAL`, NaN before numbers.
+    fn less(&self, a: Value, b: Value) -> Result<bool, ErrorCode> {
+        let (a, b) = if self.mode & bytecode::HOLD_DESC != 0 { (b, a) } else { (a, b) };
+        let (x, y) = numbers(a, b)?;
+        let lt = match (x, y) {
+            (Num::I(x), Num::I(y)) => x < y,
+            (x, y) => x.f() < y.f(),
+        };
+        Ok(lt || (self.mode & bytecode::HOLD_TOTAL != 0 && x.f().is_nan() && !y.f().is_nan()))
+    }
+}
+
+/// `HoldInsert` (bytecode `hold_mode`): Go's insertion sort, one item at a
+/// time. Gives the block's new state (its count, or `cap + 1` once closed).
+fn hold_insert<'a>(b: &Block, locals: &mut [Value<'a>], item: &[Value<'a>], key: Value<'a>, state: Value) -> Result<i64, ErrorCode> {
+    match key {
+        Value::Int(_) | Value::Float(_) => {}
+        Value::Nil => return Err(ErrorCode::Arg),
+        _ => return Err(ErrorCode::Type),
+    }
+    let n = match state {
+        Value::Int(n) if n >= 0 && n as u64 <= b.cap as u64 + 1 => n as usize,
+        _ => return Err(ErrorCode::Type),
+    };
+    if n > b.cap {
+        return Ok(n as i64);
+    }
+    // Where it lands: it moves towards the front past each item whose key
+    // it is strictly less than.
+    let mut p = n;
+    while p > 0 && b.less(key, b.key(locals, p - 1))? {
+        p -= 1;
+    }
+    if n < b.cap {
+        for i in (p..n).rev() {
+            b.copy(locals, i, i + 1);
+        }
+        b.put(locals, p, item, key);
+        return Ok(n as i64 + 1);
+    }
+    if b.mode & bytecode::HOLD_TAIL != 0 {
+        // The last `cap`: the first item drops out, unless this one would
+        // move past it.
+        if p == 0 {
+            return Ok(n as i64);
+        }
+        for i in 1..p {
+            b.copy(locals, i, i - 1);
+        }
+        b.put(locals, p - 1, item, key);
+        return Ok(n as i64);
+    }
+    if p == b.cap {
+        // Past the end. Nothing passes a NaN key, so nothing after it gets in.
+        let nan = matches!(key, Value::Float(f) if f.is_nan());
+        return Ok(if nan { b.cap as i64 + 1 } else { n as i64 });
+    }
+    for i in (p..b.cap - 1).rev() {
+        b.copy(locals, i, i + 1);
+    }
+    b.put(locals, p, item, key);
+    Ok(n as i64)
 }
 
 /// A list handle's length. An input list longer than its `maxItems` is a

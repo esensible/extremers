@@ -288,6 +288,36 @@ pub fn store_image(bundles: &[Vec<u8>]) -> Vec<u8> {
     bundle::store::store_image(&refs, STORE_SIZE)
 }
 
+/// The manifest of the bundle file `bytes` (`--from`), checked as far as
+/// [`store_image`] and the device's install need: an archive
+/// ([`bundle::archive::Archive::parse`]) with a `manifest.bin` that reads,
+/// whose hashes are its files' ([`bundle::hash::check`]), whose id is its
+/// name's and not Choose's (the firmware embeds Choose), under 4 GiB.
+pub fn bundle_manifest(bytes: &[u8]) -> Result<Manifest, String> {
+    let archive = bundle::archive::Archive::parse(bytes).map_err(|e| format!("not a bundle archive ({e:?})"))?;
+    let m = archive.file("manifest.bin").ok_or("not a bundle: no manifest.bin")?;
+    let manifest: Manifest = postcard::from_bytes(m).map_err(|e| format!("manifest.bin doesn't read: {e}"))?;
+    let name = manifest.name.as_str();
+    if manifest.id == extreme_protocol::CHOOSE {
+        return Err(format!("{name}: Choose's bundle (id 0): the firmware embeds it"));
+    }
+    if manifest.id != package_id(name) {
+        return Err(format!("{name}: id {:08x} isn't its name's ({:08x})", manifest.id, package_id(name)));
+    }
+    bundle::hash::check(&archive, &manifest).map_err(|e| format!("{name}: the manifest's hashes aren't its files' ({e:?})"))?;
+    u32::try_from(bytes.len()).map_err(|_| format!("{name}: over 4 GiB"))?;
+    Ok(manifest)
+}
+
+/// The bytes of the bundles region `bundles` take in a [`store_image`]:
+/// each a whole number of sectors, its record included.
+pub fn store_used(bundles: &[Vec<u8>]) -> usize {
+    bundles
+        .iter()
+        .map(|b| bundle::store::Record::sectors_for(b.len() as u32) as usize * bundle::store::SECTOR)
+        .sum()
+}
+
 /// What a build of `spec` reads (only paths that exist).
 pub fn inputs(root: &Path, spec: &Spec) -> Vec<PathBuf> {
     let dir = root.join(spec.dir);
@@ -603,6 +633,72 @@ mod tests {
         let archive = bundle::Archive::parse(&bytes).unwrap();
         let read: Vec<_> = archive.files().map(|(n, c)| (n.to_string(), c.to_vec())).collect();
         assert_eq!(read, built.files());
+    }
+
+    /// A bundle file as `--from` takes it: an archive whose manifest is its
+    /// files', with an engine.
+    fn test_bundle(name: &str, engine: &[u8], page: &[u8]) -> Vec<u8> {
+        let web = vec![("index.html".to_string(), page.to_vec())];
+        let m = manifest(name, 3, Some(engine), &web, &[]).unwrap();
+        let files = vec![
+            ("manifest.bin".to_string(), postcard::to_stdvec(&m).unwrap()),
+            ("engine.bin".to_string(), engine.to_vec()),
+            ("web/index.html".to_string(), page.to_vec()),
+        ];
+        archive(&files).unwrap()
+    }
+
+    /// `--from`: an image of two bundle files holds exactly them, in order,
+    /// committed as seq 1 and 2, each where the previous extent ends, the
+    /// rest erased; files that aren't app bundles are refused.
+    #[test]
+    fn store_image_from_bundle_files() {
+        use bundle::store::{COMMITTED, Record, SECTOR};
+        // the second over a sector, so its extent is two
+        let bundles = vec![test_bundle("alpha", b"one", b"<p>a"), test_bundle("beta", b"two", &[b'x'; 5000])];
+        for (b, name) in bundles.iter().zip(["alpha", "beta"]) {
+            let m = bundle_manifest(b).unwrap();
+            assert_eq!((m.name.as_str(), m.id, m.version), (name, package_id(name), 3));
+        }
+        let img = store_image(&bundles);
+        assert_eq!(img.len(), STORE_SIZE);
+        assert_eq!(store_used(&bundles), 3 * SECTOR);
+        // walk it as the store does: a record, its extent, the next record
+        let mut at = 0;
+        let mut found = Vec::new();
+        while at < img.len() {
+            match Record::parse(&img[at..]) {
+                Ok(r) => {
+                    let archive = &img[at + 64..at + 64 + r.len as usize];
+                    found.push((r.state, r.seq, r.id, archive.to_vec()));
+                    at += r.sectors as usize * SECTOR;
+                }
+                Err(_) => {
+                    assert!(img[at..at + SECTOR].iter().all(|&b| b == 0xFF), "free sector {} not erased", at / SECTOR);
+                    at += SECTOR;
+                }
+            }
+        }
+        let expected: Vec<_> = bundles
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (COMMITTED, i as u32 + 1, bundle_manifest(b).unwrap().id, b.clone()))
+            .collect();
+        assert_eq!(found, expected);
+
+        // not an archive; Choose's; a manifest whose hashes aren't its files'
+        assert!(bundle_manifest(b"hello").unwrap_err().contains("not a bundle archive"));
+        let choose = fs::read(root().join(CHOOSE_BUNDLE)).unwrap();
+        assert!(bundle_manifest(&choose).unwrap_err().contains("Choose"));
+        let web = vec![("index.html".to_string(), b"<p>".to_vec())];
+        let m = manifest("alpha", 1, Some(b"one"), &web, &[]).unwrap();
+        let edited = archive(&[
+            ("manifest.bin".to_string(), postcard::to_stdvec(&m).unwrap()),
+            ("engine.bin".to_string(), b"one!".to_vec()),
+            ("web/index.html".to_string(), b"<p>".to_vec()),
+        ])
+        .unwrap();
+        assert!(bundle_manifest(&edited).unwrap_err().contains("hashes"));
     }
 
     /// The committed Choose bundle is an archive whose manifest is Choose's.

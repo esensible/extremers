@@ -11,6 +11,7 @@ The language is **generic**. A program is one expression over named, immutable, 
 Anything still open is marked **(provisional)**.
 
 **Changes since draft 3:**
+- **The deferred list builtins** (§2.3, §4.3, §7.6): `reverse`, ranges `a..b`, `flatten`, `sortBy`, `sort`, `uniq` and `median` are built, on an explicit pipeline IR (source, stages, sink) that decides every hold. `reverse`, ranges and `flatten` hold nothing; `first`/`last`/`take`/`[:k]`/`[-k:]` of a sort keep k items; a sort under an aggregate that ignores order is dropped; otherwise a sort, `uniq` or `median` holds its input's bound, within the limit.
 - **Lists in the output** (§4.3 H1, §7.3, §8): a list may be written into the output, at any depth, and a list the program builds (`map`, `filter`, `concat`, slices, `take`) may be kept as a value. Slices, `concat` and `take` are built (§2.3).
 - **Nil narrowing** (§3.3): after `p != nil`, `p` isn't nil, in the checker's eyes. It only changes which programs are accepted, never what one does.
 - **Variants** (`oneOf`, §3.2): a record may have variants, exactly one of which is present, in inputs and outputs alike. They replace the flattened `oneOf` inputs of draft 3, which were never built.
@@ -204,7 +205,16 @@ Also, `-2 ** 2 == -4` and `2 ** 3 ** 2 == 512`.
 | `a..b` | ints, inclusive | Empty when `b < a`. |
 | `x in xs` | bool | Compares with `==`. Not on records. |
 
-> **As built:** slices, `map`, `filter`, `reduce`, `take` and `concat` are built, consumed by any list builtin or kept as a value (§4.3 H1). Not yet (`E-UNSUPPORTED`): `reverse`, `uniq`, `sortBy`, `sort`, `flatten`, `median`, ranges `a..b`, `xs?.[i]`, a list that holds lists, and a `reduce` accumulator that is a list.
+> **As built:** every builtin in these tables is built, consumed by any list builtin or kept as a value (§4.3 H1); what each holds is in §4.3, and how it lowers in §7.6. Not yet (`E-UNSUPPORTED`): `xs?.[i]`, a list that holds lists (except straight inside `flatten`, below), and a `reduce` accumulator that is a list.
+>
+> | Builtin | As built |
+> |---|---|
+> | `reverse(xs)` | The loops run backwards: nothing held. Of `nil`: `R-NIL`. |
+> | `a..b` | Ints only (`E-TYPE` otherwise; `nil` ends are `E-TYPE` too). A range is a loop of up to `hi(b) − lo(a) + 1` items, so that bound must be at most 65,535: a range whose ends aren't bounded enough (an input without `minimum`/`maximum`) is `E-UNBOUNDED`, with the fix. |
+> | `flatten(xs)` | One level: `xs` is a list literal of lists (`flatten([xs, ys])`) or a `map` that gives lists (`flatten(map(ps, [#.a, #.b]))`, `flatten(map(xs, filter(ys, …)))`); lists nested deeper are `E-UNSUPPORTED`, and so is a list of lists anywhere else. A list of items that aren't lists is given as it is. Of `nil`: `R-NIL`. |
+> | `sortBy(xs, key[, dir])`, `sort(xs[, dir])` | Keys (`sort`: the items) are numbers that can't be nil: a nullable key is `E-TYPE` ("give it a default"), so no key is ever `nil` at run time. The order is Go's insertion sort, stable: Go runs exactly that on up to 12 items; on more, Go's `sort.Sort` (pdqsort) isn't stable, so ties among more than 12 items may come out in another order there (§2.6). Nothing passes a NaN key (expr's `Less` is `<`): `sortBy([3.0, NaN, 1.0, 2.0], #)` is `[3, NaN, 1, 2]`, as in Go. `sort(nil)` is `[]`, as in Go; `sortBy(nil, …)` is `R-NIL`. |
+> | `uniq(xs)` | First occurrences, in order, compared with `==` (`1 == 1.0`; a NaN never matches). Not on records (`E-UNSUPPORTED`). Of `nil`: `R-NIL`. |
+> | `median(xs)` | As Go: the values as floats, sorted with NaN first (`sort.Float64s`); the middle one, or the mean of the middle two; `0.0` for none. Of `nil`: `R-NIL`. |
 
 **Math:** `abs`, `int`, `float`, `round`, `floor`, `ceil`.
 
@@ -284,6 +294,10 @@ The checker is statically typed, so it rejects some programs that expr would run
 | `1 % 0` with constants | a compile error under expr's optimizer | `R-DIV0` at run time; the oracle runs unoptimised (§9) |
 | `{a: 1, a: 2}` | inconsistent | `E-DUP-KEY` |
 | errors in items that nothing consumes | raised, because expr is eager | not raised (§2.7) |
+| ties in `sortBy`/`sort` of more than 12 items | `sort.Sort` (pdqsort) isn't stable past 12 items | stable: the insertion order Go gives up to 12 items; the corpus keeps ties within 12 items (§9) |
+| a sort key that may be nil | `R-NIL` when compared, none for a single item | `E-TYPE` |
+| `a..b` whose bound passes 65,535 | runs (and allocates) | `E-UNBOUNDED` |
+| `flatten` of lists nested more than one deep, or of mixed items | flattens every level | `E-UNSUPPORTED` / `E-TYPE` |
 
 ### 2.7 Lazy evaluation
 
@@ -482,7 +496,7 @@ Ranges are computed **exactly in i128**. If a result could leave i64 (so it coul
 | `take(xs, k)` | `min(n, max(0, hi(k)))` |
 | `xs[a:b]` (either left out) | `end − start`, from the ranges of `a` and `b` (a constant is a range of one value): `end` is `max(0, n + hi(b))` if `b` is always negative, `min(n, hi(b))` if it is never negative, else `n` (and `n` without `b`); then `max(0, end − lo(a))` if `a` is never negative, `min(end, −lo(a))` if it is always negative, else `end`; clamped to `0..n`. So `xs[-5:]` is `min(n, 5)`, `xs[1:]` is `n − 1`, and `xs[k:]` with `k` an input of unknown sign is `n` |
 | `concat(a, b, …)` | the sum of the bounds (saturating) |
-| `flatten(xs)` | the product of the bounds at every level |
+| `flatten(xs)` | the product of the bounds at every level (as built, one level: `n × m`; of a list literal, the sum of its lists' bounds; over 65,535 is `E-UNBOUNDED`) |
 | `c ? a : b`, `a ?? b` | the larger of the two |
 
 A bound only matters for holds, for output positions and for work. A flowing list doesn't need a useful bound: `sum(lo..hi)` is fine.
@@ -495,7 +509,7 @@ A bound only matters for holds, for output positions and for work. A flowing lis
 - Charge: none. The list is built in place in the output layout, and its bound must be at most `maxItems` (§3.4).
 - A `sortBy`, `sort` or `uniq` written straight into the output is done in place in that list.
 
-> **As built (lists in the output):** there is no arena yet, so a list is *held* in locals instead. The output's leaf at a list position is the list's handle (§8). An input list passed on, or a list literal, needs nothing more: the handle points at the input, or at the literal's block of locals. A list the program builds (`map`, `filter`, `concat`, a slice, `take`) is held wherever a value is needed (the output, a record field, a branch, `??`): a block of `bound × leaves(item)` locals is reserved for it, its items are written there by one loop, and the value is a handle to the block. Every literal's and held list's block is reserved for the whole evaluation, below all other locals, so a handle can be copied freely and stays readable after the evaluation (§8). The charge is counted in the program's locals (`Memory.locals`; `held_slots` of them, reported in `E-LIMIT`'s help), so a list's `maxItems` counts against the caller's limit (`--limit`, `E-LIMIT`); the blocks together may take at most 32,768 slots (`E-HOLD`). A list consumed by a list builtin is never held (§6). Writing a held list also converts an int item leaf into a float one where the output wants a float, and rewrites items laid out differently from the output's items (e.g. a record without an optional field).
+> **As built (lists in the output):** there is no arena yet, so a list is *held* in locals instead. The output's leaf at a list position is the list's handle (§8). An input list passed on, or a list literal, needs nothing more: the handle points at the input, or at the literal's block of locals. A list the program builds (`map`, `filter`, `concat`, a slice, `take`, a range, `reverse`, `flatten`, `sortBy`, `sort`, `uniq`) is held wherever a value is needed (the output, a record field, a branch, `??`): a block of `bound × leaves(item)` locals is reserved for it, its items are written there by one loop, and the value is a handle to the block. Every literal's and held list's block is reserved for the whole evaluation, below all other locals, so a handle can be copied freely and stays readable after the evaluation (§8). The charge is counted in the program's locals (`Memory.locals`; `held_slots` of them, reported in `E-LIMIT`'s help), so a list's `maxItems` counts against the caller's limit (`--limit`, `E-LIMIT`); the blocks together may take at most 32,768 slots (`E-HOLD`). A `sortBy`, `sort` or `uniq` kept as a value is held once: its own block is the value's (a sort's computed keys after the items). A list consumed by a list builtin is never held (§6), except for what H2–H5 hold. Writing a held list also converts an int item leaf into a float one where the output wants a float, and rewrites items laid out differently from the output's items (e.g. a record without an optional field).
 
 **H2. `sortBy` and `sort`.**
 - Charge: `n × (8 + size(T))`. The buffer holds `(key, item)` pairs.
@@ -505,6 +519,26 @@ A bound only matters for holds, for output positions and for work. A flowing lis
   - `find(…, p)` → min-by over `filter(xs, p)`.
   - `sum`, `count`, `len`, `mean`, `min`, `max`, `any`, `all`, `none`, `one`, `in` → the sort is dropped. A float `sum` or `mean` may then differ in its last bits.
 - Ties follow the stable sort. `first` of an ascending sort is the first minimum, and `last` is the last maximum.
+
+> **As built (H2–H5):** the holds are blocks of locals (there is no arena yet), reserved for the whole evaluation and counted in `held_slots` (H1), so the charge is in slots of 16 bytes: an item is its leaves, and a sorted block keeps one slot more per item for its key unless the key is one of the item's own leaves (`sort(xs)`, `sortBy(ps, .t)`; not `sortBy(xs, -#)`). The planner (§7.6) works out what each consumer needs of a list, through the stages between them, and holds only that:
+>
+> | Consumer of the sort (through `map`s, and a `filter` straight on the sort, which goes under it) | Held |
+> |---|---|
+> | `first`, `xs[c]` or `get(…, c)` with a constant `c ≥ 0`, `find(…, p)` straight on the sort (`p` goes under it) | `c + 1` items (1 for `first` and `find`): a k-selection |
+> | `last`, `xs[-c]` or `get(…, -c)` with a constant `c > 0`, `findLast(…, p)` straight on the sort | `c` items from the end (1 for `last` and `findLast`) |
+> | a window: `take(…, k)`, `[:k]`, `[a:b]` with neither end negative | `hi(k)` (or `hi(b)`) items |
+> | a window `[-k:]` (no `map` reading `#index` between) | `k` items from the end |
+> | `reverse` | as its consumer's, from the other end |
+> | `len`, `count`, `sum`, `mean`, `median`, `min`, `max`, `any`, `all`, `none`, `one`, `in` (no `map` reading `#index` between) | nothing: the sort is dropped |
+> | anything else (`reduce`, `findIndex`, a `map` reading `#index` before a tail, a list kept as a value, …) | the input's bound |
+>
+> A k-selection is one pass: each item is inserted into the k-block as Go's insertion sort would place it (`HoldInsert`, §7.4), so it gives exactly the first or last k items of the stable sort, ties and NaN keys included. The work is up to k moves per item.
+>
+> **H3, as built.** `uniq` holds its input's bound (its first occurrences, each compared with the ones kept: up to `n × bound` comparisons), `hi(k)` items under a head window (it stops reading once full), and nothing under `first`, `min`, `max` or `in`, which see the same values without it.
+>
+> **H4, as built.** `median` holds its input's bound, one slot a value, kept sorted as it arrives. A sort under it is dropped. (D2: within the limit only.)
+>
+> **H5, as built.** `reverse` holds nothing: its source is walked from its end (a list, a range, a held block, a `concat`'s parts last first, a `flatten`'s lists), and each stage before it is turned around: a `filter` as it is, a `map` reading `#index` counts down from the number of items that reach it, a window's bounds are counted from the end. Where that number isn't a list's length, a replay counts it (work, not memory). Only a second `reverse` in one loop holds what the first one reversed (`reverse(reverse(xs)[1:])` holds `reverse(xs)[1:]`).
 
 **H3. `uniq`.**
 - Charge: `n × size(T)`.
@@ -627,7 +661,7 @@ Profiles may add their own wording to the help, for example naming their inputs.
 | `E-NAME` | `prev.cout`, `pow(x, 2)`, `Math.floor`, `xs.length` | "`Prev` has no field `cout`" / "did you mean `count`?"; "`pow` isn't a builtin" / "use `x ** y`"; "lists have no fields" / "use `len(xs)`" |
 | `E-REDECLARE` | `let max = …` | "`max` is a builtin and can't be a name" / "rename it, e.g. `max_v`" |
 | `E-POINTER` | `filter(xs, #index > 2)` | "`#index` exists only in `map` and `reduce`" / "to skip items use a slice: `xs[3:]`; for one item use `xs[k]`" |
-| `E-UNSUPPORTED` | `"a" + b`, `now()`, `m[k]` | "`{feature}` isn't available" / a fix for each feature. Strings: "output numbers; format them where they're displayed". Time: "pass time in as an input". Capped list: "`concat(xs, [x])[-N:]`" |
+| `E-UNSUPPORTED` | `"a" + b`, `now()`, `m[k]` | "`{feature}` isn't available" / a fix for each feature. Strings: "output numbers; format them where they're displayed". Time: "pass time in as an input". Capped list: "`concat(xs, [x])[-N:]`". As built, lists of lists: "lists inside lists are supported only straight inside `flatten`" / "flatten it: `flatten([xs, ys])`, or join them: `concat(xs, ys)`"; `uniq` of records: "`uniq` doesn't compare records" |
 | `E-TYPE` | `elapsed_ms: t / 1000` | "`elapsed_ms` is an integer but this is a float (`/` always gives a float)" / "`int(t / 1000)`" |
 | `E-TYPE` (condition) | `prev?.paused ? …` | "`prev?.paused` may be nil, so it can't be a condition" / "`prev?.paused ?? false`" |
 | `E-TYPE` (nil into a position) | `best: max(xs)` | "`best` can't be nil, but `max(xs)` is nil for an empty list" / "`max(xs) ?? 0.0`, or make `best` optional" |
@@ -635,6 +669,7 @@ Profiles may add their own wording to the help, for example naming their inputs.
 | `E-ARG` (a nullable path as an argument) | `dist(s?.last, p)` | as built: "the argument `a` of `dist`: this may be nil (…), but nil isn't allowed here" / "test it first: `s?.last != nil ? dist(…) : …` (in the first branch `s?.last` isn't nil), or give a default: `s?.last ?? …`" |
 | `E-VARIANT` | `{phase: {idle: {}, racing: {gun: 1}}}`; `{phase: {}}`; `{phase: {racing: r}}` with `r` nullable | "the output field `phase` must have exactly one of `countdown`, `idle`, `racing`, but this sets 2 of them: `idle` and `racing`" / "set only one; to choose between them, use a condition: `c ? {a: …} : {b: …}`"; "… but this sets none of them" / "set one, e.g. `countdown: {…}`"; "… but the variant `racing` here may be nil" / "choose the variant with a condition, e.g. `r != nil ? {racing: r} : {countdown: …}`"; "… but this is a record {idle, racing} and isn't known to have exactly one" / "build it with one variant, e.g. `{countdown: {…}}`, or pass on a value that has these variants" |
 | `E-TYPE` (`%`, an index) | `x % 60` with a float `x`; `xs[n / 2]` | "`%` needs ints" / "`int(x) % 60`"; "an index must be an int" / "`xs[int(n / 2)]`" |
+| `E-TYPE` (as built: sorts) | `sortBy(ps, .alt)` with `alt` optional; `sort(xs, d)`; `sort(ss)` of strings | "`sortBy`'s key may be nil, but a sort key can't be" / "give it a default: `(…) ?? 0`, or filter first: `sortBy(filter(xs, .v != nil), .v ?? 0)`"; "the sort direction must be the literal \"asc\" or \"desc\""; "`sort`'s items must be numbers, but this is a string" |
 | `E-ARG` | a builtin called with the wrong arity or types | "`{name}` takes ({params})" / the declaration's signature |
 | `E-FIELD` | the result lacks `total` | "the output is missing `total`" / "`total: prev?.total ?? 0.0`" |
 | `E-RANGE` | `n: prev.n + 1` where `maximum` is 10 | "`n` is at most 10 but this can be 11" / "clamp it: `min(prev.n + 1, 10)`" |
@@ -643,6 +678,8 @@ Profiles may add their own wording to the help, for example naming their inputs.
 | `E-HOLD` (as built: held lists) | `filter(ps, …)` into an output list of 65,535 records | "this list is held: up to {bound} items of {stride} slots, {slots} slots ({bytes} bytes); a program's lists can hold at most 32768 slots in all, and these need {total}" / "slice it first (`(…)[-N:]`, `take(…, N)`), or keep only what you need (`first`, `last`, `sum`, `count`, …)" |
 | `E-HOLD` (index) | `ys[i]` in a loop, where `ys` is filtered | "`ys[…]` in this loop needs all of `ys` held ({bytes} bytes), because a filtered list can't be indexed" / "look back by a constant: `ys[#index - 1]` in `map(ys, …)`, or `ys[#index]` in `map(ys[1:], …)`" |
 | `E-UNBOUNDED` | `take(sortBy(xs, .v), prev.n)` with no `maximum` on `n` | "the size of `{expr}` depends on `{value}`, which has no upper bound" / "add `maximum` to `{path}`, or cap it: `min({value}, N)`" |
+| `E-UNBOUNDED` (as built: ranges, `flatten`) | `sum(1..i)` with `i` an input with no `maximum` | "this range can have up to {n} items (`i` is an integer); a range is a loop, and can have at most 65535" / "bound its ends: give the inputs `minimum` and `maximum` in their schemas, or clamp them, e.g. `max(a, 0)..min(b, 1000)`"; `flatten` over 65,535: "`flatten` here can give up to {n} items; a list can have at most 65535" / "slice the lists first: `flatten(map(xs[-N:], …))`". (`take(sortBy(xs, .v), n)` with an unbounded `n` isn't refused as built: the sort holds its input's bound instead, which `E-HOLD` checks.) |
+| `E-HOLD` (as built: sorts, `uniq`, `median`, a second `reverse`) | `reduce(sortBy(big, .lat), …)` with `big` 20,000 records | "this sort holds its whole input: up to 20000 items of 3 slots, 60000 slots (960000 bytes); a program's lists can hold at most 32768 slots in all, and these need 60000" / "take only what you need of it (`first(sortBy(…))`, `last(…)`, `take(sortBy(…), k)`, `sortBy(…)[-k:]`: k items), aggregate it (`sum`, `count`, `max`, …: nothing held), or slice its input first (`xs[-N:]`)"; likewise "`uniq` holds the values it has kept", "`median` holds every value", "this list is held to be reversed again", each with its fix |
 | `E-ACC-GROWS` | `reduce(xs, concat(#acc, [#]), [])` | "this `reduce` accumulator grows with every item" / "`concat(#acc, [#])[-N:]`, or use `map`/`filter`" |
 | `E-LIMIT` | (the totals) | "the program needs {total} bytes (output {o}, buffers {a}, stack {k}); the limit is {limit}" / the largest item's own help, with its span. As built: "… (stack {k} × 16, locals {l} × 16, output {o} × 16); the limit is {limit}" / with held lists, "{h} of the {l} locals hold lists (each held list is its bound × its items' leaves): lower the output's `maxItems`, or slice before holding: `(…)[-N:]`" |
 | `E-WORK` | `map(xs, count(xs, …))` against a work limit | "about {work} instructions (loops over {bounds} multiply)" / "slice the input (`xs[-N:]`), or carry a running total in the output" |
@@ -711,7 +748,7 @@ Every list-typed expression is lowered to a **pipeline**: a source, then stages,
 
 A `reduce` accumulator is double-buffered (H8), so replays can read it.
 
-> **As built:** sources are a list value (an input list, a literal, a held list, or any expression giving a handle) or a `Concat` of pipelines; stages are `Map`, `Filter`, `Slice` and `Take`; sinks are the aggregates and finders of §2.3 and `WriteList`, which writes the items into a held list's block (§4.3 H1). A `Concat` runs one loop per part, each part's items through its own stages, then the stages after the `concat`, then the sink (that code is emitted once per part); a part laid out differently from the whole is converted item by item. A window (`Slice`, `Take`) skips the items before its start and leaves the pipeline's loops at its end; one straight on a list sets the loop's bounds instead, so `gps[-64:]` visits only 64 fixes, however long the track. A negative bound counts the items before the window first, by a replay (the length of a list is read directly). A negative `take` count fails before any loop (`R-ARG`).
+> **As built:** the IR is in `lang/compiler/src/plan.rs`, and §7.6 describes it and its lowering. Sources are a list value (an input list, a literal, a held list, or any expression giving a handle), a `Range`, a `Concat` of pipelines, or a `Hold` (a breaker's input written into a block first); stages are `Map`, `Filter`, `Window` (`Slice`, `Take`), `Reverse`, `Flatten` and `FlatMap`; sinks are the aggregates and finders of §2.3 (with `median`) and a block write, which writes the items into a held list's block (§4.3 H1), or a hold's (in order, sorted, or first occurrences). `Index` sinks are `xs[i]`/`get` aggregates; `Zip` isn't built. A `Concat` runs one loop per part, each part's items through its own stages, then the stages after the `concat`, then the sink (that code is emitted once per part); a part laid out differently from the whole is converted item by item. A window (`Slice`, `Take`) skips the items before its start and leaves the pipeline's loops at its end; one straight on a list or range sets the loop's bounds instead, so `gps[-64:]` visits only 64 fixes, however long the track. A negative bound counts the items before the window first, by a replay (the length of a list is read directly). A negative `take` count fails before any loop (`R-ARG`).
 
 **Cursor state** lives in locals, and its size is static:
 - one counter per stage;
@@ -867,6 +904,7 @@ There is a value stack and a set of locals, both made of slots. Arguments are pu
 | Lists (as built) | `PushInputList id`, `MakeList base len stride`, `ListLen`, `ListRead leaf`, `ListStore base cap stride`, `ListMake base cap stride` | `PushInputList` pushes a handle to input list `id` (nil if the host says it's absent); `MakeList` a handle to items in locals. `ListLen`: handle → int (nil is `R-NIL`). `ListRead leaf`: handle, index → that item's leaf; it needs `0 ≤ i < len`, else `R-INDEX` (the compiler adds `len` to a negative index first). A held list's block is `cap` items of `stride` leaves from local `base` (checked at load to lie in the locals): `ListStore` pops an item's `stride` leaves and then (on top) its index `i < cap`, and writes item `i`; `ListMake`: len → a handle to the block's first `len ≤ cap` items. Either out of range is `R-TYPE` (a compiler bug). Loops are ordinary backward jumps. |
 | Errors (as built) | `Error code` | Fails the evaluation: 1 `R-NIL`, 2 `R-INDEX`, 3 `R-ARG`; ends a path. |
 | Holds | `HoldSortInsert buf dir k`, `HoldSort buf dir`, `HoldUniqueInsert buf`, `HoldMedian buf` | Stable insertion. A `Nil` key is `R-ARG`. Each comparison or move costs 1. |
+| Holds (as built) | `HoldInsert base cap stride mode` | One op for every sorted block (`sortBy`, `sort`, `median`, the k-selections). The block is `cap` items of `stride` leaves from local `base`, then, when the key isn't one of the item's leaves, `cap` keys (one slot each): items stay contiguous, so a handle (`ListMake`) reads them as any held list. Pops the block's state (an int: its count, top), then the key when it's kept apart, then the item's `stride` leaves; pushes the new state. `mode` (`bytecode::hold_mode`): bit 0 descending; bit 1 keep the last `cap` (else the first); bit 2 NaN before numbers (`median`; else keys compare with `<` alone, as expr's `Less`, so nothing passes a NaN); bits 4–15 the key's leaf in the item plus one (0: kept apart). The insertion is Go's insertion sort: the item goes in at the end and moves to the front past each item whose key it is strictly less than. A full block keeping the first `cap` drops its last item when one moves in, ignores one that doesn't, and closes (state `cap + 1`: later items are ignored) when one that nothing can pass (a NaN key) stays past its end; one keeping the last `cap` drops its first item, unless the new one would move past it. A `Nil` key is `R-ARG`, any other non-number `R-TYPE`. It counts as one instruction. `uniq` needs no op of its own: each item is compared with the kept ones in a loop of `ListRead` and `Eq`. |
 | Host builtins | `CallHost import args results` | Pops `args` leaves, calls the builtin linked as `import`, pushes its `results` leaves. The counts must equal the import's. A host failure is `R-ARG`. (Builtins over lists come with lists.) |
 | Errors | `Error code` | |
 | End | `Return` | The output is complete. |
@@ -902,8 +940,28 @@ The VM refuses to load the program (`LoadError`) unless every one of these holds
 - **Imports:** every `CallHost` names an import whose counts it matches (`LoadError::BadImport`), and linking finds a registered builtin with each import's exact signature and counts (`LoadError::Unlinked`, `LoadError::BadImport`).
 - **Stack:** an abstract interpretation of stack heights shows that the height at each instruction is the same on every path, never negative, and never above `max_stack`, and that every `Peek s` reads a slot below the height there.
 - **Static offsets** lie inside their space.
+- **Blocks (as built):** a `MakeList`, `ListStore` or `ListMake` block, and a `HoldInsert` block with its keys, lies inside the locals; a `HoldInsert` key leaf lies inside the item.
 
 Offsets reached through a `Ref`, and buffer capacities, are checked at run time.
+
+### 7.6 Pipelines (as built)
+
+The compiler lowers every list a list builtin consumes, and every list kept as a value, through one IR (`lang/compiler/src/plan.rs`; §6.1 is the design it follows):
+
+```
+Pipeline { source: Source, stages: [Stage], sink }
+Source = List(expr)            a handle: an input list, a literal, a held block, any list-valued expression
+       | Range(a, b)           a + i for i in 0..count, count = max(0, b - a + 1)
+       | Concat([Pipeline])    each part's loop in turn
+       | Hold { inner: Pipeline, kind: Plain | Sorted(key, dir, head | tail) | Unique, cap }
+Stage  = Map(body) | Filter(pred) | Window(slice | take) | Reverse | Flatten | FlatMap(map)
+sink   = an aggregate (§2.3, `median` included) | a block write (a list kept as a value, or a hold's block)
+```
+
+- **Planning** (`plan::for_sink`, `plan::for_write`) is deterministic, and decides every hold. It walks from the sink down the stages, carrying what the consumer needs of the list: every item in order, every item in any order, only which values appear, or only the first or last `k` (§4.3, as built). A `sortBy` or `uniq` becomes a `Hold` of the least that need allows, or is dropped. A `filter` straight on a sort, and `find`'s predicate, go under the sort. A second `reverse` in one pipeline holds what the first reversed. `flatten(map(xs, body))` whose `body` is a pipeline (under `let`s) becomes `FlatMap`: the body's own pipeline runs for each item, never held.
+- **Lowering** (`emit.rs`, one routine) emits each `Hold` first, as a loop of its own writing its block (into the value's block when the hold is the whole list kept as a value), then reads the block as a `List`. Each stage's state lives in locals and is set up before the loops (a map's value and `#index` counter, a window's counter and bounds); then one loop per list or range, the stages inlined in order, then the sink. A `Flatten` stage loops over the item's list there and then, running the stages after it and the sink inside; a `FlatMap` runs the body's pipeline the same way, with `#` (and `#index`) the outer item's.
+- **Reverse.** A loop whose stages include an odd number of `Reverse`s runs from its last index to its first (a `concat`'s parts last first). Each stage before the `Reverse` sees its items backwards: a `Map` reading `#index` counts down from the number of items that reach it less one, and a `Window` `[s:e)` over `n` items becomes `[n − e : n − s)` counted from the end; `n` is the list's length straight on a list, else a replay that counts. A window straight on a list or range sets the reversed loop's bounds instead.
+- **Memory** is read off the lowered plan: each hold's block (and each literal's, and each list kept as a value) is reserved in locals for the whole evaluation (`held_slots`); everything else is per-loop locals, released when the loop ends. `langc check` and `Memory` report them; nothing is allocated at run time.
 
 ---
 
@@ -1002,7 +1060,7 @@ Each implementation must be exact: integer arithmetic, or floats with no transce
 |---|---|
 | `integer divide by zero` | `R-DIV0` |
 | `index out of range` / `out of bounds` | `R-INDEX` |
-| `from <nil>` / `<nil>` operands, `cannot concat invalid` (a nil `concat` argument) | `R-NIL` |
+| `from <nil>` / `<nil>` operands, `cannot concat invalid` (a nil `concat` argument), `cannot reverse invalid`, `cannot uniq invalid`, `cannot flatten invalid`, `invalid argument for median (type <nil>)` | `R-NIL` |
 | test-builtin errors, `reduce of empty`, `unknown order`, a negative `take` (`reflect.Value.Slice: slice index out of bounds`) | `R-ARG` |
 
 `R-RANGE`, `R-INPUT` and `R-TYPE` never appear in the corpus.
@@ -1013,6 +1071,7 @@ Each implementation must be exact: integer arithmetic, or floats with no transce
 
 **The corpus**
 - the probes;
+- sorts with ties keep them within 12 items, where Go's `sort.Sort` is a stable insertion sort (§2.6); longer sorts have distinct keys;
 - generated edge cases: nil paths, `#index`, empty lists, throw versus `nil`, every `??` precedence probe, and every test builtin;
 - a rejection set: at least one program per rule in §5.1, each with its golden message.
 
@@ -1033,7 +1092,7 @@ Profiles add their own corpora on top of this.
 - Floats are compared within a tolerance.
 
 **Open:**
-- **D2: `median` over large inputs.** Hold within the limit only, or use multi-pass selection, or a remedian.
+- **D2: `median` over large inputs.** Hold within the limit only, or use multi-pass selection, or a remedian. *As built:* hold within the limit only (§4.3 H4); over it is `E-HOLD`.
 - **D13: the builtin ABI.** Only flat scalars cross it. Strings, enums and list results are not supported. Is that enough for the host builtins we expect?
 - **D15: lists in a host's kept output.** *Resolved:* the host copies them. A list in the output is a handle into the locals or an input list (§8); the engine host (`common/src/engine.rs`, engine/PROFILE.md §3 "State lists") follows each state list's handle after an accepted evaluation and copies its items into a region of its own, sized at install from the list's `maxItems` (the bundle's `layout.bin` names the state lists), and serves them to the next evaluation as that input list. The packed layout of §7.3 (items in the output after the handle) was the alternative; it would have made the state a plain copy at the cost of output slots for every item at its bound.
 - **D16: trigonometry.** The language has no `sin`, `cos` or `atan2` (nor does the engine profile, which removed them). A circular mean of headings (extreme-tune) can't be written; `lang/examples/tune` uses the mean of wrapped differences instead, which agrees to 1.3e-4° on extreme-tune's test.

@@ -5246,6 +5246,6248 @@
           }
         }
       ]
+    },
+    {
+      "name": "reverse: a list, a window, a map",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "70",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "50",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "40",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "30",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "20",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: after a filter, and #index on either side",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "98",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "204",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "406",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "309",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "205",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "104",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: windows after a filter, from either end",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: consumed by aggregates",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "i": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "l": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "r": {
+                "int": "0",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "4",
+                "kind": "int"
+              },
+              "g": {
+                "int": "3",
+                "kind": "int"
+              },
+              "i": {
+                "int": "0",
+                "kind": "int"
+              },
+              "l": {
+                "int": "1",
+                "kind": "int"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "r": {
+                "int": "4321",
+                "kind": "int"
+              },
+              "x": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "i": {
+                "int": "0",
+                "kind": "int"
+              },
+              "l": {
+                "int": "5",
+                "kind": "int"
+              },
+              "n": {
+                "int": "1",
+                "kind": "int"
+              },
+              "r": {
+                "int": "5",
+                "kind": "int"
+              },
+              "x": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: of a concat, and of a list of records",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "bits": "4004000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3ff8000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: twice",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse: #index in concat parts, flat-maps and ranges, and over sorts",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "g": {
+                "items": [],
+                "kind": "list"
+              },
+              "h": {
+                "items": [],
+                "kind": "list"
+              },
+              "i": {
+                "items": [],
+                "kind": "list"
+              },
+              "j": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "32",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "23",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "37",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "37",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "37",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "37",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "31",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "34",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "23",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "j": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "9",
+                "kind": "int"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "j": {
+                "int": "9",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse of a nil list fails",
+      "results": [
+        {
+          "error": "cannot reverse invalid (1:5)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ranges: as values, and consumed",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "int": "10",
+                "kind": "int"
+              },
+              "c": {
+                "int": "4",
+                "kind": "int"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "int": "2",
+                "kind": "int"
+              },
+              "j": {
+                "int": "110",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "int": "3",
+                "kind": "int"
+              },
+              "c": {
+                "int": "1",
+                "kind": "int"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "int": "0",
+                "kind": "int"
+              },
+              "j": {
+                "int": "103",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "int": "0",
+                "kind": "int"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "items": [],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "int": "0",
+                "kind": "int"
+              },
+              "j": {
+                "int": "100",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "int": "0",
+                "kind": "int"
+              },
+              "c": {
+                "int": "21",
+                "kind": "int"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-10",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-16",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-21",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-24",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-25",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-24",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-21",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-16",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "24",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "39",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "56",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "75",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "96",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "119",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "144",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "171",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "200",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-8",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "-10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "int": "11",
+                "kind": "int"
+              },
+              "j": {
+                "int": "100",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "int": "-9",
+                "kind": "int"
+              },
+              "c": {
+                "int": "3",
+                "kind": "int"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "-4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "h": {
+                "items": [
+                  {
+                    "int": "-3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "int": "2",
+                "kind": "int"
+              },
+              "j": {
+                "int": "91",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ranges: in, first, last, an index, and a range of a computation",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "b": {
+                "int": "1",
+                "kind": "int"
+              },
+              "c": {
+                "int": "4",
+                "kind": "int"
+              },
+              "d": {
+                "int": "3",
+                "kind": "int"
+              },
+              "e": {
+                "int": "0",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "b": {
+                "int": "99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "17",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "g": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "b": {
+                "int": "-3",
+                "kind": "int"
+              },
+              "c": {
+                "int": "3",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "e": {
+                "int": "2",
+                "kind": "int"
+              },
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "g": {
+                "items": [
+                  {
+                    "int": "-2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "flatten: a literal of lists, and a map that gives lists",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "20",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "flatten: a map whose items are pipelines, consumed",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "i": {
+                "items": [],
+                "kind": "list"
+              },
+              "l": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "r": {
+                "items": [],
+                "kind": "list"
+              },
+              "s": {
+                "int": "0",
+                "kind": "int"
+              },
+              "w": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "22",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "33",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "l": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "6",
+                "kind": "int"
+              },
+              "r": {
+                "items": [
+                  {
+                    "int": "43",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "23",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "41",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "21",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "s": {
+                "int": "12",
+                "kind": "int"
+              },
+              "w": {
+                "items": [
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "21",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "32",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "43",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "54",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "65",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "l": {
+                "int": "5",
+                "kind": "int"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "r": {
+                "items": [
+                  {
+                    "int": "55",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "52",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "50",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "s": {
+                "int": "15",
+                "kind": "int"
+              },
+              "w": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "flatten: windows and #index around it",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: first and last of a sort, with ties",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "fd": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "h": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "l": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "ld": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "fd": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "h": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "l": {
+                "int": "1",
+                "kind": "int"
+              },
+              "ld": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fd": {
+                "int": "5",
+                "kind": "int"
+              },
+              "g": {
+                "int": "1",
+                "kind": "int"
+              },
+              "h": {
+                "int": "6",
+                "kind": "int"
+              },
+              "l": {
+                "int": "6",
+                "kind": "int"
+              },
+              "ld": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "15",
+                "kind": "int"
+              },
+              "fd": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "2",
+                "kind": "int"
+              },
+              "h": {
+                "int": "14",
+                "kind": "int"
+              },
+              "l": {
+                "int": "1",
+                "kind": "int"
+              },
+              "ld": {
+                "int": "15",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: take and slices of a sort",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "h": {
+                "items": [],
+                "kind": "list"
+              },
+              "i": {
+                "items": [],
+                "kind": "list"
+              },
+              "m": {
+                "items": [],
+                "kind": "list"
+              },
+              "t": {
+                "items": [],
+                "kind": "list"
+              },
+              "td": {
+                "items": [],
+                "kind": "list"
+              },
+              "tk": {
+                "items": [],
+                "kind": "list"
+              },
+              "tl": {
+                "items": [],
+                "kind": "list"
+              },
+              "z": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "h": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "104",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "201",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "303",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "td": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tk": {
+                "items": [],
+                "kind": "list"
+              },
+              "tl": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "h": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "104",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "201",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "303",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "td": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tk": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tl": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "h": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "101",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "td": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tk": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tl": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "h": {
+                "items": [
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "i": {
+                "items": [
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "114",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "213",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "312",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "m": {
+                "items": [
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "td": {
+                "items": [
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tk": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tl": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: sort, and computed keys",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "d": {
+                "int": "0",
+                "kind": "int"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "5",
+                "kind": "int"
+              },
+              "d": {
+                "int": "5",
+                "kind": "int"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "int": "10",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "12",
+                "kind": "int"
+              },
+              "d": {
+                "int": "12",
+                "kind": "int"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "int": "8",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "12",
+                "kind": "int"
+              },
+              "d": {
+                "int": "12",
+                "kind": "int"
+              },
+              "e": {
+                "items": [
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "int": "24",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: NaN keys stop what passes them",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "3",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "9",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "7",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "5",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "6",
+                "kind": "int"
+              },
+              "l": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "z": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: find on a sort, and filters under it",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "lf": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "tf": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "6",
+                "kind": "int"
+              },
+              "lf": {
+                "int": "4",
+                "kind": "int"
+              },
+              "tf": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "lf": {
+                "int": "9",
+                "kind": "int"
+              },
+              "tf": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "dropped sorts: consumers that ignore order",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "e": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "i": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "m": {
+                "int": "0",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "o": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "s": {
+                "int": "0",
+                "kind": "int"
+              },
+              "u": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "c": {
+                "int": "4",
+                "kind": "int"
+              },
+              "e": {
+                "bits": "3ff999999999999a",
+                "kind": "float"
+              },
+              "i": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "m": {
+                "int": "4",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "o": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "s": {
+                "int": "2",
+                "kind": "int"
+              },
+              "u": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "k-selection: [0] and [-1] of a sort",
+      "results": [
+        {
+          "ok": {
+            "int": "101",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "707",
+            "kind": "int"
+          }
+        },
+        {
+          "error": "index out of range: 0 (array length is 0) (1:14)"
+        }
+      ]
+    },
+    {
+      "name": "held sorts: as values",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "items": [],
+                "kind": "list"
+              },
+              "d": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "2",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4004000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "4",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "bff8000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "1",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3fe0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "3",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3fe0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "5",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4022000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "6",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4004000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "-5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "-5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "5",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4022000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "2",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4004000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "6",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4004000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "1",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3fe0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "3",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3fe0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "4",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "bff8000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "bfe0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4004000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4004000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "15",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402e000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "14",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402c000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "13",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402a000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "12",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4028000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-2",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "11",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4026000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "10",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4024000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "0",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "9",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4022000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "8",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4020000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "2",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "7",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "401c000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "6",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4018000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "5",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4014000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "4",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4010000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "6",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "3",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4008000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "2",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4000000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "8",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "1",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3ff0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "9",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "16",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "17",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "18",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "19",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "20",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "items": [
+                  {
+                    "int": "20",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "19",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "18",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "17",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "16",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "d": {
+                "items": [
+                  {
+                    "int": "20",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "19",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "18",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "17",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "16",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "15",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "14",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "13",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "12",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "11",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "10",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "8",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "7",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "15",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402e000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "14",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402c000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "13",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "402a000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "12",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4028000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-2",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "11",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4026000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "-1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "10",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4024000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "0",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "9",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4022000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "1",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "8",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4020000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "2",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "7",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "401c000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "6",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4018000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "4",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "5",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4014000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "5",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "4",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4010000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "6",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "3",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4008000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "2",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4000000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "8",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "1",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3ff0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "9",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "c000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3fe0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "3ff4000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4000000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4008000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "400c000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4010000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4014000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4018000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "401c000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4020000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4022000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4024000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4026000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "held sorts: where order counts",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "c": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "fi": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "m": {
+                "items": [],
+                "kind": "list"
+              },
+              "r": {
+                "int": "0",
+                "kind": "int"
+              },
+              "w": {
+                "items": [],
+                "kind": "list"
+              },
+              "x": {
+                "int": "-1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "c": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "fi": {
+                "int": "3",
+                "kind": "int"
+              },
+              "m": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1004",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2001",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3003",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4005",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "5006",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "r": {
+                "int": "96543211",
+                "kind": "int"
+              },
+              "w": {
+                "items": [
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "3",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "3fe0000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "3",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "6",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4004000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  },
+                  {
+                    "fields": {
+                      "id": {
+                        "int": "5",
+                        "kind": "int"
+                      },
+                      "v": {
+                        "bits": "4022000000000000",
+                        "kind": "float"
+                      },
+                      "w": {
+                        "int": "7",
+                        "kind": "int"
+                      }
+                    },
+                    "kind": "record"
+                  }
+                ],
+                "kind": "list"
+              },
+              "x": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "uniq: held, taken, and dropped",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "c": {
+                "int": "0",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "f": {
+                "items": [],
+                "kind": "list"
+              },
+              "g": {
+                "int": "0",
+                "kind": "int"
+              },
+              "h": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "i": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "j": {
+                "items": [],
+                "kind": "list"
+              },
+              "k": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "4",
+                "kind": "int"
+              },
+              "d": {
+                "int": "3",
+                "kind": "int"
+              },
+              "e": {
+                "int": "4",
+                "kind": "int"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "3ff0000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "4004000000000000",
+                    "kind": "float"
+                  },
+                  {
+                    "bits": "bfe0000000000000",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "int": "10",
+                "kind": "int"
+              },
+              "h": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "i": {
+                "int": "4",
+                "kind": "int"
+              },
+              "j": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "k": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "101",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "202",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "b": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "c": {
+                "int": "1",
+                "kind": "int"
+              },
+              "d": {
+                "int": "5",
+                "kind": "int"
+              },
+              "e": {
+                "int": "5",
+                "kind": "int"
+              },
+              "f": {
+                "items": [
+                  {
+                    "bits": "3fb999999999999a",
+                    "kind": "float"
+                  }
+                ],
+                "kind": "list"
+              },
+              "g": {
+                "int": "5",
+                "kind": "int"
+              },
+              "h": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "i": {
+                "int": "5",
+                "kind": "int"
+              },
+              "j": {
+                "items": [],
+                "kind": "list"
+              },
+              "k": {
+                "items": [
+                  {
+                    "int": "5",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "uniq: strings, enums and bools",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [],
+                "kind": "list"
+              },
+              "e": {
+                "items": [],
+                "kind": "list"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "b": {
+                "items": [
+                  {
+                    "bool": true,
+                    "kind": "bool"
+                  },
+                  {
+                    "bool": false,
+                    "kind": "bool"
+                  }
+                ],
+                "kind": "list"
+              },
+              "e": {
+                "items": [
+                  {
+                    "kind": "string",
+                    "string": "y"
+                  },
+                  {
+                    "kind": "string",
+                    "string": "x"
+                  }
+                ],
+                "kind": "list"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "s": {
+                "items": [
+                  {
+                    "kind": "string",
+                    "string": "a"
+                  },
+                  {
+                    "kind": "string",
+                    "string": "bb"
+                  },
+                  {
+                    "kind": "string",
+                    "string": ""
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "median",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "f": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              },
+              "g": {
+                "bits": "0000000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "bfe0000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "f": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "g": {
+                "bits": "4004000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "f": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "g": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "b": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              },
+              "c": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "d": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "e": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "f": {
+                "bits": "4010000000000000",
+                "kind": "float"
+              },
+              "g": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "uniq of a nil list fails",
+      "results": [
+        {
+          "error": "cannot uniq invalid (1:5)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sortBy of a nil list fails",
+      "results": [
+        {
+          "error": "reflect: call of reflect.Value.Len on zero Value (1:5)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sort of a nil list is empty",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [],
+                "kind": "list"
+              },
+              "f": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "median of a nil list fails",
+      "results": [
+        {
+          "error": "invalid argument for median (type \u003cnil\u003e) (1:1)"
+        },
+        {
+          "ok": {
+            "bits": "4004000000000000",
+            "kind": "float"
+          }
+        }
+      ]
     }
   ],
   "oracle": "github.com/expr-lang/expr v1.17.9-0.20260412144015-3a46b1970b37 (v1.17.8 + PR #954), Optimize(false), arm64"

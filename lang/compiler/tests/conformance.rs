@@ -20,8 +20,8 @@ fn read(path: &str) -> Json {
 fn go_error_code(e: &str) -> &'static str {
     if e.contains("integer divide by zero") {
         "R-DIV0"
-    } else if e.contains("zero Value") || e.contains("cannot concat invalid") {
-        // How Go expr reports a list builtin given nil (`sum(nil)`, `concat(nil, xs)`).
+    } else if e.contains("zero Value") || ["concat", "reverse", "uniq", "flatten"].iter().any(|b| e.contains(&format!("cannot {b} invalid"))) {
+        // How Go expr reports a list builtin given nil (`sum(nil)`, `concat(nil, xs)`, `reverse(nil)`).
         "R-NIL"
     } else if e.contains("reduce of empty array") || e.contains("reflect.Value.Slice") {
         // `reflect.Value.Slice`: how Go expr reports a negative `take`.

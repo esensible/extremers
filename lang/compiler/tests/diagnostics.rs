@@ -139,7 +139,25 @@ fn cases() -> Vec<(&'static str, &'static str, Json, Options)> {
         ("E-TYPE", "filter(xs, # + 1)[0]", iface(ints_in(), int()), none),
         ("E-TYPE", "xs[1.5]", iface(ints_in(), int()), none),
         ("E-TYPE", "b ? filter(xs, # > 1) : xs", iface(json!([{"name": "b", "schema": {"type": "boolean"}}, {"name": "xs", "schema": ints()}]), int()), none),
-        ("E-UNSUPPORTED", "sortBy(xs, #)[0]", iface(ints_in(), int()), none),
+        // Lists inside lists: only straight inside `flatten`, one deep
+        ("E-UNSUPPORTED", "len([xs, xs])", iface(ints_in(), int()), none),
+        ("E-UNSUPPORTED", "map(xs, [#])", iface(ints_in(), ints()), none),
+        ("E-UNSUPPORTED", "flatten([[xs]])", iface(ints_in(), ints()), none),
+        // Ranges are loops: their ends must be bounded
+        ("E-UNBOUNDED", "sum(1..i)", iface(i(), int()), none),
+        ("E-TYPE", "len(0..f)", iface(f(), int()), none),
+        ("E-UNBOUNDED", "len(flatten(map(big, big)))", iface(json!([{"name": "big", "schema": ints_of(1000)}]), int()), none),
+        // Sorts: keys are numbers that can't be nil, and the direction a literal
+        ("E-TYPE", "first(sortBy(ps, .alt))?.lat ?? 0.0", iface(json!([{"name": "ps", "schema": {"type": "array", "items": fix(), "maxItems": 20}}]), json!({"type": "number"})), none),
+        ("E-TYPE", "sort(xs, d)", iface(json!([{"name": "xs", "schema": ints()}, {"name": "d", "schema": {"enum": ["asc", "desc"]}}]), ints()), none),
+        ("E-TYPE", "sort(ss)", iface(json!([{"name": "ss", "schema": {"type": "array", "items": {"type": "string", "maxLength": 4}, "maxItems": 4}}]), json!({"type": "array", "items": {"type": "string", "maxLength": 4}, "maxItems": 4})), none),
+        ("E-UNSUPPORTED", "len(uniq(ps))", iface(json!([{"name": "ps", "schema": {"type": "array", "items": fix(), "maxItems": 20}}]), int()), none),
+        // Holds over the limit: each names what it holds, and the fix
+        ("E-HOLD", "reduce(sortBy(big, .lat), #acc + #.lon, 0.0)", iface(json!([{"name": "big", "schema": {"type": "array", "items": fix(), "maxItems": 20000}}]), json!({"type": "number"})), none),
+        ("E-HOLD", "len(uniq(big))", iface(json!([{"name": "big", "schema": ints_of(40000)}]), int()), none),
+        ("E-HOLD", "median(big)", iface(json!([{"name": "big", "schema": ints_of(40000)}]), json!({"type": "number"})), none),
+        ("E-HOLD", "sum(map(reverse(reverse(big)[1:]), #index))", iface(json!([{"name": "big", "schema": ints_of(40000)}]), int()), none),
+        ("E-LIMIT", "sortBy(xs, -#)", iface(ints_in(), ints()), Options { limit_bytes: Some(512), ..Options::default() }),
         // Lists written to the output: each construct's bound over `maxItems`
         ("E-OUTPUT-BOUND", "concat(xs, [1])", iface(ints_in(), ints()), none),
         ("E-OUTPUT-BOUND", "filter(xs, # > 1)", iface(ints_in(), ints_of(5)), none),

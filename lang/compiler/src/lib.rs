@@ -5,6 +5,7 @@
 pub mod check;
 pub mod diag;
 pub mod emit;
+pub mod plan;
 pub mod samples;
 pub mod schema;
 pub mod syntax;

@@ -177,6 +177,13 @@ impl Builtin {
 ///   and writes them as item `i`; `ListMake { base, cap, stride }`: len →
 ///   a handle to the block's first `len ≤ cap` items. Either out of range is
 ///   `R-TYPE` (a compiler bug).
+/// - A sorted block (`sortBy`, `sort`, `median`, a k-selection) is `cap`
+///   items of `stride` leaves in locals from `base`, followed (when the key
+///   isn't one of the item's leaves) by `cap` keys, one slot each.
+///   `HoldInsert { base, cap, stride, mode }` pops the block's state (its
+///   count, top), then the key (when kept apart), then the item's `stride`
+///   leaves; inserts the item; pushes the new state. A `nil` key is `R-ARG`,
+///   another non-number `R-TYPE`. See [`hold_mode`].
 /// - `AssertNotNil`: pops a value; nil is `R-NIL`.
 /// - `Return(n)`: pops the output's `n` leaves (the last leaf on top); the
 ///   stack must then be empty, and `n` must equal the output's leaf count.
@@ -220,6 +227,9 @@ pub enum Op {
     ListRead(u16),
     ListStore { base: u16, cap: u16, stride: u16 },
     ListMake { base: u16, cap: u16, stride: u16 },
+    /// Inserts an item into a sorted block, as Go's insertion sort does
+    /// (see [`hold_mode`] for `mode`).
+    HoldInsert { base: u16, cap: u16, stride: u16, mode: u16 },
     /// Fails the evaluation: 1 `R-NIL`, 2 `R-INDEX`, 3 `R-ARG`. Ends a path,
     /// like `Return`.
     Error(u8),
@@ -230,6 +240,47 @@ pub enum Op {
 /// The most leaves a host builtin may return (the VM holds them in a fixed
 /// buffer while the builtin runs).
 pub const MAX_HOST_RESULTS: u16 = 16;
+
+/// `HoldInsert`'s `mode`: descending.
+pub const HOLD_DESC: u16 = 1;
+/// `HoldInsert`'s `mode`: keep the last `cap` items of the sorted order
+/// (else the first `cap`).
+pub const HOLD_TAIL: u16 = 2;
+/// `HoldInsert`'s `mode`: NaN comes before every number (Go's
+/// `sort.Float64s`, for `median`); else keys compare with `<` alone, so
+/// nothing passes a NaN (Go's `sort.Sort` with expr's `Less`).
+pub const HOLD_TOTAL: u16 = 4;
+/// A key leaf must be below this to be kept in `mode`.
+pub const HOLD_KEY_MAX: u16 = 0x0FFF;
+
+/// `HoldInsert`'s `mode`: the flags, and in bits 4–15 the item leaf that is
+/// the key, plus one (0: the key is kept apart, after the items).
+///
+/// The insertion is Go's `insertionSort` (what `sort.Sort` runs on up to 12
+/// items): the item goes in at the end and moves towards the front past
+/// each item whose key it is strictly less than. With `count` items held:
+/// - fewer than `cap`: it goes in, and the count grows;
+/// - `cap`, keeping the first `cap`: it goes in if it moves into the block
+///   (the last item drops out); one that stays past the end and that
+///   nothing can pass (a NaN key) closes the block: the state becomes
+///   `cap + 1`, and later items are ignored;
+/// - `cap`, keeping the last `cap`: it goes in unless it would move past
+///   the first item (the first item drops out).
+pub const fn hold_mode(desc: bool, tail: bool, total: bool, key_leaf: Option<u16>) -> u16 {
+    let key = match key_leaf {
+        Some(l) => (l + 1) << 4,
+        None => 0,
+    };
+    key | ((desc as u16) * HOLD_DESC) | ((tail as u16) * HOLD_TAIL) | ((total as u16) * HOLD_TOTAL)
+}
+
+/// The key leaf in a `HoldInsert` mode, or `None` when the key is kept apart.
+pub const fn hold_key_leaf(mode: u16) -> Option<u16> {
+    match mode >> 4 {
+        0 => None,
+        k => Some(k - 1),
+    }
+}
 
 /// The longest encoded instruction (opcode + an 8-byte operand).
 pub const MAX_OP_LEN: usize = 9;
@@ -273,6 +324,7 @@ mod code {
     pub const LIST_READ: u8 = 0x4B;
     pub const LIST_STORE: u8 = 0x4C;
     pub const LIST_MAKE: u8 = 0x4D;
+    pub const HOLD_INSERT: u8 = 0x4E;
     pub const ERROR: u8 = 0x4F;
     pub const RETURN: u8 = 0x50;
 }
@@ -328,6 +380,12 @@ impl Op {
             Op::MakeList { base, len, stride } => with(buf, MAKE_LIST, &three(base, len, stride)),
             Op::ListStore { base, cap, stride } => with(buf, LIST_STORE, &three(base, cap, stride)),
             Op::ListMake { base, cap, stride } => with(buf, LIST_MAKE, &three(base, cap, stride)),
+            Op::HoldInsert { base, cap, stride, mode } => {
+                let mut o = [0u8; 8];
+                o[0..6].copy_from_slice(&three(base, cap, stride));
+                o[6..8].copy_from_slice(&mode.to_le_bytes());
+                with(buf, HOLD_INSERT, &o)
+            }
             Op::ListLen => with(buf, LIST_LEN, &[]),
             Op::ListRead(leaf) => with(buf, LIST_READ, &leaf.to_le_bytes()),
             Op::Error(code) => with(buf, ERROR, &[code]),
@@ -400,6 +458,11 @@ impl Op {
                 };
                 (op, 6)
             }
+            HOLD_INSERT => {
+                let b = arg(8)?;
+                let w = |i: usize| u16::from_le_bytes([b[i], b[i + 1]]);
+                (Op::HoldInsert { base: w(0), cap: w(2), stride: w(4), mode: w(6) }, 8)
+            }
             LIST_LEN => (Op::ListLen, 0),
             LIST_READ => (Op::ListRead(u16_at()?), 2),
             ERROR => (Op::Error(arg(1)?[0]), 1),
@@ -428,6 +491,7 @@ impl Op {
             Op::ListRead(_) => (2, 1),
             Op::ListStore { stride, .. } => (stride + 1, 0),
             Op::ListMake { .. } => (1, 1),
+            Op::HoldInsert { stride, mode, .. } => (stride + hold_key_leaf(mode).is_none() as u16 + 1, 1),
             Op::Error(_) => (0, 0),
             Op::AssertNotNil => (1, 0),
             Op::Return(n) => (n, 0),
@@ -955,6 +1019,20 @@ impl<'a> Program<'a> {
             Op::MakeList { base, len: n, stride } | Op::ListStore { base, cap: n, stride } | Op::ListMake { base, cap: n, stride } => {
                 (base as u32 + n as u32 * stride as u32) <= self.locals as u32 && stride < u16::MAX
             }
+            // The block, and its keys when they're kept apart, lie in the
+            // locals; a key leaf lies in the item.
+            Op::HoldInsert { base, cap, stride, mode } => {
+                let keys = match hold_key_leaf(mode) {
+                    Some(l) => {
+                        if l >= stride {
+                            return Err(LoadError::BadOperand(pc));
+                        }
+                        0
+                    }
+                    None => cap as u32,
+                };
+                (1..u16::MAX).contains(&stride) && (base as u32 + cap as u32 * stride as u32 + keys) <= self.locals as u32
+            }
             _ => true,
         };
         if ok { Ok(()) } else { Err(LoadError::BadOperand(pc)) }
@@ -1083,6 +1161,8 @@ mod tests {
             Op::Call(Builtin::Max, 3), Op::CallHost { import: 2, args: 4, results: 3 }, Op::PushInputList(4),
             Op::MakeList { base: 1, len: 2, stride: 3 }, Op::ListStore { base: 4, cap: 64, stride: 3 },
             Op::ListMake { base: 4, cap: 64, stride: 3 }, Op::ListLen, Op::ListRead(5), Op::AssertNotNil, Op::Return(3),
+            Op::HoldInsert { base: 7, cap: 9, stride: 3, mode: hold_mode(true, false, false, Some(2)) },
+            Op::HoldInsert { base: 7, cap: 9, stride: 1, mode: hold_mode(false, true, true, None) },
         ] {
             roundtrip(op);
         }

@@ -155,6 +155,8 @@ const IGNORED: &[&str] = &[
 
 /// The longest string a layout can hold, in bytes, and so the largest `maxLength` (spec §3.2).
 const MAX_STRING_BYTES: u32 = 65_535;
+/// The most items a list can have (spec §3.2), and so a range.
+pub const MAX_LIST_ITEMS: u32 = u16::MAX as u32;
 
 pub fn parse_interface(json: &Json) -> Result<Interface, Vec<Diag>> {
     let mut diags = Vec::new();

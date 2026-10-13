@@ -208,11 +208,70 @@ program.expr:1:4: error[E-TYPE]: an index must be an integer, but this is a floa
 ── b ? filter(xs, # > 1) : xs
 program.expr:1:1: error[E-TYPE]: the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
 
-── sortBy(xs, #)[0]
-program.expr:1:1: error[E-UNSUPPORTED]: `sortBy` isn't implemented yet
-  help: not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`
-program.expr:1:12: error[E-POINTER]: `#` is only meaningful inside a predicate
-  help: use it in the expression argument of a list builtin, e.g. `filter(xs, # > 0)`
+── len([xs, xs])
+program.expr:1:6: error[E-UNSUPPORTED]: lists inside lists are supported only straight inside `flatten`
+  help: flatten it: `flatten([xs, ys])`, or join them: `concat(xs, ys)`
+program.expr:1:10: error[E-UNSUPPORTED]: lists inside lists are supported only straight inside `flatten`
+  help: flatten it: `flatten([xs, ys])`, or join them: `concat(xs, ys)`
+
+── map(xs, [#])
+program.expr:1:9: error[E-UNSUPPORTED]: a `map` that gives lists is supported only straight inside `flatten`
+  help: flatten it: `flatten(map(xs, …))`; lists inside lists aren't implemented yet
+program.expr:1:1: error[E-TYPE]: each item of the output is an integer but this is a list of up to 1 (an integer (-2147483648..2147483647))
+
+── flatten([[xs]])
+program.expr:1:11: error[E-UNSUPPORTED]: lists inside lists are supported only straight inside `flatten`
+  help: flatten it: `flatten([xs, ys])`, or join them: `concat(xs, ys)`
+program.expr:1:1: error[E-UNSUPPORTED]: `flatten` of lists nested more than one deep isn't implemented yet
+program.expr:1:1: error[E-TYPE]: each item of the output is an integer but this is a list of up to 20 (an integer (-2147483648..2147483647))
+
+── sum(1..i)
+program.expr:1:5: error[E-UNBOUNDED]: this range can have up to 9223372036854775807 items (`i` is an integer); a range is a loop, and can have at most 65535
+  help: bound its ends: give the inputs `minimum` and `maximum` in their schemas, or clamp them, e.g. `max(a, 0)..min(b, 1000)`
+
+── len(0..f)
+program.expr:1:8: error[E-TYPE]: a range's end must be an integer, but this is a float
+  help: e.g. `0..int(n / 2)`
+
+── len(flatten(map(big, big)))
+program.expr:1:5: error[E-UNBOUNDED]: `flatten` here can give up to 1000000 items; a list can have at most 65535
+  help: slice the lists first: `flatten(map(xs[-N:], …))`
+
+── first(sortBy(ps, .alt))?.lat ?? 0.0
+program.expr:1:18: error[E-TYPE]: `sortBy`'s key may be nil, but a sort key can't be
+  help: give it a default: `(…) ?? 0`, or filter first: `sortBy(filter(xs, .v != nil), .v ?? 0)`
+
+── sort(xs, d)
+program.expr:1:10: error[E-TYPE]: the sort direction must be the literal "asc" or "desc"
+  help: `sort(…, "desc")`
+
+── sort(ss)
+program.expr:1:6: error[E-TYPE]: `sort`'s items must be numbers, but this is a string
+  help: sort by a number, e.g. `sortBy(xs, .t)`
+
+── len(uniq(ps))
+program.expr:1:5: error[E-UNSUPPORTED]: `uniq` doesn't compare records
+  help: keep the first of each by a field instead, e.g. with `reduce`
+
+── reduce(sortBy(big, .lat), #acc + #.lon, 0.0)
+program.expr:1:8: error[E-HOLD]: this sort holds its whole input: up to 20000 items of 3 slots, 60000 slots (960000 bytes); a program's lists can hold at most 32768 slots in all, and these need 60000
+  help: take only what you need of it (`first(sortBy(…))`, `last(…)`, `take(sortBy(…), k)`, `sortBy(…)[-k:]`: k items), aggregate it (`sum`, `count`, `max`, …: nothing held), or slice its input first (`xs[-N:]`)
+
+── len(uniq(big))
+program.expr:1:5: error[E-HOLD]: `uniq` holds the values it has kept: up to 40000 items of 1 slot, 40000 slots (640000 bytes); a program's lists can hold at most 32768 slots in all, and these need 40000
+  help: take only what you need of it (`take(uniq(…), k)`: k items), or slice its input first (`xs[-N:]`)
+
+── median(big)
+program.expr:1:1: error[E-HOLD]: `median` holds every value: up to 40000 items of 1 slot, 40000 slots (640000 bytes); a program's lists can hold at most 32768 slots in all, and these need 40000
+  help: slice its input first (`xs[-N:]`)
+
+── sum(map(reverse(reverse(big)[1:]), #index))
+program.expr:1:17: error[E-HOLD]: this list is held to be reversed again: up to 39999 items of 1 slot, 39999 slots (639984 bytes); a program's lists can hold at most 32768 slots in all, and these need 39999
+  help: reverse it once: `reverse(reverse(xs))` is `xs`
+
+── sortBy(xs, -#)
+program.expr:1:1: error[E-LIMIT]: the program needs 768 bytes (stack 3 × 16, locals 44 × 16, output 1 × 16); the limit is 512
+  help: 40 of the 44 locals hold lists (each held list is its bound × its items' leaves): lower the output's `maxItems`, or slice before holding: `(…)[-N:]`
 
 ── concat(xs, [1])
 program.expr:1:1: error[E-OUTPUT-BOUND]: the output holds at most 20 items, but this can have 21

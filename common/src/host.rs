@@ -923,13 +923,17 @@ impl Host {
         let Some(engine) = engine.as_mut() else {
             return Err(Rejected::Undecodable);
         };
+        let began = embassy_time::Instant::now();
         let evaluated = engine.evaluate(memory, track, now, event)?;
+        let took = began.elapsed().as_micros();
         let stats = engine.stats();
         debug!(
-            "engine {}: {} instructions, stack high {}",
+            "engine {}: {} instructions in {} us, stack high {}, {}",
             active.name(),
             stats.steps,
-            stats.stack_high
+            took,
+            stats.stack_high,
+            if evaluated.changed { "view changed" } else { "view unchanged" }
         );
         self.reschedule(active);
         if evaluated.changed {

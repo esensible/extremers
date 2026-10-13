@@ -254,6 +254,114 @@ fn a_window_on_a_list_visits_only_the_window() {
     }
 }
 
+/// Compiles `src`, checks the locals it holds for lists (`held_slots`), and
+/// runs it on each of `runs`: each must succeed within the static stack,
+/// and the deepest must reach it. Gives the figures.
+fn holds(iface: &serde_json::Value, src: &str, runs: &[serde_json::Value], held: u16) -> compiler::Memory {
+    let c = compile(src, iface, &Options::default()).unwrap_or_else(|d| panic!("{src}: {d:?}"));
+    if std::env::var("SHOW_MEMORY").is_ok() {
+        eprintln!("{src:70} held {} stack {} locals {}", c.memory.held_slots, c.memory.stack_slots, c.memory.locals);
+    }
+    assert_eq!(c.memory.held_slots, held, "slots held for `{src}`");
+    let mut high = 0;
+    for inputs in runs {
+        match run(&c.bytes, iface, inputs.as_object().unwrap(), &[]).unwrap() {
+            RunResult::Ok { stack_high, .. } => {
+                assert!(stack_high <= c.memory.stack_slots, "`{src}` used {stack_high} slots, over its bound {}", c.memory.stack_slots);
+                high = high.max(stack_high);
+            }
+            RunResult::Failed { code, .. } => panic!("`{src}` failed with {code} on {inputs}"),
+        }
+    }
+    assert_eq!(high, c.memory.stack_slots, "`{src}`: the stack bound is never reached");
+    c.memory
+}
+
+/// `reverse` runs its loops backwards, a range is a counter, and `flatten`
+/// is a nested loop: consumed by a list builtin, none of them holds
+/// anything, after a filter or a window too. Kept as a value, a list is
+/// held as any built list is (its bound × its items' leaves).
+#[test]
+fn reverse_ranges_and_flatten_hold_nothing() {
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20});
+    let small = json!({"type": "integer", "minimum": -10, "maximum": 10});
+    let iface = json!({"inputs": [{"name": "xs", "schema": ints}, {"name": "ys", "schema": ints}, {"name": "lo", "schema": small}, {"name": "hi", "schema": small}],
+                       "output": {"type": "integer"}});
+    let runs = [
+        json!({"xs": [], "ys": [], "lo": 3, "hi": 1}),
+        json!({"xs": [3, -1, 4, -1, 5, 9], "ys": [2, 7, -8], "lo": -2, "hi": 6}),
+    ];
+    for src in [
+        "sum(reverse(xs))",
+        "first(reverse(filter(xs, # > 0))) ?? 0",
+        "sum(map(reverse(filter(xs, # > 0)[1:]), #index * #))",
+        "sum(reverse(map(filter(xs, # > 0), #index * #)))",
+        "len(reverse(concat(xs, ys)))",
+        "sum(lo..hi) + count(reverse(lo..hi), # > 0)",
+        "sum(flatten(map(xs, filter(ys, # > 0))))",
+        "len(flatten(map(xs, let x = #; map(ys, # + x))))",
+        "last(reverse(flatten(map(xs, ys[:2])))) ?? 0",
+    ] {
+        holds(&iface, src, &runs, 0);
+    }
+    // Kept as a value: the list's bound × 1 leaf.
+    let out = |max: u32| json!({"inputs": iface["inputs"], "output": {"type": "array", "items": {"type": "integer"}, "maxItems": max}});
+    holds(&out(20), "reverse(filter(xs, # > 0))", &runs, 20);
+    holds(&out(21), "lo..hi", &runs, 21);
+    // A literal of two lists holds its two handles; flattened, 40 items.
+    holds(&out(40), "flatten([xs, ys])", &runs, 2 + 40);
+    // A second reverse in one loop reverses a held block: `reverse(xs)[1:]`,
+    // at most 19 items.
+    holds(&iface, "sum(map(reverse(reverse(xs)[1:]), #index * #))", &runs, 19);
+}
+
+/// A sort whose consumer needs only its first or last k items keeps k items
+/// (a k-selection): k × the item's leaves, and one slot more per item when
+/// the key is computed rather than one of the item's own leaves. A sort
+/// whose consumer ignores order holds nothing. Kept as a value, a sort,
+/// `uniq` and `median` hold the input's bound.
+#[test]
+fn sorts_hold_only_what_their_consumer_needs() {
+    let item = json!({"type": "object", "properties": {"id": {"type": "integer", "minimum": 0, "maximum": 100}, "v": {"type": "number"}, "w": {"type": "integer", "minimum": -50, "maximum": 50}}, "required": ["id", "v", "w"]});
+    let items = json!({"type": "array", "items": item, "maxItems": 20});
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 20});
+    let inputs = json!([{"name": "ps", "schema": items}, {"name": "xs", "schema": ints}]);
+    let iface = |out: serde_json::Value| json!({"inputs": inputs, "output": out});
+    let int = iface(json!({"type": "integer"}));
+    let num = iface(json!({"type": "number"}));
+    let p = |id: i32, v: f64, w: i32| json!({"id": id, "v": v, "w": w});
+    let runs = [
+        json!({"ps": [], "xs": []}),
+        json!({"ps": [p(1, 0.5, 3), p(2, 2.5, -1), p(3, 0.5, 3), p(4, -1.5, -1), p(5, 9.0, 7)], "xs": [3, 1, 3, 2, 1, 4, 3]}),
+        json!({"ps": [p(6, 1.0, 0)], "xs": [4, 2]}),
+    ];
+    // k-selections: k × 3 leaves (the key `.w` is a leaf of the item).
+    holds(&int, "first(sortBy(ps, .w))?.id ?? -1", &runs, 3);
+    holds(&int, "last(sortBy(ps, .w, \"desc\"))?.id ?? -1", &runs, 3);
+    holds(&int, "sum(map(take(sortBy(ps, .w), 3), .id))", &runs, 3 * 3);
+    holds(&int, "sum(map(sortBy(ps, .w)[-2:], .id))", &runs, 2 * 3);
+    holds(&int, "find(sortBy(ps, .w), .v > 1.0)?.id ?? -1", &runs, 3);
+    holds(&int, "sum(take(sort(xs), 0))", &runs, 0);
+    holds(&int, "last(sort(xs)) ?? 0", &runs, 1);
+    // A computed key: one more slot per item.
+    holds(&int, "first(sortBy(ps, .v * 2.0))?.id ?? -1", &runs, 3 + 1);
+    holds(&int, "sum(take(sortBy(xs, -#), 4))", &runs, 4 * 2);
+    // Order ignored: the sort is dropped.
+    holds(&int, "sum(map(sortBy(ps, .w), .id)) + count(sort(xs), # > 1) + (max(sortBy(xs, -#)) ?? 0)", &runs, 0);
+    // Order kept: the whole input, 20 items (and their computed keys).
+    holds(&int, "reduce(sort(xs), #acc + # * #index, 0)", &runs, 20);
+    holds(&int, "reduce(sortBy(xs, -#), #acc + # * #index, 0)", &runs, 20 * 2);
+    holds(&iface(items.clone()), "sortBy(ps, .w)", &runs, 20 * 3);
+    holds(&iface(items.clone()), "sortBy(ps, .v * 2.0)", &runs, 20 * 4);
+    // `uniq`: its input's bound, or k under `take`, or nothing under `first`
+    // and `max`.
+    holds(&int, "len(uniq(xs))", &runs, 20);
+    holds(&int, "sum(take(uniq(xs), 3))", &runs, 3);
+    holds(&int, "(first(uniq(xs)) ?? 0) + (max(uniq(xs)) ?? 0)", &runs, 0);
+    // `median`: every value, one slot each; a sort under it is dropped.
+    holds(&num, "median(xs) + median(sort(xs))", &runs, 20 + 20);
+}
+
 /// Variant groups are laid out as optional records (a presence leaf, then
 /// the fields), so the same exact accounting covers them. The state
 /// machine's figures, and its instruction count for each kind of event.
