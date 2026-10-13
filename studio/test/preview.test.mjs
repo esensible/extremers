@@ -450,6 +450,20 @@ test('the watch preview: buttons by text only (no testID on the watch), hidden o
   assert.equal(textless().length, 1, 'the confirm hid itself');
 });
 
+test('the watch preview\'s status: open while a session is on a build (also one that did not mount), with the build\'s time', () => {
+  const sim = { onEnvelope: () => () => {}, send: () => ({ ok: true }) };
+  const wp = new WatchPreview({ host: { textContent: '' }, sim, win: {}, onChange: () => {} });
+  assert.deepEqual([wp.status().open, wp.status().build], [false, null]);
+  // as open() leaves it when the bundle threw at mount: the build and size set, not loaded
+  const build = { ...BUILD, at: 1, targets: { ...BUILD.targets, watch: { ...BUILD.targets.watch, at: 1_790_000_000_123 } } };
+  Object.assign(wp, { build, size: parseWatchSize('45mm'), sha256: 'ab' });
+  const s = wp.status();
+  assert.deepEqual([s.open, s.loaded], [true, false]);
+  assert.equal(s.build.at, 1_790_000_000_123, "the watch target's time");
+  assert.equal(wp.close(), true, 'there was a session to close');
+  assert.equal(wp.status().open, false);
+});
+
 test('the watch realm: clear errors for a bundle that throws or sets no __app', () => {
   const realm = () => vm.runInContext('globalThis', vm.createContext({}));
   assert.throws(() => bootWatchRealm({ realm: realm(), hostApi: {}, src: 'throw new Error("bad")' }), (e) => /failed to evaluate: bad/.test(e.message) && !!e.hint);

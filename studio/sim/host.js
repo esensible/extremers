@@ -220,18 +220,40 @@ export class Sim {
    * studio reads from it). Virtual clock, `follow`: a `t` ahead of the device
    * time moves the clock there first (wakes due on the way fire at their
    * times), as the receiver's and the device's clocks move together on the C6.
+   * Once the clock is set, the host stamps a fix with the device time, as the
+   * C6 does: a `t` that is not the device time is ignored, and (with
+   * `follow`, a caller's own update) `warnings` gets a line saying so — on
+   * the live clock any `t`, on the virtual one a `t` behind the clock.
    * → the evaluations, in order.
    */
-  gps(u, { nmea = null, follow = true } = {}) {
+  gps(u, { nmea = null, follow = true, warnings = null } = {}) {
     const recs = [];
-    if (follow && this.clock === 'virtual' && this.clockSet && typeof u.t === 'number' && u.t > this.host.now()) {
+    const wasSet = this.clockSet;
+    if (follow && this.clock === 'virtual' && wasSet && typeof u.t === 'number' && u.t > this.host.now()) {
       recs.push(...this.advance(u.t - this.host.now(), 'gps: the clock to t').evaluations);
     }
+    const now = this.host.now();
     const r = JSON.parse(nmea !== null ? this.host.nmea(nmea) : this.host.gps(JSON.stringify(u)));
     if (!r.ok) throw new SimError(r.error, 'a GPS update is { t?, lat?, lon?, speed?, heading? }: lat with lon, speed with heading, t epoch ms');
     if (nmea !== null && r.updates !== 1) this.finding('W-HOST', `nmea: the host took ${r.updates} update(s) from ${JSON.stringify(nmea)}, the studio read 1`);
-    if (typeof u.t === 'number') this.clockSet = true;
-    recs.push(...this.settle('gps'));
+    if (typeof u.t === 'number') {
+      this.clockSet = true;
+      // the first GPS time set the device clock: the live clock runs on from there
+      if (!wasSet && this.clock === 'live' && this.offset !== undefined) this.offset = this.host.now() - this.wallNow();
+    }
+    const got = this.settle('gps');
+    recs.push(...got);
+    // the fix's t as the host put it on the track (the device time; 1 ms after the last fix's at the same time)
+    const stamp = got.findLast((x) => x.cause === 'gps')?.event?.gps?.fix?.t ?? null;
+    if (follow && warnings && wasSet && typeof u.t === 'number' && u.t !== (stamp ?? now)) {
+      const off = `t ${u.t} is ${Math.abs(u.t - now)} ms ${u.t < now ? 'behind' : 'ahead of'} the device time ${now}`;
+      const as = stamp !== null ? `the fix is stamped ${stamp}` : 'the update had no fix';
+      warnings.push(this.clock === 'live'
+        ? `t ignored on the live clock: ${off}; ${as} (the device clock follows wall time and never jumps, as on the C6). For timed fixes use api.sim.start({ clock: 'virtual' }) (a t ahead moves the clock there), or api.sim.replay, which keeps a track's own intervals on either clock`
+        : u.t === now
+          ? `t ${u.t}: the track already has a fix at that time; ${as} (the track's t strictly increases)`
+          : `t ignored: ${off}; ${as} (the clock never goes back). Send fixes in time order, or api.sim.reset() and start again`);
+    }
     return recs;
   }
 

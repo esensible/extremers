@@ -94,6 +94,8 @@
   .bottom-tabs button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
   .panel { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 13px; }
   #log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 0; }
+  #skill-view { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+  #skill-view-title { margin: 0 0 6px; }
   .build-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .build-target { margin: 0 0 10px; }
   .build-target h3 { margin: 0 0 4px; font: 700 15px var(--f-head); display: flex; gap: 8px; align-items: baseline; }
@@ -219,6 +221,7 @@
           <button type="button" role="tab" id="tab-build-log" data-panel="build-log" aria-selected="false">Build log</button>
           <button type="button" role="tab" id="tab-device" data-panel="device" aria-selected="false">Device</button>
           <button type="button" role="tab" id="tab-log" data-panel="log-panel" aria-selected="false">Log</button>
+          <button type="button" role="tab" id="tab-reading" data-panel="reading" aria-selected="false">Reading</button>
         </div>
         <div class="panel" id="diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-testid="diagnostics">
           <div class="build-bar">
@@ -296,6 +299,10 @@
           <pre id="device-log" class="dev-log" data-testid="device-log"></pre>
         </div>
         <div class="panel" id="log-panel" role="tabpanel" aria-labelledby="tab-log" hidden><pre id="log" data-testid="log"></pre></div>
+        <div class="panel" id="reading" role="tabpanel" aria-labelledby="tab-reading" hidden>
+          <p class="hint" id="skill-view-title" data-testid="skill-view-title">api.skill(name, { show: true }) or api.describe({ show: true }) shows its whole text here, for a browser harness to read in one page-text call.</p>
+          <article id="skill-view" data-testid="skill-view" aria-labelledby="skill-view-title"></article>
+        </div>
       </div>
     </section>
 

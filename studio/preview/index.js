@@ -118,6 +118,28 @@ export function createController({ api, getLastBuild, kindle, watch, worker }) {
       const p = pick(target);
       return { ok: true, target, wasOpen: p.close() };
     },
+    /**
+     * After a ui.build: reopen each open preview whose target built (a new
+     * session on the new build, at its size), before ui.build answers, so
+     * its result and preview.status() already show the new build.
+     * built: the targets that built ok → { kindle?, watch? }, one entry per
+     * preview reopened (or that failed to: { reopened: false, error, hint }).
+     */
+    async afterBuild(built) {
+      const out = {};
+      for (const target of TARGETS) {
+        const p = pick(target);
+        if (!built.includes(target) || !p.status().open) continue;
+        const size = target === 'kindle' ? p.size : p.size?.name;
+        try {
+          const r = await this.open({ target, size });
+          out[target] = { reopened: true, build: r.build, warnings: r.warnings };
+        } catch (e) {
+          out[target] = { reopened: false, error: e?.message ?? String(e), ...(e?.hint ? { hint: e.hint } : {}) };
+        }
+      }
+      return out;
+    },
   };
 }
 
@@ -201,13 +223,9 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
   const wSel = $('preview-watch-size');
   if (wSel) wSel.onchange = () => { if (watch.status().open) callApi.preview.open({ target: 'watch', size: wSel.value }); };
 
-  // A successful build reopens an open preview on it (a new session); a sim
-  // start brings both up to date by itself (its envelopes).
-  api._onCall(({ name, result: r }) => {
-    if (name !== 'ui.build' || !r.ok) return;
-    if (r.targets.kindle?.ok && kindle.status().open) callApi.preview.open({ target: 'kindle', size: kindle.size });
-    if (r.targets.watch?.ok && watch.status().open) callApi.preview.open({ target: 'watch', size: watch.size?.name });
-  });
+  // A build reopens each open preview whose target built (controller.afterBuild,
+  // which api.ui.build awaits before it answers); a sim start brings both up
+  // to date by itself (its envelopes).
 
   worker().then(() => renderKindle());
   renderKindle(); renderWatch();

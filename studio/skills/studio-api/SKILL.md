@@ -95,11 +95,19 @@ again (or pack with that name). A project without the file uses its own name.
   - **live** (the default; `t0` defaults to now): the device clock runs with
     the page's, wakes fire by themselves on wall time, `advance` is refused.
     This is the box's behaviour: use it with the previews (a person watching
-    a countdown, an agent pressing preview buttons and waiting).
+    a countdown, an agent pressing preview buttons and waiting). **A `t` in
+    `sim.gps` is ignored on the live clock**, as on the C6: the host stamps
+    each fix with the device time when it arrives, and the device clock
+    never jumps. Five fixes sent in one script land milliseconds apart. The
+    result says so in `warnings` (`t ignored on the live clock: …`), and so
+    does the log. For fixes at chosen times, use the virtual clock or
+    `api.sim.replay`, which keeps a track's own intervals on either clock.
   - **virtual** (`api.sim.start({ clock: 'virtual' })`; `t0` defaults to
     1790000000000): the clock moves only with `advance`, a GPS `t` ahead of
     it, or a replay. Use it for scripted runs and tests, where you want exact
-    times. With the previews open it looks wrong: the Kindle preview re-sends
+    times: `sim.gps({ t, … })` with `t` at or ahead of the clock stamps the
+    fix at `t` (wakes due on the way fire first). A `t` behind the clock is
+    ignored, with a warning: the clock never goes back. With the previews open it looks wrong: the Kindle preview re-sends
     the state every 5 s (the device's heartbeat) stamped with the virtual
     time, so the page's countdown jumps back to it while wall time runs on.
   `api.sim.stop()` turns a live clock virtual where it stands.
@@ -155,7 +163,12 @@ again (or pack with that name). A project without the file uses its own name.
    `events` the page sent, each with the host's answer and its
    `evaluations` as records like `sim.event`'s. On the watch a button is
    found by its text only (`{ text: '' }`: the first with no text, such as a
-   confirm); watch nodes have no `testID` (skill watch-ui).
+   confirm); watch nodes have no `testID` (skill watch-ui). After an edit,
+   `api.ui.build()` again is enough: before it answers it reopens each open
+   preview (Kindle, watch or both) whose target built, also a watch app that
+   failed to mount, and says so in `previews` (`{ watch: { reopened: true,
+   build: { at } } }`); `preview.status().watch.build.at` is then the new
+   build's.
 8. `api.bundle.pack()` (the settings' name and version; the version is an
    integer 0-65535; `{ name, version }` override them), `api.bundle.inspect()`.
 9. `api.device.connect()`, `api.device.install({ activate: true })`,
@@ -164,6 +177,19 @@ again (or pack with that name). A project without the file uses its own name.
 
 ## Driving it from a browser harness
 
+- **Read the skills and `describe` in one call each.** A harness that cuts
+  tool output at about 1 kB would need some 95 calls for the skills through
+  `api.skill(name, { offset })`. Instead, `await api.skill('expr-engine', {
+  show: true })` puts the whole skill, as text, in the page's
+  `<article id="skill-view">` (the **Reading** tab, which it selects) and
+  answers only `{ ok, shown: true, name, chars }`. Then read the page's text
+  once (the harness's page-text tool, or
+  `document.getElementById('skill-view').innerText`). `await
+  api.describe({ show: true })` does the same with the tool list (pretty
+  JSON). `chars` is the length: `expr-engine` is about 54,000 and the
+  `describe` JSON about 61,000, so raise the page-text tool's own limit
+  (e.g. `max_chars`) above it if it has one. The person at the page sees it
+  too. Use your own tab.
 - **Keep the studio tab visible** (in front, in a window that is not
   minimised). Chrome throttles a hidden tab's timers: at most once a second,
   and after a few minutes hidden about once a minute. The live sim clock,
@@ -286,7 +312,9 @@ remembers the box for this page, then a quiet **Choose another box…**; `#files
 editor `#editor-<path>`: Monaco shows one file at a time, so only the file
 shown has an `#editor-<path>` (find open files by their tabs; use
 `document.getElementById`, the path is verbatim); bottom panels
-`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`. In `#diagnostics`:
+`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`, `#reading` (its
+`<article id="skill-view">` holds what `skill`/`describe` `{ show: true }`
+rendered, `#skill-view-title` names it). In `#diagnostics`:
 `#engine-check`, `#engine-state` (the compile state as text) and one
 `button.diag` per diagnostic with `data-rule`, `data-path` and `data-span`
 (`line:col-endLine:endCol`). In `#sim`: `#sim-start`, `#sim-reset`,

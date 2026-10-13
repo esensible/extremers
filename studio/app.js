@@ -343,16 +343,28 @@ function renderEditorEmpty() { $('editors-empty').hidden = !!active; }
 
 // ------------------------------------------------------------- bottom tabs ----
 
-document.querySelector('.bottom-tabs').addEventListener('click', (e) => {
-  const t = e.target.closest?.('[data-panel]');
-  if (!t) return;
+function selectPanel(t) {
   for (const b of document.querySelectorAll('.bottom-tabs [data-panel]')) {
     const on = b === t;
     b.setAttribute('aria-selected', String(on));
     $(b.dataset.panel).hidden = !on;
   }
+}
+document.querySelector('.bottom-tabs').addEventListener('click', (e) => {
+  const t = e.target.closest?.('[data-panel]');
+  if (t) selectPanel(t);
 });
 logger.onLine(() => { $('log').textContent = logger.lines(300).join('\n'); });
+
+// The Reading tab: api.skill(name, { show: true }) / api.describe({ show: true })
+// put their whole text in <article id="skill-view"> (as text: nothing in it
+// runs), and select the tab, so a page-text read gets it.
+api._setReader(({ title, text }) => {
+  $('skill-view-title').textContent = `${title} · ${text.length} characters`;
+  $('skill-view').textContent = text;
+  selectPanel($('tab-reading'));
+  $('reading').scrollTop = 0;
+});
 
 // --------------------------------------------------------------- build log ----
 // The Build button calls api.ui.build; every ui.build result (the page's or an

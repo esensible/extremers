@@ -322,6 +322,56 @@ test('live clock: advance refused; a wake fires on wall time; stop makes it virt
   ok(assert, await api.sim.reset());
 });
 
+test('sim.gps t: honoured on the virtual clock (ahead), warned when ignored (live clock; behind a virtual one)', { skip }, async () => {
+  // virtual: a t ahead stamps the fix at t, no warning; a t behind is ignored, warned
+  const v = await race();
+  const a = ok(assert, await v.api.sim.gps(fix(...STBD, 4, 90, T0 + 5000)));
+  assert.equal(a.warnings, undefined);
+  assert.equal(a.now, T0 + 5000);
+  assert.equal(a.evaluations.at(-1).event.gps.fix.t, T0 + 5000);
+  const b = ok(assert, await v.api.sim.gps(fix(...STBD, 4, 90, T0 + 1000)));
+  assert.equal(b.warnings.length, 1);
+  // stamped at the device time, 1 ms after the fix already there (the track's t strictly increases)
+  assert.match(b.warnings[0], /^t ignored: t 1790000001000 is 4000 ms behind the device time 1790000005000; the fix is stamped 1790000005001 /);
+  assert.equal(b.evaluations.at(-1).event.gps.fix.t, T0 + 5001);
+  assert.equal(ok(assert, await v.api.sim.gps(fix(...STBD, 4, 90))).warnings, undefined, 'no t, nothing to warn');
+  await everything(v.api);
+
+  // live: every t is ignored, warned, and logged; the fixes are stamped with the device time
+  // (the live clock starts at T0 here and runs on from it)
+  const l = await race({ clock: 'live' });
+  try {
+    const stamps = [];
+    for (let k = 0; k < 5; k++) {
+      const r = ok(assert, await l.api.sim.gps(fix(...STBD, 4, 90, T0 + 60_000 + 1000 * k)));
+      assert.equal(r.warnings?.length, 1, JSON.stringify(r.warnings));
+      assert.match(r.warnings[0], /^t ignored on the live clock: .*clock: 'virtual'/);
+      stamps.push(r.evaluations.at(-1).event.gps.fix.t);
+    }
+    assert.ok(stamps.every((t) => t >= T0 && t < T0 + 5000), `stamped with the device time, not at t: ${stamps.map((t) => t - T0)}`);
+    assert.ok(stamps[4] - stamps[0] < 1000, 'within one script, not a second apart');
+    assert.ok(ok(assert, await l.api.log({ last: 20 })).lines.some((x) => /WARN.*sim\.gps: t ignored on the live clock/.test(x)));
+    // NMEA on the live clock: the sentence's time is ignored the same way
+    const n = ok(assert, await l.api.sim.gps(rmcSentence({ t: T0 + 120_000, lat: STBD[0], lon: STBD[1], speed: 4, heading: 90 })));
+    assert.equal(n.updates, 1);
+    assert.match(n.warnings[0], /^t ignored on the live clock/);
+    assert.equal(ok(assert, await l.api.sim.gps(fix(...STBD, 4, 90))).warnings, undefined);
+  } finally { await l.api.sim.reset(); }
+});
+
+test('live clock without t0: the first GPS time sets the device clock, and the clock runs on from there', { skip }, async () => {
+  const { api } = await race({ clock: 'live', t0: null });
+  try {
+    const r = ok(assert, await api.sim.gps(fix(...STBD, 4, 90, T0)));
+    assert.equal(r.warnings, undefined, 'the first GPS time sets the clock: nothing ignored');
+    assert.equal(r.now, T0);
+    await new Promise((res) => setTimeout(res, 400));
+    const st = ok(assert, await api.sim.state());
+    assert.ok(st.now >= T0 + 200 && st.now < T0 + 5000, `the live clock runs on from the GPS time: ${st.now - T0} ms`);
+    assert.deepEqual(st.findings, []);
+  } finally { await api.sim.reset(); }
+});
+
 /**
  * A browser's timers: Window methods that throw "Illegal invocation" unless
  * called on the global (or with no receiver). Node's don't care, which is

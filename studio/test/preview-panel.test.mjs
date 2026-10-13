@@ -82,6 +82,7 @@ test('watch status: states in place', () => {
   assert.equal(statusEl.textContent, 'race · 45mm 198×242 · 7 states · 0 events · 2 haptics · 0 errors');
   assert.equal(renderStatus({ statusEl, closeEl }, watchStatusText(s), { open: true, errors: 0 }), 0);
   assert.equal(watchStatusText({ open: false }), 'closed');
+  assert.equal(watchStatusText({ ...s, loaded: false, errors: ['boom'] }), 'race · 45mm 198×242 · did not mount · 7 states · 0 events · 2 haptics · 1 errors');
 });
 
 test('the Kindle fit: written once per change, never for the same width; the frame is not replaced', () => {

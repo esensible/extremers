@@ -90,7 +90,7 @@ export function kindleStatusText(s, w) {
 /** The watch panel's status line from WatchPreview.status(). */
 export function watchStatusText(s) {
   if (!s.open) return 'closed';
-  return `${s.build.name} · ${s.size.name} ${s.size.width}×${s.size.height} · ${s.envelopes} states · ${s.events.length} events · ${s.haptics.length} haptics · ${s.errors.length} errors`;
+  return `${s.build.name} · ${s.size.name} ${s.size.width}×${s.size.height}${s.loaded === false ? ' · did not mount' : ''} · ${s.envelopes} states · ${s.events.length} events · ${s.haptics.length} haptics · ${s.errors.length} errors`;
 }
 
 /**

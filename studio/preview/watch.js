@@ -138,8 +138,17 @@ export class WatchPreview {
     doc.body.appendChild(f);
     this.realmFrame = f;
     const realm = f.contentWindow;
-    this.app = bootWatchRealm({ realm, hostApi: this.host.api, src: new TextDecoder().decode(file.bytes) });
-    this.host.mount(this.app, { width: sz.width, height: sz.height });
+    try {
+      this.app = bootWatchRealm({ realm, hostApi: this.host.api, src: new TextDecoder().decode(file.bytes) });
+      this.host.mount(this.app, { width: sz.width, height: sz.height });
+    } catch (e) {
+      // the session stays open on this build (status().open, loaded: false),
+      // so the next good ui.build reopens it
+      this.push(this.errors, e?.message ?? String(e));
+      this.log(`error: ${e?.message ?? e}`, 'error');
+      this.onChange();
+      throw e;
+    }
     this.loaded = true;
     this.log(`mounted ${build.name}/watch.js (${file.bytes.length} B) at ${sz.name} ${sz.width}×${sz.height}`);
     const cur = this.sim.running() ? this.sim.current() : null;
@@ -186,7 +195,7 @@ export class WatchPreview {
   }
 
   close() {
-    const was = this.loaded;
+    const was = !!this.build;
     this.teardown();
     this.reset();
     this.hostEl.textContent = '';
@@ -196,8 +205,8 @@ export class WatchPreview {
 
   status() {
     return {
-      open: this.loaded, loaded: this.loaded, size: this.size,
-      build: this.build ? { name: this.build.name, packageId: this.build.packageId, sha256: this.sha256 } : null,
+      open: !!this.build, loaded: this.loaded, size: this.size,
+      build: this.build ? { name: this.build.name, packageId: this.build.packageId, at: this.build.targets?.watch?.at ?? this.build.at ?? null, sha256: this.sha256 } : null,
       envelopes: this.envelopes, commits: this.commits, events: this.events.slice(-20), haptics: this.haptics.slice(-20),
       errors: this.errors.slice(), console: this.console.slice(-50),
     };

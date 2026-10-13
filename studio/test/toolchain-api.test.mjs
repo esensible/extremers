@@ -12,6 +12,7 @@ import { TOOLCHAIN_VERSION } from '../toolchain/core.js';
 import { createFakeIndexedDB } from './fake-indexeddb.mjs';
 import { installFileFetch, raceFiles } from './toolchain-node.mjs';
 import { buildLogHtml, statusLine } from '../ui.js';
+import { createController } from '../preview/index.js';
 
 installFileFetch();
 const readText = async (url) => (await fetch(url)).text(); // worker.js's, on node's file: fetch
@@ -216,6 +217,47 @@ test('a failed build: ok:false with the first error, a hint, every diagnostic an
   assert.match(html, /id="build-watch" data-ok="true"/);
   assert.match(html, /data-rule="B-SYNTAX"/);
   assert.match(html, /data-check="app" data-ok="true"/);
+});
+
+test('ui.build reopens the open previews on the new build before it answers (watch, Kindle, both; a failed reopen is reported)', async () => {
+  const { api } = await engineWorld();
+  ok(assert, await api.project.create('previews', { template: 'race' }));
+  // no previews open: nothing reopened, no previews field
+  const fake = (name) => ({ name, isOpen: false, size: null, opens: [], fail: null,
+    status() { return { open: this.isOpen, loaded: this.isOpen }; },
+    async open(build, { size } = {}) { if (this.fail) throw Object.assign(new Error(this.fail), { hint: 'h' }); this.opens.push({ build, size }); this.isOpen = true; return { size }; } });
+  const kindle = fake('kindle'); const watch = fake('watch');
+  const worker = Object.assign(async () => ({ ok: true }), { status: () => ({ state: 'active', error: null }) });
+  api._setPreview(createController({ api, getLastBuild, kindle, watch, worker }));
+  assert.equal(ok(assert, await api.ui.build({ target: 'both' })).previews, undefined);
+  assert.equal(kindle.opens.length + watch.opens.length, 0);
+
+  // the watch open (as after preview.open({ target: 'watch', size: '49mm' })): reopened at its size, on this build
+  watch.isOpen = true; watch.size = { name: '49mm' };
+  const a = ok(assert, await api.ui.build({ target: 'both' }));
+  const lastA = await getLastBuild('previews');
+  assert.deepEqual(Object.keys(a.previews), ['watch']);
+  assert.equal(a.previews.watch.reopened, true);
+  assert.equal(a.previews.watch.build.at, lastA.targets.watch.at, 'build.at is the new build');
+  assert.equal(watch.opens.length, 1);
+  assert.equal(watch.opens[0].size, '49mm');
+  assert.equal(watch.opens[0].build.targets.watch.at, lastA.targets.watch.at);
+  assert.equal(kindle.opens.length, 0, 'a closed preview stays closed');
+
+  // both open: both reopened; a kindle-only build reopens only the Kindle
+  kindle.isOpen = true; kindle.size = { width: 758, height: 1024 };
+  const b = ok(assert, await api.ui.build({ target: 'both' }));
+  assert.deepEqual(Object.keys(b.previews).sort(), ['kindle', 'watch']);
+  assert.deepEqual(kindle.opens.at(-1).size, { width: 758, height: 1024 });
+  const c = ok(assert, await api.ui.build({ target: 'kindle' }));
+  assert.deepEqual(Object.keys(c.previews), ['kindle']);
+  assert.equal(watch.opens.length, 2);
+
+  // a reopen that fails is in the result, and the build is still ok
+  watch.fail = 'watch.js failed to evaluate: boom';
+  const d = ok(assert, await api.ui.build({ target: 'watch' }));
+  assert.deepEqual(d.previews.watch, { reopened: false, error: 'watch.js failed to evaluate: boom', hint: 'h' });
+  api._setPreview(null);
 });
 
 test('ui.build refuses a bad target or name, and needs an open project', async () => {

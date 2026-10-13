@@ -190,6 +190,14 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     return skillIndex;
   }
 
+  // ---- the reading view (#skill-view): the page hands in a renderer with api._setReader
+  let readerImpl = null;
+  function show(title, text) {
+    if (!readerImpl) throw new ApiError('show needs the studio page: it draws in <article id="skill-view">', 'call it without { show: true } to get the text in the result (api.skill pages it: follow nextOffset)');
+    readerImpl({ title, text });
+    return { ok: true, shown: true, title, chars: text.length, element: '#skill-view', read: "the page's text: one get_page_text (or document.getElementById('skill-view').innerText)" };
+  }
+
   function chunk(text, offset, maxChars) {
     const c = text.slice(offset, offset + maxChars);
     return { totalChars: text.length, offset, nextOffset: offset + c.length < text.length ? offset + c.length : null, chunk: c };
@@ -507,11 +515,14 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // ------------------------------------------------------------- core
     {
       name: 'describe', kind: 'info',
-      summary: 'This tool list: every function with its args, return shape and an example; plus the workflow, the groups, the skills and notes. Call it first.',
-      args: [],
-      returns: '{ ok, name, version, summary, workflow: string[], groups: [{ name, summary, functions: string[] }], functions: [{ name, group, available, summary, args: [{name,type,required,description}], returns, example }], skills: [{name, description}], notes: string[] }',
-      example: 'await api.describe()',
-      run: async () => describe(),
+      summary: "This tool list: every function with its args, return shape and an example; plus the workflow, the groups, the skills and notes. Call it first. { show: true } puts it (pretty JSON) in the page's <article id=\"skill-view\"> (the Reading tab) instead, and answers only { shown, chars }: for a harness whose tool output is short, one page-text read gets all of it.",
+      args: [{ name: 'opts.show', type: 'boolean', required: false, description: "true: render it into #skill-view (the Reading tab) and return { ok, shown: true, chars }" }],
+      returns: '{ ok, name, version, summary, workflow: string[], groups: [{ name, summary, functions: string[] }], functions: [{ name, group, available, summary, args: [{name,type,required,description}], returns, example }], skills: [{name, description}], notes: string[] } — with { show: true }: { ok, shown: true, title, chars, element: "#skill-view", read }',
+      example: 'await api.describe() // a browser harness: await api.describe({ show: true }), then read the page text',
+      run: async (opts = {}) => {
+        const d = await describe();
+        return opts.show ? show(`api.describe() — ${API_NAME} ${API_VERSION}`, JSON.stringify(d, null, 2)) : d;
+      },
     },
     {
       name: 'status', kind: 'info',
@@ -558,12 +569,13 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'skill', kind: 'info',
-      summary: 'Read one skill’s markdown, in chunks: call again with offset = nextOffset until nextOffset is null.',
+      summary: "Read one skill’s markdown, in chunks: call again with offset = nextOffset until nextOffset is null. { show: true } puts the whole skill in the page's <article id=\"skill-view\"> (the Reading tab) instead and answers only { shown, chars }: for a harness whose tool output is short, one page-text read gets all of it.",
       args: [{ name: 'name', type: 'string', required: true, description: 'skill name from api.skills()' },
         { name: 'opts.offset', type: 'integer', required: false, description: 'character offset (default 0)' },
-        { name: 'opts.maxChars', type: 'integer', required: false, description: 'chunk size (default 12000, min 100, max 100000)' }],
-      returns: '{ ok, name, description, totalChars, offset, nextOffset|null, markdown }',
-      example: "await api.skill('studio-api')",
+        { name: 'opts.maxChars', type: 'integer', required: false, description: 'chunk size (default 12000, min 100, max 100000)' },
+        { name: 'opts.show', type: 'boolean', required: false, description: 'true: render the whole skill into #skill-view (the Reading tab) and return { ok, shown: true, chars } (offset and maxChars do not apply)' }],
+      returns: '{ ok, name, description, totalChars, offset, nextOffset|null, markdown } — with { show: true }: { ok, shown: true, name, title, chars, element: "#skill-view", read }',
+      example: "await api.skill('studio-api') // a browser harness: await api.skill('studio-api', { show: true }), then read the page text",
       run: async (name, opts = {}) => {
         if (typeof name !== 'string' || !name) throw new ApiError('name is required', 'see api.skills()');
         const idx = await loadSkillIndex(false);
@@ -573,6 +585,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         const maxChars = clampInt(opts.maxChars, 12000, 100, 100000, 'maxChars');
         let md;
         try { md = await fetchText('./' + s.path); } catch (e) { throw new ApiError(`could not fetch ${s.path}: ${errText(e)}`, 'run `node sync-skills.mjs` in studio/'); }
+        if (opts.show) return { name: s.name, ...show(`skill ${s.name}`, md) };
         const c = chunk(md, offset, maxChars);
         return { ok: true, name: s.name, description: s.description, totalChars: c.totalChars, offset, nextOffset: c.nextOffset, markdown: c.chunk };
       },
@@ -978,7 +991,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'sim.start', kind: 'pure',
-      summary: `Start the real host (common::Host in the wasm) on the project's engine, packed as bundle.pack would (the bundle name and version from ${SETTINGS_PATH}; the last good ui.build, or the placeholder page until there is one): it evaluates {gps: {}} on a nil state at uptime 0 and publishes; then t0, as the first GPS time does on the C6, sets the device clock (a GPS update without a fix: a second {gps: {}} evaluation). Its gps holds the newest 20,480 fixes, as the C6's track. Live (the default): the device clock follows the page's from t0 (now), wakes fire on wall time, as on the C6; the previews' countdowns run smoothly. Virtual: the clock moves only on advance/gps t/replay, for scripted runs and tests (the Kindle preview's 5 s heartbeat re-sends the state at the virtual time, so its countdown jumps back while wall time runs on). Replaces a running sim.`,
+      summary: `Start the real host (common::Host in the wasm) on the project's engine, packed as bundle.pack would (the bundle name and version from ${SETTINGS_PATH}; the last good ui.build, or the placeholder page until there is one): it evaluates {gps: {}} on a nil state at uptime 0 and publishes; then t0, as the first GPS time does on the C6, sets the device clock (a GPS update without a fix: a second {gps: {}} evaluation). Its gps holds the newest 20,480 fixes, as the C6's track. Live (the default): the device clock follows the page's from t0 (now), wakes fire on wall time, as on the C6 (and sim.gps ignores a t: a fix is stamped when it arrives); the previews' countdowns run smoothly. Virtual: the clock moves only on advance/gps t/replay, for scripted runs and tests (the Kindle preview's 5 s heartbeat re-sends the state at the virtual time, so its countdown jumps back while wall time runs on). Replaces a running sim.`,
       args: [DIR_OPT,
         { name: 'opts.clock', type: "'live' | 'virtual'", required: false, description: "default 'live'; 'virtual' for a scripted run (sim.advance moves it)" },
         { name: 'opts.t0', type: 'integer | null', required: false, description: 'device time to set, epoch ms (live: default now; virtual: default 1790000000000; null: stay on uptime)' },
@@ -1030,17 +1043,19 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'sim.gps', kind: 'pure',
-      summary: "Feed GPS: an update { t?, lat?, lon?, speed?, heading? } (or { t?, fix: { lat, lon }, velocity: { speed, heading } }) through HostHandle.gps, or NMEA text (RMC sentences) through HostHandle.nmea, as from the receiver. A fix goes on the track (its t is the device time: the host's), then {gps: {fix?, velocity?}} is evaluated. The first GPS time sets the device clock; after that, on the virtual clock a t ahead of the device time moves the clock there first (wakes due on the way fire at their times).",
-      args: [{ name: 'update', type: '{ t?, lat?, lon?, speed?, heading? } | { t?, fix?, velocity? } | string', required: true, description: 'degrees; speed knots over ground, heading degrees true; t epoch ms. A string: NMEA lines' }],
-      returns: '{ ok, updates, evaluations: [record], errors?: [{ n, t, cause, code: "R-…", at: "engine/engine.expr:line:col"|null, help }] (the evaluations the host rejected: the update stays on the track, the state does not change), now, state, view, wake }',
-      example: 'await api.sim.gps({ t: 1790000001500, lat: -33.85, lon: 151.252, speed: 4, heading: 90 })',
+      summary: "Feed GPS: an update { t?, lat?, lon?, speed?, heading? } (or { t?, fix: { lat, lon }, velocity: { speed, heading } }) through HostHandle.gps, or NMEA text (RMC sentences) through HostHandle.nmea, as from the receiver. A fix goes on the track (its t is the device time: the host's), then {gps: {fix?, velocity?}} is evaluated. The first GPS time sets the device clock; after that, on the virtual clock a t ahead of the device time moves the clock there first (wakes due on the way fire at their times). On the live clock (the default) t is ignored, as on the C6: every fix is stamped with the device time when it arrives, so fixes sent in one script land milliseconds apart; the result's warnings say so (and the log). For fixes at chosen times use api.sim.start({ clock: 'virtual' }), or api.sim.replay, which keeps a track's own intervals on either clock. A t behind a virtual clock is ignored the same way (warned).",
+      args: [{ name: 'update', type: '{ t?, lat?, lon?, speed?, heading? } | { t?, fix?, velocity? } | string', required: true, description: 'degrees; speed knots over ground, heading degrees true; t epoch ms (honoured on the virtual clock when at or ahead of it; ignored, with a warning, on the live clock). A string: NMEA lines' }],
+      returns: '{ ok, updates, warnings?: string[] (a t that was ignored: the live clock, or behind a virtual one), evaluations: [record], errors?: [{ n, t, cause, code: "R-…", at: "engine/engine.expr:line:col"|null, help }] (the evaluations the host rejected: the update stays on the track, the state does not change), now, state, view, wake }',
+      example: "await api.sim.gps({ t: 1790000001500, lat: -33.85, lon: 151.252, speed: 4, heading: 90 }) // t: virtual clock; live: omit it",
       run: async (update) => {
         const s = requireSim();
-        let recs; let updates;
+        let recs; let updates; const ws = [];
         try {
-          if (typeof update === 'string') { const r = s.nmea(update); recs = r.evaluations; updates = r.updates; } else { recs = s.gps(flatGps(update)); updates = 1; }
+          if (typeof update === 'string') { const r = s.nmea(update, { warnings: ws }); recs = r.evaluations; updates = r.updates; } else { recs = s.gps(flatGps(update), { warnings: ws }); updates = 1; }
         } catch (e) { throw simErr(e); }
-        return { ok: true, updates, evaluations: evaluationOut(recs), ...failuresOf(recs), ...simSummary() };
+        const warnings = ws.length > 3 ? [...ws.slice(0, 3), `… and ${ws.length - 3} more fixes whose t was ignored`] : ws;
+        for (const w of warnings) L('warn', `sim.gps: ${w}`);
+        return { ok: true, updates, ...(warnings.length ? { warnings } : {}), evaluations: evaluationOut(recs), ...failuresOf(recs), ...simSummary() };
       },
     },
     {
@@ -1133,10 +1148,10 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // ----------------------------------------------------------------- ui
     {
       name: 'ui.build', kind: 'pure',
-      summary: "Bundle the open project's clients in the browser (a Web Worker running rollup, Babel and terser over the project's files, as the monorepo's rollup configs do). kindle: kindle/src/index.jsx → index.html (scripts at /pkg/<id>/), bundle-<hash>.js (ES5 UMD), bundle-<hash>.css. watch: watch/src/index.jsx → watch.js (ES2020 IIFE that sets globalThis.__app). Imports: relative ones, 'solid-js' ('/store', '/web'), 'solid-watch', '<name>-wire' or 'engine-wire' (the engine's wire descriptors, from its schemas), and at the monorepo's depth ../../../protocol-js/protocol.js, ../../../client-common/{host,confirm,confirm-place}.js, ../../../wire/js/codec.js (skills kindle-ui, watch-ui). Checks: Kindle parses as ES5 and declares every Solid template; watch has no _tmpl$, sets __app, mounts on a stub host that refuses node types and props the watch's schema lacks (as the watch and the preview do), then takes one state: the running sim's current envelope when it runs this project under this name, else the sim's start envelope from a host of its own (the check's message says which, or why none). Kept as the project's last build (per target; a failed build keeps the last good one, which bundle.pack, sim.start and the previews go on using: kept[] says so): bundle.pack packs it. The same files give the same bytes. The first build loads the toolchain (≈5 MB, a few seconds).",
+      summary: "Bundle the open project's clients in the browser (a Web Worker running rollup, Babel and terser over the project's files, as the monorepo's rollup configs do). kindle: kindle/src/index.jsx → index.html (scripts at /pkg/<id>/), bundle-<hash>.js (ES5 UMD), bundle-<hash>.css. watch: watch/src/index.jsx → watch.js (ES2020 IIFE that sets globalThis.__app). Imports: relative ones, 'solid-js' ('/store', '/web'), 'solid-watch', '<name>-wire' or 'engine-wire' (the engine's wire descriptors, from its schemas), and at the monorepo's depth ../../../protocol-js/protocol.js, ../../../client-common/{host,confirm,confirm-place}.js, ../../../wire/js/codec.js (skills kindle-ui, watch-ui). Checks: Kindle parses as ES5 and declares every Solid template; watch has no _tmpl$, sets __app, mounts on a stub host that refuses node types and props the watch's schema lacks (as the watch and the preview do), then takes one state: the running sim's current envelope when it runs this project under this name, else the sim's start envelope from a host of its own (the check's message says which, or why none). Kept as the project's last build (per target; a failed build keeps the last good one, which bundle.pack, sim.start and the previews go on using: kept[] says so): bundle.pack packs it. The same files give the same bytes. An open preview (kindle, watch, or both) whose target built is reopened on the new build before ui.build answers: previews says so, and preview.status().<target>.build.at is the new build's. The first build loads the toolchain (≈5 MB, a few seconds).",
       args: [{ name: 'opts.target', type: "'kindle' | 'watch' | 'both'", required: false, description: "default 'both'" },
         { name: 'opts.name', type: 'string', required: false, description: `the bundle's name (default: ${SETTINGS_PATH}'s, api.project.settings()): its package id is the Kindle page's /pkg/<id>/ and '<name>-wire' resolves; bundle.pack refuses a build made under another name` }],
-      returns: '{ ok, project, name, packageId, publicPath, sourceSha256, toolchain, ms, targets: { kindle?: { ok, files: [{ name, size, sha256, base64 }], checks: [{ name, ok, message }], ms, stats }, watch?: (same) }, diagnostics: [{ target, severity, rule, file, line, col, message }] } — on a failed build ok:false with error and hint, the same fields, and kept: { <target>: { at, sourceSha256 } } for each failed target whose last good build is kept',
+      returns: '{ ok, project, name, packageId, publicPath, sourceSha256, toolchain, ms, targets: { kindle?: { ok, files: [{ name, size, sha256, base64 }], checks: [{ name, ok, message }], ms, stats }, watch?: (same) }, diagnostics: [{ target, severity, rule, file, line, col, message }], previews?: { kindle?: { reopened: true, build: { name, packageId, at }, warnings } | { reopened: false, error, hint? }, watch?: (same) } (only the previews that were open) } — on a failed build ok:false with error and hint, the same fields, and kept: { <target>: { at, sourceSha256 } } for each failed target whose last good build is kept',
       example: "await api.ui.build({ target: 'both' })",
       run: async (opts = {}) => {
         const target = opts.target ?? 'both';
@@ -1154,6 +1169,13 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         const targets = {};
         for (const [t, x] of Object.entries(r.targets)) targets[t] = { ok: x.ok, files: x.files.map((f) => ({ name: f.name, size: f.size, sha256: f.sha256, base64: toBase64(f.bytes) })), checks: x.checks, ms: x.ms, stats: x.stats };
         const out = { project, name: r.name, packageId: r.packageId, publicPath: r.publicPath, sourceSha256: r.sourceSha256, toolchain: r.toolchain, ms: r.ms, targets, diagnostics: r.diagnostics };
+        // each open preview whose target built is reopened on it before this answers
+        const built = Object.entries(r.targets).filter(([, x]) => x.ok).map(([t]) => t);
+        if (previewImpl?.afterBuild && built.length) {
+          let previews;
+          try { previews = await previewImpl.afterBuild(built); } catch (e) { previews = { error: errText(e) }; }
+          if (previews && Object.keys(previews).length) out.previews = previews;
+        }
         if (r.ok) return { ok: true, ...out };
         // what bundle.pack and sim.start carry now: the last good build of each failed target, if any
         const last = await tc.getLastBuild(project);
@@ -1173,7 +1195,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // preview/index.js does the work (it needs the DOM); the page hands it in with api._setPreview.
     {
       name: 'preview.open', kind: 'pure',
-      summary: "Show the open project's last successful ui.build in a preview, connected to the sim host as a device client is. kindle: the built page in #preview-kindle-frame, served byte for byte by the studio's service worker under /preview/<sid>/ (index.html with its /pkg/<id>/ paths moved under the session and a websocket shim first in <head>); the page's websocket carries the sim's envelopes (each one published, the current one on connect and every 5 s) and its HostEvents go to the host. watch: the built watch.js on solid-watch's browser host in a fresh realm, envelopes to its state, its send(bytes) to the host. Each open is a new session; a successful ui.build reopens an open preview on the new build. Start the sim with the build's name (api.sim.start({ name })) or the page shows another package's envelopes and asks to reload.",
+      summary: "Show the open project's last successful ui.build in a preview, connected to the sim host as a device client is. kindle: the built page in #preview-kindle-frame, served byte for byte by the studio's service worker under /preview/<sid>/ (index.html with its /pkg/<id>/ paths moved under the session and a websocket shim first in <head>); the page's websocket carries the sim's envelopes (each one published, the current one on connect and every 5 s) and its HostEvents go to the host. watch: the built watch.js on solid-watch's browser host in a fresh realm, envelopes to its state, its send(bytes) to the host. Each open is a new session; ui.build reopens an open preview on the new build before it answers (also one whose watch app failed to mount), so there is no need to open it again. Start the sim with the build's name (api.sim.start({ name })) or the page shows another package's envelopes and asks to reload.",
       args: [{ name: 'opts.target', type: "'kindle' | 'watch'", required: true, description: 'which preview' },
         { name: 'opts.size', type: "kindle: '600x800' | '758x1024' | 'WxH' | { width, height }; watch: '41mm' | '45mm' | '49mm'", required: false, description: "CSS px for the Kindle (default '600x800'), the case for the watch (default '45mm': 198×242 pt; 41mm 176×215, 49mm 205×251)" }],
       returns: '{ ok, target, sessionUrl?, sid?, size, build: { name, packageId, at }, warnings: string[] }',
@@ -1356,12 +1378,12 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
       summary: 'The extremers studio: author a bundle for the C6 (an expr engine with its schemas and samples, a Kindle page and a watch app in Solid JSX), check and run it on the real host in the browser, pack it, and install it on the C6 over Web Bluetooth. Projects live in this browser (IndexedDB). All of it as async functions on window.api.',
       workflow: [
         "1. api.status() — is a project open, is storage available, is the engine wasm loaded?",
-        "2. api.skill('studio-api'), then api.skill('expr-engine') before writing an engine (and 'kindle-ui' / 'watch-ui' / 'race-example' as needed). Read each fully (follow nextOffset).",
+        "2. api.skill('studio-api'), then api.skill('expr-engine') before writing an engine (and 'kindle-ui' / 'watch-ui' / 'race-example' as needed). Read each fully (follow nextOffset; from a browser harness with a short tool output, api.skill(name, { show: true }) puts the whole skill in <article id=\"skill-view\"> for one page-text read).",
         `3. api.project.list(); api.project.create(name, { template: 'race' }) to start from the Race example, or api.project.open(name). api.project.settings() is the bundle's name and version (${SETTINGS_PATH}), which the UI build, the sim and the pack use.`,
         '4. api.files.list() / api.files.read(path) / api.files.write(path, text) — edit engine/engine.expr, the schemas, engine/samples.json, kindle/src/*, watch/src/*.',
         '5. api.engine.check() — compile + smoke runs + samples; fix every diagnostic (read its help) before going on.',
-        "6. api.sim.start({ clock: 'virtual' }), then api.sim.event(...), api.sim.gps(...), api.sim.advance(ms) — a scripted run of the engine on the real host; api.sim.history() and api.sim.state() (its findings must stay empty). api.sim.start() (the live clock, the default) for the previews: time runs as on the box.",
-        "7. api.ui.build({ target: 'both' }), api.preview.open({ target: 'kindle' }), api.preview.text('kindle'), api.preview.press(...).",
+        "6. api.sim.start({ clock: 'virtual' }), then api.sim.event(...), api.sim.gps({ t, … }), api.sim.advance(ms) — a scripted run of the engine on the real host, at the times you give; api.sim.history() and api.sim.state() (its findings must stay empty). api.sim.start() (the live clock, the default) for the previews: time runs as on the box, and sim.gps ignores t (it warns).",
+        "7. api.ui.build({ target: 'both' }), api.preview.open({ target: 'kindle' }), api.preview.text('kindle'), api.preview.press(...). A later ui.build reopens the open previews on the new build by itself (its result's previews).",
         '8. api.bundle.pack() (the name and version from the settings; it refuses a UI build made under another name).',
         "9. api.device.connect() — if it says no box was chosen, ask the person to follow the Device panel's how-to (Kindle: Choose → Settings → Pair watch; 'Choose the box…' (#device-choose) and pick 'nacra'; accept macOS's pairing prompt); then api.device.install({ activate: true }) and api.device.list().",
         '10. On any { ok:false }: read error + hint, then api.status() and api.log({ last: 50 }).',
@@ -1376,6 +1398,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         'Projects are stored in this browser only (IndexedDB, per origin). api.project.export() gives a ZIP (base64) to keep or move; api.project.import({ zipBase64 }) or ({ url }) brings one in.',
         'files.write replaces the whole file and saves at once; the page shows the change. The page autosaves what a person types the same way.',
         'Large results are paged (skill, files.read, engine.disassemble, sim.history): follow nextOffset.',
+        "A browser harness whose tool output is cut short (a few kB): api.skill(name, { show: true }) and api.describe({ show: true }) render the whole text into the page's <article id=\"skill-view\"> (the Reading tab, selected for you) and answer only { shown, chars }; read it with one page-text call, or document.getElementById('skill-view').innerText. The person at the page sees it too.",
         "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose ('Choose the box…') once per browser origin, even if the Mac is already paired, then api.device.connect() works, also after a reload; a page that remembers a different box must choose again ('Choose another box…'). The first connection pairs: the box's pairing window must be open (the Kindle's Choose → Settings → Pair watch: 2 minutes, any device, one per window) and the person accepts macOS's pairing prompt; a refusal's hint says what the person must do (pairing window, forgetting 'nacra' in macOS Bluetooth settings, chrome://flags). One device call at a time: another one meanwhile answers busy.",
         'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
         "The sim is the real common::Host (HostHandle). Each evaluation it makes is in its log (cause, accepted, the R-code, instruction and span of a failure, the state, view and wake after it): that log is the history, and sim.state().state is the engine's own state (the leaves the host keeps, decoded with the state schema). A rejected evaluation is in the result's errors[] (sim.gps, sim.advance, sim.event): the input still happened (a fix stays on the track), the state did not change. Checked on every call: W-WIRE (each envelope is one logged evaluation whose view changed; its bytes are the log's, and the vendored JS codec decodes and re-encodes them unchanged), W-HOST (the call's answer agrees with the log: wakes fired, an event accepted or refused; envelopes stamped with the evaluation's time; the pending wake is the last evaluation's). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
@@ -1477,6 +1500,8 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
   // The previews' controller (preview/index.js): the page sets it; without it api.preview.* says so.
   // (bundle.pack and sim.start read the UI build from toolchain/index.js getLastBuild: no hand-off.)
   Object.defineProperty(api, '_setPreview', { value: (c) => { previewImpl = c ?? null; } });
+  // The reading view (#skill-view) for skill/describe { show: true }: the page sets ({ title, text }) => void.
+  Object.defineProperty(api, '_setReader', { value: (fn) => { readerImpl = fn ?? null; } });
   // The page's half of the device group: the chooser (only from a person's
   // click on #device-choose, so not on the agent surface; serialised, logged
   // and reported to _onCall like a device call) and the controller, for the

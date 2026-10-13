@@ -222,6 +222,28 @@ test('skills: listed from index.json; skill() pages with offset/nextOffset', asy
   fail(await api.skill(), /name is required/);
 });
 
+test('skill / describe { show: true }: the whole text into the page\'s #skill-view, a short answer; without the page a clear error', async () => {
+  const { api } = await world();
+  const noPage = fail(await api.skill('expr-engine', { show: true }), /show needs the studio page/);
+  assert.match(noPage.hint, /without \{ show: true \}/);
+  fail(await api.describe({ show: true }), /show needs the studio page/);
+  const shown = [];
+  api._setReader((x) => shown.push(x));
+  const md = readFileSync(join(studioDir, 'skills/expr-engine/SKILL.md'), 'utf8');
+  const r = okr(await api.skill('expr-engine', { show: true, maxChars: 100 }));
+  assert.deepEqual(r, { ok: true, name: 'expr-engine', shown: true, title: 'skill expr-engine', chars: md.length, element: '#skill-view', read: r.read });
+  assert.ok(JSON.stringify(r).length < 400, 'short enough for a 1 kB tool output');
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].text, md, 'the whole skill, not a chunk');
+  const d = okr(await api.describe({ show: true }));
+  assert.equal(d.shown, true);
+  assert.ok(JSON.stringify(d).length < 400);
+  const full = okr(await api.describe());
+  assert.deepEqual(JSON.parse(shown[1].text), full, 'the describe JSON, pretty-printed');
+  assert.equal(shown[1].text, JSON.stringify(full, null, 2));
+  assert.equal(okr(await api.describe({ show: false })).name, 'extremers-studio', 'show: false is the plain result');
+});
+
 // ======================================================= projects and files
 
 test('project CRUD round trip: create → list → write → rename → delete', async () => {
