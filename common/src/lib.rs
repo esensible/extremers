@@ -15,5 +15,6 @@ pub mod host;
 pub mod http;
 pub mod nmea;
 pub mod package;
+pub mod store;
 pub mod tasks;
 pub mod track;

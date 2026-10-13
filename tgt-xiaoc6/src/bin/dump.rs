@@ -1,5 +1,6 @@
-//! dump -- print what the `settings` partition holds, and where the data
-//! slot's regions and the GPS track's ring are. Read-only.
+//! dump -- print what the `settings` partition holds (the boot package
+//! among it), where the data slot's regions are, the GPS track's ring, and
+//! the bundles region's extents. Read-only.
 //!
 //!     cargo run --release --bin dump
 //!
@@ -11,7 +12,7 @@
 #![no_std]
 #![no_main]
 
-use common::{ble_settings::AddrText, track};
+use common::{ble_settings::AddrText, store, track};
 use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
@@ -73,8 +74,17 @@ async fn main(_spawner: Spawner) -> ! {
                 );
             }
         }
+        match storage::boot_id().await {
+            Some(0) => info!("dump: boot package: Choose"),
+            Some(id) => info!("dump: boot package: {=u32:#010x}", id),
+            None => match storage::value_len(storage::KEY_BOOT).await {
+                Some(n) => warn!("dump: boot package: {=usize}-byte record, not 4", n),
+                None => info!("dump: boot package: none kept (the only app, else Choose)"),
+            },
+        }
     }
     dump_track();
+    dump_bundles();
     info!("dump: done");
     loop {
         Timer::after(Duration::from_secs(60)).await;
@@ -129,4 +139,67 @@ fn dump_track() {
             );
         }
     }
+}
+
+/// The bundles region's extents as the app's boot scan walks them
+/// (`common::store::walk`: reads only), each with its manifest's name and
+/// version where the archive has a readable one (not validated), and the
+/// free sectors. The region's flash offset is where
+/// `extreme-pack --store-image`'s image goes (README.md).
+fn dump_bundles() {
+    let Some(slot) = storage::data_slot() else {
+        return;
+    };
+    let Some(bytes) = xip::bundles_bytes(&slot) else {
+        warn!("dump: bundles region not mapped");
+        return;
+    };
+    info!(
+        "dump: bundles region at flash {=u32:#08x} (probe-rs download --binary-format bin --base-address {=u32:#x} bundles.img)",
+        slot.bundles().start,
+        slot.bundles().start
+    );
+    let (mut free, mut extents) = (0u32, 0u32);
+    for item in store::walk(bytes) {
+        match item {
+            store::Item::Free { .. } => free += 1,
+            store::Item::Extent { first, record: r } => {
+                extents += 1;
+                let at = store::archive_offset(first);
+                let manifest = bytes
+                    .get(at..at + r.len as usize)
+                    .and_then(|a| bundle_manifest(a));
+                match manifest {
+                    Some((name, version)) => info!(
+                        "dump: bundles: sectors {=u16}+{=u16}: {=str}, seq {=u32}, id {=u32:#010x}, {=u32} B: {=str} v{=u16}",
+                        first,
+                        r.sectors,
+                        store::state_name(r.state),
+                        r.seq,
+                        r.id,
+                        r.len,
+                        name,
+                        version
+                    ),
+                    None => info!(
+                        "dump: bundles: sectors {=u16}+{=u16}: {=str}, seq {=u32}, id {=u32:#010x}, {=u32} B: no readable manifest",
+                        first,
+                        r.sectors,
+                        store::state_name(r.state),
+                        r.seq,
+                        r.id,
+                        r.len
+                    ),
+                }
+            }
+        }
+    }
+    info!("dump: bundles: {=u32} extents, {=u32} sectors without one", extents, free);
+}
+
+/// The name and version in an archive's `manifest.bin`, read without
+/// validating anything else.
+fn bundle_manifest(archive: &'static [u8]) -> Option<(&'static str, u16)> {
+    let manifest = common::package::Package::manifest_of(archive)?;
+    Some((manifest.name, manifest.version))
 }

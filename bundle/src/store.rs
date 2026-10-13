@@ -1,6 +1,7 @@
-//! The bundle store's record (the plan's A5): each bundle in the `bundles`
-//! partition is a sector-aligned extent, a 64-byte record then the archive
-//! at +64. Little-endian:
+//! The bundle store's record (the plan's A5): each bundle in the bundles
+//! region (on the C6, the first 512 KiB of the inactive app slot) is a
+//! sector-aligned extent, a 64-byte record then the archive at +64.
+//! Little-endian:
 //!
 //! ```text
 //!  0  "XBS1"
@@ -25,6 +26,9 @@ pub const SECTOR: usize = 4096;
 pub const WRITING: u32 = 0xFFFF_FFFF;
 pub const COMMITTED: u32 = 0xFFFF_0000;
 pub const DELETED: u32 = 0;
+/// Where the state word is in a record: committing and deleting write these
+/// four bytes alone (`state.to_le_bytes()`), each only clearing bits.
+pub const STATE_OFFSET: usize = 4;
 
 /// A store record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,10 +114,10 @@ fn crc32(bytes: impl Iterator<Item = u8>) -> u32 {
     !c
 }
 
-/// A `bundles` partition image of `size` bytes holding `bundles` (archives)
-/// committed, in order: extents from sector 0, back to back, `seq` 1 to n,
-/// each `id` from its manifest; the rest erased (0xFF). For flashing a
-/// device directly.
+/// An image of the bundles region, `size` bytes, holding `bundles`
+/// (archives) committed, in order: extents from sector 0, back to back,
+/// `seq` 1 to n, each `id` from its manifest; the rest erased (0xFF). For
+/// flashing a device directly.
 ///
 /// Panics if an archive has no readable manifest or they don't fit.
 #[cfg(feature = "std")]
@@ -154,7 +158,7 @@ mod tests {
         // committing and deleting only clear bits, and the CRC leaves the state out
         let mut w = Record { state: WRITING, ..r }.to_bytes();
         assert_eq!(&w[56..60], &b[56..60]);
-        w[4..8].copy_from_slice(&DELETED.to_le_bytes());
+        w[STATE_OFFSET..STATE_OFFSET + 4].copy_from_slice(&DELETED.to_le_bytes());
         assert_eq!(Record::parse(&w).map(|r| r.state), Ok(DELETED));
         let mut bad = b;
         bad[13] ^= 1;

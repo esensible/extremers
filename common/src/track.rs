@@ -633,4 +633,4 @@ impl<const N: usize> TrackLog for RamTrack<N> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

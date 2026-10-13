@@ -84,15 +84,11 @@ extreme-protocol = { path = "../extreme-protocol", optional = true }
 postcard = { workspace = true, optional = true }
 
 [features]
-default = ["esp32c6", "dev-race"]
+default = ["esp32c6"]
 # Drives the host from inside the firmware (Choose -> Race -> back, with
 # synthetic GPS fixes, every 30 s) and logs what happens; for measuring on
 # a box with no client and no GPS.
 selftest = ["dep:extreme-protocol", "dep:postcard"]
-# Temporary, until bundles are installed into their own partition: a bundle
-# embedded in the image as the one app, from the path in the environment
-# variable EXTREMERS_DEV_BUNDLE at build time (README.md).
-dev-race = []
 esp32c6 = [
     "esp-hal/esp32c6",
     "esp-rtos/esp32c6",

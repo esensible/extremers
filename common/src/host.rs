@@ -13,9 +13,10 @@ use embassy_sync::{
     channel::Channel,
     mutex::Mutex,
     pubsub::{DynSubscriber, Error as PubSubError, PubSubChannel},
+    signal::Signal,
 };
 use embassy_time::{Duration, Instant, with_timeout};
-use portable_atomic::AtomicU64;
+use portable_atomic::{AtomicU32, AtomicU64};
 
 use extreme_protocol::{
     ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, CHOOSE, ChooseView,
@@ -26,10 +27,11 @@ use extreme_protocol::{
 use crate::{
     ble_settings::{BleCommand, BleStatus, BleStatusView},
     config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS, TRACK_FIXES},
-    engine::{EngineMemory, Evaluated, Event, Rejected, VmEngine},
+    engine::{EngineMemory, Evaluated, Event, LIMITS, Rejected, VmEngine},
     fmt::Dbg,
     nmea::GpsUpdate,
     package::Package,
+    store::{Bundles, Error as StoreError, Space},
     track::{RamTrack, Track, TrackFix, TrackLog},
 };
 
@@ -38,6 +40,8 @@ use crate::{
 pub struct Registry {
     choose: Option<Package>,
     apps: heapless::Vec<Package, { REGISTRY_MAX - 1 }>,
+    /// The package to boot with, if one was chosen ([`set_boot`](Self::set_boot)).
+    boot: Option<PackageId>,
 }
 
 /// Why a package was not installed.
@@ -58,6 +62,7 @@ impl Registry {
         let mut registry = Registry {
             choose,
             apps: heapless::Vec::new(),
+            boot: None,
         };
         for app in apps {
             if let Err(e) = registry.install(*app) {
@@ -67,19 +72,40 @@ impl Registry {
         registry
     }
 
-    /// Installs `package`, replacing an installed one with its id.
-    pub fn install(&mut self, package: Package) -> Result<(), InstallError> {
+    /// Whether [`install`](Self::install) would take `package`.
+    pub fn check(&self, package: &Package) -> Result<(), InstallError> {
         if package.engine.is_none() {
             return Err(InstallError::Abi);
         }
         if package.id == CHOOSE || package.id != package_id(package.name) {
             return Err(InstallError::Id);
         }
+        if self.apps.is_full() && !self.apps.iter().any(|p| p.id == package.id) {
+            return Err(InstallError::Full);
+        }
+        Ok(())
+    }
+
+    /// Installs `package`, replacing an installed one with its id.
+    pub fn install(&mut self, package: Package) -> Result<(), InstallError> {
+        self.check(&package)?;
         match self.apps.iter_mut().find(|p| p.id == package.id) {
             Some(slot) => *slot = package,
             None => self.apps.push(package).map_err(|_| InstallError::Full)?,
         }
         Ok(())
+    }
+
+    /// Chooses the package to boot with ([`CHOOSE`] for Choose; `None`:
+    /// the rule of [`boot_package`](Self::boot_package)). On the C6 it is
+    /// kept in the settings (`KEY_BOOT`) and set from there at boot.
+    pub fn set_boot(&mut self, id: Option<PackageId>) {
+        self.boot = id;
+    }
+
+    /// The package chosen to boot with, if any (installed or not).
+    pub fn boot(&self) -> Option<PackageId> {
+        self.boot
     }
 
     /// Removes the app `id`; whether it was installed.
@@ -103,9 +129,14 @@ impl Registry {
         self.choose.or_else(|| self.apps.first().copied())
     }
 
-    /// What the host starts with: the only app when there is just one, or
-    /// no Choose (single-app transparency); else Choose.
+    /// What the host starts with: the package chosen with
+    /// [`set_boot`](Self::set_boot) if it is installed; else the only app
+    /// when there is just one, or no Choose (single-app transparency); else
+    /// Choose.
     pub fn boot_package(&self) -> Option<Package> {
+        if let Some(chosen) = self.boot.and_then(|id| self.get(id)) {
+            return Some(chosen);
+        }
         if self.apps.len() == 1 || self.choose.is_none() {
             self.apps.first().copied().or(self.choose)
         } else {
@@ -254,22 +285,66 @@ pub struct Host {
     ble_status: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<BleStatus>>>,
     /// BLE commands from the web clients to the BLE transport.
     ble_commands: Channel<CriticalSectionRawMutex, BleCommand, 2>,
+    /// The bundle store the registry's apps live in; `None` on a host
+    /// without one (the registry is then all there is).
+    store: Mutex<CriticalSectionRawMutex, Option<&'static mut (dyn Bundles + Send)>>,
+    /// Readers of bundle bytes outside the `active` lock ([`lease`](Self::lease)).
+    leases: AtomicU32,
+    /// The boot package [`activate`](Self::activate) chose last, for the
+    /// target to keep ([`next_boot_change`](Self::next_boot_change)).
+    boot_changes: Signal<CriticalSectionRawMutex, PackageId>,
 }
+
+/// A reader of bundle bytes ([`Host::lease`]); dropping it ends the read.
+pub struct Lease<'h>(&'h AtomicU32);
+
+impl Drop for Lease<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// How often [`Host::bundle_begin`] looks again while a reader holds a
+/// lease, and for how long.
+const LEASE_POLL: Duration = Duration::from_millis(50);
+const LEASE_WAIT: Duration = Duration::from_secs(10);
 
 impl Host {
     /// A host running `registry`, starting with its boot package
     /// ([`Registry::boot_package`]); its engines run in `memory`, with a
     /// track in RAM.
     pub fn new(registry: Registry, memory: &'static mut EngineMemory) -> Self {
-        Self::with(registry, memory, HostTrack::Ram(RamTrack::new()))
+        Self::with(registry, memory, HostTrack::Ram(RamTrack::new()), None)
     }
 
     /// [`new`](Self::new), with `track` as the engines' `gps`.
     pub fn with_track(registry: Registry, memory: &'static mut EngineMemory, track: &'static mut (dyn TrackLog + Send)) -> Self {
-        Self::with(registry, memory, HostTrack::Given(track))
+        Self::with(registry, memory, HostTrack::Given(track), None)
     }
 
-    fn with(registry: Registry, memory: &'static mut EngineMemory, track: HostTrack) -> Self {
+    /// [`new`](Self::new), with `track` (if any) as the engines' `gps`, and
+    /// `store` (if any): the bundle store the registry's apps were read
+    /// from ([`BundleStore::open`](crate::store::BundleStore::open)), which
+    /// installs and deletes go to.
+    pub fn with_storage(
+        registry: Registry,
+        memory: &'static mut EngineMemory,
+        track: Option<&'static mut (dyn TrackLog + Send)>,
+        store: Option<&'static mut (dyn Bundles + Send)>,
+    ) -> Self {
+        let track = match track {
+            Some(track) => HostTrack::Given(track),
+            None => HostTrack::Ram(RamTrack::new()),
+        };
+        Self::with(registry, memory, track, store)
+    }
+
+    fn with(
+        registry: Registry,
+        memory: &'static mut EngineMemory,
+        track: HostTrack,
+        store: Option<&'static mut (dyn Bundles + Send)>,
+    ) -> Self {
         let boot = registry.boot_package();
         let host = Host {
             active: Mutex::new(Active {
@@ -285,6 +360,9 @@ impl Host {
             broadcast: PubSubChannel::new(),
             ble_status: BlockingMutex::new(RefCell::new(None)),
             ble_commands: Channel::new(),
+            store: Mutex::new(store),
+            leases: AtomicU32::new(0),
+            boot_changes: Signal::new(),
         };
         if let Ok(mut active) = host.active.try_lock() {
             host.start(&mut active, boot);
@@ -341,31 +419,150 @@ impl Host {
         }
     }
 
-    /// Installs (or updates) `package` at run time; the clients' Choose
-    /// lists change at once. Updating the active package restarts it.
+    /// Installs (or updates) `package` at run time, in the registry only
+    /// (not the store: see [`bundle_commit`](Self::bundle_commit)); the
+    /// clients' Choose lists change at once. Updating the active package
+    /// restarts it, with its state if the interface is unchanged.
     pub async fn install(&self, package: Package) -> Result<(), InstallError> {
         let mut active = self.active.lock().await;
         self.registry.lock(|r| r.borrow_mut().install(package))?;
-        info!("host: installed {} v{}", package.name, package.version);
-        if active.id() == package.id {
-            self.start(&mut active, Some(package));
-        }
-        self.publish(&mut active);
+        self.installed(&mut active, package);
         Ok(())
     }
 
-    /// Removes the app `id`; if it was active, back to the default.
+    /// Removes the app `id` from the registry (not the store: see
+    /// [`bundle_delete`](Self::bundle_delete)); if it was active, back to
+    /// the default.
     pub async fn remove(&self, id: PackageId) -> bool {
         let mut active = self.active.lock().await;
         if !self.registry.lock(|r| r.borrow_mut().remove(id)) {
             return false;
         }
-        if active.id() == id {
-            let default = self.registry.lock(|r| r.borrow().default_package());
-            self.start(&mut active, default);
-        }
-        self.publish(&mut active);
+        self.removed(&mut active, id);
         true
+    }
+
+    /// Makes `id` active (as [`HostEvent::Select`]) and the package to boot
+    /// with ([`Registry::set_boot`]; [`CHOOSE`] for Choose), which the
+    /// target keeps ([`next_boot_change`](Self::next_boot_change)).
+    pub async fn activate(&self, id: PackageId) -> Result<(), Refused> {
+        self.select(Some(id)).await?;
+        self.registry.lock(|r| r.borrow_mut().set_boot(Some(id)));
+        self.boot_changes.signal(id);
+        info!("host: {} is the boot package", id);
+        Ok(())
+    }
+
+    /// The next boot package chosen by [`activate`](Self::activate), for
+    /// the target to keep across reboots (only the latest matters).
+    pub async fn next_boot_change(&self) -> PackageId {
+        self.boot_changes.wait().await
+    }
+
+    // ---- the bundle store ----
+
+    /// A reader of bundle bytes outside the `active` lock (an HTTP file
+    /// response, a BLE transfer): until it is dropped, the sectors of a
+    /// bundle deleted meanwhile are not erased. Taken *before* the package
+    /// is looked up, so a package found is either still installed or
+    /// covered.
+    pub fn lease(&self) -> Lease<'_> {
+        self.leases.fetch_add(1, Ordering::AcqRel);
+        Lease(&self.leases)
+    }
+
+    /// Readers holding a [`lease`](Self::lease) now.
+    pub fn leases(&self) -> u32 {
+        self.leases.load(Ordering::Acquire)
+    }
+
+    /// Starts an upload of bundle `id`, `len` bytes, SHA-256 `sha256`, into
+    /// the store ([`Bundles::begin`]). If the sectors it needs held a
+    /// bundle deleted since boot that something may still be reading, it
+    /// waits for the readers ([`lease`](Self::lease)) to go, looking every
+    /// 50 ms; [`StoreError::Busy`] if they are still there after 10 s.
+    /// Refused for Choose's id, without a store, and for a new id with
+    /// the registry full.
+    pub async fn bundle_begin(&self, id: PackageId, len: u32, sha256: &[u8; 32]) -> Result<(), StoreError> {
+        if id == CHOOSE {
+            return Err(StoreError::Install(InstallError::Id));
+        }
+        let full = self.registry.lock(|r| {
+            let r = r.borrow();
+            r.apps.is_full() && r.get(id).is_none()
+        });
+        if full {
+            return Err(StoreError::Install(InstallError::Full));
+        }
+        let deadline = Instant::now() + LEASE_WAIT;
+        loop {
+            let begun = match self.store.lock().await.as_deref_mut() {
+                Some(store) => store.begin(id, len, sha256, self.leases() == 0),
+                None => return Err(StoreError::NotFound),
+            };
+            match begun {
+                Err(StoreError::Leased) if Instant::now() < deadline => embassy_time::Timer::after(LEASE_POLL).await,
+                Err(StoreError::Leased) => {
+                    warn!("host: upload refused: a deleted bundle's reader held on for {} s", LEASE_WAIT.as_secs());
+                    return Err(StoreError::Busy);
+                }
+                other => return other,
+            }
+        }
+    }
+
+    /// The upload's next bytes ([`Bundles::write`]); the bytes written so
+    /// far.
+    pub async fn bundle_write(&self, offset: u32, bytes: &[u8]) -> Result<u32, StoreError> {
+        match self.store.lock().await.as_deref_mut() {
+            Some(store) => store.write(offset, bytes),
+            None => Err(StoreError::NoUpload),
+        }
+    }
+
+    /// Ends the upload ([`Bundles::commit`]): once it is validated and the
+    /// registry takes it, it is installed, and if it replaces the active
+    /// package that restarts (keeping its state if the interface is
+    /// unchanged); every client is told.
+    pub async fn bundle_commit(&self) -> Result<Package, StoreError> {
+        let mut active = self.active.lock().await;
+        let mut store = self.store.lock().await;
+        let Some(store) = store.as_deref_mut() else {
+            return Err(StoreError::NoUpload);
+        };
+        let package = store.commit(&LIMITS, &mut active.memory.scratch, &mut |p| self.registry.lock(|r| r.borrow().check(p)))?;
+        // checked, so it can't fail; the store has it either way, for the
+        // next boot
+        if let Err(e) = self.registry.lock(|r| r.borrow_mut().install(package)) {
+            error!("host: {} committed but not installed: {:?}", package.name, Dbg(&e));
+        }
+        self.installed(&mut active, package);
+        Ok(package)
+    }
+
+    /// Drops the upload in progress; whether there was one.
+    pub async fn bundle_abort(&self) -> bool {
+        self.store.lock().await.as_deref_mut().is_some_and(|s| s.abort())
+    }
+
+    /// Deletes the bundle `id` from the store and the registry; if it was
+    /// active, back to the default.
+    pub async fn bundle_delete(&self, id: PackageId) -> Result<(), StoreError> {
+        let mut active = self.active.lock().await;
+        match self.store.lock().await.as_deref_mut() {
+            Some(store) => store.delete(id)?,
+            None => return Err(StoreError::NotFound),
+        }
+        if self.registry.lock(|r| r.borrow_mut().remove(id)) {
+            self.removed(&mut active, id);
+        }
+        info!("host: bundle {} deleted", id);
+        Ok(())
+    }
+
+    /// The store's free space; `None` without a store.
+    pub async fn bundle_space(&self) -> Option<Space> {
+        self.store.lock().await.as_deref().map(|s| s.space())
     }
 
     // ---- inputs ----
@@ -577,10 +774,39 @@ impl Host {
 
     // ---- internals, called with `active` locked ----
 
+    /// After `package` went into the registry: if it replaces the active
+    /// package, that restarts (with its state if the interface is
+    /// unchanged); every client is told (the Choose list changed).
+    fn installed(&self, active: &mut Active, package: Package) {
+        info!("host: installed {} v{}", package.name, package.version);
+        if active.id() == package.id {
+            let previous = active.engine.take();
+            self.start_from(active, Some(package), previous);
+        }
+        self.publish(active);
+    }
+
+    /// After the app `id` left the registry: if it was active, back to the
+    /// default; every client is told.
+    fn removed(&self, active: &mut Active, id: PackageId) {
+        if active.id() == id {
+            let default = self.registry.lock(|r| r.borrow().default_package());
+            self.start(active, default);
+        }
+        self.publish(active);
+    }
+
     /// Makes `package` active with a fresh engine (the old one is dropped
     /// first: they share the buffers) and cancels the old timer. If the
     /// engine does not start the default package takes over.
     fn start(&self, active: &mut Active, package: Option<Package>) {
+        self.start_from(active, package, None);
+    }
+
+    /// [`start`](Self::start); with `previous`, the engine of the package
+    /// `package` replaces, its state is kept if the interface is unchanged
+    /// ([`VmEngine::resume`]).
+    fn start_from(&self, active: &mut Active, package: Option<Package>, previous: Option<VmEngine>) {
         active.engine = None;
         active.package = package;
         if active.timer.take().is_some() {
@@ -596,7 +822,11 @@ impl Host {
         }
         let now = self.now() as i64;
         let started = Instant::now();
-        match VmEngine::start(&package, now, active.memory, &active.track) {
+        let engine = match previous {
+            Some(previous) => VmEngine::resume(previous, &package, now, active.memory, &active.track),
+            None => VmEngine::start(&package, now, active.memory, &active.track),
+        };
+        match engine {
             Ok(engine) => {
                 let (stack, locals, inputs, outputs) = engine.slots();
                 let stats = engine.stats();

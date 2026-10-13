@@ -53,37 +53,15 @@ use common::{
     host::{Host, Registry},
     nmea::AsyncReader,
     package::Package,
+    store::{self, Apps, BundleStore, Bundles, Item},
     tasks::{read_gps, serve_http},
-    track::FlashTrack,
+    track::{FlashTrack, TrackFlash, TrackLog},
 };
-use esp_hal::peripherals::FLASH;
 use esp_storage::FlashStorage;
 
 /// The engines' buffers (common::engine), static: not the heap, not the
 /// main stack.
 static ENGINE_MEMORY: ConstStaticCell<EngineMemory> = ConstStaticCell::new(EngineMemory::new());
-
-/// Feature `dev-race`: the one app, a bundle embedded in flash (64-byte
-/// aligned, as a bundle in the store will be), until bundles are installed
-/// into their own partition.
-#[cfg(feature = "dev-race")]
-mod dev_bundle {
-    #[repr(C, align(64))]
-    struct Aligned<const N: usize>([u8; N]);
-
-    const PATH: &str = env!(
-        "EXTREMERS_DEV_BUNDLE",
-        "feature dev-race: set EXTREMERS_DEV_BUNDLE to a bundle's path (cargo run -p extreme-pack -- --bundle writes target/packages/race.bundle)"
-    );
-    static BUNDLE: &Aligned<{ include_bytes!(env!("EXTREMERS_DEV_BUNDLE")).len() }> =
-        &Aligned(*include_bytes!(env!("EXTREMERS_DEV_BUNDLE")));
-
-    pub static BYTES: &[u8] = &BUNDLE.0;
-
-    pub fn path() -> &'static str {
-        PATH
-    }
-}
 
 /// The BLE controller, with 20 HCI command slots.
 type BleController = ExternalController<BleConnector<'static>, 20>;
@@ -131,32 +109,75 @@ async fn main(spawner: Spawner) -> ! {
     let _rf_antenna_select = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
     defmt::info!("rf switch: powered (GPIO3 low), onboard antenna (GPIO14 low)");
 
-    // A second handle on the flash, for the data slot (xip.rs): its own
-    // FlashStorage, over flash disjoint from the settings partition's.
+    // Two more handles on the flash, for the data slot's regions (xip.rs):
+    // each its own FlashStorage, over flash disjoint from the settings
+    // partition's and from each other's.
     // SAFETY: esp-storage runs every operation in its own critical section,
-    // so the two never interleave; neither assumes it is the only writer of
+    // so they never interleave; none assumes it is the only writer of
     // anything outside its own region.
-    let data_flash = unsafe { peripherals.FLASH.clone_unchecked() };
+    // Made first, before any flash operation of the app's: each handle's
+    // size comes from the chip's ID (esp-storage reads it when a handle is
+    // made), and the data slot's handles once read a size too small for it
+    // when made after the settings had been read (`OutOfBounds`). The
+    // repo's esp-storage now keeps the first size detected for all.
+    let (tracks_flash, bundles_flash) = unsafe {
+        (
+            FlashStorage::new(peripherals.FLASH.clone_unchecked()),
+            FlashStorage::new(peripherals.FLASH.clone_unchecked()),
+        )
+    };
+    defmt::info!(
+        "flash: capacity {=usize:#x} (tracks handle), {=usize:#x} (bundles handle)",
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&tracks_flash),
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&bundles_flash)
+    );
     // Settings partition (read only here; see storage.rs), then the access
     // point's credentials from it, or the compiled-in defaults.
     storage::init(peripherals.FLASH).await;
     choose_access_point_credentials().await;
-    let track = flash_track(data_flash);
+    let (tracks, bundles) = match data_regions(tracks_flash, bundles_flash) {
+        Some((tracks, bundles)) => (Some(tracks), Some(bundles)),
+        None => {
+            defmt::warn!("data slot unusable: the track in RAM (lost at a reboot), no bundles but Choose");
+            (None, None)
+        }
+    };
+    let track = tracks.and_then(flash_track);
 
     memory::log("before the host");
     let engine_memory = ENGINE_MEMORY.take();
     let choose = load("choose", extreme_packages::CHOOSE, engine_memory);
-    #[cfg(feature = "dev-race")]
-    let apps = load(dev_bundle::path(), dev_bundle::BYTES, engine_memory);
-    #[cfg(not(feature = "dev-race"))]
-    let apps: Option<Package> = None;
-    let registry = Registry::new(choose, apps.as_slice());
+    let (store, apps) = match bundles {
+        Some(bundles) => {
+            let (store, apps) = bundle_store(bundles, engine_memory);
+            (Some(store), apps)
+        }
+        None => (None, Default::default()),
+    };
+    let mut registry = Registry::new(choose, &apps);
+    let boot = storage::boot_id().await;
+    registry.set_boot(boot);
+    defmt::info!(
+        "boot package: {=str}; starting {=str}",
+        match boot {
+            None => "none kept (the rule: the only app, else Choose)",
+            Some(0) => "Choose",
+            Some(_) => "a bundle",
+        },
+        registry.boot_package().map_or("nothing", |p| p.name)
+    );
+    if let Some(id) = boot {
+        defmt::info!("boot package id {=u32:#010x}{=str}", id, if registry.get(id).is_some() { "" } else { " (not installed)" });
+    }
     static HOST: StaticCell<Host> = StaticCell::new();
-    let runtime: &'static Host = HOST.init(match track {
-        Some(track) => Host::with_track(registry, engine_memory, track),
-        None => Host::new(registry, engine_memory),
-    });
+    let runtime: &'static Host = HOST.init(Host::with_storage(
+        registry,
+        engine_memory,
+        track.map(|t| t as &'static mut (dyn TrackLog + Send)),
+        store.map(|s| s as &'static mut (dyn Bundles + Send)),
+    ));
     memory::log("host up");
+    spawner.spawn(boot_package_task(runtime).unwrap());
 
     // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
     // controller's connection limit matches the host's.
@@ -240,30 +261,105 @@ async fn main(spawner: Spawner) -> ! {
 }
 
 type Tracks = FlashTrack<xip::XipFlash>;
+type Store = BundleStore<xip::XipFlash>;
 
-/// The engines' `gps` in the data slot's tracks region (common::track,
-/// xip.rs), read in place: maps the slot, checks that reads in place see
-/// what the flash holds, and opens the ring (a new run from its head).
-/// `None` (logged) if any of that fails: the host then keeps the track in
-/// RAM, gone at a reboot.
-fn flash_track(flash: FLASH<'static>) -> Option<&'static mut Tracks> {
-    let fallback = "track: in RAM instead (lost at a reboot)";
+/// The data slot's two regions (storage.rs, xip.rs), tracks and bundles,
+/// each written through its own `flash` handle and read in place: maps the
+/// slot and checks that reads in place see what the flash holds. `None`
+/// (logged) if any of that fails: the host then keeps the track in RAM,
+/// gone at a reboot, and has no bundles but Choose.
+fn data_regions(tracks: FlashStorage<'static>, bundles: FlashStorage<'static>) -> Option<(xip::XipFlash, xip::XipFlash)> {
     let Some(slot) = storage::data_slot() else {
-        defmt::warn!("track: no data slot; {=str}", fallback);
+        defmt::warn!("data slot: none (see the storage lines above)");
         return None;
     };
     if !xip::map(&slot) {
-        defmt::warn!("{=str}", fallback);
         return None;
     }
-    let Some(mut region) = xip::XipFlash::new(FlashStorage::new(flash), slot.tracks()) else {
-        defmt::warn!("track: tracks region not mapped; {=str}", fallback);
+    let (Some(mut tracks), Some(bundles)) = (
+        xip::XipFlash::new(tracks, slot.tracks()),
+        xip::XipFlash::new(bundles, slot.bundles()),
+    ) else {
+        defmt::warn!("data slot: a region is not within the mapping");
         return None;
     };
-    if !region.self_check(&slot) {
-        defmt::warn!("{=str}", fallback);
-        return None;
+    tracks.self_check(&slot).then_some((tracks, bundles))
+}
+
+/// The bundle store in the data slot's bundles region (common::store):
+/// its boot scan, every bundle in it logged, and the ones that validate
+/// (in `memory`'s scratch) for the registry.
+fn bundle_store(region: xip::XipFlash, memory: &mut EngineMemory) -> (&'static mut Store, Apps) {
+    let bytes = region.bytes();
+    let started = esp_hal::time::Instant::now();
+    let (store, apps) = BundleStore::open(region, &LIMITS, &mut memory.scratch);
+    let us = started.elapsed().as_micros();
+    let space = store.space();
+    let extents = store.entries().filter(|i| matches!(i, Item::Extent { .. })).count();
+    defmt::info!(
+        "store: bundles region at {=usize:#010x}, {=usize} B: {=usize} extents, {=usize} bundles validated in {=u64} us; {=u32} B free, the largest bundle that fits {=u32} B",
+        bytes.as_ptr() as usize,
+        bytes.len(),
+        extents,
+        apps.len(),
+        us,
+        space.free_bytes,
+        space.largest_free
+    );
+    for item in store.entries() {
+        let Item::Extent { first, record: r } = item else {
+            continue;
+        };
+        let state = store::state_name(r.state);
+        // the package, if it is this extent's and it validated
+        let at = bytes.as_ptr() as usize + store::archive_offset(first);
+        match apps.iter().find(|p| p.archive.bytes().as_ptr() as usize == at) {
+            Some(p) => defmt::info!(
+                "store: sectors {=u16}+{=u16}: {=str}, seq {=u32}, id {=u32:#010x}: {=str} v{=u16}, {=u32} B",
+                first,
+                r.sectors,
+                state,
+                r.seq,
+                r.id,
+                p.name,
+                p.version,
+                r.len
+            ),
+            None => defmt::info!(
+                "store: sectors {=u16}+{=u16}: {=str}, seq {=u32}, id {=u32:#010x}, {=u32} B{=str}",
+                first,
+                r.sectors,
+                state,
+                r.seq,
+                r.id,
+                r.len,
+                if r.state == store::COMMITTED { " (not loaded: see above)" } else { "" }
+            ),
+        }
     }
+    static STORE: StaticCell<Store> = StaticCell::new();
+    (STORE.init(store), apps)
+}
+
+/// Keeps the boot package `Host::activate` chooses in the settings.
+#[embassy_executor::task]
+async fn boot_package_task(runtime: &'static Host) -> ! {
+    loop {
+        let id = runtime.next_boot_change().await;
+        if storage::store_boot_id(id).await {
+            defmt::info!("settings: boot package {=u32:#010x} kept", id);
+        } else {
+            defmt::warn!("settings: boot package {=u32:#010x} not kept", id);
+        }
+    }
+}
+
+/// The engines' `gps` in the data slot's tracks region (common::track,
+/// xip.rs): opens the ring (a new run from its head). `None` (logged) if
+/// that fails: the host then keeps the track in RAM, gone at a reboot.
+fn flash_track(region: xip::XipFlash) -> Option<&'static mut Tracks> {
+    let fallback = "track: in RAM instead (lost at a reboot)";
+    let range = region.range();
     let started = esp_hal::time::Instant::now();
     let track = match FlashTrack::open(region, GPS_MAX_ITEMS) {
         Ok(track) => track,
@@ -276,8 +372,8 @@ fn flash_track(flash: FLASH<'static>) -> Option<&'static mut Tracks> {
     let scan = track.boot_scan();
     defmt::info!(
         "track: flash {=u32:#08x}..{=u32:#08x}, {=u32} records; scan {:?} in {=u64} us: head {=u32}, oldest {=u32}, {=u32} held{=str}; this boot's run starts at {=u32}",
-        slot.tracks().start,
-        slot.tracks().end,
+        range.start,
+        range.end,
         track.capacity(),
         defmt::Debug2Format(&scan.kind),
         us,

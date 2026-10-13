@@ -30,6 +30,9 @@
 //!   `KEY_GATT_HASH`      the GATT database hash last served, 16 bytes
 //!   `KEY_GATT_BASE + n`  bond slot n's GATT client state, 5 bytes
 //!                        (`common::ble_settings::GattClientRecord`)
+//!   `KEY_BOOT`           the package to boot with, u32 LE (a bundle's id;
+//!                        0 = Choose), written by `Host::activate`; absent or
+//!                        not installed: `Registry::boot_package`'s rule
 
 use core::ops::Range;
 
@@ -59,6 +62,8 @@ pub const KEY_BOND_BASE: u8 = 0x20;
 pub const KEY_GATT_HASH: Key = [0x30];
 /// Each bond slot's GATT client state: `KEY_GATT_BASE + slot`.
 pub const KEY_GATT_BASE: u8 = 0x40;
+/// The package to boot with (u32 LE; 0 = Choose).
+pub const KEY_BOOT: Key = [0x50];
 
 /// sequential-storage's scratch buffer. It must hold the largest item of
 /// ANY key plus its key, word-rounded: a page migration triggered by storing
@@ -222,6 +227,10 @@ impl WifiCreds {
 /// accessor below reports "nothing stored" and every write fails.
 pub async fn init(flash: FLASH<'static>) -> bool {
     let mut flash = FlashStorage::new(flash);
+    info!(
+        "storage: flash capacity {=usize:#x} (settings handle)",
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&flash)
+    );
 
     let mut table_buf = [0u8; partitions::PARTITION_TABLE_MAX_LEN];
     let (range, otadata) = {
@@ -646,4 +655,22 @@ pub async fn store_gatt(slot: usize, record: &GattClientRecord) -> bool {
 
 pub async fn store_gatt_hash(hash: &[u8; 16]) -> bool {
     store(KEY_GATT_HASH, hash).await
+}
+
+/// The package to boot with (`KEY_BOOT`); `None` if none is stored or the
+/// record is not 4 bytes (logged).
+pub async fn boot_id() -> Option<u32> {
+    with_value(KEY_BOOT, |v| {
+        let v = v?;
+        let id = <[u8; 4]>::try_from(v).ok().map(u32::from_le_bytes);
+        if id.is_none() {
+            warn!("storage: boot record is {=usize} bytes, not 4; ignored", v.len());
+        }
+        id
+    })
+    .await
+}
+
+pub async fn store_boot_id(id: u32) -> bool {
+    store(KEY_BOOT, &id.to_le_bytes()).await
 }

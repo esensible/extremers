@@ -62,10 +62,17 @@ fn race() -> Package {
 /// Race's bundle under another name (a second app), with or without its
 /// watch bundle.
 fn race_as(name: &str, watch: bool) -> Package {
+    load(Box::leak(race_archive(name, 1, watch).into_boxed_slice()))
+}
+
+/// Race's archive as `name` at `version`, with or without its watch
+/// bundle.
+fn race_archive(name: &str, version: u16, watch: bool) -> Vec<u8> {
     let archive = race().archive;
     let mut manifest: Manifest = postcard::from_bytes(archive.file("manifest.bin").unwrap()).unwrap();
     manifest.id = package_id(name);
     manifest.name = name.try_into().unwrap();
+    manifest.version = version;
     if !watch {
         manifest.ui.watch = NO_WATCH_BUNDLE;
         manifest.watch_len = 0;
@@ -76,7 +83,7 @@ fn race_as(name: &str, watch: bool) -> Package {
         .filter(|(n, _)| *n != "manifest.bin" && (watch || *n != "watch.js"))
         .collect();
     files.push(("manifest.bin", &manifest));
-    load(Box::leak(bundle::archive::write(&files).into_boxed_slice()))
+    bundle::archive::write(&files)
 }
 
 fn memory() -> &'static mut EngineMemory {
@@ -472,4 +479,201 @@ fn a_long_feed() {
     assert_eq!(line(&race_view(&host)), (true, true));
     let stats = block_on(async { host.active.lock().await.engine.as_ref().unwrap().stats() });
     assert!(stats.steps > 0 && (stats.stack_high as usize) <= crate::engine::STACK_SLOTS, "{stats:?}");
+}
+
+// ---- the boot package, and the bundle store ----
+
+#[test]
+fn the_chosen_boot_package_wins_when_installed() {
+    let boots = |apps: &[Package], boot: Option<PackageId>| {
+        let mut registry = Registry::new(Some(choose()), apps);
+        registry.set_boot(boot);
+        state(&Host::new(registry, memory())).active
+    };
+    // one app would start by itself; Choose chosen
+    assert_eq!(boots(&[race()], Some(CHOOSE)), CHOOSE);
+    // two would start Choose; the second chosen
+    assert_eq!(boots(&[race(), race_as("race2", true)], Some(RACE2)), RACE2);
+    // not installed (deleted since): the rule
+    assert_eq!(boots(&[race()], Some(RACE2)), RACE);
+    assert_eq!(boots(&[race(), race_as("race2", true)], Some(12345)), CHOOSE);
+    // Choose chosen but not there: the rule
+    let mut registry = Registry::new(None, &[race(), race_as("race2", true)]);
+    registry.set_boot(Some(CHOOSE));
+    assert_eq!(state(&Host::new(registry, memory())).active, RACE);
+}
+
+#[test]
+fn activate_selects_and_is_kept() {
+    let host = full();
+    assert_eq!(block_on(host.activate(12345)), Err(Refused::NotInstalled));
+    block_on(host.activate(RACE2)).unwrap();
+    assert_eq!(state(&host).active, RACE2);
+    assert_eq!(block_on(host.next_boot_change()), RACE2);
+    assert_eq!(host.registry.lock(|r| r.borrow().boot()), Some(RACE2));
+    // the latest only
+    block_on(host.activate(RACE)).unwrap();
+    block_on(host.activate(CHOOSE)).unwrap();
+    assert_eq!(state(&host).active, CHOOSE);
+    assert_eq!(block_on(host.next_boot_change()), CHOOSE);
+}
+
+use crate::{
+    store::{BundleStore, Bundles, MAX_SECTORS},
+    track::{TrackFlash, tests::Nor},
+};
+use bundle::store::{SECTOR, store_image};
+use sha2::{Digest, Sha256};
+
+/// A host with Choose and a store in RAM NOR flash holding `bundles` (as
+/// `extreme-pack --store-image` writes them), booting `boot`; and the
+/// flash, to reboot from.
+fn stored(bundles: &[&[u8]], boot: Option<PackageId>) -> (Host, Nor) {
+    let nor = Nor::blank(MAX_SECTORS);
+    nor.program(0, &store_image(bundles, MAX_SECTORS * SECTOR));
+    (boot_from(nor, boot), nor)
+}
+
+/// A host booted from the store in `nor`, as the C6 does.
+fn boot_from(nor: Nor, boot: Option<PackageId>) -> Host {
+    let memory = memory();
+    let (store, apps) = BundleStore::open(nor, &LIMITS, &mut memory.scratch);
+    let mut registry = Registry::new(Some(choose()), &apps);
+    registry.set_boot(boot);
+    let store: &'static mut (dyn Bundles + Send) = Box::leak(Box::new(store));
+    Host::with_storage(registry, memory, None, Some(store))
+}
+
+/// Uploads `archive` to the host's store as `id`, 240 bytes at a time.
+fn upload(host: &Host, id: PackageId, archive: &[u8]) -> Result<Package, crate::store::Error> {
+    let sha: [u8; 32] = Sha256::digest(archive).into();
+    block_on(host.bundle_begin(id, archive.len() as u32, &sha))?;
+    for (i, chunk) in archive.chunks(240).enumerate() {
+        block_on(host.bundle_write((i * 240) as u32, chunk))?;
+    }
+    block_on(host.bundle_commit())
+}
+
+#[test]
+fn a_host_boots_from_its_store() {
+    // nothing stored: Choose alone
+    let (host, _) = stored(&[], None);
+    assert_eq!(state(&host).active, CHOOSE);
+    let space = block_on(host.bundle_space()).unwrap();
+    assert_eq!(space.free_bytes, (MAX_SECTORS * SECTOR) as u32);
+    // Race stored: the only app, so it starts
+    let (host, nor) = stored(&[race_bytes()], None);
+    assert_eq!(state(&host).active, RACE);
+    assert_eq!(phase(&race_view(&host)).0, "idle");
+    // with Choose kept as the boot package
+    assert_eq!(state(&boot_from(nor, Some(CHOOSE))).active, CHOOSE);
+    // hosts without a store refuse store operations
+    assert_eq!(block_on(full().bundle_delete(RACE)), Err(crate::store::Error::NotFound));
+    assert_eq!(block_on(full().bundle_space()), None);
+}
+
+/// A new version of the running bundle (same interface) is installed
+/// beside it and takes over with the race in progress; the old one's
+/// sectors are reused by the next upload, and the engine, whose state
+/// pointed into them, runs on.
+#[test]
+fn a_replacement_keeps_the_race() {
+    let v1 = race_bytes();
+    let (host, nor) = stored(&[v1], None);
+    gps(&host, Some((-33.85, 151.252)), None);
+    race_event(&host, RACE, json!({"line_stbd": {}})).unwrap();
+    let tap = host.now() as i64;
+    race_event(&host, RACE, json!({"bump_seq": {"seconds": 300, "tapped_at": tap}})).unwrap();
+    let before = phase(&race_view(&host));
+    assert_eq!(before, ("countdown".into(), Some(tap + 300_000)));
+
+    let mut updates = host.subscribe().unwrap();
+    let v2 = race_archive("race", 2, true);
+    let p = upload(&host, RACE, &v2).unwrap();
+    assert_eq!(p.version, 2);
+    let s = state(&host);
+    assert_eq!(s.active, RACE);
+    assert_eq!(host.package(RACE).unwrap().version, 2);
+    assert_eq!(phase(&race_view(&host)), before);
+    assert_eq!(line(&race_view(&host)), (true, false));
+    // the clients were told
+    assert!(updates.try_next_message_pure().is_some());
+
+    // v1's sectors (0..) go to the next upload, erased first
+    let erases = nor.erases.get();
+    upload(&host, RACE2, &race_archive("race2", 1, true)).unwrap();
+    assert!(nor.erases.get() > erases);
+    assert_eq!(host.package(RACE2).unwrap().archive.bytes().as_ptr(), unsafe { nor.bytes().as_ptr().add(64) });
+    // the race runs on
+    race_event(&host, RACE, json!({"line_port": {}})).unwrap();
+    assert_eq!(line(&race_view(&host)), (true, true));
+    assert_eq!(phase(&race_view(&host)), before);
+
+    // after a reboot: both, the newer Race
+    let host = boot_from(nor, None);
+    assert_eq!(host.package(RACE).unwrap().version, 2);
+    assert!(host.package(RACE2).is_some());
+}
+
+#[test]
+fn deleting_the_active_bundle_goes_back() {
+    let r2 = race_archive("race2", 1, true);
+    let (host, nor) = stored(&[race_bytes(), &r2], Some(RACE2));
+    assert_eq!(state(&host).active, RACE2);
+    block_on(host.bundle_delete(RACE2)).unwrap();
+    assert_eq!(state(&host).active, CHOOSE);
+    assert_eq!(pick(&host, RACE2), Err(Refused::NotInstalled));
+    assert_eq!(block_on(host.bundle_delete(RACE2)), Err(crate::store::Error::NotFound));
+    // gone after a reboot too; the boot package, no longer there, gives way
+    let host = boot_from(nor, Some(RACE2));
+    assert!(host.package(RACE2).is_none());
+    assert_eq!(state(&host).active, RACE);
+}
+
+#[test]
+fn an_upload_waits_for_the_readers_of_a_deleted_bundle() {
+    let (host, _) = stored(&[race_bytes()], None);
+    // an HTTP response of Race's page under way
+    let lease = host.lease();
+    block_on(host.bundle_delete(RACE)).unwrap();
+    assert_eq!(host.leases(), 1);
+    let r2 = race_archive("race2", 1, true);
+    let sha: [u8; 32] = Sha256::digest(&r2).into();
+    let started = Instant::now();
+    let reader = async {
+        embassy_time::Timer::after(Duration::from_millis(120)).await;
+        drop(lease);
+    };
+    let (begun, ()) = block_on(embassy_futures::join::join(host.bundle_begin(RACE2, r2.len() as u32, &sha), reader));
+    begun.unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(120));
+    assert_eq!(host.leases(), 0);
+    // one upload at a time
+    assert_eq!(block_on(host.bundle_begin(RACE, 100, &sha)), Err(crate::store::Error::Busy));
+    assert!(block_on(host.bundle_abort()));
+}
+
+#[test]
+fn uploads_the_registry_would_refuse_are_refused() {
+    let (host, _) = stored(&[], None);
+    let sha = [0; 32];
+    assert_eq!(block_on(host.bundle_begin(CHOOSE, 100, &sha)), Err(crate::store::Error::Install(InstallError::Id)));
+    // Choose's archive uploaded as Race
+    let choose_bytes = extreme_packages::CHOOSE;
+    let sha: [u8; 32] = Sha256::digest(choose_bytes).into();
+    block_on(host.bundle_begin(RACE, choose_bytes.len() as u32, &sha)).unwrap();
+    for (i, chunk) in choose_bytes.chunks(240).enumerate() {
+        block_on(host.bundle_write((i * 240) as u32, chunk)).unwrap();
+    }
+    // its manifest says Choose's id, not Race's
+    assert_eq!(block_on(host.bundle_commit()).err(), Some(crate::store::Error::Id));
+    // a full registry takes no new id
+    let apps: Vec<Package> = (0..7).map(|i| race_as(&std::format!("app{i}"), false)).collect();
+    let nor = Nor::blank(MAX_SECTORS);
+    let (store, _) = BundleStore::open(nor, &LIMITS, &mut memory().scratch);
+    let store: &'static mut (dyn Bundles + Send) = Box::leak(Box::new(store));
+    let host = Host::with_storage(Registry::new(Some(choose()), &apps), memory(), None, Some(store));
+    assert_eq!(block_on(host.bundle_begin(RACE, 100, &sha)), Err(crate::store::Error::Install(InstallError::Full)));
+    // but a new version of one installed is fine
+    block_on(host.bundle_begin(package_id("app3"), 100, &sha)).unwrap();
 }

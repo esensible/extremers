@@ -337,6 +337,7 @@ dependencies = [
  "postcard-schema",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "static_cell",
  "trouble-host",
 ]

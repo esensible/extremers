@@ -145,9 +145,10 @@ pub const CHOOSE: Spec = Spec {
 /// The committed Choose bundle `extreme-packages` embeds, from the root.
 pub const CHOOSE_BUNDLE: &str = "choose/choose.bundle";
 
-/// The bundles partition's size (`tgt-xiaoc6/partitions.csv`): what
-/// `--store-image` fills.
-pub const STORE_SIZE: usize = 0x100000;
+/// The bundles region's size (`common::config::DATA_BUNDLES_LEN`: the
+/// first 512 KiB of the C6's inactive app slot): what `--store-image`
+/// fills.
+pub const STORE_SIZE: usize = 0x8_0000;
 
 /// A built engine: the program, its tables and descriptors, its sources.
 pub struct Engine {
@@ -302,8 +303,9 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
     })
 }
 
-/// The store image of `bundles` (`--store-image`): the bundles partition
-/// as `extreme-bundle` lays it out, for `probe-rs download`.
+/// The store image of `bundles` (`--store-image`): the bundles region as
+/// `extreme-bundle` lays it out, for `probe-rs download` at the inactive
+/// slot's offset (`tgt-xiaoc6/README.md`).
 pub fn store_image(bundles: &[Vec<u8>]) -> Vec<u8> {
     let refs: Vec<&[u8]> = bundles.iter().map(Vec::as_slice).collect();
     bundle::store::store_image(&refs, STORE_SIZE)

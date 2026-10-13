@@ -174,10 +174,45 @@ impl VmEngine {
     /// its first evaluation, `{gps: {}}` at `now`, so a view exists before
     /// the first event.
     pub fn start(package: &Package, now: i64, memory: &mut EngineMemory, track: &dyn Track) -> Result<VmEngine, StartError> {
+        let mut e = Self::link(package)?;
+        e.evaluate(memory, track, now, Event::Gps { fix: None, velocity: None })
+            .map_err(StartError::First)?;
+        Ok(e)
+    }
+
+    /// [`start`](Self::start) for `package` replacing the package
+    /// `previous` runs, keeping `previous`'s state when both programs have
+    /// the same interface hash (a new version whose UIs or code changed but
+    /// not its state): the first evaluation is then given that state. Its
+    /// strings (enum values, which point into the old bundle) are pointed
+    /// at the same strings in the new one. If the state can't be carried,
+    /// or the first evaluation with it is rejected (logged), the engine
+    /// starts afresh.
+    pub fn resume(previous: VmEngine, package: &Package, now: i64, memory: &mut EngineMemory, track: &dyn Track) -> Result<VmEngine, StartError> {
+        let mut e = Self::link(package)?;
+        let n = e.layout.state_leaves as usize;
+        let same = previous.has_state && previous.program.interface_hash == e.program.interface_hash;
+        if same && repoint(&mut memory.state[..n], &e) {
+            e.has_state = true;
+            match e.evaluate(memory, track, now, Event::Gps { fix: None, velocity: None }) {
+                Ok(_) => {
+                    info!("engine {}: state kept from the version it replaces", e.name);
+                    return Ok(e);
+                }
+                Err(r) => warn!("engine {}: the state kept is rejected ({:?}); starting afresh", e.name, Dbg(&r)),
+            }
+        } else if previous.has_state {
+            info!("engine {}: interface changed; starting afresh", e.name);
+        }
+        Self::start(package, now, memory, track)
+    }
+
+    /// `package`'s engine linked, before its first evaluation.
+    fn link(package: &Package) -> Result<VmEngine, StartError> {
         let engine = package.engine.ok_or(StartError::NoEngine)?;
         let mut linked = [None; IMPORTS];
         vm::link(&engine.program, &sailing::BUILTINS, &mut linked).map_err(StartError::Link)?;
-        let mut e = VmEngine {
+        Ok(VmEngine {
             name: package.name,
             bundle: package.archive.bytes(),
             program: engine.program,
@@ -190,10 +225,7 @@ impl VmEngine {
             view_len: 0,
             wake: None,
             stats: Stats::default(),
-        };
-        e.evaluate(memory, track, now, Event::Gps { fix: None, velocity: None })
-            .map_err(StartError::First)?;
-        Ok(e)
+        })
     }
 
     /// The published value, bitwire (the view, or the state without one),
@@ -315,6 +347,29 @@ impl VmEngine {
         self.stats = stats;
         Ok(Evaluated { changed, wake: self.wake })
     }
+}
+
+/// Points every string in `state` at the same bytes in `engine`'s bundle:
+/// its enum strings, else its program's constants. `false` if one isn't
+/// there (`state` then partly changed: not to be used).
+fn repoint(state: &mut [Value<'static>], engine: &VmEngine) -> bool {
+    state.iter_mut().all(|v| {
+        let Value::Str(s) = *v else {
+            return true;
+        };
+        let in_enums = engine.enums.and_then(|en| (0..en.len()).filter_map(|i| en.get(i)).find(|e| *e == s));
+        let in_consts = || {
+            let c = engine.program.consts;
+            (0..c.len().saturating_sub(s.len()) + 1).find(|&i| c.get(i..i + s.len()) == Some(s)).map(|i| &c[i..i + s.len()])
+        };
+        match in_enums.or_else(in_consts) {
+            Some(new) => {
+                *v = Value::Str(new);
+                true
+            }
+            None => false,
+        }
+    })
 }
 
 /// Whether `s` lies within `bundle`.

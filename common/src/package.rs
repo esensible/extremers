@@ -71,6 +71,15 @@ impl Package {
         })
     }
 
+    /// The id, name and version in the archive `bytes`'s `manifest.bin`,
+    /// read without validating anything else: for listings (the `dump`
+    /// tool), never for running.
+    pub fn manifest_of(bytes: &[u8]) -> Option<ManifestInfo<'_>> {
+        let archive = Archive::parse(bytes).ok()?;
+        let m = postcard::from_bytes::<ManifestRef>(archive.file("manifest.bin")?).ok()?;
+        Some(ManifestInfo { id: m.id, name: m.name, version: m.version })
+    }
+
     pub fn manifest(&self) -> Manifest {
         Manifest {
             id: self.id,
@@ -98,6 +107,14 @@ impl Package {
     pub fn watch(&self) -> &'static [u8] {
         self.archive.file("watch.js").unwrap_or(&[])
     }
+}
+
+/// What [`Package::manifest_of`] reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManifestInfo<'a> {
+    pub id: PackageId,
+    pub name: &'a str,
+    pub version: u16,
 }
 
 /// Longest `web/<name>` looked up; longer names are not found.

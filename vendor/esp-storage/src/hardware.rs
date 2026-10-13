@@ -49,8 +49,31 @@ pub(crate) fn read_flash_encrypted(
     crate::mmu::read_flash_encrypted(offset, bytes)
 }
 
-/// Detect flash size by reading via the dedicated hardware RDID command.
+/// The flash size, detected once ([`detect_flash_size`]) and kept: every
+/// `FlashStorage` gets the same.
+///
+/// Local patch (extremers): an application with more than one
+/// `FlashStorage` (one per flash region, from `FLASH::clone_unchecked`)
+/// detected the size once per instance, and a later detection, after
+/// other flash operations, need not agree with the first (seen on an
+/// ESP32-C6 with 4 MiB: a second instance, made after the first had read
+/// the partition table and the settings, failed reads at 0x200000 with
+/// `OutOfBounds`). A size of 0 (the chip not recognised) is not kept, so
+/// a later instance detects again.
 pub(crate) fn get_flash_size() -> u32 {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static SIZE: AtomicU32 = AtomicU32::new(0);
+    let known = SIZE.load(Ordering::Relaxed);
+    if known != 0 {
+        return known;
+    }
+    let size = detect_flash_size();
+    SIZE.store(size, Ordering::Relaxed);
+    size
+}
+
+/// Detect flash size by reading via the dedicated hardware RDID command.
+fn detect_flash_size() -> u32 {
     // On ESP32 the hardware RDID mechanism does not work reliably, so we
     // read the flash size from the ROM global `g_rom_flashchip` instead.
     #[cfg(esp32)]

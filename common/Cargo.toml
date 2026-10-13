@@ -46,6 +46,9 @@ bundle = { package = "extreme-bundle", path = "../bundle", default-features = fa
 vm = { package = "lang-vm", path = "../lang/vm" }
 sailing = { package = "engine-builtins", path = "../engine/builtins" }
 bitwire = { path = "../wire/rust" }
+# the bundle store hashes an upload as it arrives (src/store.rs); the
+# version extreme-bundle already uses
+sha2 = { version = "0.10", default-features = false }
 
 [features]
 default = []

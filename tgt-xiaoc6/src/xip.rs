@@ -172,6 +172,18 @@ impl XipFlash {
         if range.start % SECTOR_LEN as u32 != 0 || range.len() % SECTOR_LEN != 0 {
             return None;
         }
+        // esp-storage bounds every operation by the size it detected for
+        // this handle (absolute flash offsets, as `range` is)
+        let capacity = ReadNorFlash::capacity(&flash);
+        if (capacity as u64) < range.end as u64 {
+            warn!(
+                "xip: flash handle for {=u32:#x}..{=u32:#x} has a capacity of {=usize:#x}: it would refuse the region",
+                range.start,
+                range.end,
+                capacity
+            );
+            return None;
+        }
         Some(XipFlash {
             offset: range.start,
             bytes: region_bytes(range)?,
@@ -231,6 +243,11 @@ impl XipFlash {
             );
         }
         ok
+    }
+
+    /// The region, as flash offsets.
+    pub fn range(&self) -> Range<u32> {
+        self.offset..self.offset + self.bytes.len() as u32
     }
 
     fn vaddr(&self, offset: u32) -> usize {

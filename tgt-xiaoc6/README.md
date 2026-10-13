@@ -25,7 +25,7 @@ With the probe on a `probe-rs serve` host, set `PROBE_RS_REMOTE_HOST` and
 | `otadata` | data/ota | 0xF000 | 8 KiB | which app slot to boot (ota_0 for now) |
 | `phy_init` | data/phy | 0x11000 | 4 KiB | ESP-IDF standard; unused |
 | `ota_0` | app | 0x20000 | 1.875 MiB | the app (about 0.9 MiB today) |
-| `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: GPS tracks, later an update |
+| `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: bundles (512 KiB at +0) and GPS tracks (640 KiB at +0x80000); later an update |
 | `settings` | data/nvs | 0x3E0000 | 128 KiB | key/value settings: WiFi SSID + password |
 
 With `otadata` blank and no factory partition the bootloader boots `ota_0`,
@@ -53,6 +53,31 @@ sectors in `ota_0` -- and refuses an image bigger than the slot. The
 firmware finds partitions by label or type in the table, so changing the
 layout means editing `partitions.csv` only. Details in `partitions.csv` and
 `src/storage.rs`.
+
+## Installing bundles for development
+
+The firmware holds only Choose. Apps (Race, …) are bundles in the bundle
+store: the first 512 KiB of the app slot that is *not* running
+(`common/src/store.rs`, `common/src/config.rs` `DATA_BUNDLES_*`). Until they
+can be installed over BLE, write the whole region from an image built from
+the repo's packages (from the repo root, in the dev container):
+
+    cargo run -p extreme-pack -- --bundle --store-image target/packages/bundles.img
+
+then flash it at the inactive slot's start, after the app (`cargo run
+--release` here):
+
+    probe-rs download --chip esp32c6 --binary-format bin --base-address 0x200000 target/packages/bundles.img
+
+0x200000 is `ota_1`, the inactive slot while `ota_0` runs, which is where
+probe-rs flashes the app. The app logs the data slot at boot (`storage:
+running app slot ota_0; inactive slot ota_1 at 0x200000 …`), and `dump`
+prints the exact command (`dump: bundles region at flash 0x200000 …`). The
+image is exactly the region (512 KiB, whole sectors), so the GPS tracks after
+it are untouched; it replaces every bundle there. At boot the app logs each
+bundle it finds (`store: sectors 0+25: committed, seq 1, id 0x8ebbc298:
+race v1, 101504 B`) and the free space; with one app and no boot package
+kept, that app starts. An erased region gives Choose alone.
 
 ## WiFi credentials
 
@@ -85,7 +110,9 @@ To see what is stored without changing it:
     cargo run --release --bin dump
 
 It logs the stored SSID and the password's length, and the BLE bonds: how
-many, and each one's address (never a key). Flash the app afterwards.
+many, and each one's address (never a key); the boot package kept; the GPS
+track's ring; and the bundle store's extents (state, seq, id, name and
+version, length, sectors). Flash the app afterwards.
 
 The firmware builds against a patched trouble-host clone at
 `/Users/sensible-1/src/trouble` (root `Cargo.toml`, `[patch.crates-io]`); a

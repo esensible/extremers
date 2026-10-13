@@ -220,9 +220,15 @@ impl Handler for HttpHandler<'_> {
             return Ok(());
         }
         debug!("http: GET {}", headers.path);
+        let route = route(headers.path);
+        // a file is read from its bundle in place until it is sent: a
+        // lease, taken before the package is looked up, keeps the bundle's
+        // sectors from being erased meanwhile should it be deleted (not for
+        // the websocket, which reads no bundle and lives long)
+        let _lease = (!matches!(route, Route::Socket)).then(|| self.host.lease());
         // the entry page must never come from a cache: a reload has to get
         // whichever package is active now
-        let (found, no_cache) = match route(headers.path) {
+        let (found, no_cache) = match route {
             Route::Socket => (None, false),
             Route::Entry => {
                 let id = self.host.current_state().await.active;

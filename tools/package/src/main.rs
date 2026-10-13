@@ -3,16 +3,18 @@
 //!     cargo run -p extreme-pack                          # into target/packages/
 //!     cargo run -p extreme-pack -- --out DIR
 //!     cargo run -p extreme-pack -- --bundle              # also <name>.bundle
-//!     cargo run -p extreme-pack -- --store-image PATH    # also the bundles partition
+//!     cargo run -p extreme-pack -- --store-image PATH    # also the bundles region
 //!     cargo run -p extreme-pack -- --check               # choose/choose.bundle is current
 //!
 //! Each package goes to `<out>/<name>/`: its files (`extreme_pack::Built::files`),
 //! web files under `web/`. `--bundle` writes each as one archive,
 //! `<out>/<name>.bundle`, and Choose's to `choose/choose.bundle` too (committed:
-//! `extreme-packages` embeds it). `--store-image` writes the bundles partition
-//! holding the app packages (not Choose, which the firmware embeds):
+//! `extreme-packages` embeds it). `--store-image` writes an image of the C6's
+//! bundles region (512 KiB) holding the app packages (not Choose, which the
+//! firmware embeds), flashed at the start of the inactive app slot
+//! (`ota_1` at 0x200000 while `ota_0` runs; `tgt-xiaoc6/README.md`):
 //!
-//!     probe-rs download --chip esp32c6 --binary-format bin --base-address 0x120000 PATH
+//!     probe-rs download --chip esp32c6 --binary-format bin --base-address 0x200000 PATH
 //!
 //! `--check` builds Choose only and fails if its bundle differs from the
 //! committed one.

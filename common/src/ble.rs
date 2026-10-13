@@ -1321,6 +1321,10 @@ async fn serve_channel<'d, C: Controller, S>(
                 return;
             }
         };
+        // the asset is read from its bundle in place while it is sent: a
+        // lease, taken before the package is looked up, keeps the bundle's
+        // sectors from being erased meanwhile should it be deleted
+        let _lease = ctx.runtime.lease();
         let (header, asset) = ctx.runtime.asset(&request);
         let name = ctx.runtime.package(request.package).map_or("?", |p| p.name);
         let transfer = Transfer::new(header, asset, sdu_max);

@@ -3,26 +3,30 @@ use std::cell::Cell;
 use super::*;
 
 /// NOR flash in RAM: a write ANDs bits in, an erase sets a sector to 0xFF.
-/// `Copy`, so a test keeps a handle to the bytes a track owns, and reopens
-/// them as a reboot would.
+/// `Copy`, so a test keeps a handle to the bytes a track (or the bundle
+/// store, store/tests.rs) owns, and reopens them as a reboot would.
 #[derive(Clone, Copy)]
-struct Nor {
-    mem: &'static [Cell<u8>],
-    erases: &'static Cell<u32>,
+pub(crate) struct Nor {
+    pub(crate) mem: &'static [Cell<u8>],
+    pub(crate) erases: &'static Cell<u32>,
 }
 
+// `Cell` isn't `Sync`, so `Nor` isn't `Send`; the host holds its store as
+// `dyn Bundles + Send`. Each test's model is its own, used by one thread.
+unsafe impl Send for Nor {}
+
 impl Nor {
-    fn new(sectors: usize, fill: impl Fn(usize) -> u8) -> Nor {
+    pub(crate) fn new(sectors: usize, fill: impl Fn(usize) -> u8) -> Nor {
         let mem: Vec<Cell<u8>> = (0..sectors * SECTOR_LEN).map(|i| Cell::new(fill(i))).collect();
         Nor { mem: Vec::leak(mem), erases: Box::leak(Box::new(Cell::new(0))) }
     }
 
-    fn blank(sectors: usize) -> Nor {
+    pub(crate) fn blank(sectors: usize) -> Nor {
         Nor::new(sectors, |_| 0xFF)
     }
 
     /// Programs `bytes` at `offset` as the flash would: bits only cleared.
-    fn program(&self, offset: usize, bytes: &[u8]) {
+    pub(crate) fn program(&self, offset: usize, bytes: &[u8]) {
         for (c, b) in self.mem[offset..offset + bytes.len()].iter().zip(bytes) {
             c.set(c.get() & b);
         }
