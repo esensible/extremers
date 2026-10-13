@@ -61,6 +61,27 @@ impl core::fmt::Display for Hex<'_> {
     }
 }
 
+/// A duration in milliseconds, with as many decimals as it needs (a BLE
+/// connection interval is a multiple of 1.25 ms), for `Disp`.
+#[allow(dead_code)] // the BLE transport's
+pub(crate) struct Millis(pub embassy_time::Duration);
+
+impl core::fmt::Display for Millis {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let us = self.0.as_micros();
+        let (ms, mut frac, mut digits) = (us / 1000, us % 1000, 3);
+        write!(f, "{ms}")?;
+        if frac == 0 {
+            return Ok(());
+        }
+        while frac % 10 == 0 {
+            frac /= 10;
+            digits -= 1;
+        }
+        write!(f, ".{frac:0digits$}")
+    }
+}
+
 /// A `Display` value as a log argument, formatted with `{}`.
 #[cfg(not(feature = "defmt"))]
 pub(crate) struct Disp<'a, T: core::fmt::Display + ?Sized>(pub &'a T);
@@ -69,5 +90,25 @@ pub(crate) struct Disp<'a, T: core::fmt::Display + ?Sized>(pub &'a T);
 impl<T: core::fmt::Display + ?Sized> core::fmt::Display for Disp<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+    use std::format;
+
+    use embassy_time::Duration;
+
+    use super::Millis;
+
+    #[test]
+    fn millis_has_the_decimals_it_needs() {
+        let ms = |us| format!("{}", Millis(Duration::from_micros(us)));
+        assert_eq!(ms(7_500), "7.5");
+        assert_eq!(ms(11_250), "11.25");
+        assert_eq!(ms(15_000), "15");
+        assert_eq!(ms(1_001), "1.001");
+        assert_eq!(ms(0), "0");
     }
 }

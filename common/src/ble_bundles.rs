@@ -396,6 +396,13 @@ impl Host {
         })
     }
 
+    /// The connection whose upload is live, if any: the BLE side keeps that
+    /// link at a short connection interval meanwhile (BLE.md "Throughput").
+    pub fn bundle_uploader(&self) -> Option<u8> {
+        let now = Instant::now();
+        self.session().filter(|s| s.live(now)).map(|s| s.client)
+    }
+
     /// When the upload in progress is dropped unless it hears from its
     /// client before; `None` without one.
     pub fn bundle_deadline(&self) -> Option<Instant> {

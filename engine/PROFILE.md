@@ -18,6 +18,9 @@ The language itself knows nothing in this document.
 | `state.schema.json` | The state's shape. |
 | `view.schema.json` | Optional. The view's shape: what clients receive. Without it, clients receive the state. |
 | `event.schema.json` | Optional. The author's own events, which clients send. The host adds its built-in events (§2). |
+| `samples.json` | Optional. Sample runs (`lang/SPEC.md` §5.3) that test the engine beyond the smoke runs (§5). Not packaged: `extreme-pack` and the studio leave it out of the bundle. |
+
+The program may call the six sailing builtins (§4) and nothing else the host offers.
 
 The schemas follow the language's schema rules (`lang/SPEC.md` §3.2): the wire subset, `maxItems` on every list and `maxLength` on every string. Variants are written as `oneOf` over fields: exactly one of several named fields is present, each holding that variant's own data (`lang/SPEC.md`, variants). Programs test which with `!= nil` and `?.`, never by comparing strings. For example, Race's state is `{phase, line, velocity?}` where `phase` is exactly one of `idle {}`, `countdown {gun}` and `racing {gun}`; it reads `state.phase.countdown?.gun`, and after `state.phase.countdown != nil` it reads `state.phase.countdown.gun` directly (the checker narrows on the test).
 
@@ -85,7 +88,7 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 
 **Which clock.** `timestamp` is when the event reached the engine. A time derived from a position (where the boat will be) is based on the fix's own time, `fix.t`.
 
-**Builtins:** the eight in §4.
+**Builtins:** the six in §4.
 
 **What the host guarantees about `gps`.** These are facts about the platform. The language doesn't use them for bounds.
 - `t` strictly increases.
@@ -102,29 +105,29 @@ Any other field is invalid: the checker rejects it at compile time (`E-FIELD`, "
 
 **Client events** are validated against the event schema first: ranges, enums, string lengths and list lengths. An event that fails is dropped with a log line, and the engine isn't evaluated.
 
-**A completed evaluation** (`Outcome::Done`):
+**A completed evaluation** (`vm::run` returns `Ok`):
 - The output's `state` becomes the new `state`: the host takes it from the output buffer into its state buffer.
 - The output's `wake` sets the timer, or clears it when absent (§2).
 - The output's `view`, or the new `state` when the engine has no view, goes to clients. If it is byte-identical to what they last received, it isn't republished.
 
-**A failed evaluation** (`Outcome::Failed`):
+**A failed evaluation** (`vm::run` returns `Err(Fail {code, pc})`):
 - The old state is kept.
 - The host logs the code and span.
 - The event is dropped.
 - If no evaluation is ever accepted, `state` stays `nil`. An engine that fails when `state` is nil therefore never starts. The smoke run (§5) catches this before the engine ships.
 
-**Memory on the C6.** The host holds:
-- the state buffer (the current state);
-- the output buffer (`{state, view?, wake?}`, being built);
-- one event buffer;
-- the program's arena, stack and locals.
+**Memory on the C6.** The host holds one set of buffers for the active engine, sized once (`EngineMemory`, `common/src/engine.rs`), nothing allocated:
+- the state's leaves (128 slots), the input leaves (192: state, event, timestamp and the `gps` handle) and the output leaves (128: `{state, view?, wake?}`, being built);
+- the VM's stack (128 slots) and locals (256);
+- the load scratch (8 KiB of code at most), used while a bundle is loaded;
+- two 256-byte buffers for the published value as bitwire (the last one, and the one being encoded).
 
-So engine RAM is `size(State) + size(Output) + size(Event) + arena + 16 × (max_stack + locals)`, where `size(Output) = size(State) + size(View) + 16`, plus the code if it's copied from flash.
+The program runs in place from the bundle in flash. An engine whose compiled needs exceed any of these (`compiler::Memory`; `engine/profile`'s layout) is refused when its bundle is installed (`OverLimit`, BLE.md "Errors"), so an installed engine always fits.
 
 **The `gps` accessor.**
 - Fixes live as plain 32-byte records, little endian, no headers: `t` i64, then `lat`, `lon` and `alt` as f64. An `alt` of NaN means absent. A record is free when its `t` bytes are all 0xFF.
 - On the C6 they are in the **tracks region** of the data slot, the OTA app slot the firmware was not booted from (`DataSlot`, `tgt-xiaoc6/src/storage.rs`): 640 KiB at slot + 0x80000, after the 512 KiB bundles region. It is read in place through the flash MMU (`tgt-xiaoc6/src/xip.rs`).
-- The records form a ring (`common/src/track.rs`, `FlashTrack`): each fix is appended at the head; when a sector fills, the next one is erased, so the oldest fixes go 128 at a time and appending never stops. At boot the head is found again and a new run starts there: `gps` holds only the fixes appended since boot, the older ones stay in the ring for a later download.
+- The records form a ring (`common/src/track.rs`, `FlashTrack`): each fix is appended at the head; when a sector fills, the next one is erased, so the oldest fixes go 128 at a time and appending never stops. At boot the head is found again and a new run starts there: `gps` holds only the fixes appended since boot, the older ones stay in the ring for a later download. `t` carries across boots: a fix's `t` is `max(now, last t + 1)` with the ring's newest record as the last (`next_t`), so `t` strictly increases through the whole ring; that is safe because a record is appended only on a fix, and the GPS update that brings a fix also brings the GPS date and time (an active RMC sentence carries both), which set the device clock before the append (`Host::gps_update`), so a new run's `t` is epoch ms like the old run's and not uptime that the old `t` would hold back.
 - The host serves `gps` to the VM as a `ListInput` (`GpsList`): the length is the run's (at most `maxItems`), fixed for the evaluation, and each item's `t`, `lat`, `lon` and `alt` leaves are read from the record on demand (`alt` is nil for NaN).
 - Nothing is copied into RAM.
 - A firmware update written into the data slot wipes the track (and the bundles), by the owner's choice.
@@ -145,18 +148,16 @@ These are declared in the interface (`lang/SPEC.md` §2.4) and registered by the
 - The earth's radius is 6,371,000 m.
 - Math goes through `libm`.
 
-Every result is a float. `P` is the record `{lat: float, lon: float}`. Each builtin's cost is 32 (**provisional**).
+Six, `engine/builtins` (`BUILTINS`). `P` is the record `{lat: float, lon: float}`; every other result is a float. Each builtin's cost is 32 (**provisional**).
 
 | Builtin | Parameters → result | Semantics |
 |---|---|---|
 | `distance` | `(a: P, b: P) → float` | Haversine distance, in metres. |
 | `bearing` | `(a: P, b: P) → float` | Initial bearing, 0 ≤ x < 360. |
-| `destination` | `(p: P, heading: float, metres: float) → P` | The point reached. |
 | `courses_cross` | `(p1: P, h1: float, p2: P, h2: float, range?: float) → P?` | Where two courses cross. |
 | `lines_cross` | `(a1: P, a2: P, b1: P, b2: P, range?: float) → P?` | Where the great circles through two lines cross. |
 | `course_crosses_line` | `(p: P, h: float, a: P, b: P, range?: float) → P?` | Where a course crosses a line. |
 | `angle_diff` | `(a: float, b: float) → float` | `a − b`, wrapped to −180 ≤ x ≤ 180, as `geo_math.rs`'s `simple_diff` (computed in radians). Exactly opposite headings give +180 or −180. Positive means `a` is clockwise of `b`. |
-| `mean_heading` | aggregate over `hs: float`, `ws: float` → float; `acc_bytes` 16; cost 32 per call plus 32 per item | `atan2(Σw·sin, Σw·cos)` in degrees, −180 < x ≤ 180. Gives 0 when every weight is 0, and for empty lists. |
 
 **Positions cross the builtin boundary in degrees.** A program that passes a builtin's result into another builtin converts radians → degrees → radians, which can move the last bit of a coordinate (about a nanometre). Results can therefore differ from `extreme-race`, which stays in radians throughout, by about that much. A value truncated to whole units can then come out one unit different, as Race's crossing time does at the 1e-5 kn speed floor, where it chains `course_crosses_line` into `distance`: 1 ms. This is accepted; `engine/race/tests/against_extreme_race.rs` keeps the 1 ms tolerance explicit and lists every evaluation that uses it.
 
@@ -173,11 +174,16 @@ Every result is a float. `P` is the record `{lat: float, lon: float}`. Each buil
 
 ## 5. The smoke run
 
-`langc check` is given these sample runs (`lang/SPEC.md` §5.3):
+Every engine must complete these two runs, written as sample runs (`lang/SPEC.md` §5.3):
 1. `state = nil`, `event = {gps: {}}` (no fix, no velocity), `timestamp = 1_790_000_000_000`, `gps = []`.
 2. `event = {wake: {}}`, with `state` chained from run 1's output's `state` (`"chain": {"state": "output.state"}`) and `timestamp + 1000`.
 
 Each run must complete with the output of §2: `{state, wake?}`, plus `view` when the engine has `view.schema.json`.
+
+Where they run:
+- **The studio**: `api.engine.check()` compiles the engine, then runs the smoke runs, then the project's `samples.json` if there is one, on the VM with the sailing builtins (§4), through `engine/wasm`'s `run_samples` (`compiler::samples::run_samples`). A failed run is a diagnostic with its `R-…` code, its span in `engine.expr` and the help.
+- **The host**, at engine start: run 1 is the engine's first evaluation (`{gps: {}}` with `state` nil, §3). An engine that fails it does not start.
+- **`langc check --samples RUNS.json`** runs a samples file too, but `langc` is generic and has no host builtins, so it can only run engines that call none. Race's runs, the smoke runs first, are `engine/race/samples.json`; `engine/race/tests/against_extreme_race.rs` runs them with the builtins.
 
 The help for `R-NIL` says: "`state` is nil on the first event, and a GPS update may have no fix or velocity: use `?.` and `??`".
 

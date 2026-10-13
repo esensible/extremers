@@ -24,8 +24,8 @@ With the probe on a `probe-rs serve` host, set `PROBE_RS_REMOTE_HOST` and
 | `nvs` | data/nvs | 0x9000 | 24 KiB | ESP-IDF standard; unused |
 | `otadata` | data/ota | 0xF000 | 8 KiB | which app slot to boot (ota_0 for now) |
 | `phy_init` | data/phy | 0x11000 | 4 KiB | ESP-IDF standard; unused |
-| `ota_0` | app | 0x20000 | 1.875 MiB | the app (about 0.9 MiB today) |
-| `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: bundles (512 KiB at +0) and GPS tracks (640 KiB at +0x80000); later an update |
+| `ota_0` | app | 0x20000 | 1.875 MiB | the app (about 1.65 MiB today) |
+| `ota_1` | app | 0x200000 | 1.875 MiB | the other slot: the data slot (below); later an update |
 | `settings` | data/nvs | 0x3E0000 | 128 KiB | key/value settings: WiFi SSID + password |
 
 With `otadata` blank and no factory partition the bootloader boots `ota_0`,
@@ -33,13 +33,24 @@ which is where probe-rs flashes, and writes `ota_seq` 1 (= `ota_0`) into
 `otadata`; the app logs `storage: otadata selects "Ota0" (ota_seq 0x1 /
 0xffffffff)`. `provision` blanks `otadata` first: on a board flashed with
 the earlier layout, its second sector held the old app image's header,
-which esp-bootloader-esp-idf rejects (`storage: cannot read otadata`). The slot that is not running holds GPS
-tracks (not implemented yet): written while sailing, downloaded over BLE,
-and erased before an OTA update writes new firmware into it. An update
-therefore needs the tracks downloaded first, and there is no rollback to
-the previous firmware once tracks have overwritten it. The app logs at
-boot which slot it runs from and the inactive slot's size
-(`storage::track_slot`).
+which esp-bootloader-esp-idf rejects (`storage: cannot read otadata`).
+
+**The data slot.** The app slot that is not running is the *data slot*
+(`src/storage.rs` `DataSlot`, `common/src/config.rs` `DATA_*`):
+
+| From the slot's start | Size | Holds |
+|---|---|---|
+| +0x00000 | 512 KiB | the bundle store (`common/src/store.rs`): every installed app, written by an install over BLE (`../BLE.md` "Bundles") or a dev image (below) |
+| +0x80000 | 640 KiB | the GPS track (`common/src/track.rs`): a ring of 32-byte fixes, 20,480 of them (5.7 h at 1 Hz), appended on every fix |
+| +0x120000 | to the end | spare |
+
+Both regions are read in place through the flash MMU (`src/xip.rs`). The
+app logs at boot which slot it runs from and where the data slot is
+(`storage: running app slot ota_0; inactive slot ota_1 at 0x200000, …:
+the data slot`), then what the store and the track hold. A firmware update
+over the air (later) will write the new image over the data slot, so the
+bundles are installed again and the track starts afresh afterwards (the
+owner's choice); there is no rollback to the previous firmware.
 
 Once OTA exists, mind that probe-rs always flashes `ota_0`: if `otadata`
 then selects `ota_1`, the bootloader keeps booting `ota_1`. (`ota_seq` 1
@@ -57,10 +68,11 @@ layout means editing `partitions.csv` only. Details in `partitions.csv` and
 ## Installing bundles for development
 
 The firmware holds only Choose. Apps (Race, …) are bundles in the bundle
-store: the first 512 KiB of the app slot that is *not* running
-(`common/src/store.rs`, `common/src/config.rs` `DATA_BUNDLES_*`). Until they
-can be installed over BLE, write the whole region from an image built from
-the repo's packages (from the repo root, in the dev container):
+store, the data slot's first 512 KiB. They are installed over BLE from a
+browser (`../BLE.md` "Bundles"; the first connection must pair, see
+"Pairing without a Kindle" below). Without a browser, write the whole
+region from an image built from the repo's packages (from the repo root,
+in the dev container):
 
     cargo run -p extreme-pack -- --bundle --store-image target/packages/bundles.img
 
@@ -110,9 +122,34 @@ To see what is stored without changing it:
     cargo run --release --bin dump
 
 It logs the stored SSID and the password's length, and the BLE bonds: how
-many, and each one's address (never a key); the boot package kept; the GPS
-track's ring; and the bundle store's extents (state, seq, id, name and
-version, length, sectors). Flash the app afterwards.
+many, and each one's address (never a key); the boot package kept; then
+the data slot:
+
+    dump: data slot 0x200000+0x1e0000: bundles 0x200000..0x280000, tracks 0x280000..0x320000, spare from 0x320000
+    dump: track: Ring, head … (the next boot's run starts here), oldest …, … of 20480 records held, keep …
+    dump: track: newest-0: t …, lat …, lon …, alt …
+    dump: bundles region at flash 0x200000 (probe-rs download --binary-format bin --base-address 0x200000 bundles.img)
+    dump: bundles: sectors 0+25: committed, seq 1, id 0x8ebbc298, 101504 B: race v1
+    dump: bundles: 1 extents, 103 sectors without one
+
+(the track's ring as the app's boot scan finds it, with its three newest
+fixes; each bundle extent's state, sequence number, id, length, and its
+manifest's name and version). It only reads. Flash the app afterwards.
+
+## Pairing without a Kindle
+
+New BLE bonds are made only while the pairing window is open, which the
+Kindle's settings panel opens (`../BLE.md` "The pairing window"). For
+development without a Kindle, build with `--features dev-pairing` (off by
+default; never for a boat): the window opens once at boot, for 120 s
+(`ble: dev-pairing: window open for 120 s`), so a browser can pair and
+install bundles:
+
+    cargo run --release --features dev-pairing
+
+A reflash or reset opens it again. Anyone in range can pair meanwhile.
+`../BLE.md` "The devtool" has the rest (stale keys on the computer, a Mac
+that stops finding the box).
 
 The firmware builds against a patched trouble-host clone at
 `/Users/sensible-1/src/trouble` (root `Cargo.toml`, `[patch.crates-io]`); a

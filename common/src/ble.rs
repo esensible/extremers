@@ -30,6 +30,7 @@
 
 use core::cell::{Cell, RefCell};
 
+use bt_hci::{cmd::le::LeReadLocalSupportedFeatures, controller::ControllerCmdSync};
 use embassy_futures::{
     join::{join4, join_array},
     select::{Either, Either3, Either4, select, select3, select4},
@@ -48,7 +49,7 @@ use crate::{
     ble_settings::{AddrText, BleCommand, BleNote, BleStatus, BondRecord, GattClientRecord},
     bulk::{self, Transfer},
     config::{BLE_NAME, BLE_PAIRING_WINDOW_SECS, MAX_BLE_BONDS, MAX_BLE_CONNECTIONS},
-    fmt::{Dbg, Disp, Hex},
+    fmt::{Dbg, Disp, Hex, Millis},
     host::{Host, Refused, StateMessage},
 };
 
@@ -84,6 +85,15 @@ const HOST_BONDS: usize = MAX_BLE_BONDS + CONNECTIONS_MAX;
 /// disconnected after this unless it pairs afresh, so it does not hold a
 /// connection slot for nothing (Apple devices usually leave at once).
 const STALE_GRACE: Duration = Duration::from_secs(10);
+
+/// The connection interval asked for while a bundle upload runs: the
+/// shortest Apple's accessory guidelines let a peripheral ask a Mac or an
+/// iPhone for (BLE.md "Throughput").
+const UPLOAD_INTERVAL: Duration = Duration::from_millis(15);
+
+/// A central whose Pairing Request was refused is disconnected after this,
+/// so the Pairing Failed queued for it goes out before the link drops.
+const REFUSED_GRACE: Duration = Duration::from_millis(200);
 
 /// The service and its characteristics (BLE.md).
 const SERVICE_UUID: u128 = 0xe4a1c000_6b2f_4f77_9a0d_3c5e7b9d1f20;
@@ -164,6 +174,13 @@ struct RaceService {
     #[characteristic(uuid = DATA_UUID, write_without_response, notify, value = heapless09::Vec::new(), permissions(encrypted))]
     data: DataValue,
 }
+
+/// What the transport needs of the target's controller: trouble's
+/// [`Controller`], and LE Read Local Supported Features, which asking for
+/// a connection interval sends ([`upload_interval`]).
+pub trait BleController: Controller + ControllerCmdSync<LeReadLocalSupportedFeatures> {}
+
+impl<C: Controller + ControllerCmdSync<LeReadLocalSupportedFeatures>> BleController for C {}
 
 /// Where the target keeps bonds across power cycles (the C6: its settings
 /// partition). Slots are `0..MAX_BLE_BONDS`.
@@ -268,7 +285,7 @@ pub async fn serve_ble<C, S>(
     diagnostics: Diagnostics,
 ) -> !
 where
-    C: Controller,
+    C: BleController,
     S: BondStore,
 {
     info!("ble: address {} (static random)", Disp(&AddrText(address)));
@@ -294,6 +311,8 @@ where
         .set_io_capabilities(IoCapabilities::NoInputNoOutput)
         .register_l2cap_spsm(UI_PSM)
         .build();
+    // the window starts closed: a Pairing Request is refused until it opens
+    stack.set_pairing_allowed(false);
     let mut peripheral = stack.peripheral();
     let mut runner = stack.runner();
 
@@ -464,13 +483,14 @@ async fn control<C, S>(
                     "ble: pairing window open for {} s (from the Kindle)",
                     BLE_PAIRING_WINDOW_SECS
                 );
-                shared.pair_until.set(Some(Instant::now() + window));
+                set_window(shared, stack, Some(Instant::now() + window));
                 shared.note.set(BleNote::None);
             }
             Either::First(BleCommand::Cancel) => {
-                if shared.pair_until.take().is_none() {
+                if shared.pair_until.get().is_none() {
                     continue;
                 }
+                set_window(shared, stack, None);
                 info!("ble: pairing window closed (cancelled from the Kindle)");
                 shared.note.set(BleNote::None);
             }
@@ -480,13 +500,26 @@ async fn control<C, S>(
                     "ble: pairing window closed after {} s, nobody paired",
                     BLE_PAIRING_WINDOW_SECS
                 );
-                shared.pair_until.set(None);
+                set_window(shared, stack, None);
                 shared.note.set(BleNote::Expired);
             }
         }
         shared.kick_all();
         shared.publish(runtime).await;
     }
+}
+
+/// Opens the pairing window until `until`, or closes it (`None`). The host
+/// refuses a Pairing Request outright while it is closed (Pairing Failed,
+/// Pairing Not Supported), so no central comes away with keys the box did
+/// not keep (BLE.md "The pairing window").
+fn set_window<C: Controller>(
+    shared: &Shared,
+    stack: &Stack<'_, C, DefaultPacketPool>,
+    until: Option<Instant>,
+) {
+    shared.pair_until.set(until);
+    stack.set_pairing_allowed(until.is_some());
 }
 
 /// Deletes every bond, from flash and from the host; the workers then drop
@@ -525,7 +558,7 @@ async fn worker<'v, C, S>(
     advertising: &Mutex<NoopRawMutex, &mut Peripheral<'v, C, DefaultPacketPool>>,
     unit: &[u8; 6],
 ) where
-    C: Controller,
+    C: BleController,
     S: BondStore,
 {
     let shared = ctx.shared;
@@ -546,27 +579,30 @@ async fn worker<'v, C, S>(
             }
         };
 
-        // Bonding only inside the window; outside it a pairing still
-        // encrypts the link but makes no bond, and is then refused
-        // (`serve`).
+        // Bonding only inside the window; outside it the host refuses a
+        // Pairing Request (`set_window`), and a pairing that slipped past
+        // the window's end is refused after the fact (`serve`).
         let pairing = shared.pairing_open();
         let _ = conn.set_bondable(pairing);
         let slot = shared.slot_of(&conn.peer_identity());
         let peer = addr_of(&conn.peer_address());
+        let interval = Millis(conn.params().conn_interval);
         match slot {
             Some(slot) => info!(
-                "ble: connection {} from {} (bond slot {} {}; pairing window {})",
+                "ble: connection {} from {} (bond slot {} {}; pairing window {}; interval {} ms)",
                 me,
                 Disp(&AddrText(peer)),
                 slot,
                 Disp(&AddrText(addr_of(&conn.peer_identity().addr))),
-                if pairing { "open" } else { "closed" }
+                if pairing { "open" } else { "closed" },
+                Disp(&interval)
             ),
             None => info!(
-                "ble: connection {} from {} (not bonded; pairing window {})",
+                "ble: connection {} from {} (not bonded; pairing window {}; interval {} ms)",
                 me,
                 Disp(&AddrText(peer)),
-                if pairing { "open" } else { "closed" }
+                if pairing { "open" } else { "closed" },
+                Disp(&interval)
             ),
         }
         // a kick from before this connection is not about it
@@ -674,15 +710,15 @@ struct Link {
 /// Trusted = encrypted with a bond this box holds: either the central
 /// resumed encryption with a stored bond's key (`Encrypted` with that
 /// bond), or it just bonded inside the pairing window (`PairingComplete`).
-/// An encrypted link is not enough on its own: outside the window a
-/// central can still pair (without bonding) and encrypt, and may even
-/// claim a bonded device's identity address while doing so.
+/// An encrypted link is not enough on its own: a pairing that started
+/// before the window closed can complete after it, and a central may claim
+/// a bonded device's identity address while pairing.
 async fn serve<C, S>(
     me: usize,
     ctx: &Context<'_, '_, C, S>,
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
 ) where
-    C: Controller,
+    C: BleController,
     S: BondStore,
 {
     let link = Link {
@@ -702,7 +738,7 @@ async fn serve_gatt<C, S>(
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
     link: &Link,
 ) where
-    C: Controller,
+    C: BleController,
     S: BondStore,
 {
     let (shared, stack, server, runtime, store) =
@@ -712,6 +748,8 @@ async fn serve_gatt<C, S>(
     let (bundle, data) = (&server.race.bundle, &server.race.data);
     // set when the peer turned out to hold a bond this box does not
     let mut stale_deadline: Option<Instant> = None;
+    // while this connection's upload is live: its parameters before
+    let mut fast: Option<ConnParams> = None;
 
     // subscribe before reading the current state, so no change is missed
     let mut updates = match runtime.subscribe() {
@@ -738,8 +776,13 @@ async fn serve_gatt<C, S>(
     let mut warned_mtu = false;
 
     loop {
-        let stale = async {
-            match stale_deadline {
+        fast = upload_interval(me, stack, runtime, conn, fast).await;
+        // the stale peer's grace, or the upload going idle: looked at again
+        // when it comes
+        let upload_idle = fast.and(runtime.bundle_deadline());
+        let wake = stale_deadline.into_iter().chain(upload_idle).min();
+        let timer = async {
+            match wake {
                 Some(t) => Timer::at(t).await,
                 None => core::future::pending().await,
             }
@@ -748,7 +791,7 @@ async fn serve_gatt<C, S>(
             conn.next(),
             updates.next_message_pure(),
             shared.kick[me].wait(),
-            stale,
+            timer,
         )
         .await
         {
@@ -791,6 +834,10 @@ async fn serve_gatt<C, S>(
                 continue;
             }
             Either4::Fourth(()) => {
+                if !stale_deadline.is_some_and(|t| Instant::now() >= t) {
+                    // the upload's idle deadline: `upload_interval` decides
+                    continue;
+                }
                 warn!(
                     "ble: connection {}: stale peer did not pair afresh within {} s; disconnecting",
                     me,
@@ -812,6 +859,17 @@ async fn serve_gatt<C, S>(
                     debug!("ble: connection parameters: {:?}", Dbg(&e));
                 }
             }
+            GattConnectionEvent::ConnectionParamsUpdated {
+                conn_interval,
+                peripheral_latency,
+                supervision_timeout,
+            } => info!(
+                "ble: connection {}: interval {} ms, latency {}, supervision timeout {} ms",
+                me,
+                Disp(&Millis(conn_interval)),
+                peripheral_latency,
+                supervision_timeout.as_millis()
+            ),
             // A bonded central resumed encryption with its key.
             GattConnectionEvent::Encrypted { bond: Some(bond), .. } => {
                 link.trusted.set(shared.holds(&bond));
@@ -883,6 +941,22 @@ async fn serve_gatt<C, S>(
                         shared.publish(runtime).await;
                     }
                 }
+            }
+            // The host refused the Pairing Request: the window is closed
+            // (`set_window`). The central holds no keys; the link is of no
+            // use to it, so it goes, once the refusal is on its way.
+            GattConnectionEvent::PairingFailed(trouble_host::Error::Security(
+                PairingFailedReason::PairingNotSupported,
+            )) => {
+                warn!(
+                    "ble: connection {}: pairing request from {} refused (pairing window closed); disconnecting",
+                    me,
+                    Disp(&AddrText(addr_of(&conn.raw().peer_address())))
+                );
+                shared.note.set(BleNote::Rejected);
+                shared.publish(runtime).await;
+                Timer::after(REFUSED_GRACE).await;
+                conn.raw().disconnect();
             }
             GattConnectionEvent::PairingFailed(e) => {
                 warn!("ble: connection {}: pairing failed: {:?}", me, Dbg(&e));
@@ -1143,6 +1217,85 @@ async fn serve_gatt<C, S>(
             }
             _ => {}
         }
+    }
+}
+
+/// Keeps the link at [`UPLOAD_INTERVAL`] while connection `me` owns a live
+/// bundle upload, and asks for what it had before once the upload ends
+/// (committed, aborted, idle, or taken over by another connection); `fast`
+/// is the link's parameters from before the upload, `None` while none is
+/// running. A central writes about one `data` chunk per connection event,
+/// so the interval sets the upload's rate (BLE.md "Throughput").
+async fn upload_interval<C: BleController>(
+    me: usize,
+    stack: &Stack<'_, C, DefaultPacketPool>,
+    runtime: &Host,
+    conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    fast: Option<ConnParams>,
+) -> Option<ConnParams> {
+    let uploading = runtime.bundle_uploader() == Some(me as u8);
+    let (request, before) = match (uploading, fast) {
+        (true, None) => {
+            let before = conn.raw().params();
+            if before.conn_interval <= UPLOAD_INTERVAL {
+                // fast enough already; nothing to restore either
+                return Some(before);
+            }
+            (upload_params(&before), before)
+        }
+        (false, Some(before)) if before.conn_interval > UPLOAD_INTERVAL => {
+            (restore_params(&before), before)
+        }
+        (false, Some(_)) => return None,
+        _ => return fast,
+    };
+    info!(
+        "ble: connection {}: bundle upload {}: asking for interval {}-{} ms (now {} ms)",
+        me,
+        if uploading { "begun" } else { "over" },
+        Disp(&Millis(request.min_connection_interval)),
+        Disp(&Millis(request.max_connection_interval)),
+        Disp(&Millis(before.conn_interval))
+    );
+    if let Err(e) = conn.raw().update_connection_params(stack, &request).await {
+        // the upload goes on at the interval it has
+        warn!("ble: connection {}: connection parameters not requested: {:?}", me, Dbg(&e));
+    }
+    uploading.then_some(before)
+}
+
+/// The supervision timeout a request carries: the link's own, within the
+/// 2-6 s Apple's accessory guidelines allow.
+fn request_timeout(before: &ConnParams) -> Duration {
+    before.supervision_timeout.clamp(Duration::from_secs(2), Duration::from_secs(6))
+}
+
+/// The parameters an upload asks for: [`UPLOAD_INTERVAL`] exactly, no
+/// latency.
+fn upload_params(before: &ConnParams) -> RequestedConnParams {
+    RequestedConnParams {
+        min_connection_interval: UPLOAD_INTERVAL,
+        max_connection_interval: UPLOAD_INTERVAL,
+        max_latency: 0,
+        min_event_length: Duration::from_micros(0),
+        max_event_length: Duration::from_micros(0),
+        supervision_timeout: request_timeout(before),
+    }
+}
+
+/// The parameters asked for after an upload: the interval it had (up to
+/// the next multiple of 15 ms) to 15 ms more, its latency; the central
+/// picks.
+fn restore_params(before: &ConnParams) -> RequestedConnParams {
+    let step = UPLOAD_INTERVAL.as_micros();
+    let min = before.conn_interval.as_micros().div_ceil(step) * step;
+    RequestedConnParams {
+        min_connection_interval: Duration::from_micros(min),
+        max_connection_interval: Duration::from_micros(min + step),
+        max_latency: before.peripheral_latency.min(30),
+        min_event_length: Duration::from_micros(0),
+        max_event_length: Duration::from_micros(0),
+        supervision_timeout: request_timeout(before),
     }
 }
 
@@ -1630,7 +1783,7 @@ async fn enrol<C: Controller, S: BondStore>(
         warn!("ble: bond slot {}: GATT record not saved", slot);
     }
     shared.gatt.borrow_mut()[slot] = Some(gatt);
-    shared.pair_until.set(None);
+    set_window(shared, stack, None);
     if saved {
         info!(
             "ble: pairing accepted: bonded with {} ({}), bond slot {}; pairing window closed",
@@ -1744,6 +1897,39 @@ mod tests {
             assert_eq!(bytes[..4], [0xe4, 0xa1, 0xc0, n]);
             assert_eq!(bytes[4..], tail);
         }
+    }
+
+    /// The parameters an upload asks for, and those asked for after it, are
+    /// valid requests and keep to Apple's accessory guidelines (interval
+    /// min a multiple of 15 ms, max at least min + 15 ms unless both are
+    /// 15 ms, supervision timeout 2-6 s, more than three max intervals).
+    #[test]
+    fn upload_intervals_are_valid_requests() {
+        let link = |interval_us, latency, timeout_ms| ConnParams {
+            conn_interval: Duration::from_micros(interval_us),
+            peripheral_latency: latency,
+            supervision_timeout: Duration::from_millis(timeout_ms),
+        };
+        let apple = |p: &RequestedConnParams| {
+            let (min, max) = (p.min_connection_interval.as_micros(), p.max_connection_interval.as_micros());
+            let timeout = p.supervision_timeout.as_micros();
+            min % 15_000 == 0
+                && min >= 15_000
+                && (max >= min + 15_000 || (min == 15_000 && max == 15_000))
+                && p.max_latency <= 30
+                && (2_000_000..=6_000_000).contains(&timeout)
+                && max * (u64::from(p.max_latency) + 1) * 3 < timeout
+        };
+        for before in [link(30_000, 0, 720), link(22_500, 0, 5_000), link(48_750, 4, 6_000), link(7_500, 0, 100)] {
+            let fast = upload_params(&before);
+            assert!(fast.is_valid() && apple(&fast), "{fast:?}");
+            assert_eq!(fast.max_connection_interval, UPLOAD_INTERVAL);
+            let back = restore_params(&before);
+            assert!(back.is_valid() && apple(&back), "{back:?}");
+            assert!(back.min_connection_interval >= before.conn_interval);
+        }
+        assert_eq!(restore_params(&link(30_000, 0, 720)).min_connection_interval, Duration::from_millis(30));
+        assert_eq!(restore_params(&link(22_500, 0, 720)).min_connection_interval, Duration::from_millis(30));
     }
 
     /// A bundle request fits `event`; a chunk at the host's largest ATT

@@ -757,7 +757,10 @@ fn a_bundle_is_uploaded_over_ble() {
     );
 
     let race = race_bytes();
+    assert_eq!(host.bundle_uploader(), None);
     assert_eq!(ask1(&host, C0, begin_of(RACE, race)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    // the connection that keeps its link fast meanwhile
+    assert_eq!(host.bundle_uploader(), Some(C0.id));
     let acks = send(&host, C0, race, 0);
     let (last, rest) = acks.split_last().unwrap();
     assert_eq!(*last, BundleResponse::Ack { offset: race.len() as u32 });
@@ -770,6 +773,7 @@ fn a_bundle_is_uploaded_over_ble() {
     assert!(updates.try_next_message_pure().is_some());
     assert_eq!(host.package(RACE).unwrap().version, 1);
     assert_eq!(host.bundle_deadline(), None);
+    assert_eq!(host.bundle_uploader(), None);
 
     // Choose stays active; Race, the only app, is what the host boots with
     let list = ask(&host, C0, BundleRequest::List);
@@ -817,7 +821,9 @@ fn an_upload_survives_gaps_and_a_new_connection() {
     assert_eq!(ask1(&host, C1, BundleRequest::Commit), err(COMMIT, BundleError::Busy, 0));
     assert_eq!(ask1(&host, C1, BundleRequest::Abort), err(3, BundleError::Busy, 0));
     // but resumes it where it is
+    assert_eq!(host.bundle_uploader(), Some(C0.id));
     assert_eq!(ask1(&host, C1, begin_of(RACE, race)), BundleResponse::Ready { offset: 4800, chunk: 240, window: 1920 });
+    assert_eq!(host.bundle_uploader(), Some(C1.id));
     // now the other's
     assert_eq!(data(&host, C0, race, 4800), Some(err(REQUEST_DATA, BundleError::Busy, 0)));
     assert_eq!(send(&host, C1, race, 4800).last(), Some(&BundleResponse::Ack { offset: race.len() as u32 }));
@@ -873,6 +879,7 @@ fn an_idle_upload_is_dropped() {
     assert!(block_on(host.bundle_expire(deadline)));
     assert_eq!(block_on(host.bundle_uploading()), None);
     assert_eq!(host.bundle_deadline(), None);
+    assert_eq!(host.bundle_uploader(), None);
     assert!(!block_on(host.bundle_expire(deadline + idle)));
     // its connection is told, once; another just finds nothing
     assert_eq!(data(&host, C1, race, 2400), Some(err(REQUEST_DATA, BundleError::NoUpload, 0)));

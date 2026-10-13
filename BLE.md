@@ -70,8 +70,9 @@ On an unencrypted link the box answers an access with:
 | anyone, while the pairing window is open | `0x05` Insufficient Authentication | pairs (the "Pair" prompt), then retries |
 | anyone else | `0x08` Insufficient Authorization | nothing: pairing would be refused, so it is not invited |
 
-An encrypted link that is not a stored bond (a central that paired outside
-the window, or encrypted with a key the box does not hold) gets `0x08` too.
+An encrypted link that is not a stored bond (a pairing that began just
+before the window closed and finished after, or a key the box does not
+hold) gets `0x08` too.
 A write *command* (write without response) gets no answer at all, as ATT
 requires, so it can never start pairing: the first `event` a watch sends
 must be a write *request*.
@@ -79,11 +80,24 @@ must be a write *request*.
 **The pairing window.** New bonds are made only while it is open: for
 `BLE_PAIRING_WINDOW_SECS` (120 s, `common/src/config.rs`) after **Pair watch**
 on the Kindle's settings panel, or until a device bonds (one device per tap),
-or until **Stop pairing**. Outside it the box does not bond: a pairing still
-completes (the host has no way to answer a Pairing Request with Pairing
-Failed) but makes no bond, and the box then drops the link and logs
-`pairing … rejected (pairing window closed)`. Bonded devices reconnect and
-re-encrypt at any time.
+or until **Stop pairing**. Outside it the box refuses to pair at all: it
+answers a Pairing Request with Pairing Failed, reason `0x05` Pairing Not
+Supported, before any key is exchanged, so the central keeps no keys and
+does not list `nacra` as paired; the box logs `pairing request from …
+refused (pairing window closed); disconnecting`, shows "rejected" on the
+Kindle's panel, and drops the link 200 ms later (once the refusal is on
+its way). Bonded devices reconnect and re-encrypt at any time: resuming
+encryption with a stored key is not a pairing. A pairing that began inside
+the window and finished after it closed is still refused after the fact
+(`pairing from … rejected (pairing window closed)`; the host forgets the
+new key and the link drops).
+
+(Before this, the host could not refuse: a pairing outside the window ran
+to the end without a bond, and a Mac that paired that way kept its keys,
+showed `nacra` as paired, and stalled on every later attempt until it was
+forgotten there. The refusal is `Stack::set_pairing_allowed` in the
+patched trouble-host below, which `common/src/ble.rs` sets as the window
+opens and closes.)
 
 **Bonds** (identity address, IRK, LTK; `ble_settings::BondRecord`) are kept
 in the `settings` flash partition next to the Wi-Fi credentials, up to
@@ -104,7 +118,9 @@ an old pairing", and dropped after 10 s unless it pairs afresh.
 
 The firmware uses trouble-host from a patched local clone (root
 `Cargo.toml`, `[patch.crates-io]`): 0.7.0 cannot re-pair an Apple device
-that connects from a resolvable private address, among other bonding bugs.
+that connects from a resolvable private address, among other bonding bugs,
+and has no way to refuse a Pairing Request (`set_pairing_allowed`, branch
+`bundle-ble-fixes`).
 
 ## Pairing a watch
 
@@ -384,6 +400,38 @@ in sectors …`, and why anything was refused. Validating at a commit takes
 the `active` lock, so GPS updates and events wait for it (not yet measured
 on the device).
 
+### Throughput
+
+A central writes about one `data` chunk per connection event, so the
+connection interval sets an upload's rate: Chrome on a Mac uploaded Race at
+9.7 KB/s in 240-byte chunks, one write every 25 ms or so. While a
+connection owns a live upload the box therefore asks for a **15 ms**
+interval (exactly; latency 0; the link's supervision timeout, held within
+2–6 s), from `Begin` (or a resume) on; once the upload is over (committed,
+aborted, refused at its commit, idle for 60 s, or resumed by another
+connection) it asks for what the link had before, rounded up to a multiple
+of 15 ms, to 15 ms more. 15 ms is the shortest Apple's accessory
+guidelines let a peripheral ask a Mac or an iPhone for (minimum a multiple
+of 15 ms; maximum at least 15 ms above it unless both are 15 ms; timeout
+2–6 s and more than three maximum intervals); a request outside them may
+be refused. A link already at 15 ms or less is left alone. The central
+decides; the box only asks. Firmware: `common/src/ble.rs`
+`upload_interval`.
+
+The box logs every connection's interval as it connects (`ble: connection
+C from … (…; interval 30 ms)`), the request (`ble: connection C: bundle
+upload begun: asking for interval 15-15 ms (now 30 ms)`, and `… bundle
+upload over: asking for interval 30-45 ms (now 15 ms)`), and what the
+central agreed (`ble: connection C: interval 15 ms, latency 0, supervision
+timeout … ms`).
+
+Expected, not yet measured: one 240-byte chunk per 15 ms event is 16 KB/s,
+less the odd wait for an `Ack` (rare: the window is two `Ack`s deep), so
+about 14–16 KB/s, Race (~100 KB) in 7 s instead of 10; more if the central
+puts several writes in one event. The box keeps up: erasing a 4 KiB sector
+(about every 17 chunks) takes ~45 ms, three events, which the 8 queued
+writes absorb. The packet pool is unchanged.
+
 ### The devtool
 
 `bundle/web/devtool.html` (with `bundle/js/client.js`, plain ES modules,
@@ -400,12 +448,26 @@ repository root from a container, e.g.
 and open `http://localhost:5191/bundle/web/devtool.html`.
 
 **Pairing without a Kindle.** Firmware built with `--features dev-pairing`
-(`tgt-xiaoc6`, off by default) opens the pairing window for 120 s after
-boot, exactly as **Pair watch** does (`ble: dev-pairing: window open for
-120 s`): connect from the devtool within that time and confirm the OS's
-pairing prompt. Development only: anyone in range can bond meanwhile. A
-computer that was paired before the box lost its bond (provision, Forget
-all) must forget `nacra` in its Bluetooth settings first.
+(`tgt-xiaoc6`, off by default) opens the pairing window once, at boot,
+exactly as **Pair watch** does (`ble: dev-pairing: window open for 120
+s`): it is open for the first 120 s after boot and never again until the
+next boot. Connect within that time and confirm the OS's pairing prompt;
+missed it, reset the box (a reflash is a reboot too, and opens it again).
+Development only: anyone in range can bond meanwhile. Outside the window
+the pairing is refused (above), and the browser reports that subscribing
+failed.
+
+- **Stale keys.** A computer that was paired before the box lost its bond
+  (provision, Forget all, a reflash that erased the settings) tries its old
+  key: the box logs `… has an old pairing with this box (forget nacra on
+  that device, then pair again)` and drops it after 10 s, and the page says
+  to forget `nacra`. Forget `nacra` in the computer's Bluetooth settings,
+  then connect again inside the window.
+- **Discovery stalls on a Mac.** If the Mac stops finding `nacra` (the
+  chooser stays empty, or a connection hangs at service discovery) while
+  the box is advertising (`ble: advertising as nacra` in its log), turn
+  Bluetooth off and on again on the Mac; that cleared it every time so
+  far.
 
 ## GATT caching
 

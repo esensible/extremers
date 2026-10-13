@@ -13,8 +13,9 @@
 # bootloader probe-rs flashes) and records that as ota_seq 1 in otadata.
 # The `provision` binary blanks `otadata` (a board flashed with the old
 # layout had an app image header where its second sector now is). The slot
-# not running is where GPS tracks go until an update needs it
-# (src/storage.rs, `TrackSlot`), so there is no separate tracks partition.
+# not running is the data slot (src/storage.rs, `DataSlot`): the bundle
+# store (512 KiB) and the GPS track (640 KiB) until an update needs it, so
+# there are no separate data partitions (README.md "Partitions").
 #
 # A flash writes only the bootloader, this table and the app image into
 # ota_0, and erases only around them: the region around the bootloader and
