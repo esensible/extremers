@@ -82,7 +82,7 @@ impl<'r> HttpHandler<'r> {
         if let Some(contents) = package.web_file(file) {
             return Some(contents);
         }
-        (file == "watch.js" && !package.watch.is_empty()).then_some(package.watch)
+        (file == "watch.js" && !package.watch().is_empty()).then(|| package.watch())
     }
 
     /// Relays between a websocket and the host until either side fails or

@@ -1,0 +1,19 @@
+[package]
+name = "engine-profile"
+version = "0.1.0"
+edition = "2024"
+description = "The extremers engine profile's tooling (engine/PROFILE.md): an engine's interface from its schemas, and the device tables (layout, node maps, enums) a bundle carries."
+
+[lib]
+name = "engine_profile"
+path = "lib.rs"
+
+[dependencies]
+serde_json = "1"
+compiler = { package = "lang-compiler", path = "../../lang/compiler" }
+bytecode = { package = "lang-bytecode", path = "../../lang/bytecode" }
+sailing = { package = "engine-builtins", path = "../builtins" }
+bitwire = { path = "../../wire/rust" }
+
+# Its own workspace, like engine/builtins and engine/race.
+[workspace]

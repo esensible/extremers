@@ -1,4 +1,5 @@
-#![no_std]
+// The tests have std (host/tests.rs shares wire/rust's std test adapter).
+#![cfg_attr(not(test), no_std)]
 
 // First, so its logging macros are visible to every module below.
 #[macro_use]
@@ -13,9 +14,6 @@ pub mod engine;
 pub mod host;
 pub mod http;
 pub mod nmea;
+pub mod package;
 pub mod tasks;
-pub mod wire_bridge;
-
-/// Memory use on the device, for the logs (see the targets' heap/stack
-/// logging): how much heap wasm3 holds, where the target can tell.
-pub use extreme_wasm3 as wasm3;
+pub mod track;

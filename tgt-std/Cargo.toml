@@ -20,6 +20,6 @@ env_logger = "0.11"
 static_cell = { workspace = true }
 
 #
-# The packages (Race, Tune, Choose), run by the host in common
+# Choose's bundle (the apps' bundles are files, `--bundle`)
 #
 extreme-packages = { path = "../extreme-packages" }

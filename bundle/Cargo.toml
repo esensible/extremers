@@ -1,0 +1,33 @@
+[package]
+name = "extreme-bundle"
+version = "0.1.0"
+edition = "2024"
+description = "Bundles: the flat archive an engine and its UIs travel and are stored in, its device tables (layout, node maps, enums), the install check, the bitwire Source/Sink over VM leaves, and the store record. no_std core; `std` adds the writers."
+
+[lib]
+name = "bundle"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+bytecode = { package = "lang-bytecode", path = "../lang/bytecode" }
+vm = { package = "lang-vm", path = "../lang/vm" }
+bitwire = { path = "../wire/rust" }
+extreme-protocol = { path = "../extreme-protocol" }
+postcard = { version = "1.1", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+[dev-dependencies]
+compiler = { package = "lang-compiler", path = "../lang/compiler" }
+engine-profile = { path = "../engine/profile" }
+engine-race = { path = "../engine/race" }
+sailing = { package = "engine-builtins", path = "../engine/builtins" }
+postcard = { version = "1.1", features = ["use-std"] }
+serde_json = "1"
+
+# Its own workspace for now, like wire/rust (lang/ and engine/ are workspaces
+# of their own, depended on by path). The root workspace takes it as a member
+# later; this section goes then.
+[workspace]

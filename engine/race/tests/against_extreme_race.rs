@@ -33,7 +33,7 @@
 //! The view has no crossing percentage (no client shows it), so the
 //! reference's `cross` isn't compared.
 
-use compiler::{RunResult, compile, run};
+use compiler::{RunResult, compile, plain, run};
 use extreme_race::{LineView, Phase, Race, RaceEvent};
 use extreme_sdk::{Engine, Fix, Location, Velocity};
 use serde_json::{Map, Value as Json, json};
@@ -128,20 +128,6 @@ impl Vm {
         self.state = o["state"].clone();
         self.view = o["view"].clone();
         self.wake = wake_of(output);
-    }
-}
-
-/// `compiler::run`'s tagged output as plain JSON (the next evaluation's
-/// `state`).
-fn plain(v: &Json) -> Json {
-    match v["kind"].as_str().unwrap() {
-        "record" => Json::Object(v["fields"].as_object().unwrap().iter().map(|(k, f)| (k.clone(), plain(f))).collect()),
-        "int" => json!(v["int"].as_str().unwrap().parse::<i64>().unwrap()),
-        "float" => json!(f64::from_bits(u64::from_str_radix(v["bits"].as_str().unwrap(), 16).unwrap())),
-        "string" => v["string"].clone(),
-        "bool" => v["bool"].clone(),
-        "nil" => Json::Null,
-        k => panic!("unexpected {k}"),
     }
 }
 
@@ -681,31 +667,27 @@ fn each_event_first() {
 }
 
 /// samples.json: PROFILE.md §5's smoke runs (a GPS update with nothing as
-/// the first event, then a wake), then every kind of event, as `langc check
-/// --samples` would run them if it had the host's builtins and chained
-/// `state` from the output's `state`: the profile runs them here. Logs the
-/// instructions of each evaluation.
+/// the first event, then a wake), then every kind of event, each chaining
+/// `state` from the output's `state` (lang/SPEC.md §5.3), run by
+/// `compiler::samples` with the host's builtins. Logs the instructions of
+/// each evaluation.
 #[test]
 fn samples() {
     let samples: Json = serde_json::from_str(include_str!("../samples.json")).unwrap();
     let mut vm = Vm::new();
-    for (n, r) in samples["runs"].as_array().unwrap().iter().enumerate() {
-        let mut inputs = r["inputs"].as_object().unwrap().clone();
-        match r.get("chain") {
+    let report = compiler::samples::run_samples(&vm.program, &vm.iface, &samples, &sailing::BUILTINS);
+    assert_eq!(report["ok"], true, "{report:#}");
+    for (n, (r, s)) in report["runs"].as_array().unwrap().iter().zip(samples["runs"].as_array().unwrap()).enumerate() {
+        match s.get("chain") {
             Some(c) => {
                 assert_eq!(c, &json!({"state": "output.state"}), "run {n}: `state` is chained from the output's `state`");
-                inputs.insert("state".into(), vm.state.clone());
+                assert_eq!(r["chained_from"], json!(n - 1), "run {n} chains from the run before");
             }
-            None => assert_eq!(inputs["state"], Json::Null, "run {n}: an unchained run starts from nil"),
+            None => assert_eq!(s["inputs"]["state"], Json::Null, "run {n}: an unchained run starts from nil"),
         }
-        match run(&vm.program, &vm.iface, &inputs, &sailing::BUILTINS).unwrap() {
-            RunResult::Ok { value, stack_high, steps: instructions } => {
-                vm.accept(&plain(&value));
-                let kind = inputs["event"].as_object().unwrap().keys().next().unwrap().clone();
-                eprintln!("run {n} ({kind}): {instructions} instructions, stack {stack_high}: {}\n  view {} wake {:?}", vm.state, vm.view, vm.wake);
-            }
-            RunResult::Failed { code, span } => panic!("run {n}: {code} at {span:?}"),
-        }
+        vm.accept(&r["output"]);
+        let kind = s["inputs"]["event"].as_object().unwrap().keys().next().unwrap().clone();
+        eprintln!("run {n} ({kind}): {} instructions, stack {}: {}\n  view {} wake {:?}", r["steps"], r["stack_high"], vm.state, vm.view, vm.wake);
     }
     let s = &vm.state;
     assert_eq!(s["phase"], json!({"idle": {}}));
@@ -763,7 +745,7 @@ fn an_undeclared_output_field_is_rejected() {
 
     let state: Json = serde_json::from_str(engine_race::STATE_SCHEMA).unwrap();
     let event: Json = serde_json::from_str(engine_race::EVENT_SCHEMA).unwrap();
-    let no_view = engine_race::engine_interface(&state, None, &event);
+    let no_view = engine_profile::engine_interface(&state, None, Some(&event)).unwrap();
     let output = "{state: next, view: next, wake: nil}";
     let d = compile_errors(&with_output(output), &no_view);
     assert!(d.iter().any(|d| d.rule == "E-FIELD" && d.message == "the output has no field `view`"), "{output}: {d:#?}");
@@ -785,7 +767,7 @@ fn a_view_schema_makes_view_required() {
     let state: Json = serde_json::from_str(engine_race::STATE_SCHEMA).unwrap();
     let event: Json = serde_json::from_str(engine_race::EVENT_SCHEMA).unwrap();
     let view = json!({"type": "object", "properties": {"gun": {"type": "integer", "format": "int64"}}});
-    let iface = engine_race::engine_interface(&state, Some(&view), &event);
+    let iface = engine_profile::engine_interface(&state, Some(&view), Some(&event)).unwrap();
     assert_eq!(iface["output"]["required"], json!(["state", "view"]));
     let d = compile_errors(&with_output("{state: next, wake: next.phase.countdown?.gun}"), &iface);
     assert!(d.iter().any(|d| d.rule == "E-FIELD" && d.message == "the output is missing the field `view`"), "{d:#?}");
@@ -823,7 +805,9 @@ fn a_nil_wake_is_no_timer() {
 
 /// The tooling refuses an author's event named like a built-in one.
 #[test]
-#[should_panic(expected = "`wake` is a built-in event")]
 fn an_author_event_cant_be_named_wake() {
-    engine_race::event_schema(&json!({"oneOf": [{"properties": {"wake": {"type": "object"}}, "required": ["wake"]}]}));
+    let state: Json = serde_json::from_str(engine_race::STATE_SCHEMA).unwrap();
+    let event = json!({"oneOf": [{"properties": {"wake": {"type": "object"}}, "required": ["wake"]}]});
+    let d = engine_profile::engine_interface(&state, None, Some(&event)).unwrap_err();
+    assert!(d.iter().any(|d| d.rule == "E-SCHEMA" && d.message.starts_with("`wake` is a built-in event")), "{d:#?}");
 }

@@ -1,6 +1,5 @@
-//! Memory use in the log: the heap (esp-alloc's statistics, and how much of
-//! it wasm3 holds for the active engine) and the main stack's high-water
-//! mark.
+//! Memory use in the log: the heap (esp-alloc's statistics), the main
+//! stack's high-water mark, and the engines' static buffers.
 //!
 //! The main stack is the RAM left after .data/.bss (the `.stack` section);
 //! the main task, and with it the embassy executor and every task and
@@ -58,18 +57,16 @@ pub fn main_stack_high_water() -> (usize, usize) {
 pub fn log(label: &str) {
     let s = esp_alloc::HEAP.stats();
     let (stack_used, stack_size) = main_stack_high_water();
-    let (wasm3, wasm3_peak, _) = common::wasm3::heap_use();
     defmt::info!(
-        "memory {=str}: heap used {=usize} free {=usize} of {=usize}, min free {=usize}; wasm3 {=usize} (peak {=usize}); main stack high water {=usize} of {=usize}",
+        "memory {=str}: heap used {=usize} free {=usize} of {=usize}, min free {=usize}; main stack high water {=usize} of {=usize}; engine buffers {=usize} (static)",
         label,
         s.current_usage,
         s.size - s.current_usage,
         s.size,
         s.size - s.max_usage,
-        wasm3,
-        wasm3_peak,
         stack_used,
-        stack_size
+        stack_size,
+        core::mem::size_of::<common::engine::EngineMemory>()
     );
 }
 

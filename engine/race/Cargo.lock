@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "bitwire"
+version = "0.0.0"
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -64,10 +68,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-profile"
+version = "0.1.0"
+dependencies = [
+ "bitwire",
+ "engine-builtins",
+ "lang-bytecode",
+ "lang-compiler",
+ "serde_json",
+]
+
+[[package]]
 name = "engine-race"
 version = "0.1.0"
 dependencies = [
  "engine-builtins",
+ "engine-profile",
  "extreme-race",
  "extreme-sdk",
  "lang-compiler",

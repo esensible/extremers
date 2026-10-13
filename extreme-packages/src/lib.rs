@@ -1,19 +1,15 @@
-//! The packages the firmware ships with (README "Packages"): Race and Tune
-//! preinstalled, and the built-in Choose's bundles. build.rs builds them
-//! with tools/package and embeds them (in flash on the C6); every target's
-//! host starts its registry from [`PACKAGES`].
+//! What the firmware ships with (README "Packages"): the built-in Choose,
+//! as the bundle `tools/package` builds (`cargo run -p extreme-pack --
+//! --bundle` writes it, `-- --check` checks it is current). Embedded in
+//! flash on the C6, 64-byte aligned like a bundle in the store.
 
 #![no_std]
 
-pub use extreme_protocol::Package;
-use extreme_protocol::UiHashes;
+#[repr(C, align(64))]
+struct Aligned<const N: usize>([u8; N]);
 
-/// What the firmware ships with.
-pub struct Packages {
-    /// The app packages, in Choose's order.
-    pub preinstalled: &'static [Package],
-    /// The built-in chooser (id 0, no engine).
-    pub choose: Package,
-}
+static CHOOSE_BUNDLE: &Aligned<{ include_bytes!("../../choose/choose.bundle").len() }> =
+    &Aligned(*include_bytes!("../../choose/choose.bundle"));
 
-pub static PACKAGES: Packages = include!(concat!(env!("OUT_DIR"), "/packages.rs"));
+/// Choose's bundle (no engine: `manifest.bin`, `web/*`, `watch.js`).
+pub static CHOOSE: &[u8] = &CHOOSE_BUNDLE.0;

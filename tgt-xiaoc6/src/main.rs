@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, Stack, StackResources, StaticConfigV4};
@@ -47,13 +47,38 @@ use common::{
         AP_IP, AP_PREFIX_LEN, GPS_BAUD, HTTP_PORT, MAX_BLE_BONDS, MAX_WEB_SOCKETS,
         SOCKET_BUFFER_SIZE,
     },
+    engine::{EngineMemory, LIMITS},
     host::{Host, Registry},
     nmea::AsyncReader,
+    package::Package,
     tasks::{read_gps, serve_http},
 };
 
-// The packages the firmware ships with: Race and Tune preinstalled, Choose.
-use extreme_packages::PACKAGES;
+/// The engines' buffers (common::engine), static: not the heap, not the
+/// main stack.
+static ENGINE_MEMORY: ConstStaticCell<EngineMemory> = ConstStaticCell::new(EngineMemory::new());
+
+/// Feature `dev-race`: the one app, a bundle embedded in flash (64-byte
+/// aligned, as a bundle in the store will be), until bundles are installed
+/// into their own partition.
+#[cfg(feature = "dev-race")]
+mod dev_bundle {
+    #[repr(C, align(64))]
+    struct Aligned<const N: usize>([u8; N]);
+
+    const PATH: &str = env!(
+        "EXTREMERS_DEV_BUNDLE",
+        "feature dev-race: set EXTREMERS_DEV_BUNDLE to a bundle's path (cargo run -p extreme-pack -- --bundle writes target/packages/race.bundle)"
+    );
+    static BUNDLE: &Aligned<{ include_bytes!(env!("EXTREMERS_DEV_BUNDLE")).len() }> =
+        &Aligned(*include_bytes!(env!("EXTREMERS_DEV_BUNDLE")));
+
+    pub static BYTES: &[u8] = &BUNDLE.0;
+
+    pub fn path() -> &'static str {
+        PATH
+    }
+}
 
 /// The BLE controller, with 20 HCI command slots.
 type BleController = ExternalController<BleConnector<'static>, 20>;
@@ -107,11 +132,17 @@ async fn main(spawner: Spawner) -> ! {
     choose_access_point_credentials().await;
 
     memory::log("before the host");
+    let engine_memory = ENGINE_MEMORY.take();
+    let choose = load("choose", extreme_packages::CHOOSE, engine_memory);
+    #[cfg(feature = "dev-race")]
+    let apps = load(dev_bundle::path(), dev_bundle::BYTES, engine_memory);
+    #[cfg(not(feature = "dev-race"))]
+    let apps: Option<Package> = None;
     static HOST: StaticCell<Host> = StaticCell::new();
-    let runtime: &'static Host = HOST.init(Host::new(Registry::new(
-        Some(&PACKAGES.choose),
-        PACKAGES.preinstalled,
-    )));
+    let runtime: &'static Host = HOST.init(Host::new(
+        Registry::new(choose, apps.as_slice()),
+        engine_memory,
+    ));
     memory::log("host up");
 
     // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
@@ -192,6 +223,48 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         Timer::after(Duration::from_millis(100)).await;
         led.toggle();
+    }
+}
+
+/// The bundle `bytes` (in flash), validated, timed; `None` (logged) if it
+/// is not valid.
+fn load(what: &str, bytes: &'static [u8], memory: &mut EngineMemory) -> Option<Package> {
+    let started = esp_hal::time::Instant::now();
+    let loaded = Package::load(bytes, &LIMITS, &mut memory.scratch);
+    let us = started.elapsed().as_micros();
+    match loaded {
+        Ok(package) => {
+            match package.engine {
+                Some(engine) => defmt::info!(
+                    "bundle {=str}: {=str} v{=u16}, {=usize} B, loaded (validated) in {=u64} us; code {=usize} B, constants {=usize} B; slots: stack {=u16}, locals {=u16}, inputs {=u16}, outputs {=u16}, state {=u16}",
+                    what,
+                    package.name,
+                    package.version,
+                    bytes.len(),
+                    us,
+                    engine.program.code.len(),
+                    engine.program.consts.len(),
+                    engine.program.max_stack,
+                    engine.program.locals,
+                    engine.program.input_count,
+                    engine.program.output_count,
+                    engine.layout.state_leaves
+                ),
+                None => defmt::info!(
+                    "bundle {=str}: {=str} v{=u16}, {=usize} B, no engine, loaded in {=u64} us",
+                    what,
+                    package.name,
+                    package.version,
+                    bytes.len(),
+                    us
+                ),
+            }
+            Some(package)
+        }
+        Err(e) => {
+            defmt::error!("bundle {=str}: not valid: {:?}", what, defmt::Debug2Format(&e));
+            None
+        }
     }
 }
 

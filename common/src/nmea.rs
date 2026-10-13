@@ -13,7 +13,19 @@
 
 use embassy_time::{Duration, Timer};
 
-use extreme_sdk::{Fix, Velocity};
+/// A GPS position, in degrees. South and west are negative.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Fix {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Speed over ground in knots and course over ground in degrees true.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Velocity {
+    pub speed: f64,
+    pub heading: f64,
+}
 
 /// A valid GPS fix, as reported by [`next_update`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

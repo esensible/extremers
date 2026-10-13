@@ -684,7 +684,7 @@
           ],
           "type": "object"
         },
-        "maxItems": 61440,
+        "maxItems": 57344,
         "type": "array"
       }
     }

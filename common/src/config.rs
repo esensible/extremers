@@ -39,6 +39,9 @@ pub const HTTP_PORT: u16 = 80;
 
 /// Baud rate of the GPS UART.
 pub const GPS_BAUD: u32 = 9600;
+/// Fixes the RAM track keeps (`track::RamTrack`, 24 B each): the newest,
+/// for the engines' `gps`. Until the track is in flash.
+pub const TRACK_FIXES: usize = 128;
 
 /// Maximum number of simultaneous HTTP connections, websockets included.
 pub const MAX_WEB_SOCKETS: usize = 4;

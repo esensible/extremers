@@ -3,7 +3,7 @@ name = "extreme-pack"
 version = "0.1.0"
 edition.workspace = true
 publish = false
-description = "Builds packages: engine.wasm, the web and watch bundles, the manifest and its content hash"
+description = "Builds packages and their bundles: the compiled engine and its tables, the web and watch bundles, the manifest and its content hash"
 
 [lib]
 path = "src/lib.rs"
@@ -16,4 +16,10 @@ path = "src/main.rs"
 extreme-protocol = { path = "../../extreme-protocol" }
 heapless = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
+serde_json = { workspace = true }
 sha2 = "0.10"
+# lang/ and engine/ are workspaces of their own (excluded from this one)
+compiler = { package = "lang-compiler", path = "../../lang/compiler" }
+engine-profile = { path = "../../engine/profile" }
+# bundle/ is a workspace of its own for now, like wire/rust
+bundle = { package = "extreme-bundle", path = "../../bundle", features = ["std"] }

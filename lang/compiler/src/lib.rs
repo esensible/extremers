@@ -5,6 +5,7 @@
 pub mod check;
 pub mod diag;
 pub mod emit;
+pub mod samples;
 pub mod schema;
 pub mod syntax;
 pub mod types;
@@ -236,6 +237,21 @@ where
             if present { v } else { json!({"kind": "nil"}) }
         }
         _ => from_value(leaves_iter.next().unwrap()),
+    }
+}
+
+/// `run`'s tagged output as plain JSON (records as objects, absent fields
+/// left out, ints and floats as numbers): what the next evaluation takes as
+/// an input. A list in the output is only its handle there, so it becomes
+/// null.
+pub fn plain(v: &Json) -> Json {
+    match v["kind"].as_str() {
+        Some("record") => Json::Object(v["fields"].as_object().into_iter().flatten().map(|(k, f)| (k.clone(), plain(f))).collect()),
+        Some("int") => v["int"].as_str().and_then(|s| s.parse::<i64>().ok()).map_or(Json::Null, |i| json!(i)),
+        Some("float") => v["bits"].as_str().and_then(|s| u64::from_str_radix(s, 16).ok()).map_or(Json::Null, |b| json!(f64::from_bits(b))),
+        Some("string") => v["string"].clone(),
+        Some("bool") => v["bool"].clone(),
+        _ => Json::Null,
     }
 }
 

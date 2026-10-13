@@ -1,46 +1,60 @@
-//! Building packages (README "Packages").
+//! Building packages (README "Packages") and their bundles.
 //!
 //! A package is:
 //!
-//! - `manifest.bin`: its [`Manifest`] (postcard);
-//! - `engine.wasm`: its engine (an `extreme_sdk::Engine` behind
-//!   `export_engine!`), built for `wasm32-unknown-unknown` with 1-byte
-//!   memory pages and exactly the linear memory it needs; none for Choose,
-//!   whose view the host makes itself;
+//! - `manifest.bin`: its [`Manifest`] (postcard), `abi` [`ABI`] with an
+//!   engine, [`NO_ENGINE`] without (Choose);
+//! - with an engine (an engine directory, `engine/race` style:
+//!   `engine.expr`, `state.schema.json`, optional `view.schema.json`,
+//!   `event.schema.json` and `samples.json`; engine/PROFILE.md):
+//!   - `engine.bin`: the program, compiled by `lang/compiler` against the
+//!     interface `engine/profile` generates from the schemas;
+//!   - `layout.bin`, `view.map`, `event.map`, `enums.bin`: the host's
+//!     tables for it (`engine/profile`'s `tables`);
+//!   - `view.desc`: the wire descriptor of the published value, the view
+//!     schema's (the state schema's when there is no view);
+//!     `event.desc`: the author's `event.schema.json`'s, if there is one.
+//!     Both compiled by `wire/js` (a node call, [`compile_schema`]);
+//!   - `source.json`: the engine sources verbatim, `{engine, state, view,
+//!     event, samples?}` (`view`/`event` null when absent), for the studio
+//!     to reopen; the device ignores it;
 //! - `web/`: its Kindle page (`client-js/`, built with npm): the host
 //!   serves its index.html at `/` while the package is active, and its
 //!   files at `/pkg/<id>/` (Choose's id is 0), where index.html points;
-//! - `watch.js`: its watch bundle (`watch-js/`), empty if it has none;
-//! - `schema.json`: its view's and events' postcard schemas, from
-//!   `tools/bindgen` (kept with the build output, not on the device).
+//! - `watch.js`: its watch bundle (`watch-js/`), absent if it has none.
 //!
-//! The content hash is the first 8 bytes of the SHA-256 of engine.wasm,
-//! the web bundle and the watch bundle, in that order, where the web bundle
-//! is its files in name order, each as its name, a NUL, its length (u32
-//! little-endian) and its contents ([`content_hash`]). Each client's UI has
-//! its own hash too, the same prefix of the SHA-256 of the web bundle alone
+//! A bundle is those files as one archive (`extreme-bundle`'s `write`; web
+//! files as `web/<name>`); [`Built::bundle`].
+//!
+//! The content hash is the first 8 bytes of the SHA-256 of engine.bin, the
+//! web bundle and the watch bundle, in that order, where the web bundle is
+//! its files in name order, each as its name, a NUL, its length (u32
+//! little-endian) and its contents ([`content_hash`]). The tables and
+//! descriptors are not hashed on their own: they are made from the
+//! interface and engine.bin, and engine.bin carries the interface's hash,
+//! which covers the schemas verbatim. Each client's UI has its own hash
+//! too, the same prefix of the SHA-256 of the web bundle alone
 //! ([`web_hash`]) and of the watch bundle alone ([`watch_hash`]): the
 //! envelope's `ui`, so a client reloads only for a change to its own UI.
 //!
-//! `extreme-packages/build.rs` builds the preinstalled packages into the
-//! firmware with this; `cargo run -p extreme-pack` writes them out
-//! (`target/packages/<name>/`).
+//! `cargo run -p extreme-pack` writes them out (`target/packages/<name>/`);
+//! `extreme-packages` embeds the committed `choose/choose.bundle`.
 
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use extreme_protocol::{Manifest, Name, PackageId, UiHashes, package_id};
+use serde_json::{Value as Json, json};
 use sha2::{Digest, Sha256};
 
-/// The engine ABI the packages are built for (`extreme_sdk::abi::VERSION`).
-pub const ABI: u16 = 1;
+/// The engine ABI of a package with an engine: lang bytecode.
+pub const ABI: u16 = 2;
 
-/// The module's stack, bytes: the engines are small and do not recurse.
-/// `common::engine`'s tests check what they use of it.
-pub const ENGINE_STACK: u32 = 2048;
+/// The `abi` of a package without an engine (Choose).
+pub const NO_ENGINE: u16 = 0;
 
 /// A package's sources.
 #[derive(Clone, Copy, Debug)]
@@ -48,11 +62,10 @@ pub struct Spec {
     /// The package's name ([`Manifest::name`]); its id is [`package_id`] of it.
     pub name: &'static str,
     pub version: u16,
-    /// Its directory, from the repository root: `client-js/` (the Kindle
-    /// page), `watch-js/` (the watch bundle, optional), `protocol-js/`
-    /// (bindgen's output for it, with `schema.json`).
+    /// Its UI directory, from the repository root: `client-js/` (the
+    /// Kindle page), `watch-js/` (the watch bundle, optional).
     pub dir: &'static str,
-    /// The crate whose cdylib is the engine; `None` for Choose.
+    /// Its engine directory, from the repository root; `None` for Choose.
     pub engine: Option<&'static str>,
 }
 
@@ -66,21 +79,13 @@ impl Spec {
     }
 }
 
-/// The app packages preinstalled in the firmware, in Choose's order.
-pub const PACKAGES: &[Spec] = &[
-    Spec {
-        name: "race",
-        version: 1,
-        dir: "extreme-race",
-        engine: Some("extreme-race"),
-    },
-    Spec {
-        name: "tune",
-        version: 1,
-        dir: "extreme-tune",
-        engine: Some("extreme-tune"),
-    },
-];
+/// The app packages, in Choose's order.
+pub const PACKAGES: &[Spec] = &[Spec {
+    name: "race",
+    version: 1,
+    dir: "extreme-race",
+    engine: Some("engine/race"),
+}];
 
 /// The built-in Choose package.
 pub const CHOOSE: Spec = Spec {
@@ -90,14 +95,38 @@ pub const CHOOSE: Spec = Spec {
     engine: None,
 };
 
+/// The committed Choose bundle `extreme-packages` embeds, from the root.
+pub const CHOOSE_BUNDLE: &str = "choose/choose.bundle";
+
+/// The bundles partition's size (`tgt-xiaoc6/partitions.csv`): what
+/// `--store-image` fills.
+pub const STORE_SIZE: usize = 0x100000;
+
+/// A built engine: the program, its tables and descriptors, its sources.
+pub struct Engine {
+    /// `engine.bin`.
+    pub program: Vec<u8>,
+    /// What the program needs on the device.
+    pub memory: compiler::Memory,
+    /// `layout.bin`.
+    pub layout: Vec<u8>,
+    /// `view.desc`, `view.map`.
+    pub view_desc: Vec<u8>,
+    pub view_map: Vec<u8>,
+    /// `event.desc`, `event.map`: with author events only.
+    pub event: Option<(Vec<u8>, Vec<u8>)>,
+    /// `enums.bin`: if any leaf is an enum.
+    pub enums: Option<Vec<u8>>,
+    /// `source.json`.
+    pub source: Vec<u8>,
+}
+
 /// A built package.
 pub struct Built {
     pub spec: Spec,
     pub manifest: Manifest,
-    /// Empty for Choose.
-    pub engine: Vec<u8>,
-    /// The linear memory the engine declares, bytes (0 for Choose).
-    pub memory: u32,
+    /// `None` for Choose.
+    pub engine: Option<Engine>,
     /// (name, contents), in name order.
     pub web: Vec<(String, Vec<u8>)>,
     /// Empty if the package has no watch bundle.
@@ -107,6 +136,41 @@ pub struct Built {
 impl Built {
     pub fn manifest_bytes(&self) -> Vec<u8> {
         postcard::to_stdvec(&self.manifest).unwrap()
+    }
+
+    /// The package's files (module docs), as (path, contents) in name order:
+    /// what `--out` writes and what the bundle holds.
+    pub fn files(&self) -> Vec<(String, Vec<u8>)> {
+        let mut out = vec![("manifest.bin".to_string(), self.manifest_bytes())];
+        if let Some(e) = &self.engine {
+            out.push(("engine.bin".into(), e.program.clone()));
+            out.push(("layout.bin".into(), e.layout.clone()));
+            out.push(("view.desc".into(), e.view_desc.clone()));
+            out.push(("view.map".into(), e.view_map.clone()));
+            if let Some((desc, map)) = &e.event {
+                out.push(("event.desc".into(), desc.clone()));
+                out.push(("event.map".into(), map.clone()));
+            }
+            if let Some(enums) = &e.enums {
+                out.push(("enums.bin".into(), enums.clone()));
+            }
+            out.push(("source.json".into(), e.source.clone()));
+        }
+        for (name, contents) in &self.web {
+            out.push((format!("web/{name}"), contents.clone()));
+        }
+        if !self.watch.is_empty() {
+            out.push(("watch.js".into(), self.watch.clone()));
+        }
+        out.sort();
+        out
+    }
+
+    /// The bundle: [`Built::files`] as one archive.
+    pub fn bundle(&self) -> Vec<u8> {
+        let files = self.files();
+        let refs: Vec<(&str, &[u8])> = files.iter().map(|(n, c)| (n.as_str(), c.as_slice())).collect();
+        bundle::archive::write(&refs)
     }
 }
 
@@ -163,13 +227,9 @@ fn prefix(h: Sha256) -> [u8; 8] {
 /// Builds `spec`: its engine, its bundles, its manifest.
 pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
     let dir = root.join(spec.dir);
-    let (engine, memory) = match spec.engine {
-        Some(krate) => {
-            let wasm = build_engine(root, krate)?;
-            let memory = memory_size(&wasm).ok_or_else(|| format!("{krate}: engine.wasm declares no memory"))?;
-            (wasm, memory)
-        }
-        None => (Vec::new(), 0),
+    let engine = match spec.engine {
+        Some(engine_dir) => Some(build_engine(root, &root.join(engine_dir))?),
+        None => None,
     };
     let public_path = format!("/pkg/{}/", spec.id());
     let web_dist = npm_build(&dir.join("client-js"), Some(&public_path))?
@@ -184,12 +244,13 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
         Some(dist) => fs::read(dist.join("watch.js")).map_err(|e| format!("{}: watch-js/dist/watch.js: {e}", spec.name))?,
         None => Vec::new(),
     };
+    let program: &[u8] = engine.as_ref().map_or(&[], |e| &e.program);
     let manifest = Manifest {
         id: spec.id(),
         name: Name::try_from(spec.name).map_err(|_| format!("{}: name longer than 16 bytes", spec.name))?,
         version: spec.version,
-        abi: ABI,
-        content_hash: content_hash(&engine, &web, &watch),
+        abi: if engine.is_some() { ABI } else { NO_ENGINE },
+        content_hash: content_hash(program, &web, &watch),
         ui: UiHashes {
             web: web_hash(&web),
             watch: watch_hash(&watch),
@@ -200,23 +261,30 @@ pub fn build(root: &Path, spec: &Spec) -> Result<Built, String> {
         spec: *spec,
         manifest,
         engine,
-        memory,
         web,
         watch,
     })
 }
 
-/// What a build of `spec` reads, for `cargo:rerun-if-changed` (only paths
-/// that exist: cargo treats a missing one as always changed).
+/// The store image of `bundles` (`--store-image`): the bundles partition
+/// as `extreme-bundle` lays it out, for `probe-rs download`.
+pub fn store_image(bundles: &[Vec<u8>]) -> Vec<u8> {
+    let refs: Vec<&[u8]> = bundles.iter().map(Vec::as_slice).collect();
+    bundle::store::store_image(&refs, STORE_SIZE)
+}
+
+/// What a build of `spec` reads (only paths that exist).
 pub fn inputs(root: &Path, spec: &Spec) -> Vec<PathBuf> {
     let dir = root.join(spec.dir);
     let mut out = Vec::new();
-    if spec.engine.is_some() {
-        out.push(dir.join("src"));
-        out.push(dir.join("Cargo.toml"));
-        out.push(root.join("extreme-sdk/src"));
-        out.push(root.join("extreme-sdk/Cargo.toml"));
-        out.push(root.join("Cargo.lock"));
+    if let Some(engine) = spec.engine {
+        let engine = root.join(engine);
+        for file in ENGINE_FILES {
+            out.push(engine.join(file));
+        }
+        for js in ["index.js", "codec.js", "compile.js", "rollup.js", "scripts/compile-schema.js"] {
+            out.push(root.join("wire/js").join(js));
+        }
     }
     for js in ["client-js", "watch-js"] {
         for input in ["src", "package.json", "package-lock.json", "rollup.config.js"] {
@@ -224,68 +292,108 @@ pub fn inputs(root: &Path, spec: &Spec) -> Vec<PathBuf> {
         }
     }
     out.push(dir.join("protocol-js"));
+    out.push(dir.join("race-wire.mjs"));
     out.push(root.join("protocol-js/protocol.js"));
     out.push(root.join("client-common"));
     out.retain(|p| p.exists());
     out
 }
 
-/// The engine crate `krate` as a wasm32 cdylib, its memory exactly what it
-/// needs: linked once to find `__heap_base` (the end of its stack, data and
-/// statics), then again with that much memory in 1-byte pages. Each link
-/// has its own target directory, so neither invalidates the other.
-fn build_engine(root: &Path, krate: &str) -> Result<Vec<u8>, String> {
-    let probe = link(root, krate, "probe", &["--export=__heap_base".into()])?;
-    let wasm = fs::read(&probe).map_err(|e| format!("{}: {e}", probe.display()))?;
-    let heap_base = exported_global(&wasm, "__heap_base")
-        .ok_or_else(|| format!("{krate}: no __heap_base in {}", probe.display()))?;
-    let fit = link(
-        root,
-        krate,
-        "fit",
-        &[
-            format!("--initial-memory={heap_base}"),
-            format!("--max-memory={heap_base}"),
-            "--page-size=1".into(),
-        ],
-    )?;
-    fs::read(&fit).map_err(|e| format!("{}: {e}", fit.display()))
+/// An engine directory's files (module docs); all but the first two optional.
+const ENGINE_FILES: [&str; 5] = [
+    "engine.expr",
+    "state.schema.json",
+    "view.schema.json",
+    "event.schema.json",
+    "samples.json",
+];
+
+/// Compiles the engine in `dir` and makes its tables (module docs).
+///
+fn build_engine(root: &Path, dir: &Path) -> Result<Engine, String> {
+    let read = |name: &str| -> Result<Option<String>, String> {
+        let path = dir.join(name);
+        match fs::read_to_string(&path) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    };
+    let parse = |name: &str, src: &str| -> Result<Json, String> {
+        serde_json::from_str(src).map_err(|e| format!("{}: {e}", dir.join(name).display()))
+    };
+    let missing = |name: &str| format!("{}: missing", dir.join(name).display());
+    let source = read("engine.expr")?.ok_or_else(|| missing("engine.expr"))?;
+    let state_src = read("state.schema.json")?.ok_or_else(|| missing("state.schema.json"))?;
+    let view_src = read("view.schema.json")?;
+    let event_src = read("event.schema.json")?;
+    let samples_src = read("samples.json")?;
+    let state = parse("state.schema.json", &state_src)?;
+    let view = view_src.as_deref().map(|s| parse("view.schema.json", s)).transpose()?;
+    let event = event_src.as_deref().map(|s| parse("event.schema.json", s)).transpose()?;
+
+    let rendered = |file: &str, src: &str, diags: Vec<compiler::diag::Diag>| {
+        let file = dir.join(file).display().to_string();
+        diags.iter().map(|d| d.render(&file, src)).collect::<Vec<_>>().join("\n")
+    };
+    let interface = engine_profile::engine_interface(&state, view.as_ref(), event.as_ref())
+        .map_err(|d| rendered("engine.expr", &source, d))?;
+    let compiled = compiler::compile(&source, &interface, &compiler::Options::default())
+        .map_err(|d| rendered("engine.expr", &source, d))?;
+
+    // the published value is the view, or the state when there is none
+    let published = if view.is_some() { "view.schema.json" } else { "state.schema.json" };
+    let view_desc = compile_schema(root, &dir.join(published))?;
+    let event_desc = match event {
+        Some(_) => Some(compile_schema(root, &dir.join("event.schema.json"))?),
+        None => None,
+    };
+    let tables = engine_profile::layout::tables(&interface, &compiled.bytes, &view_desc, event_desc.as_deref())
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+
+    let mut source_json = json!({
+        "engine": source,
+        "state": state_src,
+        "view": view_src,
+        "event": event_src,
+    });
+    if let Some(samples) = samples_src {
+        source_json["samples"] = Json::String(samples);
+    }
+    let event = match (event_desc, tables.event_map) {
+        (Some(desc), Some(map)) => Some((desc, map)),
+        (None, None) => None,
+        _ => return Err(format!("{}: an event descriptor without its map, or the other way round", dir.display())),
+    };
+    Ok(Engine {
+        program: compiled.bytes,
+        memory: compiled.memory,
+        layout: tables.layout.to_vec(),
+        view_desc,
+        view_map: tables.view_map,
+        event,
+        enums: tables.enums,
+        source: serde_json::to_vec(&source_json).unwrap(),
+    })
 }
 
-/// `cargo rustc` for the engine; the path of the .wasm.
-fn link(root: &Path, krate: &str, phase: &str, link_args: &[String]) -> Result<PathBuf, String> {
-    let target_dir = root.join("target/engines").join(phase);
-    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let mut cmd = Command::new(cargo);
-    cmd.current_dir(root)
-        .args(["rustc", "-p", krate, "--lib", "--crate-type", "cdylib"])
-        .args(["--target", "wasm32-unknown-unknown", "--profile", "engine"])
-        .arg("--target-dir")
-        .arg(&target_dir)
-        .arg("--")
-        .args(["-C", &format!("link-arg=-zstack-size={ENGINE_STACK}")]);
-    for a in link_args {
-        cmd.args(["-C", &format!("link-arg={a}")]);
+/// The wire descriptor of the JSON Schema at `schema`, compiled by
+/// `wire/js` (`scripts/compile-schema.js`).
+pub fn compile_schema(root: &Path, schema: &Path) -> Result<Vec<u8>, String> {
+    let script = root.join("wire/js/scripts/compile-schema.js");
+    let out = Command::new("node")
+        .arg(&script)
+        .arg(schema)
+        .output()
+        .map_err(|e| format!("node (needed to compile {}): {e}", schema.display()))?;
+    if !out.status.success() {
+        return Err(format!(
+            "compiling {}: {}",
+            schema.display(),
+            String::from_utf8_lossy(&out.stderr).trim_end()
+        ));
     }
-    // When run from a build script: nothing of the outer build (its target,
-    // its rustflags, its target dir) may leak into this one.
-    for (key, _) in env::vars_os() {
-        let key = key.to_string_lossy().into_owned();
-        let leaks = key == "RUSTFLAGS"
-            || key == "RUSTDOCFLAGS"
-            || key == "RUSTC_WORKSPACE_WRAPPER"
-            || (key.starts_with("CARGO_") && key != "CARGO_HOME" && key != "CARGO_NET_OFFLINE");
-        if leaks {
-            cmd.env_remove(&key);
-        }
-    }
-    let status = cmd.status().map_err(|e| format!("cargo: {e}"))?;
-    if !status.success() {
-        return Err(format!("building the {krate} engine ({phase}) failed"));
-    }
-    Ok(target_dir
-        .join("wasm32-unknown-unknown/engine")
-        .join(format!("{}.wasm", krate.replace('-', "_"))))
+    Ok(out.stdout)
 }
 
 /// Runs `npm ci` (first time) and `npm run build` in `dir`; its `dist/`, or
@@ -358,127 +466,6 @@ fn read_files(dir: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
     Ok(out)
 }
 
-// ---- just enough of the wasm binary format ----
-
-fn leb(b: &[u8], i: &mut usize) -> Option<u64> {
-    let mut value = 0u64;
-    let mut shift = 0;
-    loop {
-        let byte = *b.get(*i)?;
-        *i += 1;
-        value |= ((byte & 0x7f) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some(value);
-        }
-        shift += 7;
-        if shift > 63 {
-            return None;
-        }
-    }
-}
-
-/// (id, contents) of each section.
-fn sections(wasm: &[u8]) -> Option<Vec<(u8, &[u8])>> {
-    if wasm.get(..8)? != b"\0asm\x01\0\0\0" {
-        return None;
-    }
-    let mut i = 8;
-    let mut out = Vec::new();
-    while i < wasm.len() {
-        let id = wasm[i];
-        i += 1;
-        let len = leb(wasm, &mut i)? as usize;
-        out.push((id, wasm.get(i..i + len)?));
-        i += len;
-    }
-    Some(out)
-}
-
-fn name<'a>(b: &'a [u8], i: &mut usize) -> Option<&'a [u8]> {
-    let len = leb(b, i)? as usize;
-    let s = b.get(*i..*i + len)?;
-    *i += len;
-    Some(s)
-}
-
-/// The value of the exported i32 global `export` (an `i32.const` init).
-pub fn exported_global(wasm: &[u8], export: &str) -> Option<u32> {
-    let sections = sections(wasm)?;
-    let (_, exports) = sections.iter().find(|(id, _)| *id == 7)?;
-    let mut i = 0;
-    let mut index = None;
-    for _ in 0..leb(exports, &mut i)? {
-        let n = name(exports, &mut i)?;
-        let kind = *exports.get(i)?;
-        i += 1;
-        let idx = leb(exports, &mut i)?;
-        if n == export.as_bytes() && kind == 3 {
-            index = Some(idx);
-        }
-    }
-    let index = index?;
-    // imported globals come first in the index space; the engines import
-    // none
-    let (_, globals) = sections.iter().find(|(id, _)| *id == 6)?;
-    let mut i = 0;
-    for g in 0..leb(globals, &mut i)? {
-        let _ty = globals.get(i..i + 2)?; // value type, mutability
-        i += 2;
-        // init expression: i32.const n, end
-        if *globals.get(i)? != 0x41 {
-            return None;
-        }
-        i += 1;
-        let value = leb_signed32(globals, &mut i)?;
-        if *globals.get(i)? != 0x0b {
-            return None;
-        }
-        i += 1;
-        if g == index {
-            return Some(value as u32);
-        }
-    }
-    None
-}
-
-fn leb_signed32(b: &[u8], i: &mut usize) -> Option<i32> {
-    let mut value: i64 = 0;
-    let mut shift = 0;
-    loop {
-        let byte = *b.get(*i)?;
-        *i += 1;
-        value |= ((byte & 0x7f) as i64) << shift;
-        shift += 7;
-        if byte & 0x80 == 0 {
-            if shift < 64 && byte & 0x40 != 0 {
-                value |= -1i64 << shift;
-            }
-            return Some(value as i32);
-        }
-        if shift > 35 {
-            return None;
-        }
-    }
-}
-
-/// The initial size of the module's memory in bytes (1-byte pages when it
-/// says so, custom-page-sizes flag 0x08 with page size log2 0).
-pub fn memory_size(wasm: &[u8]) -> Option<u32> {
-    let sections = sections(wasm)?;
-    let (_, memories) = sections.iter().find(|(id, _)| *id == 5)?;
-    let mut i = 0;
-    if leb(memories, &mut i)? != 1 {
-        return None;
-    }
-    let flags = leb(memories, &mut i)?;
-    let initial = leb(memories, &mut i)?;
-    if flags & 1 != 0 {
-        leb(memories, &mut i)?; // maximum
-    }
-    let page_log2 = if flags & 8 != 0 { leb(memories, &mut i)? } else { 16 };
-    Some((initial << page_log2) as u32)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,12 +473,12 @@ mod tests {
     #[test]
     fn hash_covers_every_part() {
         let web = vec![("a.js".to_string(), b"x".to_vec())];
-        let h = content_hash(b"wasm", &web, b"watch");
-        assert_ne!(h, content_hash(b"wasm!", &web, b"watch"));
-        assert_ne!(h, content_hash(b"wasm", &web, b"watch!"));
+        let h = content_hash(b"engine", &web, b"watch");
+        assert_ne!(h, content_hash(b"engine!", &web, b"watch"));
+        assert_ne!(h, content_hash(b"engine", &web, b"watch!"));
         let renamed = vec![("b.js".to_string(), b"x".to_vec())];
-        assert_ne!(h, content_hash(b"wasm", &renamed, b"watch"));
-        assert_eq!(h, content_hash(b"wasm", &web, b"watch"));
+        assert_ne!(h, content_hash(b"engine", &renamed, b"watch"));
+        assert_eq!(h, content_hash(b"engine", &web, b"watch"));
         // nothing at all is still a hash
         assert_eq!(content_hash(&[], &[], &[])[..4], [0xe3, 0xb0, 0xc4, 0x42]);
     }
@@ -523,5 +510,44 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), PACKAGES.len() + 1);
         assert!(PACKAGES.len() + 1 <= extreme_protocol::REGISTRY_MAX);
+    }
+
+    /// Choose's files: the manifest, the Kindle page under `web/`, the
+    /// watch bundle; nothing of an engine.
+    #[test]
+    fn files_without_an_engine() {
+        let built = Built {
+            spec: CHOOSE,
+            manifest: Manifest {
+                id: 0,
+                name: Name::try_from("choose").unwrap(),
+                version: 1,
+                abi: NO_ENGINE,
+                content_hash: [0; 8],
+                ui: UiHashes::default(),
+                watch_len: 1,
+            },
+            engine: None,
+            web: vec![("index.html".into(), b"<p>".to_vec()), ("a.js".into(), b"x".to_vec())],
+            watch: b"w".to_vec(),
+        };
+        let names: Vec<_> = built.files().into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, ["manifest.bin", "watch.js", "web/a.js", "web/index.html"]);
+        // the bundle holds exactly those files
+        let bytes = built.bundle();
+        let archive = bundle::Archive::parse(&bytes).unwrap();
+        let read: Vec<_> = archive.files().map(|(n, c)| (n.to_string(), c.to_vec())).collect();
+        assert_eq!(read, built.files());
+    }
+
+    /// The committed Choose bundle is an archive whose manifest is Choose's.
+    #[test]
+    fn committed_choose_bundle_reads() {
+        let bytes = fs::read(root().join(CHOOSE_BUNDLE)).unwrap();
+        let archive = bundle::Archive::parse(&bytes).unwrap();
+        let manifest: Manifest = postcard::from_bytes(archive.file("manifest.bin").unwrap()).unwrap();
+        assert_eq!((manifest.id, manifest.abi), (extreme_protocol::CHOOSE, NO_ENGINE));
+        assert!(archive.file("web/index.html").is_some());
+        assert_eq!(archive.file("watch.js").map(<[u8]>::len), Some(manifest.watch_len as usize));
     }
 }

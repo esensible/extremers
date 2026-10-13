@@ -66,11 +66,13 @@ impl Diag {
         out
     }
 
+    /// The JSON form (spec §5). Each end of the span has its line and column
+    /// and its byte offset in `src` (for editors that address by offset).
     pub fn to_json(&self, src: &str) -> Json {
         let span = self.span.map(|s| {
             let (l1, c1) = line_col(src, s.start);
             let (l2, c2) = line_col(src, s.end);
-            json!({"start": {"line": l1, "col": c1}, "end": {"line": l2, "col": c2}})
+            json!({"start": {"line": l1, "col": c1, "offset": s.start}, "end": {"line": l2, "col": c2, "offset": s.end}})
         });
         json!({
             "rule": self.rule,
@@ -79,6 +81,18 @@ impl Diag {
             "message": self.message,
             "help": self.help,
         })
+    }
+}
+
+/// What to do about a run-time error (spec §5.2).
+pub fn runtime_help(code: &str) -> &'static str {
+    match code {
+        "R-NIL" => "a nullable input or field is nil here: test it first (`x != nil ? x.f : …`), or read it with `?.` and give a default with `??`",
+        "R-INDEX" => "the index is out of range: check `len(xs)` first, or use `get(xs, i)`, which gives nil",
+        "R-DIV0" => "`%` by zero: check the divisor first",
+        "R-ARG" => "a builtin was given something it can't use (e.g. `reduce` with no initial value on an empty list, or a negative range)",
+        "R-INPUT" => "an input doesn't match its schema: this is the host's or the sample's mistake, not the program's",
+        _ => "this means a bug in the compiler: please report it with the program and the inputs",
     }
 }
 

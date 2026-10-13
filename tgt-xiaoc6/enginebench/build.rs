@@ -1,6 +1,4 @@
-//! The two engines' code, into OUT_DIR:
-//! - `engine.wasm`: Race as the firmware embeds it, tools/package's final
-//!   ("fit") link of extreme-race (build the firmware first, so it exists);
+//! The engine's code, into OUT_DIR:
 //! - `race.bin`: engine/race/engine.expr compiled against its interface;
 //! - `consts.rs`: the program's buffer sizes, and the leaf of every input,
 //!   output, state and view field the bench reads or writes (lang/SPEC.md
@@ -39,14 +37,10 @@ fn main() {
     let root = manifest.join("../..");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    let wasm = root.join("target/engines/fit/wasm32-unknown-unknown/engine/extreme_race.wasm");
-    println!("cargo:rerun-if-changed={}", wasm.display());
     for f in ["engine.expr", "state.schema.json", "view.schema.json", "event.schema.json", "lib.rs"] {
         println!("cargo:rerun-if-changed={}", root.join("engine/race").join(f).display());
     }
     println!("cargo:rerun-if-changed={}", root.join("engine/builtins/builtins.json").display());
-    fs::copy(&wasm, out.join("engine.wasm"))
-        .unwrap_or_else(|e| panic!("{}: {e} (build tgt-xiaoc6 first: extreme-packages builds it)", wasm.display()));
 
     let iface = engine_race::interface();
     let c = compiler::compile(engine_race::PROGRAM, &iface, &Default::default()).unwrap_or_else(|d| panic!("{d:#?}"));

@@ -2,13 +2,13 @@
 resolver = "3"
 
 members = [
-    # the host protocol, the engine SDK, the WASM interpreter
+    # the host protocol, the old engine SDK, the host
     "extreme-protocol",
     "extreme-sdk",
-    "extreme-wasm3",
     "common",
 
-    # packages: the engines (crates), and what the firmware ships with
+    # the old Rust engines (host-only now: bindgen and engine/race's
+    # against_extreme_race), and what the firmware ships with (Choose)
     "extreme-race",
     "extreme-tune",
     "extreme-packages",
@@ -20,15 +20,17 @@ members = [
     # targets
     "tgt-std",
     "tgt-xiaoc6",
-    "tgt-pico",
 ]
 # wire/ is the stand-alone bitwire codec (its own workspace; to be open
 # sourced). common depends on wire/rust by path, which would otherwise make
 # it a member. lang/ and engine/ are workspaces of their own too: without
 # the exclusion, a build that loads this workspace (e.g. through common)
 # and also lang/vm attributes lang/vm to this workspace and fails on its
-# inherited `license`.
-exclude = ["wire", "lang", "engine"]
+# inherited `license`. bundle/ (the bundle archive and device tables) is its
+# own workspace for now too; common and tools/package depend on it by path.
+# tgt-pico still runs the wasm3 host that is gone, and is left as it was
+# (it doesn't build).
+exclude = ["wire", "lang", "engine", "bundle", "tgt-pico"]
 
 [workspace.package]
 edition = "2024"
@@ -89,16 +91,6 @@ codegen-units = 1
 # Debug info only lives in the ELF, not the flashed image; probe-rs needs it
 # to show each defmt log line's source location.
 debug = 2
-
-# A package's engine.wasm (tools/package builds the engine crates as wasm32
-# cdylibs with it): small, no debug info, no names section. The size of the
-# module is what the interpreter parses and compiles on the device.
-[profile.engine]
-inherits = "release"
-opt-level = "z"
-debug = false
-strip = true
-panic = "abort"
 
 # Bonding (BLE.md "Security"): trouble-host 0.7.0 on crates.io cannot keep a
 # bond with an Apple device working. Re-pairing a bonded peer that connects

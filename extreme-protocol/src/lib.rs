@@ -16,9 +16,6 @@
 
 #![no_std]
 
-mod package;
-pub use package::Package;
-
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 

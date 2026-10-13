@@ -149,6 +149,24 @@ pub fn field_offset(f: &BTreeMap<String, Ty>, field: &str) -> u16 {
     f.iter().take_while(|(k, _)| k.as_str() != field).map(|(_, t)| leaves(t)).sum()
 }
 
+/// The leaf of the field at `path` inside a value of type `t`, counted from
+/// the value's first leaf; `None` if a step isn't a record field. An
+/// optional record's presence leaf comes before its fields, and a path that
+/// ends at an optional record gives its presence leaf.
+pub fn leaf_offset(t: &Ty, path: &[&str]) -> Option<u16> {
+    let (mut t, mut at) = (t, 0u16);
+    for k in path {
+        if let Ty::Opt(inner) = t {
+            at += 1;
+            t = inner;
+        }
+        let Ty::Rec(fields, _) = t else { return None };
+        t = fields.get(*k)?;
+        at += field_offset(fields, k);
+    }
+    Some(at)
+}
+
 impl Ty {
     pub fn nullable(self) -> Ty {
         match self {
@@ -282,5 +300,27 @@ mod tests {
         assert_eq!(unify(&Ty::Nil, &i), Some(Ty::Opt(Box::new(i.clone()))));
         assert_eq!(unify(&Ty::Opt(Box::new(i.clone())), &Ty::Int(Range::exact(3))), Some(Ty::Opt(Box::new(Ty::Int(Range { lo: 1, hi: 3 })))));
         assert_eq!(unify(&Ty::Bool, &i), None);
+    }
+
+    #[test]
+    fn leaf_offsets() {
+        let f = Ty::Float;
+        let fix = Ty::Rec(BTreeMap::from([("lat".into(), f.clone()), ("lon".into(), f.clone())]), None);
+        // {b: {lat, lon}?, a: float, c: {fix: {lat, lon}?}}: a 0, b 1 (presence), b.lat 2, b.lon 3, c.fix 4
+        let t = Ty::Rec(
+            BTreeMap::from([
+                ("a".into(), f.clone()),
+                ("b".into(), fix.clone().nullable()),
+                ("c".into(), Ty::Rec(BTreeMap::from([("fix".into(), fix.nullable())]), None)),
+            ]),
+            None,
+        );
+        assert_eq!(leaf_offset(&t, &[]), Some(0));
+        assert_eq!(leaf_offset(&t, &["a"]), Some(0));
+        assert_eq!(leaf_offset(&t, &["b"]), Some(1));
+        assert_eq!(leaf_offset(&t, &["b", "lon"]), Some(3));
+        assert_eq!(leaf_offset(&t, &["c", "fix", "lat"]), Some(5));
+        assert_eq!(leaf_offset(&t, &["d"]), None);
+        assert_eq!(leaf_offset(&t, &["a", "x"]), None);
     }
 }

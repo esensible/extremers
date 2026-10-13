@@ -10,6 +10,7 @@ path = "lib.rs"
 [dependencies]
 serde_json = "1"
 sailing = { package = "engine-builtins", path = "../builtins" }
+engine-profile = { path = "../profile" }
 
 [dev-dependencies]
 compiler = { package = "lang-compiler", path = "../../lang/compiler" }

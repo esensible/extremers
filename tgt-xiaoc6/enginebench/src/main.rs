@@ -1,28 +1,24 @@
-//! The Race engine, old against new, on the ESP32-C6. Not the firmware: a
-//! bench, flashed on its own, that logs over defmt/RTT and then idles.
+//! The Race engine on the ESP32-C6. Not the firmware: a bench, flashed on
+//! its own, that logs over defmt/RTT and then idles. (It compared Race
+//! under wasm3 with Race on the VM until wasm3 left the firmware: GPS
+//! evaluation 2,988 µs there against 1,653 µs here, heap +54 KB against 0.)
 //!
-//! - **Old:** extreme-race's engine.wasm (the bytes the firmware embeds) under
-//!   wasm3, through `common::engine::WasmEngine`, called as the firmware's
-//!   host calls it: the input (`on_location` / `on_event` / `on_timer`), then
-//!   `next_timer`, then `view` when the engine says its view changed.
-//! - **New:** engine/race/engine.expr as bytecode (in flash, run in place)
-//!   on `lang/vm`, with the sailing builtins, called as the host will
-//!   (engine/PROFILE.md §3): one `vm::run` per event (`{gps: …}`,
-//!   `{wake: {}}` or one of Race's own), the output's `state` copied into
-//!   the state buffer (the host's swap), its `wake` read as the timer, and
-//!   its `view` left in the output buffer, where the host reads it to
-//!   publish (the comparison reads it there).
+//! engine/race/engine.expr as bytecode (in flash, run in place) on
+//! `lang/vm`, with the sailing builtins, called as the host does
+//! (engine/PROFILE.md §3): one `vm::run` per event (`{gps: …}`, `{wake:
+//! {}}` or one of Race's own), the output's `state` copied into the state
+//! buffer, its `wake` read as the timer, and its `view` read in the output
+//! buffer.
 //!
-//! Both get the same events, as the firmware delivers them (no tick): a set
-//! line; GPS updates approaching it; a sequence and bump events; then
-//! sequences of one second, each ended by the wake at its gun. The wakes
-//! are scripted at the times the engines ask for, and the bench checks that
-//! both asked for exactly those. Their results are compared after every
-//! evaluation. Times come from the SYSTIMER (µs); RAM from esp-alloc's
-//! statistics and wasm3's own counters; native stack by painting it. Same
-//! heap as the firmware (64 KiB + 64 KiB), same CPU clock, the firmware's
-//! release profile; but nothing else running (no radio, no executor), so
-//! these are the engines alone.
+//! The events come as the firmware delivers them (no tick): a set line; GPS
+//! updates approaching it; a sequence and bump events; then sequences of
+//! one second, each ended by the wake at its gun. The wakes are scripted at
+//! the times the engine asks for, and the bench checks that it asked for
+//! exactly those. Times come from the SYSTIMER (µs); RAM from esp-alloc's
+//! statistics; native stack by painting it. Same heap as the firmware (64
+//! KiB + 64 KiB), same CPU clock, the firmware's release profile; but
+//! nothing else running (no radio, no executor), so this is the engine
+//! alone.
 
 #![no_std]
 #![no_main]
@@ -150,12 +146,10 @@ fn micros(since: Instant) -> u64 {
     since.elapsed().as_micros()
 }
 
-/// What clients would see, and the timer, to compare the two engines, in
-/// the old view's terms: a line with both ends but no crossing yet is the
-/// old time 0, no speed yet the old speed 0. The old crossing percentage
-/// isn't compared: the new view has none (no client shows it). Nor is the
-/// heading: the old view zeroes it at the gun, where the new view keeps the
-/// last (engine/race's tests check both).
+/// What clients would see, and the timer, in the terms the wasm3 engine's
+/// view had (from when the two were compared): a line with both ends but
+/// no crossing yet is time 0, no speed yet speed 0. The bench checks the
+/// timer against the script.
 #[derive(Clone, Copy, PartialEq, defmt::Format)]
 struct Seen {
     phase: u8,
@@ -167,86 +161,8 @@ struct Seen {
     wake: i64,
 }
 
-const SEEN0: Seen = Seen { phase: 0, start: 0, line: 0, time: 0, speed: 0.0, wake: -1 };
+// ---- the engine ----
 
-// ---- the old engine ----
-
-#[cfg(feature = "old")]
-mod old {
-    use common::engine::{Outcome, WasmEngine};
-    use extreme_protocol::{Package, UiHashes, package_id};
-    use extreme_race::{LineView, Phase, RaceView};
-    use extreme_sdk::{Fix, Location, Velocity};
-
-    use super::{Input, Seen};
-
-    /// Race as the firmware ships it: the same engine.wasm, in flash.
-    pub static RACE: Package = Package {
-        id: package_id("race"),
-        name: "race",
-        version: 1,
-        abi: extreme_sdk::abi::VERSION,
-        content_hash: [0; 8],
-        ui: UiHashes { web: [0; 8], watch: [0; 8] },
-        memory: 0, // informational; WasmEngine reads the module's own
-        engine: include_bytes!(concat!(env!("OUT_DIR"), "/engine.wasm")),
-        web: &[],
-        watch: &[],
-    };
-
-    /// One event, as common::host does it: the call, `next_timer` (its
-    /// reschedule), and `view` if the view changed (its publish). The time
-    /// of the call alone, µs.
-    pub fn eval(e: &mut WasmEngine, now: u64, input: Input) -> u64 {
-        let t = super::Instant::now();
-        let outcome = match input {
-            Input::Fix { lat, lon, speed, heading } => e.on_location(
-                now,
-                &Location { timestamp: now, fix: Some(Fix { lat, lon }), velocity: Some(Velocity { speed, heading }) },
-            ),
-            Input::Wake => e.on_timer(now, now),
-            Input::LineStbd => e.on_event(now, &[0]),
-            Input::LinePort => e.on_event(now, &[1]),
-            Input::Bump { seconds, tapped_at } => {
-                let mut buf = [0u8; 24];
-                let bytes = postcard::to_slice(&(2u8, seconds, tapped_at), &mut buf).unwrap();
-                e.on_event(now, bytes)
-            }
-            Input::Finish => e.on_event(now, &[3]),
-        }
-        .unwrap();
-        let call = super::micros(t);
-        e.next_timer().unwrap();
-        if outcome == Outcome::Changed {
-            let mut buf = [0u8; 64];
-            e.view(now, &mut buf).unwrap();
-        }
-        call
-    }
-
-    pub fn seen(e: &mut WasmEngine, now: u64) -> Seen {
-        let mut buf = [0u8; 64];
-        let n = e.view(now, &mut buf).unwrap();
-        let v: RaceView = postcard::from_bytes(&buf[..n]).unwrap();
-        let line = |l: LineView| match l {
-            LineView::None => (0, 0),
-            LineView::Stbd => (1, 0),
-            LineView::Port => (2, 0),
-            LineView::Both { time, .. } => (3, time as i64),
-        };
-        let (phase, start, (l, time)) = match v.phase {
-            Phase::Active { line: l } => (0, 0, line(l)),
-            Phase::InSequence { start_time, line: l } => (1, start_time as i64, line(l)),
-            Phase::Racing { start_time, .. } => (2, start_time as i64, (0, 0)),
-        };
-        let wake = e.next_timer().unwrap().map_or(-1, |w| w as i64);
-        Seen { phase, start, line: l, time, speed: v.speed, wake }
-    }
-}
-
-// ---- the new engine ----
-
-#[cfg(feature = "new")]
 mod new {
     use vm::{HostFn, ListInput, Program, Value};
 
@@ -463,9 +379,6 @@ fn main() -> ! {
         heap0,
         main_stack_size()
     );
-    #[cfg(feature = "old")]
-    defmt::info!("code: race engine.wasm {=usize} B", old::RACE.engine.len());
-    #[cfg(feature = "new")]
     defmt::info!(
         "code: race bytecode {=usize} B; compiler: stack {=usize} + locals {=usize} + output {=usize} slots x 16 = {=usize} B; Value is {=usize} B",
         new::RACE_BIN.len(),
@@ -518,102 +431,6 @@ fn main() -> ! {
         _ => None,
     };
 
-    // ---- old: wasm3 ----
-    #[cfg(feature = "old")]
-    let old_seen = {
-        use common::engine::WasmEngine;
-        static mut SEEN: [Seen; EVALUATIONS] = [SEEN0; EVALUATIONS];
-        let seen = unsafe { &mut *core::ptr::addr_of_mut!(SEEN) };
-        let (h0, _) = heap();
-        let (w0, _, _) = common::wasm3::heap_use();
-        let ((mut e, load_us), load_stack) = stack_used(|| {
-            let t = Instant::now();
-            let e = WasmEngine::new(&old::RACE, T0).unwrap();
-            (e, micros(t))
-        });
-        let (h1, _) = heap();
-        let (w1, _, wb1) = common::wasm3::heap_use();
-        defmt::info!(
-            "old load: WasmEngine::new (parse, load, link, find exports, init) {=u64} us; native stack {=usize} B; heap +{=usize} B (wasm3 +{=usize} B in {=usize} blocks); linear memory {=usize} B, wasm3 value stack 4096 B (in the heap)",
-            load_us,
-            load_stack,
-            h1 - h0,
-            w1 - w0,
-            wb1,
-            e.memory_size()
-        );
-        let mut total = [Times::new(), Times::new(), Times::new()];
-        let mut call = [Times::new(), Times::new(), Times::new()];
-        let mut first_stack = [0usize; 3];
-        let mut steady_stack = [0usize; 3];
-        let mut seen_kind = [0usize; 3];
-        let mut timers_off = 0;
-        for (i, &(now, input)) in script.iter().enumerate() {
-            let kind = kind(i, input);
-            let (c, tot) = if kind < 3 && (seen_kind[kind] == 0 || seen_kind[kind] == 10) {
-                let ((c, tot), used) = stack_used(|| {
-                    let t = Instant::now();
-                    let c = old::eval(&mut e, now, input);
-                    (c, micros(t))
-                });
-                if seen_kind[kind] == 0 {
-                    first_stack[kind] = used;
-                } else {
-                    steady_stack[kind] = used;
-                }
-                (c, tot)
-            } else {
-                let t = Instant::now();
-                let c = old::eval(&mut e, now, input);
-                (c, micros(t))
-            };
-            if kind < 3 {
-                seen_kind[kind] += 1;
-                total[kind].push(tot);
-                call[kind].push(c);
-            }
-            seen[i] = old::seen(&mut e, now);
-            if asks_for_next_wake(i, &seen[i]) == Some(false) {
-                timers_off += 1;
-            }
-        }
-        total[0].log("old GPS update, line set (on_location + next_timer + view)");
-        call[0].log("old GPS update, line set (on_location alone)");
-        total[1].log("old bump event (on_event + next_timer + view)");
-        call[1].log("old bump event (on_event alone)");
-        total[2].log("old wake, the gun (on_timer + next_timer + view)");
-        call[2].log("old wake, the gun (on_timer alone)");
-        let (h2, hmax) = heap();
-        let (w2, wpeak, wb2) = common::wasm3::heap_use();
-        defmt::info!(
-            "old RAM after {=usize} evaluations: heap +{=usize} B over the start (peak since boot {=usize} B used); wasm3 {=usize} B in {=usize} blocks, peak {=usize} B; engine stack unused (bottom of linear memory) {=usize} B",
-            script.len(),
-            h2 - h0,
-            hmax,
-            w2,
-            wb2,
-            wpeak,
-            e.stack_unused()
-        );
-        defmt::info!(
-            "old native stack: GPS update {=usize} B (first call, compiling: {=usize} B); bump {=usize} B (first: {=usize} B); wake {=usize} B (first: {=usize} B)",
-            steady_stack[0],
-            first_stack[0],
-            steady_stack[1],
-            first_stack[1],
-            steady_stack[2],
-            first_stack[2]
-        );
-        defmt::info!("old timer: {=usize} evaluations asked for a timer other than the scripted wake", timers_off);
-        drop(e);
-        let (h3, _) = heap();
-        let (w3, _, _) = common::wasm3::heap_use();
-        defmt::info!("old dropped: heap back to +{=usize} B over the start; wasm3 {=usize} B", h3 - h0, w3);
-        &*seen
-    };
-
-    // ---- new: lang/vm ----
-    #[cfg(feature = "new")]
     {
         use new::TrackFix;
         let (h0, _) = heap();
@@ -638,7 +455,6 @@ fn main() -> ! {
         let mut stack = [0usize; 3];
         let mut instructions = [0u32; 3];
         let mut seen_kind = [0usize; 3];
-        let mut mismatches = 0;
         let mut timers_off = 0;
         for (i, &(now, input)) in script.iter().enumerate() {
             let kind = kind(i, input);
@@ -663,13 +479,6 @@ fn main() -> ! {
             let seen = e.seen();
             if asks_for_next_wake(i, &seen) == Some(false) {
                 timers_off += 1;
-            }
-            #[cfg(feature = "old")]
-            if seen != old_seen[i] {
-                if mismatches < 5 {
-                    defmt::warn!("evaluation {=usize}: old {} new {}", i, old_seen[i], seen);
-                }
-                mismatches += 1;
             }
         }
         times[0].log("new GPS update, line set (program + state copy)");
@@ -697,8 +506,6 @@ fn main() -> ! {
             core::mem::size_of_val(&e.linked)
         );
         defmt::info!("new timer: {=usize} evaluations asked for a timer other than the scripted wake", timers_off);
-        #[cfg(feature = "old")]
-        defmt::info!("compared: {=usize} of {=usize} evaluations differ between old and new (view and timer)", mismatches, script.len());
     }
 
     defmt::info!("enginebench: done");

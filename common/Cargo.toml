@@ -37,13 +37,14 @@ defmt = { version = "1.0", optional = true }
 # AtomicU64 on targets without 64-bit atomics (fallback is a no-op where they exist)
 portable-atomic = { workspace = true, features = ["fallback"] }
 
-# Local crates: the host protocol, the engine ABI and shared types, the
-# interpreter the engines run in
+# Local crates: the host protocol; bundles (the archive, its device tables,
+# the install check); the VM the engines run on and the sailing builtins
+# they link against; the bitwire codec views and events travel in. lang/,
+# engine/, bundle/ and wire/ are workspaces of their own, depended on by path.
 extreme-protocol = { path = "../extreme-protocol" }
-extreme-sdk = { path = "../extreme-sdk" }
-extreme-wasm3 = { path = "../extreme-wasm3" }
-# The bitwire codec (wire/rust, a stand-alone crate); src/wire_bridge.rs
-# converts the engines' postcard to and from it until the engines speak it.
+bundle = { package = "extreme-bundle", path = "../bundle", default-features = false }
+vm = { package = "lang-vm", path = "../lang/vm" }
+sailing = { package = "engine-builtins", path = "../engine/builtins" }
 bitwire = { path = "../wire/rust" }
 
 [features]
@@ -59,10 +60,11 @@ ble = ["dep:trouble-host", "dep:heapless09", "dep:static_cell"]
 embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
 critical-section = { version = "1.2", features = ["std"] }
 postcard = { workspace = true, features = ["use-std"] }
-# the real Race and Tune packages, run by the host under wasm3 in the tests
+# the host tests run the real bundles: Choose (embedded) and Race
+# (target/packages/race.bundle, `cargo run -p extreme-pack -- --bundle`);
+# `std` packs variants of Race's archive
 extreme-packages = { path = "../extreme-packages" }
-extreme-race = { path = "../extreme-race" }
-extreme-tune = { path = "../extreme-tune" }
+bundle = { package = "extreme-bundle", path = "../bundle", features = ["std"] }
 log = { workspace = true, features = ["std"] }
-# src/wire_bridge.rs tests read fixtures/wire-bridge/wire-bridge.json
+# views and events as JSON, through wire/rust's test adapter (host/tests.rs)
 serde_json = { workspace = true }

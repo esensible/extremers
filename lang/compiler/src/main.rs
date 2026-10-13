@@ -5,10 +5,11 @@
 //!   langc dump PROGRAM.expr --interface IFACE.json
 //!
 //! `check` reports diagnostics and the program's memory, then evaluates any
-//! sample runs on the VM: `{"runs": [{"inputs": {"name": value, …}}, …]}`.
-//! `dump` prints the emitted code, one instruction per line.
+//! sample runs on the VM: `{"runs": [{"inputs": {"name": value, …}, "chain"?: {"name": "output.path"}}, …]}`
+//! (spec §5.3). `dump` prints the emitted code, one instruction per line.
 
-use compiler::{Options, RunResult, compile, run};
+use compiler::samples::run_samples;
+use compiler::{Options, compile};
 use serde_json::{Value as Json, json};
 use std::process::ExitCode;
 
@@ -67,27 +68,31 @@ fn real_main() -> Result<ExitCode, String> {
             let mut failed = false;
             if let Some(path) = flag("--samples") {
                 let samples = read_json(&path)?;
-                for (i, r) in samples.get("runs").and_then(Json::as_array).ok_or("samples need a `runs` list")?.iter().enumerate() {
-                    let inputs = r.get("inputs").and_then(Json::as_object).ok_or("each run needs `inputs`")?;
-                    // langc is generic: it has no host builtins, so a program
-                    // that calls any can't be sample-run here (the host's own
-                    // tooling runs those).
-                    let res = run(&compiled.bytes, &iface, inputs, &[])?;
-                    match &res {
-                        RunResult::Ok { value, stack_high, steps } => {
-                            if *stack_high > compiled.memory.stack_slots {
-                                return Err(format!("run {i}: the VM used {stack_high} stack slots, more than the {} the compiler worked out (a compiler bug)", compiled.memory.stack_slots));
-                            }
-                            runs_out.push(json!({"run": i, "ok": value, "stack_high": stack_high, "steps": steps}));
+                // langc is generic: it has no host builtins, so a program
+                // that calls any can't be sample-run here (the host's own
+                // tooling runs those).
+                let report = run_samples(&compiled.bytes, &iface, &samples, &[]);
+                if let Some(e) = report.get("invalid") {
+                    return Err(e.as_str().unwrap_or("invalid samples").to_string());
+                }
+                for r in report["runs"].as_array().into_iter().flatten() {
+                    let i = &r["run"];
+                    if let Some(e) = r.get("invalid") {
+                        return Err(format!("run {i}: {}", e.as_str().unwrap_or("invalid")));
+                    }
+                    if r["ok"] == true {
+                        let stack_high = r["stack_high"].as_u64().unwrap_or(0);
+                        if stack_high > compiled.memory.stack_slots as u64 {
+                            return Err(format!("run {i}: the VM used {stack_high} stack slots, more than the {} the compiler worked out (a compiler bug)", compiled.memory.stack_slots));
                         }
-                        RunResult::Failed { code, span } => {
-                            failed = true;
-                            let at = span.map(|(s, _)| {
-                                let (l, c) = compiler::diag::line_col(&src, s);
-                                format!("{program}:{l}:{c}")
-                            });
-                            runs_out.push(json!({"run": i, "error": code, "at": at, "help": runtime_help(code)}));
-                        }
+                        runs_out.push(json!({"run": i, "ok": r["tagged"], "stack_high": stack_high, "steps": r["steps"]}));
+                    } else {
+                        failed = true;
+                        let at = r["span"]["start"].as_u64().map(|s| {
+                            let (l, c) = compiler::diag::line_col(&src, s as u32);
+                            format!("{program}:{l}:{c}")
+                        });
+                        runs_out.push(json!({"run": i, "error": r["error"], "at": at, "help": r["help"]}));
                     }
                 }
             }
@@ -120,18 +125,6 @@ fn real_main() -> Result<ExitCode, String> {
             Ok(if failed { ExitCode::from(1) } else { ExitCode::SUCCESS })
         }
         other => Err(format!("unknown command `{other}`\n{USAGE}")),
-    }
-}
-
-/// What to do about a run-time error (spec §5.2).
-fn runtime_help(code: &str) -> &'static str {
-    match code {
-        "R-NIL" => "a nullable input or field is nil here: test it first (`x != nil ? x.f : …`), or read it with `?.` and give a default with `??`",
-        "R-INDEX" => "the index is out of range: check `len(xs)` first, or use `get(xs, i)`, which gives nil",
-        "R-DIV0" => "`%` by zero: check the divisor first",
-        "R-ARG" => "a builtin was given something it can't use (e.g. `reduce` with no initial value on an empty list, or a negative range)",
-        "R-INPUT" => "an input doesn't match its schema: this is the host's or the sample's mistake, not the program's",
-        _ => "this means a bug in the compiler: please report it with the program and the inputs",
     }
 }
 

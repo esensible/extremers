@@ -1,12 +1,10 @@
 //! The package host: the registry of installed packages, the selection (the
 //! *active* package) and its engine, the device clock and the engine's
-//! timer, and the broadcast of every change to every client (README "Host
-//! protocol").
+//! timer, the GPS track, and the broadcast of every change to every client
+//! (README "Host protocol").
 //!
 //! Transports ([`crate::http`], [`crate::ble`]) only move bytes; everything
 //! that touches the selection or an engine goes through [`Host`].
-
-extern crate alloc;
 
 use core::{cell::RefCell, sync::atomic::Ordering};
 
@@ -21,30 +19,31 @@ use portable_atomic::AtomicU64;
 
 use extreme_protocol::{
     ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, CHOOSE, ChooseView,
-    Envelope, GetAsset, HostEvent, Package, PackageId, PackageInfo, REGISTRY_MAX, STATE_MAX,
-    UiHashes, package_id,
+    Envelope, GetAsset, HostEvent, PackageId, PackageInfo, REGISTRY_MAX, STATE_MAX, UiHashes,
+    package_id,
 };
-use extreme_sdk::Location;
 
 use crate::{
     ble_settings::{BleCommand, BleStatus, BleStatusView},
-    config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS},
-    engine::{Outcome, WasmEngine},
+    config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS, TRACK_FIXES},
+    engine::{EngineMemory, Evaluated, Event, Rejected, VmEngine},
     fmt::Dbg,
     nmea::GpsUpdate,
+    package::Package,
+    track::RamTrack,
 };
 
 /// The packages a host can run: the built-in Choose (if installed) and the
-/// apps. Packages are `'static` (the preinstalled ones are in flash).
+/// apps, validated bundles (`'static`: in flash on the C6).
 pub struct Registry {
-    choose: Option<&'static Package>,
-    apps: heapless::Vec<&'static Package, { REGISTRY_MAX - 1 }>,
+    choose: Option<Package>,
+    apps: heapless::Vec<Package, { REGISTRY_MAX - 1 }>,
 }
 
 /// Why a package was not installed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallError {
-    /// Its engine speaks another ABI than v1, or it has none.
+    /// It has no engine (only Choose may be a page alone).
     Abi,
     /// Its id is not the hash of its name, or is Choose's.
     Id,
@@ -55,13 +54,13 @@ pub enum InstallError {
 impl Registry {
     /// `choose` (or none) and the `apps`; an app that cannot be installed
     /// is left out (logged).
-    pub fn new(choose: Option<&'static Package>, apps: &'static [Package]) -> Self {
+    pub fn new(choose: Option<Package>, apps: &[Package]) -> Self {
         let mut registry = Registry {
             choose,
             apps: heapless::Vec::new(),
         };
         for app in apps {
-            if let Err(e) = registry.install(app) {
+            if let Err(e) = registry.install(*app) {
                 error!("host: package {} not installed: {:?}", app.name, Dbg(&e));
             }
         }
@@ -69,8 +68,8 @@ impl Registry {
     }
 
     /// Installs `package`, replacing an installed one with its id.
-    pub fn install(&mut self, package: &'static Package) -> Result<(), InstallError> {
-        if package.abi != extreme_sdk::abi::VERSION || package.engine.is_empty() {
+    pub fn install(&mut self, package: Package) -> Result<(), InstallError> {
+        if package.engine.is_none() {
             return Err(InstallError::Abi);
         }
         if package.id == CHOOSE || package.id != package_id(package.name) {
@@ -91,7 +90,7 @@ impl Registry {
     }
 
     /// The installed package `id` (Choose is 0).
-    pub fn get(&self, id: PackageId) -> Option<&'static Package> {
+    pub fn get(&self, id: PackageId) -> Option<Package> {
         if id == CHOOSE {
             return self.choose;
         }
@@ -100,13 +99,13 @@ impl Registry {
 
     /// Where "back" goes: Choose if installed, else the first (the only)
     /// app; `None` with nothing installed at all.
-    pub fn default_package(&self) -> Option<&'static Package> {
+    pub fn default_package(&self) -> Option<Package> {
         self.choose.or_else(|| self.apps.first().copied())
     }
 
     /// What the host starts with: the only app when there is just one, or
     /// no Choose (single-app transparency); else Choose.
-    pub fn boot_package(&self) -> Option<&'static Package> {
+    pub fn boot_package(&self) -> Option<Package> {
         if self.apps.len() == 1 || self.choose.is_none() {
             self.apps.first().copied().or(self.choose)
         } else {
@@ -136,9 +135,9 @@ pub struct StateMessage {
     /// The active package's name, for logs.
     pub name: &'static str,
     pub ui: UiHashes,
-    /// The engine's view, postcard; empty for Choose, whose view each
-    /// transport makes for itself (the BLE status only goes on the
-    /// websocket).
+    /// The engine's view, bitwire (its `view.desc`); empty for Choose,
+    /// whose view each transport makes for itself (the BLE status only
+    /// goes on the websocket).
     pub view: heapless::Vec<u8, STATE_MAX>,
 }
 
@@ -160,7 +159,8 @@ pub enum Refused {
     /// An engine event for a package that is not the active one (a client
     /// that has not caught up yet), or for Choose.
     NotActive,
-    /// The engine did not take the bytes.
+    /// The engine did not take the bytes: not one of its events, outside
+    /// its declaration, or its evaluation failed.
     Engine,
     /// A `Ble` command over BLE, or on a host without BLE, or while one is
     /// still queued.
@@ -174,13 +174,29 @@ enum Timer {
     Cancel,
 }
 
-/// The active package.
+/// The active package, and what its engine runs on.
 struct Active {
-    package: &'static Package,
+    /// `None` with nothing installed at all (no engine, no page).
+    package: Option<Package>,
     /// `None` for Choose, or if the engine failed to start.
-    engine: Option<WasmEngine>,
+    engine: Option<VmEngine>,
     /// What the timer task was last told to wait for.
     timer: Option<u64>,
+    /// The engine's buffers, lent to every call.
+    memory: &'static mut EngineMemory,
+    /// `gps`: every fix since boot (the newest [`TRACK_FIXES`]), whichever
+    /// package is active.
+    track: RamTrack<TRACK_FIXES>,
+}
+
+impl Active {
+    fn id(&self) -> PackageId {
+        self.package.map_or(CHOOSE, |p| p.id)
+    }
+
+    fn name(&self) -> &'static str {
+        self.package.map_or("nothing", |p| p.name)
+    }
 }
 
 pub struct Host {
@@ -211,14 +227,16 @@ pub struct Host {
 
 impl Host {
     /// A host running `registry`, starting with its boot package
-    /// ([`Registry::boot_package`]).
-    pub fn new(registry: Registry) -> Self {
+    /// ([`Registry::boot_package`]); its engines run in `memory`.
+    pub fn new(registry: Registry, memory: &'static mut EngineMemory) -> Self {
         let boot = registry.boot_package();
         let host = Host {
             active: Mutex::new(Active {
-                package: boot.unwrap_or(&NOTHING),
+                package: boot,
                 engine: None,
                 timer: None,
+                memory,
+                track: RamTrack::new(),
             }),
             registry: BlockingMutex::new(RefCell::new(registry)),
             tick_offset: AtomicU64::new(0),
@@ -228,8 +246,7 @@ impl Host {
             ble_commands: Channel::new(),
         };
         if let Ok(mut active) = host.active.try_lock() {
-            let package = active.package;
-            host.start(&mut active, package);
+            host.start(&mut active, boot);
         }
         host
     }
@@ -248,7 +265,7 @@ impl Host {
     // ---- packages ----
 
     /// The installed package `id`.
-    pub fn package(&self, id: PackageId) -> Option<&'static Package> {
+    pub fn package(&self, id: PackageId) -> Option<Package> {
         self.registry.lock(|r| r.borrow().get(id))
     }
 
@@ -271,26 +288,26 @@ impl Host {
         match self.package(request.package) {
             // not installed, or nothing to fetch
             None => refused(ASSET_UNKNOWN_PACKAGE),
-            Some(package) if package.watch.is_empty() => refused(ASSET_UNKNOWN_PACKAGE),
+            Some(package) if package.watch().is_empty() => refused(ASSET_UNKNOWN_PACKAGE),
             Some(package) if package.ui.watch != request.hash => refused(ASSET_HASH_NOT_CURRENT),
             Some(package) => (
                 AssetHeader {
                     status: ASSET_OK,
-                    len: package.watch.len() as u32,
+                    len: package.watch().len() as u32,
                 },
-                package.watch,
+                package.watch(),
             ),
         }
     }
 
     /// Installs (or updates) `package` at run time; the clients' Choose
     /// lists change at once. Updating the active package restarts it.
-    pub async fn install(&self, package: &'static Package) -> Result<(), InstallError> {
+    pub async fn install(&self, package: Package) -> Result<(), InstallError> {
         let mut active = self.active.lock().await;
         self.registry.lock(|r| r.borrow_mut().install(package))?;
         info!("host: installed {} v{}", package.name, package.version);
-        if active.package.id == package.id {
-            self.start(&mut active, package);
+        if active.id() == package.id {
+            self.start(&mut active, Some(package));
         }
         self.publish(&mut active);
         Ok(())
@@ -302,9 +319,9 @@ impl Host {
         if !self.registry.lock(|r| r.borrow_mut().remove(id)) {
             return false;
         }
-        if active.package.id == id {
+        if active.id() == id {
             let default = self.registry.lock(|r| r.borrow().default_package());
-            self.start(&mut active, default.unwrap_or(&NOTHING));
+            self.start(&mut active, default);
         }
         self.publish(&mut active);
         true
@@ -324,20 +341,11 @@ impl Host {
             HostEvent::SelectDefault => self.select(None).await,
             HostEvent::Engine { package, bytes } => {
                 let mut active = self.active.lock().await;
-                if package != active.package.id {
+                if package != active.id() || active.engine.is_none() {
                     return Err(Refused::NotActive);
                 }
-                let now = self.now();
-                let Some(engine) = active.engine.as_mut() else {
-                    return Err(Refused::NotActive);
-                };
-                match engine.on_event(now, bytes) {
-                    Ok(Outcome::Refused) => Err(Refused::Engine),
-                    outcome => {
-                        self.apply(&mut active, outcome);
-                        Ok(())
-                    }
-                }
+                let result = self.evaluate(&mut active, Event::Client(bytes));
+                result.map(|_| ()).map_err(|_| Refused::Engine)
             }
             HostEvent::Ble(command) => {
                 if transport == Transport::Ble {
@@ -363,39 +371,34 @@ impl Host {
         let Some(package) = package else {
             return Err(Refused::NotInstalled);
         };
-        if package.id != active.package.id {
-            self.start(&mut active, package);
+        if package.id != active.id() {
+            self.start(&mut active, Some(package));
         }
         // sent either way: the client that asked learns where things are
         self.publish(&mut active);
         Ok(())
     }
 
-    /// Feeds a GPS update to the engine. The first GPS time also sets the
-    /// clock used by [`now`](Self::now).
+    /// A GPS update: a fix goes on the track (whichever package is
+    /// active), then the engine evaluates `{gps: {fix?, velocity?}}`, the
+    /// fix being the track's last. The first GPS time also sets the clock
+    /// used by [`now`](Self::now).
     pub async fn gps_update(&self, update: GpsUpdate) {
-        let timestamp = match update.timestamp {
-            Some(timestamp) => {
-                if self.tick_offset.load(Ordering::Relaxed) == 0 {
-                    let uptime = Instant::now().as_millis();
-                    self.tick_offset
-                        .store(timestamp.saturating_sub(uptime), Ordering::Relaxed);
-                    info!("clock set from GPS: {} ms since epoch", timestamp);
-                }
-                timestamp
-            }
-            None => self.now(),
-        };
-        let location = Location {
-            timestamp,
-            fix: update.fix,
-            velocity: update.velocity,
-        };
+        if let Some(timestamp) = update.timestamp
+            && self.tick_offset.load(Ordering::Relaxed) == 0
+        {
+            let uptime = Instant::now().as_millis();
+            self.tick_offset
+                .store(timestamp.saturating_sub(uptime), Ordering::Relaxed);
+            info!("clock set from GPS: {} ms since epoch", timestamp);
+        }
         let mut active = self.active.lock().await;
-        let now = self.now();
-        if let Some(engine) = active.engine.as_mut() {
-            let outcome = engine.on_location(now, &location);
-            self.apply(&mut active, outcome);
+        let now = self.now() as i64;
+        let fix = update.fix.map(|f| (active.track.append(now, f.lat, f.lon), f.lat, f.lon));
+        let velocity = update.velocity.map(|v| (v.speed, v.heading));
+        if active.engine.is_some() {
+            // a rejection is logged by the engine, and changes nothing
+            let _ = self.evaluate(&mut active, Event::Gps { fix, velocity });
         }
     }
 
@@ -403,8 +406,8 @@ impl Host {
 
     /// The current state.
     pub async fn current_state(&self) -> StateMessage {
-        let mut active = self.active.lock().await;
-        self.capture(&mut active)
+        let active = self.active.lock().await;
+        self.capture(&active)
     }
 
     /// Subscribes to changes. Subscribe before reading
@@ -444,7 +447,7 @@ impl Host {
 
     // ---- the engine timer ----
 
-    /// Delivers the engine's timer. Run exactly once, in its own task.
+    /// Delivers the engine's wake. Run exactly once, in its own task.
     pub async fn run_timer(&self) -> ! {
         let mut instructions = loop {
             match self.timer_channel.dyn_subscriber() {
@@ -456,7 +459,7 @@ impl Host {
             }
         };
 
-        // when the engine wants its timer, epoch ms
+        // when the engine wants its wake, epoch ms
         let mut pending: Option<u64> = None;
         loop {
             let Some(at) = pending else {
@@ -484,10 +487,8 @@ impl Host {
                     }
                     debug!("timer: firing for {}", at);
                     active.timer = None;
-                    let now = self.now();
-                    if let Some(engine) = active.engine.as_mut() {
-                        let outcome = engine.on_timer(now, at);
-                        self.apply(&mut active, outcome);
+                    if active.engine.is_some() {
+                        let _ = self.evaluate(&mut active, Event::Wake);
                     }
                 }
             }
@@ -530,73 +531,86 @@ impl Host {
     // ---- internals, called with `active` locked ----
 
     /// Makes `package` active with a fresh engine (the old one is dropped
-    /// first, so the two are never in memory together) and cancels the old
-    /// timer. If the engine does not start the default package takes over.
-    fn start(&self, active: &mut Active, package: &'static Package) {
+    /// first: they share the buffers) and cancels the old timer. If the
+    /// engine does not start the default package takes over.
+    fn start(&self, active: &mut Active, package: Option<Package>) {
         active.engine = None;
         active.package = package;
         if active.timer.take().is_some() {
             self.tell_timer(Timer::Cancel);
         }
-        if package.engine.is_empty() {
+        let Some(package) = package else {
+            info!("host: nothing installed");
+            return;
+        };
+        if package.engine.is_none() {
             info!("host: {} active", package.name);
             return;
         }
-        match WasmEngine::new(package, self.now()) {
-            Ok(mut engine) => {
+        let now = self.now() as i64;
+        let started = Instant::now();
+        match VmEngine::start(&package, now, active.memory, &active.track) {
+            Ok(engine) => {
+                let (stack, locals, inputs, outputs) = engine.slots();
+                let stats = engine.stats();
                 info!(
-                    "host: {} v{} active (engine.wasm {} B, memory {} B)",
+                    "host: {} v{} active: started in {} us (code + constants {} B; slots: stack {}, locals {}, inputs {}, outputs {}); first evaluation {} instructions, stack high {}",
                     package.name,
                     package.version,
-                    package.engine.len(),
-                    engine.memory_size()
+                    started.elapsed().as_micros(),
+                    engine.program_bytes(),
+                    stack,
+                    locals,
+                    inputs,
+                    outputs,
+                    stats.steps,
+                    stats.stack_high
                 );
                 active.engine = Some(engine);
                 self.reschedule(active);
             }
             Err(e) => {
-                error!("host: {}: engine does not start: {}", package.name, e);
+                error!("host: {}: engine does not start: {:?}", package.name, Dbg(&e));
                 let default = self.registry.lock(|r| r.borrow().default_package());
                 if let Some(default) = default
                     && default.id != package.id
                 {
-                    self.start(active, default);
+                    self.start(active, Some(default));
                 }
             }
         }
     }
 
-    /// Acts on what an engine call said: tells the clients if the view
-    /// changed and the timer task if the engine's timer moved. A trap (a
-    /// bug in the package) stops the engine and returns to the default.
-    fn apply(&self, active: &mut Active, outcome: Result<Outcome, &'static str>) {
-        match outcome {
-            Ok(Outcome::Changed) => {
-                self.reschedule(active);
-                self.publish(active);
-            }
-            Ok(_) => self.reschedule(active),
-            Err(e) => {
-                error!("host: {}: engine trapped: {}; back to the default", active.package.name, e);
-                let default = self.registry.lock(|r| r.borrow().default_package());
-                self.start(active, default.unwrap_or(&NOTHING));
-                self.publish(active);
-            }
+    /// Evaluates `event` on the active engine (the caller checked there is
+    /// one). If it was evaluated: the timer task is told if the wake moved,
+    /// and the clients if the view changed. If not, nothing changed.
+    fn evaluate(&self, active: &mut Active, event: Event) -> Result<Evaluated, Rejected> {
+        let now = self.now() as i64;
+        let Active { engine, memory, track, .. } = active;
+        let Some(engine) = engine.as_mut() else {
+            return Err(Rejected::Undecodable);
+        };
+        let evaluated = engine.evaluate(memory, track, now, event)?;
+        let stats = engine.stats();
+        debug!(
+            "engine {}: {} instructions, stack high {}",
+            active.name(),
+            stats.steps,
+            stats.stack_high
+        );
+        self.reschedule(active);
+        if evaluated.changed {
+            self.publish(active);
         }
+        Ok(evaluated)
     }
 
-    /// Asks the engine for its timer and tells the timer task if it moved.
+    /// Tells the timer task if the engine's wake moved.
     fn reschedule(&self, active: &mut Active) {
-        let Some(engine) = active.engine.as_mut() else {
+        let Some(engine) = active.engine.as_ref() else {
             return;
         };
-        let next = match engine.next_timer() {
-            Ok(next) => next,
-            Err(e) => {
-                error!("host: {}: next_timer trapped: {}", active.package.name, e);
-                None
-            }
-        };
+        let next = engine.wake().map(|at| at.max(0) as u64);
         if next != active.timer {
             active.timer = next;
             self.tell_timer(match next {
@@ -612,21 +626,16 @@ impl Host {
     }
 
     /// The state as clients see it now.
-    fn capture(&self, active: &mut Active) -> StateMessage {
+    fn capture(&self, active: &Active) -> StateMessage {
         let mut view = heapless::Vec::new();
-        let now = self.now();
-        if let Some(engine) = active.engine.as_mut() {
-            let mut buf = [0u8; STATE_MAX];
-            match engine.view(now, &mut buf) {
-                // cannot fail: buf is STATE_MAX long
-                Ok(len) => view.extend_from_slice(&buf[..len]).unwrap_or(()),
-                Err(e) => error!("host: {}: view: {}", active.package.name, e),
-            }
+        if let Some(engine) = active.engine.as_ref() {
+            // cannot fail: a view is at most STATE_MAX bytes
+            view.extend_from_slice(engine.view(active.memory)).unwrap_or(());
         }
         StateMessage {
-            active: active.package.id,
-            name: active.package.name,
-            ui: active.package.ui,
+            active: active.id(),
+            name: active.name(),
+            ui: active.package.map_or(UiHashes::default(), |p| p.ui),
             view,
         }
     }
@@ -645,20 +654,6 @@ fn next_pending(instruction: Timer) -> Option<u64> {
         Timer::Cancel => None,
     }
 }
-
-/// Active on a host with nothing installed at all: no engine, no page.
-static NOTHING: Package = Package {
-    id: CHOOSE,
-    name: "nothing",
-    version: 0,
-    abi: 0,
-    content_hash: [0; 8],
-    ui: UiHashes { web: [0; 8], watch: [0; 8] },
-    memory: 0,
-    engine: &[],
-    web: &[],
-    watch: &[],
-};
 
 #[cfg(test)]
 mod tests;
