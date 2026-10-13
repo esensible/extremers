@@ -1,0 +1,33 @@
+// Tune (extreme-tune's TuneSpeed): the current speed and heading against
+// their time-weighted means over the last 30 s. Each sample is weighted by
+// the time until the next one, clipped to the window; the newest sample
+// gets no weight.
+//
+// The heading mean is the weighted mean of each heading's difference from
+// the current one, wrapped to -180..180. extreme-tune takes the circular
+// mean (atan2 of the weighted sin and cos sums); the language has no sin,
+// cos or atan2, and for headings within a few degrees of each other the two
+// agree to well under 0.001°.
+let s = state ?? {samples: [], speed: 0.0, speed_dev: 0.0, heading_dev: 0.0};
+let v = event.gps?.velocity;
+let newest = last(s.samples)?.t;
+// No velocity, or a repeated or out-of-order sample: nothing changes.
+let next = v == nil || (newest != nil && timestamp <= newest) ? s : (
+  let ws = timestamp - 30000;
+  let joined = concat(s.samples, [{t: timestamp, speed: v.speed, heading: v.heading}]);
+  // Keep the newest sample before the window too: it covers the window's start.
+  let k = findLastIndex(joined, .t < ws) ?? 0;
+  let kept = {samples: joined[k:][-64:]};
+  let xs = kept.samples;
+  let n = len(xs);
+  let parts = map(xs, ({
+    w: #index + 1 < n ? (xs[#index + 1].t - max(.t, ws)) / 1000 : 0.0,
+    speed: .speed,
+    d: (let d = .heading - v.heading; d > 180 ? d - 360 : d < -180 ? d + 360 : d)
+  }));
+  let total = sum(map(parts, .w));
+  let mean_speed = total > 0 ? sum(map(parts, .w * .speed)) / total : v.speed;
+  let mean_d = total > 0 ? sum(map(parts, .w * .d)) / total : 0.0;
+  {samples: xs, speed: v.speed, speed_dev: v.speed - mean_speed, heading_dev: 0.0 - mean_d}
+);
+{state: next, view: {speed: next.speed, speed_dev: next.speed_dev, heading_dev: next.heading_dev}}

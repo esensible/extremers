@@ -150,12 +150,23 @@ again (or pack with that name). A project without the file uses its own name.
    only whitespace changes) and as given when it does not
    (`formatted: false`, `jsonError`): read it back for the stored text.
 5. `api.engine.check()` — compile, the smoke runs and `engine/samples.json`
-   (chained). Fix every diagnostic from its `help` before going on.
+   (chained). Fix every diagnostic from its `help` before going on. Its
+   `compile.memory` has `locals` and `held_slots` (the locals that list
+   literals and built lists hold for the whole evaluation, each `maxItems ×
+   item leaves`); the C6 allows 256 locals, which the compile does not
+   check: `sim.start` (6, below) does. `api.engine.layout()` shows the tables
+   the bundle carries, `stateLists` among them: each list the state keeps
+   between evaluations (`maxItems × itemLeaves` slots; the C6 holds 1,024
+   slots for up to 4 lists).
 6. `api.sim.start({ clock: 'virtual' })`, then `api.sim.gps({ t, lat, lon, speed, heading })`,
    `api.sim.event({ line_stbd: {} })`, `api.sim.advance(ms)`,
    `api.sim.state()`, `api.sim.history()`: a scripted run of the engine on
    the real host, with its refusals, publish rules and wake timer (above).
-   For the previews, `api.sim.start()` (live) again.
+   A list in the state round-trips as on the box: `api.sim.state().state`
+   shows the list the host kept. `sim.start` refuses a bundle the box would
+   (over its limits: "the engine needs more than the C6 has: locals",
+   state-list slots or state lists, with a hint). For the previews,
+   `api.sim.start()` (live) again.
 7. `api.ui.build({ target: 'both' })` (under the settings' name; a failed
    build keeps the last good one, and says so in `kept`),
    `api.preview.open({ target: 'kindle' })`, `api.preview.text('kindle')`,
@@ -229,7 +240,10 @@ fake of the box; it has not yet run against the hardware itself.
   rewinds to where the box asks, silence resends, a dropped link reconnects
   and resumes where the box is (the box keeps an upload 60 s). Commit makes
   the box check the SHA-256 and validate the bundle: its refusals say why
-  (`Invalid` with the validator's reason, `OverLimit`, `NoSpace`, `Full`).
+  (`Invalid` with the validator's reason, 1-16, e.g. 16 a state list in
+  `layout.bin`'s table that isn't the program's; `OverLimit` with which
+  limit, 1-10: code bytes, stack, locals, inputs, outputs, state leaves,
+  imports, view bytes, state-list slots, state lists; `NoSpace`, `Full`).
   The same name replaces the bundle on the box; a UI-only change keeps a
   running race. Progress: `api.device.status().progress` = `{ phase, sent,
   total, kbps }` (kbps: thousands of bytes a second).

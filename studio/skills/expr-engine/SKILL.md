@@ -37,7 +37,7 @@ There is nothing else: no `init`, no `step`, no `view.expr`, no `timer.expr`, no
 
 **Events.** An evaluation happens only when an event arrives. Events are asynchronous: GPS updates come at whatever rate the receiver gives (or never); client events whenever a client sends one.
 
-- `gps`, built in: `{fix?: Fix, velocity?: {speed, heading}}`. Either part may be absent: `{gps: {}}` is a valid event. `speed` is speed over ground in **knots**; `heading` is course over ground, degrees true, 0 ≤ x < 360. When `fix` is present it is also the last item of `gps`. `event.gps.velocity` is the receiver's **current** velocity only, and only in this event: nothing keeps past velocities. An average over past velocities would need a list in the state, and writing a list to the output is not implemented yet (section 3, "Lists"); keep a running aggregate in the state instead (a sum and a count, an exponential average; a heading's average moves by a fraction of `angle_diff(v.heading, avg)` and is wrapped back into 0..360 by hand, never averaged as plain numbers), or derive it from the track's positions (section 5, "A mean direction").
+- `gps`, built in: `{fix?: Fix, velocity?: {speed, heading}}`. Either part may be absent: `{gps: {}}` is a valid event. `speed` is speed over ground in **knots**; `heading` is course over ground, degrees true, 0 ≤ x < 360. When `fix` is present it is also the last item of `gps`. `event.gps.velocity` is the receiver's **current** velocity only, and only in this event: nothing keeps past velocities unless you do. To average past velocities, keep them in a bounded list in the state (section 3, "Lists"; section 5, "A list in the state: Tune"), keep a running aggregate (a sum and a count, an exponential average; a heading's average moves by a fraction of `angle_diff(v.heading, avg)` and is wrapped back into 0..360 by hand, never averaged as plain numbers), or derive it from the track's positions (section 5, "A mean direction").
 - `wake`, built in: `{}`. The time you asked for has come. It carries no data, and it can arrive when you no longer want it (the state moved on since you asked): decide from the state, and leave the state alone if there is nothing to do.
 - Your events: the variants of `event.schema.json`, e.g. `bump_seq {seconds, tapped_at}`, `race_finish {}`. You can't name one `gps` or `wake`. The host validates a client event against the schema (ranges, enums, lengths) before evaluating; one that fails is dropped.
 
@@ -69,7 +69,7 @@ The schemas use the wire subset of JSON Schema, plus bounds. The compiler reject
 | string | `{"type": "string", "maxLength": 8}` | `maxLength` is required ("a string needs `maxLength`"). |
 | enum | `{"enum": ["port", "stbd"]}` | |
 | record | `{"type": "object", "required": [...], "properties": {...}}` | A field not in `required` is optional, and optional means **absent**: there are no null values. |
-| list | `{"type": "array", "maxItems": 5, "items": ...}` | `maxItems` is required ("a list needs `maxItems`"). **But see "Lists" below.** |
+| list | `{"type": "array", "maxItems": 5, "items": ...}` | `maxItems` is required ("a list needs `maxItems`"). It is also what the list costs: see "Lists" below. |
 | variants | `oneOf` (below) | |
 
 **Variants** say "exactly one of these". Each alternative names one variant: it has exactly one property, lists it in `required`, and that property's schema is an object. From Race's state:
@@ -90,7 +90,13 @@ In JSON a value is `{"countdown": {"gun": 1790000300000}}`. An alternative that 
 
 **Model "which of several" with variants, never with a tag string.** Use an enum only for a value that an event carries.
 
-**Lists (as built).** The compiler cannot write a list into the output yet. Any list in the state or the view is `E-UNSUPPORTED` "the output field `state.xs` is a list; writing lists to the output isn't implemented yet". This includes an optional list field you never set: passing the state on whole (`{state: s}`) fails as soon as the schema has one. **Keep no lists in the state or the view.** Keep running aggregates instead: a count, the last value, the best value, a running sum. `Splits` (section 5) keeps the last and best lap and a count instead of a list of laps. The specs' bounded-list idiom, `concat(xs ?? [], [x])[-N:]`, doesn't compile today: both `concat` and slices are unimplemented.
+**Lists (as built).** A list can go in the state and in the view. Its value can be a list literal (`[]`, `[{t: timestamp, v: x}]`), a list passed on (`s.samples`), or a list the program builds with `map`, `filter`, `concat`, a slice `xs[a:b]` or `take(xs, n)`.
+
+- **The bounded-list idiom.** Append and keep the newest N: `concat(state?.xs ?? [], [x])[-N:]`, with the field's `maxItems` at least N. Without the slice it is `E-OUTPUT-BOUND` "the output field `state.samples` holds at most 64 items, but this can have 65" / "keep the last 64: `(…)[-64:]`". To keep a time window, filter by time and still bound it: `filter(concat(s.xs, [x]), .t >= timestamp - 30000)[-64:]`. Once the list is capped `len` stops growing, so keep a separate count if you need one.
+- **What a built list costs.** A list literal, and a list the program builds where a value is needed (an output field, a record field, a branch, a `??`, a `let` used as a value), is *held*: a block of `bound × item leaves` locals, reserved for the **whole evaluation**. The bound is the most items the compiler can prove: `xs[-N:]` has at most N items, `concat` the sum of its parts, `filter` and `map` their input's. An item's leaves are one per scalar field (plus one for each optional record in it). The block counts against the program's locals, and the C6 allows **256 locals** for everything. `api.engine.compile()` reports `memory.held_slots`, the locals that hold lists. **The compile does not stop you at 256**: it is the host that refuses the bundle, `api.sim.start()` (and the box at install) with "the engine needs more than the C6 has: locals". So check `memory.locals ≤ 256` after every change to a list's `maxItems`. (With `api.engine.compile({ limitBytes })` the compile fails with `E-LIMIT`, and its help names the held slots.) Beyond 32,768 held slots the compile fails with `E-HOLD`. Tune (section 5) keeps 64 samples of 3 fields: its lists hold 198 of its 225 locals. A list consumed by another list builtin (`sum(map(xs, .v))`, `last(filter(…))`) is never held and costs nothing.
+- **Hold a slice of `gps`, never `gps` itself.** A held `filter(gps, …)` or `map(gps, …)` has a bound of 20,480 (the schema can't express the gap between fixes), which can never fit. Slice by count first: `map(gps[-11:], ({lat: .lat, lon: .lon}))`.
+- **A state list round-trips on the device** (engine/PROFILE.md §3, "State lists"). After each accepted evaluation the host copies each list in the state into a region of its own, `maxItems × item leaves` slots. It serves that region to the next evaluation as `state`'s list. A rejected evaluation keeps the last state and its lists. Nothing survives a reboot. The C6 has **1,024 slots for up to 4 state lists** in all. A bundle over either limit is refused at install (`OverLimit`: state-list slots, or state lists). `api.engine.layout().stateLists` lists the state's lists with their `maxItems` and `itemLeaves`. In practice the 256 locals bind first: a list the program builds must also fit in them.
+- **A list in the view** is encoded in full on every publish, and the published value must fit 256 bytes. Keep view lists short.
 
 ## 4. Variants and nil
 
@@ -221,14 +227,67 @@ let next =
   - `count(gps, .t > timestamp - 60000)`, `last(gps)`, `find(gps, .t > since)?.t`, `findIndex(gps, .alt != nil)`;
   - `max(map(gps, .lat)) - min(map(gps, .lat))`, `sum(gps, .lat)`, `mean(map(gps, .lon))`;
   - each fix with the one before it: `sum(map(gps, #index > 0 ? distance(gps[#index - 1], #) : 0.0))` is the track length, and adding `&& .t > since` to the condition limits it to a time window.
-  - Slices (`gps[-11:]`) aren't implemented yet.
-- **What a look-back costs.** A `map`, `filter`, `sum`, `count` or `find` over `gps` runs its predicate once per fix: up to **20,480 iterations per evaluation**, on every GPS event, on the C6. A time window does not shorten the walk (there are no slices yet), so put the cheap test first and the work behind it: `#.t > w0 ? distance(…) : 0.0` costs one comparison for each fix outside the window. Two such sums are two walks. Prefer the newest fix directly: `last(gps)` is one access, not a walk. Keep a running aggregate in the state when the whole track is not needed.
-- **A mean direction.** There is no `sin`, `cos` or `atan2`, and no `mean_heading` (section 6), so a circular mean of headings can't be written today. A mean direction of travel can, from displacements, with `distance` and `bearing` standing in for the trigonometry:
+  - the newest N fixes: `gps[-11:]`, e.g. `sum(map(gps[-11:], .lat))`. Inside `map(gps[-11:], …)`, `#index` counts from the slice's start, so look back through the slice itself: `let w = gps[-11:]; sum(map(w, #index > 0 ? distance(w[#index - 1], #) : 0.0))` is the length of the last 10 legs (a slice of an input list is read in place: nothing is held).
+- **What a look-back costs.** A `map`, `filter`, `sum`, `count` or `find` over `gps` runs its predicate once per fix: up to **20,480 iterations per evaluation**, on every GPS event, on the C6. A time filter does not shorten the walk: `filter(gps, .t > w0)` still visits every fix. **A slice does**: `gps[-64:]` visits only the newest 64 fixes, however long the track. So prefer `gps[-N:]` to walking the whole track whenever a count of fixes will do (the receiver's rate gives the count for a time: at 1 Hz, `gps[-31:]` covers 30 s), and filter by time inside the slice if you must: `filter(gps[-64:], .t > w0)`. When you must walk the whole track, put the cheap test first and the work behind it: `#.t > w0 ? distance(…) : 0.0` costs one comparison for each fix outside the window. Two such sums are two walks. Prefer the newest fix directly: `last(gps)` is one access, not a walk. Keep a running aggregate, or a bounded list, in the state when the whole track is not needed.
+- **A mean direction.** There is no `sin`, `cos` or `atan2`, and no `mean_heading` (section 6), so a circular mean of headings can't be written today. Two things can. A mean of recent velocity headings, kept in a state list, as the weighted mean of each heading's wrapped difference from the current one (Tune, below). And a mean direction of travel from the track's displacements, with `distance` and `bearing` standing in for the trigonometry:
   - the window: `let w0 = timestamp - span_ms;` and the newest fix, `let newest = last(gps);`, inside `newest != nil ? … : nil`;
   - metres per degree here: `let m_lat = distance(newest, {lat: newest.lat + 0.01, lon: newest.lon}) * 100.0; let m_lon = distance(newest, {lat: newest.lat, lon: newest.lon + 0.01}) * 100.0;`
   - each segment in the window as a unit vector (north, east), weighted by the time it covers: `let north = sum(map(gps, #index > 0 && #.t > w0 ? (let p = gps[#index - 1]; let d = distance(p, #); d > 0.01 ? (#.lat - p.lat) * m_lat / d * float(#.t - max(p.t, w0)) : 0.0) : 0.0));`, and `east` the same with `lon` and `m_lon`;
   - the angle of (north, east), as `atan2` would give it: `let r = (north ** 2 + east ** 2) ** 0.5;` then `r > 0.0 ? bearing({lat: 0.0, lon: 0.0}, {lat: north / r * 0.01, lon: east / r * 0.01}) : nil`. At the equator a 0.01° offset is flat to about 10⁻⁶ degrees, so this is the vector's direction, 0 ≤ x < 360.
-  - `r` over the window's length is how steady the course was (1: straight; near 0: no mean direction): test it (Tune uses `r > span_ms * 0.001`) rather than trusting a heading made of noise. Over a short window segments are short and the flat-earth conversion from degrees to metres is exact enough; segments under 1 cm (`d > 0.01`) are left out. It is two walks of the track (above).
+  - `r` over the window's length is how steady the course was (1: straight; near 0: no mean direction): test it (e.g. `r > span_ms * 0.001`) rather than trusting a heading made of noise. Over a short window segments are short and the flat-earth conversion from degrees to metres is exact enough; segments under 1 cm (`d > 0.01`) are left out. It is two walks of the track (above); walk `gps[-N:]` instead when N fixes cover the window.
+
+**A list in the state: Tune.** The second worked example (abridged from `lang/examples/tune/program.expr`, extreme-tune's TuneSpeed): the current speed and heading against their **time-weighted means** over the last 30 s of velocity samples. Each sample is weighted by the time until the next one, clipped to the window; the newest gets no weight. The samples are a state list.
+
+`state.schema.json` (the view schema is `speed`, `speed_dev`, `heading_dev`, each `{"type": "number", "format": "float"}`, all required):
+
+```json
+{
+  "type": "object",
+  "required": ["samples", "speed", "speed_dev", "heading_dev"],
+  "properties": {
+    "samples": {"type": "array", "maxItems": 64, "items": {
+      "type": "object", "required": ["t", "speed", "heading"],
+      "properties": {"t": {"type": "integer", "format": "int64"}, "speed": {"type": "number"}, "heading": {"type": "number"}}}},
+    "speed": {"type": "number"},
+    "speed_dev": {"type": "number"},
+    "heading_dev": {"type": "number"}
+  }
+}
+```
+
+`engine.expr`:
+
+```
+let s = state ?? {samples: [], speed: 0.0, speed_dev: 0.0, heading_dev: 0.0};
+let v = event.gps?.velocity;
+let newest = last(s.samples)?.t;
+// No velocity, or a repeated or out-of-order sample: nothing changes.
+let next = v == nil || (newest != nil && timestamp <= newest) ? s : (
+  let ws = timestamp - 30000;
+  let joined = concat(s.samples, [{t: timestamp, speed: v.speed, heading: v.heading}]);
+  // Keep the newest sample before the window too: it covers the window's start.
+  let k = findLastIndex(joined, .t < ws) ?? 0;
+  let kept = {samples: joined[k:][-64:]};
+  let xs = kept.samples;
+  let n = len(xs);
+  let parts = map(xs, ({
+    w: #index + 1 < n ? (xs[#index + 1].t - max(.t, ws)) / 1000 : 0.0,
+    speed: .speed,
+    d: (let d = .heading - v.heading; d > 180 ? d - 360 : d < -180 ? d + 360 : d)
+  }));
+  let total = sum(map(parts, .w));
+  let mean_speed = total > 0 ? sum(map(parts, .w * .speed)) / total : v.speed;
+  let mean_d = total > 0 ? sum(map(parts, .w * .d)) / total : 0.0;
+  {samples: xs, speed: v.speed, speed_dev: v.speed - mean_speed, heading_dev: 0.0 - mean_d}
+);
+{state: next, view: {speed: next.speed, speed_dev: next.speed_dev, heading_dev: next.heading_dev}}
+```
+
+What it shows:
+- The bounded list: `concat` appends, a slice from `findLastIndex` drops what fell out of the window, and `[-64:]` bounds it to the schema's `maxItems`. On the device the 64 × 3 slots of `samples` round-trip between evaluations (section 3, "Lists").
+- Each sample against the next: `xs[#index + 1]` inside `map(xs, …)`.
+- **The heading mean is the mean of wrapped differences**, not a circular mean: each heading's difference from the current one, wrapped to −180..180, weighted, averaged. extreme-tune takes the circular mean (atan2 of the weighted sin and cos sums), which the language can't write. For headings within a few degrees of each other the two agree closely: on extreme-tune's `test_multiple_samples` (10/90, 11/92 at +5 s, 9/88 at +15 s, 12/91 at +25 s, 13/93 at +35 s) Tune gives `speed_dev` 2.3333 and `heading_dev` 2.6667, within 1.3e-4° of extreme-tune's circular mean (lang/SPEC.md D16). Headings spread across tens of degrees drift further apart; say so if a request depends on the exact circular mean.
+- Its lists hold 198 of its 225 locals (`api.engine.compile().memory.held_slots`), and its state list takes 192 of the C6's 1,024 state-list slots (`api.engine.layout().stateLists`).
 
 ## 6. The sailing builtins
 
@@ -245,7 +304,7 @@ Six are declared today (`engine/builtins/builtins.json`), and these are all ther
 
 **The crossings work on whole great circles, not segments or rays.** A course becomes its position plus the point 5 km along its heading. Of the two antipodal intersections, the one nearer the first position is taken. So the crossing can lie beyond the ends of a line, and behind the boat. The result is nil beyond `range` (default 200,000 m), when the circles coincide, or when a line is degenerate. A negative `range` fails the evaluation (`R-ARG`). If you need "ahead of the boat, between the ends", test it yourself with `bearing` and `angle_diff`, as Race's `pointing` does before calling `course_crosses_line`.
 
-**Not declared, so don't call them.** `engine/PROFILE.md` §4 lists eight builtins. `destination(p, heading, metres) → P` and `mean_heading(headings, weights)` are not declared yet. Calling either is `E-NAME` "`destination` isn't a builtin" / "the builtins are abs, int, float, round, floor, ceil, min, max, distance, bearing, courses_cross, lines_cross, course_crosses_line, angle_diff". There is no trigonometry (`sin`, `cos`, `atan2`, `sqrt`) and no `push_last` or `fail`, so a circular mean of headings isn't expressible today; a mean direction of travel from the track's displacements is (section 5, "A mean direction", where `bearing` stands in for `atan2`). VMG (`speed × cos(angle)`) can't be written today (PROFILE D11, open). Don't invent builtins. If a request needs one, say which one is missing.
+**Not declared, so don't call them.** `engine/PROFILE.md` §4 lists eight builtins. `destination(p, heading, metres) → P` and `mean_heading(headings, weights)` are not declared yet. Calling either is `E-NAME` "`destination` isn't a builtin" / "the builtins are abs, int, float, round, floor, ceil, min, max, distance, bearing, courses_cross, lines_cross, course_crosses_line, angle_diff". There is no trigonometry (`sin`, `cos`, `atan2`, `sqrt`) and no `push_last` or `fail`, so a circular mean of headings isn't expressible today; a weighted mean of wrapped heading differences is (Tune, section 5), and so is a mean direction of travel from the track's displacements (section 5, "A mean direction", where `bearing` stands in for `atan2`). VMG (`speed × cos(angle)`) can't be written today (PROFILE D11, open). Don't invent builtins. If a request needs one, say which one is missing.
 
 **Time to something is distance over speed, composed by you.** No builtin gives an ETA.
 
@@ -312,10 +371,14 @@ expr is **not JavaScript, Rust or Python**. A program is one expression. There a
 | `find`, `findLast` `(xs, p)` | the item or nil |
 | `findIndex`, `findLastIndex` `(xs, p)` | the index, or **nil** (not −1) |
 | `first(xs)`, `last(xs)`, `get(xs, i)` | the item or nil |
-| `map(xs, e)`, `filter(xs, p)` | lists that **must end in another list builtin**. `let alts = filter(gps, .alt != nil); count(alts, …)` is fine: each use re-runs it. A `map`/`filter` as a conditional branch, a record field or a list item is `E-UNSUPPORTED` "a `map` or `filter` result can only be passed to another list builtin here". |
-| `reduce(xs, e, init)` | the fold. **`init` comes last**: `reduce(gps, 0, #acc + 1)` is `E-POINTER` "`#acc` is only meaningful inside a predicate". **Today, reduce only over a list of numbers:** `reduce(map(gps, .lat), max(#acc, #), -90.0)` works, but any `reduce` directly over `gps` (records) crashes the compiler ("internal error: entered unreachable code"). Map to numbers first, or use `count`/`sum`. |
+| `map(xs, e)`, `filter(xs, p)` | lists. Passed to another list builtin they flow and cost nothing: `let alts = filter(gps, .alt != nil); count(alts, …)` re-runs the filter at each use. Kept as a value (an output or record field, a branch, a `??`) they are held (section 3, "Lists"). |
+| `xs[a:b]`, `xs[a:]`, `xs[:b]` | a slice. Negative bounds count from the end; indices are clamped, so a slice never fails. Straight on a list it sets the loop's bounds: `gps[-64:]` visits 64 fixes, not the track |
+| `take(xs, n)` | the first `min(n, len)` items; a negative `n` is `R-ARG` |
+| `concat(a, b, …)` | the lists one after another; a nil argument is `R-NIL` (write `state?.xs ?? []`) |
+| `[a, b]` | a list literal. `[]` is the empty list of whatever the field holds |
+| `reduce(xs, e, init)` | the fold. **`init` comes last**: `reduce(gps, 0, #acc + 1)` is `E-POINTER` "`#acc` is only meaningful inside a predicate". Over numbers or records: `reduce(gps, #acc + 1, 0)`, `reduce(map(gps, .lat), max(#acc, #), -90.0)`. The accumulator can't be a list: `reduce(xs, concat(#acc, [#]), [])` is `E-ACC-GROWS` "a `reduce` accumulator can't be a list" (use `map`/`filter`, or `concat(…)[-N:]` outside a `reduce`). |
 
-**Not implemented yet** (`E-UNSUPPORTED`, "… isn't implemented yet"): slices `xs[a:b]`, ranges `a..b`, `concat`, `take`, `sortBy`, `sort`, `uniq`, `reverse`, `flatten`, `median`, lists inside lists, comparing lists, and writing a list into the output.
+**Not implemented yet** (`E-UNSUPPORTED`, "`reverse` isn't implemented yet" / "not implemented yet: lists that are sorted, reversed, deduplicated or flattened, and `median`"): `reverse`, `uniq`, `sortBy`, `sort`, `flatten`, `median`, ranges `a..b`, `xs?.[i]`, lists inside lists, comparing lists, and a list as a `reduce` accumulator. Instead of `median`, keep a running aggregate or a `mean`; instead of `reverse`, index from the end (`xs[n - 1 - #index]` in `map(xs, …)`).
 
 **Numbers**
 
@@ -338,7 +401,7 @@ In the studio the compiler, the sailing builtins and the real host (`common::Hos
 
 1. **The interface.** `await api.engine.interface()` generates it from the schemas in `engine/` (the inputs, the output, the builtin declarations), as the profile's tooling does, and lists your `events`. Schema errors come back as `E-SCHEMA` on the schema file, with a span: JSON syntax, the bitwire subset (from the vendored compiler, at the JSON pointer's position) and the profile's own rules (an event named `gps` or `wake`).
 
-2. **Compile:** `await api.engine.compile()` gives `programBytes`, `memory: {stack_slots, locals, output_slots, slot_bytes, program_bytes, total_bytes}` and `interfaceHash`, or `{ok: false, error, hint, diagnostics}`. The C6's limits: code ≤ 8 KiB, stack 128 slots, locals 256.
+2. **Compile:** `await api.engine.compile()` gives `programBytes`, `memory: {stack_slots, locals, held_slots, output_slots, slot_bytes, program_bytes, total_bytes}` and `interfaceHash`, or `{ok: false, error, hint, diagnostics}`. `held_slots` is how many of the locals hold lists for the whole evaluation (section 3, "Lists"). The C6's limits: code ≤ 8 KiB, stack 128 slots, locals 256 (held lists included), and for the state's lists 1,024 slots across at most 4 lists (`api.engine.layout().stateLists`). The compile doesn't check them; `api.sim.start()` loads the bundle on the real host, which does, and refuses it in words ("the engine needs more than the C6 has: locals").
 
 3. **Check:** `await api.engine.check()` = compile + the smoke runs (PROFILE §5) + `engine/samples.json` if it exists. `ok` only when it compiles and every run completes; `runs` has each run (`source: "smoke"` or the samples file, `ok`, `output`, `instructions`, or `error: "R-…"` with its `span` and `help`). The smoke runs: run 1 with `state` null, `event` `{"gps": {}}` (no fix, no velocity), `timestamp` 1790000000000, `gps` `[]`; run 2 `{"wake": {}}` on run 1's state at `timestamp + 1000`. Both must complete. Add a sample run for each of your events. **`chain` works here**: a run with `"chain": {"state": "output.state"}` takes the previous run's output state, so write only the first run's state:
 
@@ -379,7 +442,16 @@ Every compile diagnostic has a stable rule id, a position, a message stating the
 | `E-UNSUPPORTED` | `now()`, string building, dynamic keys, and everything in "Not implemented yet" | section 7 |
 | `E-SCHEMA` | a list without `maxItems`, a string without `maxLength`, a `oneOf` alternative that isn't a named record | fix the schema at the path given |
 
-SPEC §5.1 also defines `E-OUTPUT-BOUND`, `E-HOLD`, `E-UNBOUNDED`, `E-ACC-GROWS`, `E-LIMIT` and `E-WORK`, for list and memory bounds. Engines without list outputs rarely meet them.
+For lists and memory:
+
+| Rule | Typical cause | Fix |
+|---|---|---|
+| `E-OUTPUT-BOUND` | `concat(s.xs, [x])` into a field of `maxItems` 64: "holds at most 64 items, but this can have 65" | `(…)[-64:]` |
+| `E-LIMIT` | with `compile({ limitBytes })`: the program's stack, locals and output over that budget; with held lists the help says "{h} of the {l} locals hold lists". Without a budget, over 256 locals is the host's refusal at `sim.start` / install instead | lower `maxItems`, keep fewer item fields, or slice before holding: `(…)[-N:]` |
+| `E-HOLD` | held lists over 32,768 slots (`map(gps, …)` kept as a value); `ys[i]` in a loop where `ys` is filtered | slice first (`gps[-N:]`); look back with `ys[#index - 1]` in `map(ys, …)` |
+| `E-ACC-GROWS` | a list as a `reduce` accumulator | `map`/`filter`, or `concat(…)[-N:]` |
+
+SPEC §5.1 also defines `E-UNBOUNDED` and `E-WORK`.
 
 **Run-time errors** (from a sample run, or logged by the host, which keeps the old state):
 

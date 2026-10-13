@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createDevice } from '../device/index.js';
 import { SERVICE, DEVICE_NAME } from '../device/ble.js';
-import { packageId } from '../device/bundles.js';
+import { packageId, describeError, describeInvalid, errorHint, REASONS, LIMITS } from '../device/bundles.js';
 import { makeFakeBluetooth, makeBundle } from './fake-bluetooth.mjs';
 import { VENDOR } from './engine-world.mjs';
 
@@ -437,4 +437,28 @@ test('a bundle whose manifest id is not the hash of its name is refused before s
   await rejects(dev.install(makeBundle({ name: 'x', id: 42 })), /is not the hash of its name/);
   assert.deepEqual(c6.requests, []);
   await rejects(dev.install(new Uint8Array([1, 2, 3])), /not a bundle/);
+});
+
+// bundle/src/validate.rs: `reason` 1..=16 (16 STATE_LIST) and `limit` 1..=10
+// (9 STATE_LIST_SLOTS, 10 STATE_LISTS). A code added there is added here.
+test("the validator's refusals in words: every reason and over-limit code validate.rs has", () => {
+  const ints = (o) => Object.keys(o).map(Number);
+  const upTo = (n) => Array.from({ length: n }, (_, i) => i + 1);
+  assert.deepEqual(ints(REASONS), upTo(16));
+  assert.deepEqual(ints(LIMITS), upTo(10));
+  const commit = (tag, detail) => ({ value: { request: 2, code: { tag }, detail } });
+  for (const reason of upTo(16)) assert.doesNotMatch(describeError(commit('Invalid', reason | (3 << 8))), /: reason \d/);
+  for (const which of upTo(10)) assert.doesNotMatch(describeError(commit('OverLimit', which)), /: limit \d/);
+  assert.equal(describeError(commit('Invalid', 16 | (1 << 8))), "Commit: invalid bundle: a state list in layout.bin's list table is not the program's (detail 1)");
+  assert.match(describeError(commit('OverLimit', 9)), /state-list slots/);
+  assert.equal(describeError(commit('OverLimit', 10)), 'Commit: the engine needs more than the C6 has: state lists');
+  assert.match(errorHint(commit('OverLimit', 9)), /1,024 slots.*stateLists/);
+  assert.match(errorHint(commit('OverLimit', 10)), /up to 4 state lists/);
+  assert.match(errorHint(commit('Invalid', 16)), /list table/);
+  assert.match(errorHint(commit('OverLimit', 3)), /256 locals.*held_slots/);
+  assert.match(errorHint(commit('OverLimit', 2)), /make it smaller/);
+  // the engine wasm host's form of the same refusals (the sim's load error)
+  assert.deepEqual(describeInvalid('invalid bundle: OverLimit { which: 3 }'), { why: 'the engine needs more than the C6 has: locals', hint: errorHint(commit('OverLimit', 3)) });
+  assert.equal(describeInvalid('invalid bundle: Reason { reason: 16, detail: 0 }').why, "invalid bundle: a state list in layout.bin's list table is not the program's (detail 0)");
+  assert.equal(describeInvalid('something else'), null);
 });

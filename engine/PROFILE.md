@@ -37,7 +37,7 @@ With a view schema, the output also has `view: …`, computed from `next`.
 
 **Clients format for display.** What clients receive (the view, or else the state) holds values, not text: store `pace_s_per_km: 323`, not `"5:23"`.
 
-**Keeping a bounded list in the state.** Write `concat(state?.splits ?? [], [split_ms])[-5:]`. Once the list is capped, `len(state.splits)` stops growing, so keep a separate count field if you need one. The new list is held in the VM's locals: `maxItems` × the item's fields slots of the 256 (§3), so keep `maxItems` small. (As built, the device host doesn't yet carry a list in the state from one evaluation to the next, so such an engine runs in the studio and `langc` but is refused at install: `lang/SPEC.md` §8, D15.)
+**Keeping a bounded list in the state.** Write `concat(state?.splits ?? [], [split_ms])[-5:]`. Once the list is capped, `len(state.splits)` stops growing, so keep a separate count field if you need one. The new list is held in the VM's locals: `maxItems` × the item's fields slots of the 256 (§3), so keep `maxItems` small. The device host keeps the list between evaluations in a region of its own, `maxItems` × the item's fields slots of the 1,024 it has for at most 4 state lists (§3, "State lists").
 
 ---
 

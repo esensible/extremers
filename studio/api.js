@@ -876,7 +876,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
       args: [DIR_OPT,
         { name: 'opts.limitBytes', type: 'integer', required: false, description: "the engine RAM budget to check against (default: the compiler's, the C6's)" },
         { name: 'opts.codeInRam', type: 'boolean', required: false, description: 'count the code as copied into RAM (default false: it runs in place from flash)' }],
-      returns: '{ ok, programBytes, memory: { stack_slots, locals, output_slots, slot_bytes, program_bytes, total_bytes }, interfaceHash, imports: string[], diagnostics: [] } | { ok:false, error, hint, diagnostics: [' + DIAG + '] }',
+      returns: '{ ok, programBytes, memory: { stack_slots, locals, held_slots, output_slots, slot_bytes, program_bytes, total_bytes }, interfaceHash, imports: string[], diagnostics: [] } | { ok:false, error, hint, diagnostics: [' + DIAG + '] } — held_slots: of locals, the slots list literals and built lists hold for the whole evaluation (each maxItems × item leaves); the C6 allows 256 locals',
       example: 'await api.engine.compile()',
       run: async (opts = {}) => {
         const { built } = await getBuilt(opts);
@@ -933,9 +933,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'engine.layout', kind: 'pure',
-      summary: "The device tables the bundle will carry (engine/profile layout): layout.bin's fields (leaf indices, limits), the interface hash, the view/event node maps, the enum strings; the descriptors are compiled from the schemas by the vendored bitwire compiler.",
+      summary: "The device tables the bundle will carry (engine/profile layout): layout.bin's fields (leaf indices, limits), its list table (gpsList: the program's list id for gps; stateLists: each list the state keeps between evaluations, with its handle leaf, maxItems and item leaves — the device reserves maxItems × itemLeaves slots for it; the C6 holds up to 4 state lists and 1,024 slots in all), the interface hash, the view/event node maps, the enum strings; the descriptors are compiled from the schemas by the vendored bitwire compiler.",
       args: [DIR_OPT],
-      returns: '{ ok, layout: { <field>: integer, … }, interfaceHash, viewMap: [{ leaf, span, aux }], eventMap: [...]|null, enums: string[]|null, sizes: { layout, viewMap, eventMap, enums, viewDesc, eventDesc } }',
+      returns: '{ ok, layout: { <field>: integer, … }, gpsList: integer, stateLists: [{ list, leaf, maxItems, itemLeaves }], interfaceHash, viewMap: [{ leaf, span, aux }], eventMap: [...]|null, enums: string[]|null, sizes: { layout, viewMap, eventMap, enums, viewDesc, eventDesc } }',
       example: 'await api.engine.layout()',
       run: async (opts = {}) => {
         const { mod, built } = await getBuilt(opts);
@@ -944,7 +944,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         try { l = tables(mod, built); } catch (e) { throw new ApiError(errText(e), e.hint); }
         const len = (b64) => (b64 ? atob(b64).length : null);
         return {
-          ok: true, layout: l.layout, interfaceHash: l.interface_hash, viewMap: l.view_map, eventMap: l.event_map, enums: l.enums,
+          ok: true, layout: l.layout, gpsList: l.gps_list,
+          stateLists: l.state_lists.map((s) => ({ list: s.list, leaf: s.leaf, maxItems: s.max_items, itemLeaves: s.item_leaves })),
+          interfaceHash: l.interface_hash, viewMap: l.view_map, eventMap: l.event_map, enums: l.enums,
           sizes: { layout: len(l.bytes.layout), viewMap: len(l.bytes.view_map), eventMap: len(l.bytes.event_map), enums: len(l.bytes.enums), viewDesc: built.view.desc.length, eventDesc: built.event ? built.event.desc.length : null },
         };
       },

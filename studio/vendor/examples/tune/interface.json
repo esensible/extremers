@@ -1,0 +1,130 @@
+{
+  "inputs": [
+    {
+      "name": "state",
+      "nullable": true,
+      "schema": {
+        "type": "object",
+        "required": ["samples", "speed", "speed_dev", "heading_dev"],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "required": ["t", "speed", "heading"],
+              "properties": {
+                "t": {"type": "integer", "format": "int64"},
+                "speed": {"type": "number"},
+                "heading": {"type": "number"}
+              }
+            }
+          },
+          "speed": {"type": "number"},
+          "speed_dev": {"type": "number"},
+          "heading_dev": {"type": "number"}
+        }
+      }
+    },
+    {
+      "name": "event",
+      "schema": {
+        "oneOf": [
+          {
+            "required": ["gps"],
+            "properties": {
+              "gps": {
+                "type": "object",
+                "properties": {
+                  "fix": {
+                    "type": "object",
+                    "required": ["t", "lat", "lon"],
+                    "properties": {
+                      "t": {"type": "integer", "format": "int64"},
+                      "lat": {"type": "number"},
+                      "lon": {"type": "number"},
+                      "alt": {"type": "number"}
+                    }
+                  },
+                  "velocity": {
+                    "type": "object",
+                    "required": ["speed", "heading"],
+                    "properties": {
+                      "speed": {"type": "number"},
+                      "heading": {"type": "number"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": ["wake"],
+            "properties": {
+              "wake": {"type": "object"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "timestamp",
+      "schema": {"type": "integer", "format": "int64"}
+    },
+    {
+      "name": "gps",
+      "schema": {
+        "type": "array",
+        "maxItems": 20480,
+        "items": {
+          "type": "object",
+          "required": ["t", "lat", "lon"],
+          "properties": {
+            "t": {"type": "integer", "format": "int64"},
+            "lat": {"type": "number"},
+            "lon": {"type": "number"},
+            "alt": {"type": "number"}
+          }
+        }
+      }
+    }
+  ],
+  "output": {
+    "type": "object",
+    "required": ["state", "view"],
+    "properties": {
+      "state": {
+        "type": "object",
+        "required": ["samples", "speed", "speed_dev", "heading_dev"],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "required": ["t", "speed", "heading"],
+              "properties": {
+                "t": {"type": "integer", "format": "int64"},
+                "speed": {"type": "number"},
+                "heading": {"type": "number"}
+              }
+            }
+          },
+          "speed": {"type": "number"},
+          "speed_dev": {"type": "number"},
+          "heading_dev": {"type": "number"}
+        }
+      },
+      "view": {
+        "type": "object",
+        "required": ["speed", "speed_dev", "heading_dev"],
+        "properties": {
+          "speed": {"type": "number", "format": "float"},
+          "speed_dev": {"type": "number", "format": "float"},
+          "heading_dev": {"type": "number", "format": "float"}
+        }
+      },
+      "wake": {"type": "integer", "format": "int64"}
+    }
+  }
+}

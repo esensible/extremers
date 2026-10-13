@@ -41,6 +41,8 @@ test('race: engine.check compiles, every smoke and sample run completes', { skip
   assert.deepEqual(r.runs.slice(2).map((x) => x.output), golden.map((x) => x.output));
   assert.match(r.compile.interfaceHash, /^[0-9a-f]{16}$/);
   assert.ok(r.compile.programBytes > 0 && r.compile.memory.total_bytes > 0);
+  assert.equal(typeof r.compile.memory.held_slots, 'number');
+  assert.ok(r.compile.memory.held_slots <= r.compile.memory.locals);
 });
 
 test('race: interface is interface.json; compile is cached until a file changes', { skip }, async () => {
@@ -70,6 +72,8 @@ test('race: descriptors, tables and the bundle are the monorepo\'s, byte for byt
   assert.deepEqual(l.layout, fixture.layout);
   assert.deepEqual(l.viewMap, fixture.view_map);
   assert.equal(l.interfaceHash, fixture.interface_hash);
+  assert.equal(l.gpsList, fixture.gps_list);
+  assert.deepEqual(l.stateLists, []);
 
   // the engine's bundle files + the fixture's web/ and watch.js → extreme-pack's race.bundle
   const mod = await import('../vendor/engine-wasm/engine_wasm.js');
@@ -253,4 +257,59 @@ test('locatePointer finds nested values', () => {
   assert.equal(at('/a/1'), '{"b": "x"}');
   assert.equal(at('/c/nope'), '{"d~/": 2}', 'the deepest part that exists');
   assert.equal(locatePointer('{', ''), null);
+});
+
+// lang/examples/tune (vendored): a list in the state, written by the
+// program (concat, a slice), kept by the host between evaluations.
+test('tune: a state list is checked, tabled, kept by the host and published', { skip }, async () => {
+  const { api } = await raceProject('tune');
+  const iface = JSON.parse(vendorText('examples/tune/interface.json'));
+  const state = iface.inputs.find((i) => i.name === 'state').schema;
+  const pretty = (v) => JSON.stringify(v, null, 2) + '\n';
+  ok(assert, await api.files.write('engine/engine.expr', vendorText('examples/tune/program.expr')));
+  ok(assert, await api.files.write('engine/state.schema.json', pretty(state)));
+  ok(assert, await api.files.write('engine/view.schema.json', pretty(iface.output.properties.view)));
+  ok(assert, await api.files.delete('engine/event.schema.json'));
+  ok(assert, await api.files.write('engine/samples.json', vendorText('examples/tune/samples.json')));
+
+  const c = ok(assert, await api.engine.check());
+  assert.ok(c.runs.every((x) => x.ok), JSON.stringify(c.runs.filter((x) => !x.ok)));
+  // extreme-tune's test_multiple_samples: the run at +35 s
+  const view = c.runs.at(-2).output.view;
+  assert.ok(Math.abs(view.speed_dev - 7 / 3) < 1e-9 && Math.abs(view.heading_dev - 8 / 3) < 1e-9, JSON.stringify(view));
+  assert.equal(c.runs.at(-2).output.state.samples.length, 5);
+  // 64 samples of 3 leaves, and the one-sample literal, held in the locals
+  assert.equal(c.compile.memory.held_slots, 198);
+
+  const l = ok(assert, await api.engine.layout());
+  assert.deepEqual(l.stateLists, [{ list: 0, leaf: 2, maxItems: 64, itemLeaves: 3 }]);
+  assert.equal(l.gpsList, 1);
+  assert.equal(l.sizes.layout, 80 + 4 + 8, "layout.bin v2: the fixed part, the table's header, one entry");
+
+  // on the host: each evaluation reads the list the last one left
+  ok(assert, await api.sim.start({ clock: 'virtual' }));
+  const t = 1790000100000;
+  for (const [dt, speed, heading] of [[0, 10, 90], [5000, 11, 92], [15000, 9, 88], [25000, 12, 91], [35000, 13, 93]]) {
+    const r = ok(assert, await api.sim.gps({ t: t + dt, lat: -33.85, lon: 151.21, speed, heading }));
+    assert.ok(r.evaluations.every((e) => e.accepted), JSON.stringify(r.evaluations));
+  }
+  const s = ok(assert, await api.sim.state());
+  assert.deepEqual(s.state.samples.map((x) => [x.t - t, x.speed, x.heading]), [[0, 10, 90], [5000, 11, 92], [15000, 9, 88], [25000, 12, 91], [35000, 13, 93]]);
+  assert.ok(Math.abs(s.view.speed_dev - 7 / 3) < 1e-6 && Math.abs(s.view.heading_dev - 8 / 3) < 1e-6, JSON.stringify(s.view));
+  assert.deepEqual(s.findings, []);
+});
+
+test('an engine over the C6\'s locals: compile reports held_slots, the host refuses it in words', { skip }, async () => {
+  const { api } = await raceProject('tune-big');
+  const iface = JSON.parse(vendorText('examples/tune/interface.json'));
+  const state = iface.inputs.find((i) => i.name === 'state').schema;
+  state.properties.samples.maxItems = 100;
+  ok(assert, await api.files.write('engine/engine.expr', vendorText('examples/tune/program.expr').replace('[-64:]', '[-100:]')));
+  ok(assert, await api.files.write('engine/state.schema.json', JSON.stringify(state, null, 2) + '\n'));
+  ok(assert, await api.files.write('engine/view.schema.json', JSON.stringify(iface.output.properties.view, null, 2) + '\n'));
+  ok(assert, await api.files.delete('engine/event.schema.json'));
+  const c = ok(assert, await api.engine.compile());
+  assert.ok(c.memory.locals > 256 && c.memory.held_slots >= 300, JSON.stringify(c.memory));
+  const r = notOk(assert, await api.sim.start({ clock: 'virtual' }), /more than the C6 has: locals/);
+  assert.match(r.hint, /held_slots/);
 });

@@ -32,6 +32,7 @@ import { decodeEnvelope, decodeHostEvent, encodeHostEvent } from '../vendor/runt
 import { engineEvent, packageId } from '../vendor/runtimes/client-common/host.js';
 import { rmcUpdate } from './nmea.js';
 import { spanOfBytes } from '../engine/locate.js';
+import { describeInvalid } from '../device/bundles.js';
 
 export class SimError extends Error {
   constructor(message, hint) { super(message); this.hint = hint; }
@@ -93,6 +94,9 @@ export class Sim {
     if (!this.loaded[0]?.ok) {
       const why = this.loaded[0]?.error ?? 'unknown';
       this.free();
+      // in the words the box's refusal gets (device/bundles.js)
+      const words = describeInvalid(why);
+      if (words) throw new SimError(`the host did not load the bundle: ${words.why} (${why})`, words.hint);
       throw new SimError(`the host did not load the bundle: ${why}`, 'api.engine.check() first; api.bundle.inspect() shows what the bundle holds');
     }
     const st = JSON.parse(this.host.state());

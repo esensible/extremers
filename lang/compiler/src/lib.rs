@@ -29,6 +29,9 @@ pub struct Options {
 pub struct Memory {
     pub stack_slots: u16,
     pub locals: u16,
+    /// Of `locals`, the slots reserved for the whole evaluation for list
+    /// literals and held lists (each its bound × its items' leaves).
+    pub held_slots: u16,
     /// The output's leaves, which the host holds for the VM to write.
     pub output_slots: u16,
     pub slot_bytes: u32,
@@ -41,7 +44,7 @@ pub struct Memory {
 impl Memory {
     pub fn to_json(&self) -> Json {
         json!({
-            "stack_slots": self.stack_slots, "locals": self.locals, "output_slots": self.output_slots,
+            "stack_slots": self.stack_slots, "locals": self.locals, "held_slots": self.held_slots, "output_slots": self.output_slots,
             "slot_bytes": self.slot_bytes, "program_bytes": self.program_bytes, "total_bytes": self.total_bytes,
         })
     }
@@ -66,6 +69,7 @@ pub fn compile(source: &str, interface: &Json, opts: &Options) -> Result<Compile
     let memory = Memory {
         stack_slots: em.max_stack,
         locals: em.locals,
+        held_slots: em.held_slots,
         output_slots: em.output_leaves,
         slot_bytes,
         program_bytes,

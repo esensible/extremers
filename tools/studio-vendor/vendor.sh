@@ -19,6 +19,8 @@
 #                 (extremers.schema.json, extremers-props.js)
 #   examples/race/ Race's engine directory, Kindle and watch sources, and the
 #                 watch fixtures (script.json, log.jsonl)
+#   examples/tune/ lang/examples/tune (program.expr, interface.json,
+#                 samples.json): a list in the state
 #   fixtures/     what the studio's tests hold the wasm to:
 #                 race.samples.expected.json and race.layout.json (engine/wasm's
 #                 golden files, checked current by its cargo test here),
@@ -135,6 +137,12 @@ copy_dir extreme-race/client-js/src examples/race/client-js/src
 copy_dir extreme-race/watch-js/src examples/race/watch-js/src
 copy extreme-race/watch-js/fixtures/script.json examples/race/watch-js/fixtures/script.json
 copy extreme-race/watch-js/fixtures/log.jsonl examples/race/watch-js/fixtures/log.jsonl
+
+# ---- examples/tune ----
+# lang's Tune (a list in the state), which the studio's tests run on the host
+for f in program.expr interface.json samples.json; do
+    copy "lang/examples/tune/$f" "examples/tune/$f"
+done
 
 # ---- fixtures ----
 copy engine/wasm/fixtures/race.samples.expected.json fixtures/race.samples.expected.json

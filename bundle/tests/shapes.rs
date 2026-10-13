@@ -1,6 +1,7 @@
 //! What Race doesn't exercise: an enum in the state, the view and an event;
-//! a string; an optional record in the view; lists in the view (by hand: the
-//! compiler doesn't write lists to the output yet). Tables from
+//! a string; an optional record in the view; lists in the view (their
+//! handles made by hand, so the view's encoder is tested on its own:
+//! tests/tune.rs has a list the compiler writes, in the state). Tables from
 //! engine/profile, descriptors and the oracle's bytes from wire/js (node).
 
 use bundle::archive::{self, Archive};

@@ -70,14 +70,14 @@ export function hex(bytes) {
 // ------------------------------------------------------------------ errors ----
 
 // bundle/src/validate.rs `reason` and `limit`, and their details (client.js)
-const REASONS = {
+export const REASONS = {
   1: 'the archive does not parse',
   2: 'manifest.bin',
   3: 'a file is missing',
   4: 'engine.bin does not load',
   5: 'layout.bin does not parse',
   6: "the program's and the layout's interface hashes differ",
-  7: "the program's leaf or list counts are not the layout's",
+  7: "the program's leaf or list counts are not the layout's, or its lists are not gps and the list table's",
   8: 'a layout leaf is out of range or of the wrong kind',
   9: 'a descriptor does not load',
   10: 'a map does not follow its descriptor',
@@ -86,10 +86,22 @@ const REASONS = {
   13: 'the state has string leaves that are not enums',
   14: 'watch.js and the manifest disagree',
   15: 'a node the host does not support',
+  16: "a state list in layout.bin's list table is not the program's",
 };
-const MANIFEST = { 0: 'does not decode', 1: 'abi is not 2', 2: "content_hash is not the files'", 3: "ui.web is not the page's", 4: "ui.watch is not watch.js's" };
-const MISSING = { 1: 'manifest.bin', 2: 'engine.bin', 3: 'layout.bin', 4: 'view.desc', 5: 'view.map', 6: 'event.desc/event.map (one without the other)', 7: 'web/index.html', 8: 'enums.bin' };
-const LIMITS = { 1: 'code bytes', 2: 'stack', 3: 'locals', 4: 'inputs', 5: 'outputs', 6: 'state leaves', 7: 'imports', 8: 'view bytes' };
+export const MANIFEST = { 0: 'does not decode', 1: 'abi is not 2', 2: "content_hash is not the files'", 3: "ui.web is not the page's", 4: "ui.watch is not watch.js's" };
+export const MISSING = { 1: 'manifest.bin', 2: 'engine.bin', 3: 'layout.bin', 4: 'view.desc', 5: 'view.map', 6: 'event.desc/event.map (one without the other)', 7: 'web/index.html', 8: 'enums.bin' };
+export const LIMITS = {
+  1: 'code bytes',
+  2: 'stack',
+  3: 'locals',
+  4: 'inputs',
+  5: 'outputs',
+  6: 'state leaves',
+  7: 'imports',
+  8: 'view bytes',
+  9: 'state-list slots (each state list maxItems × item leaves, together)',
+  10: 'state lists',
+};
 
 /** A BundleResponse Error in words (BLE.md "Errors"). */
 export function describeError(r) {
@@ -137,8 +149,13 @@ export function errorHint(r) {
     case 'Busy': return 'another connection (a second tab or computer) is uploading: wait for it, or up to 60 s for the box to drop it, then try again';
     case 'NoUpload': case 'Timeout': return 'install again: the upload starts over';
     case 'Hash': return 'install again (the box dropped the upload); if it happens every time, api.device.status() and api.log() say how the upload went';
-    case 'Invalid': return "the box's validator refused the bundle: api.engine.check(), api.ui.build({ target: 'both' }), then install again; api.bundle.inspect() shows what the bundle holds";
-    case 'OverLimit': return "the engine is over the C6's limits: make it smaller (api.engine.check() shows its sizes), then install again";
+    case 'Invalid':
+      if ((detail & 0xff) === 16) return "layout.bin's list table and engine.bin disagree: rebuild both from the same sources (api.engine.check(), then api.bundle.pack()) and install again; api.engine.layout() shows stateLists";
+      return "the box's validator refused the bundle: api.engine.check(), api.ui.build({ target: 'both' }), then install again; api.bundle.inspect() shows what the bundle holds";
+    case 'OverLimit':
+      if (detail === 3) return "the program needs more than the C6's 256 locals: api.engine.compile().memory shows locals and held_slots (the locals its lists hold, each maxItems × item leaves): lower a list's maxItems, keep fewer item fields, or slice before holding ((…)[-N:]), then install again";
+      if (detail === 9 || detail === 10) return "the state keeps more list items than the C6 holds between evaluations (up to 4 state lists, 1,024 slots in all, each list maxItems × item leaves): lower a state list's maxItems, keep fewer item fields, or fewer lists, then install again; api.engine.layout() shows stateLists";
+      return "the engine is over the C6's limits: make it smaller (api.engine.check() shows its sizes), then install again";
     case 'NoSpace': return 'delete a bundle to make room (api.device.list() shows largestFree; api.device.delete(name))';
     case 'Full': return 'delete a bundle first (api.device.list(), then api.device.delete(name))';
     case 'NotFound': return 'api.device.list() shows the ids and names on the box';
@@ -146,6 +163,23 @@ export function errorHint(r) {
     case 'Flash': return "the box's log (defmt) says which sector; try again";
     default: return undefined;
   }
+}
+
+/**
+ * A host's refusal of a bundle as the engine wasm reports it (bundle's
+ * `Invalid` in Rust's Debug form, e.g. "invalid bundle: OverLimit { which: 3 }")
+ * in the words and hint the box's refusal gets; null when it is neither form.
+ */
+export function describeInvalid(text) {
+  const over = /OverLimit \{ which: (\d+) \}/.exec(text ?? '');
+  const reason = /Reason \{ reason: (\d+), detail: (\d+) \}/.exec(text ?? '');
+  const r = over
+    ? { value: { request: 2, code: { tag: 'OverLimit' }, detail: Number(over[1]) } }
+    : reason
+      ? { value: { request: 2, code: { tag: 'Invalid' }, detail: (Number(reason[1]) | (Number(reason[2]) << 8)) >>> 0 } }
+      : null;
+  if (!r) return null;
+  return { why: describeError(r).replace(/^Commit: /, ''), hint: errorHint(r) };
 }
 
 export class BundleError extends Error {

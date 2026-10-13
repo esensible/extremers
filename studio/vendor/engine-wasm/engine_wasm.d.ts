@@ -142,8 +142,8 @@ export function builtins(): string;
 /**
  * Compiles `source` against `interface` (JSON); `opts` is JSON
  * `{limit_bytes?, code_in_ram?}` or empty. The JSON on success:
- * `{ok: true, memory: {stack_slots, locals, output_slots, slot_bytes,
- * program_bytes, total_bytes}, interface_hash (hex), imports (the
+ * `{ok: true, memory: {stack_slots, locals, held_slots, output_slots,
+ * slot_bytes, program_bytes, total_bytes}, interface_hash (hex), imports (the
  * builtins' signatures), program_bytes}`; diagnostics are
  * `{rule, severity, span: {start, end: {line, col, offset}} | null,
  * message, help}`.
@@ -169,10 +169,13 @@ export function engine_interface(state: string, view?: string | null, event?: st
  * (JSON) as it was compiled against, `program` the bytecode, `view_desc`
  * the bitwire descriptor of the published value (the view, or the state
  * without one), `event_desc` the author's events' (if any). `{ok: true,
- * layout: {<field>: u16, …}, interface_hash, view_map: [{leaf, span,
+ * layout: {<field>: u16, …}, gps_list, state_lists: [{list, leaf,
+ * max_items, item_leaves}], interface_hash, view_map: [{leaf, span,
  * aux}], event_map: […] | null, enums: [string] | null, bytes: {layout,
  * view_map, event_map, enums} (base64; null where absent)}` or `{ok:
- * false, error}`.
+ * false, error}`. `layout` is the fixed part's fields; `gps_list` and
+ * `state_lists` its list table's (`gps` list 0 and none without state
+ * lists: a version 1 layout, which has no table).
  */
 export function layout(_interface: string, program: Uint8Array, view_desc: Uint8Array, event_desc?: Uint8Array | null): string;
 

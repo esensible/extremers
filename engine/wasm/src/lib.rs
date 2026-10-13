@@ -118,8 +118,8 @@ impl Compiled {
 
 /// Compiles `source` against `interface` (JSON); `opts` is JSON
 /// `{limit_bytes?, code_in_ram?}` or empty. The JSON on success:
-/// `{ok: true, memory: {stack_slots, locals, output_slots, slot_bytes,
-/// program_bytes, total_bytes}, interface_hash (hex), imports (the
+/// `{ok: true, memory: {stack_slots, locals, held_slots, output_slots,
+/// slot_bytes, program_bytes, total_bytes}, interface_hash (hex), imports (the
 /// builtins' signatures), program_bytes}`; diagnostics are
 /// `{rule, severity, span: {start, end: {line, col, offset}} | null,
 /// message, help}`.
