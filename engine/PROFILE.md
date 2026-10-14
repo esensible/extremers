@@ -148,7 +148,7 @@ Sorts, k-selections and `median` use the VM op `HoldInsert` (`lang/SPEC.md` §7.
 - The records form a ring (`common/src/track.rs`, `FlashTrack`): each fix is appended at the head; when a sector fills, the next one is erased, so the oldest fixes go 128 at a time and appending never stops. At boot the head is found again and a new run starts there: `gps` holds only the fixes appended since boot, the older ones stay in the ring for a later download. `t` carries across boots: a fix's `t` is `max(now, last t + 1)` with the ring's newest record as the last (`next_t`), so `t` strictly increases through the whole ring; that is safe because a record is appended only on a fix, and the GPS update that brings a fix also brings the GPS date and time (an active RMC sentence carries both), which set the device clock before the append (`Host::gps_update`), so a new run's `t` is epoch ms like the old run's and not uptime that the old `t` would hold back.
 - The host serves `gps` to the VM as a `ListInput` (`GpsList`): the length is the run's (at most `maxItems`), fixed for the evaluation, and each item's `t`, `lat`, `lon` and `alt` leaves are read from the record on demand (`alt` is nil for NaN).
 - Nothing is copied into RAM.
-- A firmware update written into the data slot wipes the track (and the bundles), by the owner's choice.
+- A firmware update over BLE (`BLE.md` "Firmware update") writes its image over the data slot and wipes the track (and the bundles, which the studio saves and installs again), by the owner's choice. From the update's begin until the reboot, and while the new firmware is on trial (its first 20 s), the track is the RAM track (`common::track::RamTrack`, the newest fixes only): the data slot then holds the image, or the previous firmware.
 
 **Limits passed to the compiler and VM (D4, provisional until measured on the C6):**
 - arena limit: 8 KiB;
@@ -228,5 +228,5 @@ These are on top of the language corpus (`lang/SPEC.md` §9):
 ## 7. Open decisions
 
 - **D4 Limits.** The arena limit, the instruction budget and the builtin costs need measuring on the C6.
-- **D6 A full GPS log.** *Resolved:* the track is a sliding ring that never stops appending (the oldest sector is erased as the head reaches it), and a new run starts at every boot, so `gps` is the fixes since boot. A firmware update may wipe the slot the ring lives in.
+- **D6 A full GPS log.** *Resolved:* the track is a sliding ring that never stops appending (the oldest sector is erased as the head reaches it), and a new run starts at every boot, so `gps` is the fixes since boot. A firmware update wipes the ring (its image goes into the slot the ring lives in), and until the updated firmware confirms itself `gps` comes from the RAM track (§3).
 - **D11 VMG.** VMG is `speed × cos(angle_diff(heading, bearing))`, and nothing gives a cosine. The options are a sailing-level builtin, such as `vmg(speed, heading, bearing)`, or `cos` in degrees.

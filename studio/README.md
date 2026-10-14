@@ -234,6 +234,14 @@ finishes it (the image again if it was never committed). A new update is
 refused while one is pending, so a second save can never overwrite the
 first with an empty box.
 
+`deviceBackups` came with IndexedDB version 2 (`store.js` `DB_VERSION`;
+the upgrade keeps every project). A studio tab opened before it holds the
+database at version 1 and blocks the upgrade: the new tab answers
+"IndexedDB is blocked by another studio tab running an older version" until
+the old tab is closed or reloaded, once. Tabs from now on close their
+database when another asks for a newer version, so they yield by
+themselves.
+
 The upload: `Ready { offset, chunk, window }` sets the chunk (240 B at the
 box's MTU) and the window (1920 B); writes go in order, `[offset u32
 LE][bytes]`, at most a window past the last `Ack`. `Error { data, Sequence,

@@ -67,6 +67,9 @@ cargo run -p extreme-pack -- --bundle
 # ESP32-C6 firmware; `cargo run --release` flashes and opens the monitor
 cd tgt-xiaoc6 && cargo build --release
 
+# its image for a firmware update over BLE (the studio): target/xiaoc6.bin
+cargo run -p extreme-image -- target/riscv32imac-unknown-none-elf/release/xiaoc6
+
 # host build with Race, then open http://localhost:8080
 cargo run -p tgt-std -- --bundle target/packages/race.bundle
 ```
@@ -130,6 +133,13 @@ the hotspot; the studio does this, and `--store-image` writes the whole
 store for a dev install by probe-rs (`tgt-xiaoc6/README.md`). At boot the
 host scans the store into its registry (`common::host::Registry`) and
 starts the bundle last activated, or the only app, or Choose.
+
+The firmware itself is updated the same way, over BLE from the studio
+(`BLE.md` "Firmware update"): the image goes into the data slot, over the
+bundles and the GPS track, and boots on trial: one that crashes or hangs
+in its first 20 s three boots running is rolled back to the old firmware. The studio saves the bundles off the box first and installs
+them again afterwards; the track is lost. `tgt-xiaoc6/README.md` has the
+slots, the image tool and what to do before the box is potted.
 
 ### Engines
 

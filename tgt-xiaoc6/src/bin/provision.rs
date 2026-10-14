@@ -1,6 +1,8 @@
 //! provision -- erase the `settings` partition and write the WiFi credentials.
 //! Also blanks `otadata`, so the bootloader boots `ota_0` (storage.rs,
-//! `blank_otadata`).
+//! `blank_otadata`), when it runs from `ota_0`; after a firmware update
+//! moved the box to `ota_1` it leaves `otadata` alone (blank would switch
+//! the next boot to `ota_0`; README.md "`otadata` and probe-rs").
 //!
 //! Erasing `settings` deletes the BLE bonds too: every paired watch has to
 //! be forgotten on the watch and paired again (BLE.md "Security"). To drop

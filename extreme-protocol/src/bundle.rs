@@ -58,7 +58,7 @@ pub enum BundleRequest {
     /// (its last 32 bytes, the SHA-256 of the rest) is `sha256`, uploaded
     /// as a bundle is (`Ready`, `data`, `Ack`, then `Commit` or `Abort`)
     /// into the data slot, which it wipes. A host that cannot take one
-    /// answers [`BundleError::NotAllowed`].
+    /// answers [`BundleError::NotFound`].
     BeginFirmware { len: u32, sha256: [u8; 32] },
 }
 

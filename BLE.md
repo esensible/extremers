@@ -171,8 +171,8 @@ heartbeat.
 | `state` | `…001` | read, notify (bonded link only) | 22–289 | the host's `Envelope`, sent on every change |
 | `event` | `…002` | write, write-without-response (bonded link only) | 1–64 | a `HostEvent` |
 | `ui-psm` | `…003` | read (bonded link only) | 2 | the bulk channel's LE PSM, u16 little-endian: `81 00` (0x0081; "Watch bundles") |
-| `bundle` | `…004` | notify (bonded link only) | 1–66 | a `BundleResponse`: the answers to bundle requests ("Bundles") |
-| `data` | `…005` | write-without-response, notify (bonded link only) | 4–244 | a bundle's bytes, `offset u32 LE` then up to a chunk ("Bundles") |
+| `bundle` | `…004` | notify (bonded link only) | 1–66 | a `BundleResponse`: the answers to bundle and firmware requests ("Bundles", "Firmware update") |
+| `data` | `…005` | write-without-response, notify (bonded link only) | 4–244 | a bundle's or a firmware image's bytes, `offset u32 LE` then up to a chunk ("Bundles", "Firmware update") |
 
 `state` is pushed on every change (the same moments the websocket clients
 get a message) and can be read at any time; a read captures the state
@@ -251,7 +251,8 @@ the hotspot. Firmware: `common/src/ble_bundles.rs` (what a request does),
 `common/src/ble.rs` (the characteristics), `common/src/store.rs` (the
 flash). Messages: `extreme-protocol/src/bundle.rs`, generated into
 `protocol-js` and `protocol-swift`. From a browser: the studio's Device
-panel and `api.device.*` ("The studio's client" below).
+panel and `api.device.*` ("The studio's client" below). The firmware
+itself is replaced the same way ("Firmware update").
 
 Three characteristics of the service, all on a bonded link only (like
 everything else, "Security"):
@@ -281,6 +282,8 @@ everything else, "Security"):
 | 4 | `Delete { id: u32 }` | `Deleted` |
 | 5 | `Activate { id: u32 }` | `Activated` |
 | 6 | `Get { id: u32, from: u32 }` | `Sending`, the bytes on `data`, `Sent` |
+| 7 | `Firmware` | `Firmware` ("Firmware update") |
+| 8 | `BeginFirmware { len: u32, sha256: [u8; 32] }` | `Ready`; then `Commit` answers `Rebooting` ("Firmware update") |
 
 | tag | `BundleResponse` | meaning |
 |---|---|---|
@@ -295,6 +298,8 @@ everything else, "Security"):
 | 8 | `Sending { id: u32, len: u32, sha256: [u8; 32], chunk: u16 }` | a download: the archive's length and SHA-256; `chunk` bytes per `data` notification |
 | 9 | `Sent { id: u32 }` | the download's last bytes went |
 | 10 | `Error { request: u8, code: BundleError, detail: u32 }` | `request` refused: the request's tag, or `255` for a `data` write |
+| 11 | `Firmware { sha256: [u8; 32], slot: u8, pending: bool, max_len: u32 }` | the running firmware ("Firmware update") |
+| 12 | `Rebooting` | a firmware update was committed: the box restarts into it now |
 
 `id` is a package's id: FNV-1a of its name (`race` 2394669720), Choose 0.
 
@@ -347,11 +352,16 @@ idle for 60 s: dropped`); its connection's next request or write gets
 `Abort` drops the upload; so does any `Commit` that fails, except `Length`
 (the upload goes on). An upload cut off by a reboot is gone.
 
+A firmware image is uploaded the same way, after `BeginFirmware` ("Firmware
+update"). There is one upload at a time: while a bundle's or an image's is
+live, a `Begin` or `BeginFirmware` of the other kind is `Busy`, from any
+connection, the owner's included.
+
 ### Errors
 
 | code | `BundleError` | when; `detail` |
 |---|---|---|
-| 0 | `Busy` | another connection's upload is live; or a deleted bundle's sectors are still being read after 10 s |
+| 0 | `Busy` | another connection's upload is live, or an upload of the other kind (bundle, firmware); a deleted bundle's sectors are still being read after 10 s; `Begin` or `Delete` while the firmware is on trial or a firmware update has begun ("Firmware update") |
 | 1 | `NoUpload` | `Commit`, `Abort` or a write with no upload in progress |
 | 2 | `Sequence` | a write past a gap; `detail` = the offset to write from |
 | 3 | `Length` | `Begin` of 0 bytes; a write past the length, or a non-last write not a multiple of 4, or without a whole offset; `Commit` before every byte is in (`detail` = bytes so far); `Get` from past the end (`detail` = the archive's length) |
@@ -360,10 +370,13 @@ idle for 60 s: dropped`); its connection's next request or write gets
 | 6 | `OverLimit` | the engine needs more than the box has: `detail` = `validate::limit` (1 code bytes, 2 stack, 3 locals, 4 inputs, 5 outputs, 6 state leaves, 7 imports, 8 view bytes, 9 state list slots, 10 state lists) |
 | 7 | `NoSpace` | no run of free sectors holds it (`ListEnd.largest_free` says what does) |
 | 8 | `Full` | the box holds 7 bundles besides Choose: delete one |
-| 9 | `NotFound` | no bundle with that id (also: a host without a store) |
+| 9 | `NotFound` | no bundle with that id (also: a host without a store); `Firmware` or `BeginFirmware` on a host that takes no firmware updates |
 | 10 | `NotAllowed` | `detail` 0: Choose's id (uploaded or deleted), an id that is not the hash of the manifest's name, a manifest whose id is not `Begin`'s; 1: a bundle without an engine |
 | 11 | `Flash` | a flash write or erase failed (logged on the box) |
 | 12 | `Timeout` | the upload was dropped after 60 s idle |
+
+A firmware update's own meanings of `Busy`, `NoSpace`, `Hash`, `Invalid`
+and `Flash` are under "Firmware update".
 
 ### A download
 
@@ -388,6 +401,11 @@ ms (R B/s), chunks of C`.
 | `bundle`: `Error { data, Sequence, 240 }` | `0a ff 02 f001` |
 | `bundle`: `Error { Commit, Invalid, 2 \| 2 << 8 }` | `0a 02 05 8204` |
 | `data`: bytes 960.. | `c0030000` then the bytes |
+| `event`: `Bundle(Firmware)` | `04 07` |
+| `event`: `Bundle(BeginFirmware)` 1734160 bytes, SHA-256 `ba7816bf…` | `04 08 90ec69 ba7816bf…15ad` (39 at most) |
+| `bundle`: `Firmware { ba7816bf…, slot 1, pending, max_len 1966080 }` | `0b ba7816bf…15ad 01 01 808078` |
+| `bundle`: `Rebooting` | `0c` |
+| `bundle`: `Error { Commit, Invalid, CHECKSUM \| 0x1234 << 8 }` | `0a 02 05 87e848` |
 
 (All of them, and every `BundleResponse`, in `protocol-js/test/vectors.json`.)
 
@@ -398,7 +416,13 @@ The box logs every step: `store: upload of … begun: N B in sectors …`,
 v1 uploaded and installed: N B in T ms (R B/s)`, `store: race v1 committed
 in sectors …`, and why anything was refused. Validating at a commit takes
 the `active` lock, so GPS updates and events wait for it (not yet measured
-on the device).
+on the device). A firmware update logs `host: firmware update begun: N B,
+sha256 …; K bundles out of the registry, the track in RAM, the store
+dropped until the reboot`, `bundles: firmware uploaded and checked: N B in
+T ms (R B/s); rebooting` and `firmware: ota_N selected for the next boot,
+on trial`; the new firmware then `firmware: running ota_N, …`, `firmware:
+on trial after an update from ota_M: boot 1 of 3; …` and, 20 s later,
+`firmware: confirmed after 20 s; the data slot is writable`.
 
 ### Throughput
 
@@ -431,6 +455,14 @@ about 14–16 KB/s, Race (~100 KB) in 7 s instead of 10; more if the central
 puts several writes in one event. The box keeps up: erasing a 4 KiB sector
 (about every 17 chunks) takes ~45 ms, three events, which the 8 queued
 writes absorb. The packet pool is unchanged.
+
+Measured with firmware images (Chrome on a Mac, 240-byte chunks, the
+15 ms interval): a 1.77 MB image went up at 26–31 kB/s, 57–66 s, with no
+rewinds or resends.
+From `Rebooting` to `Firmware` answering `pending: false` took 23–25 s
+(the reset, the boot, the reconnect, the 20 s trial). The studio's whole
+update with three bundles (about 275 KB: saved, then restored) took 2 to
+2¼ min end to end.
 
 ### The studio's client
 
@@ -480,6 +512,97 @@ failed.
   Bluetooth off and on again on the Mac; that cleared it every time so
   far.
 
+## Firmware update
+
+The box's firmware is replaced over the bundle characteristics: an image
+uploaded into the *data slot* (the app slot the box does not run from,
+which also holds its bundles and its GPS track: `tgt-xiaoc6/README.md`
+"Partitions"), checked there, then booted on trial. The bundles and the
+track are lost by it; the studio saves the bundles first and restores them
+afterwards ("The studio's client"). There is no signing: only a bonded
+client can ask, as for everything else ("Security"). Firmware:
+`common/src/ble_bundles.rs`, `common/src/host.rs` (`firmware_*`),
+`common/src/firmware.rs` (the image's writer), `tgt-xiaoc6/src/main.rs`
+(`ota_boot`, `confirm_task`, `firmware_task`); the image format:
+`extreme-protocol/src/firmware.rs`.
+
+**The image** is ESP-IDF's app image for the ESP32-C6, as the bootloader
+takes it: `cargo run -p extreme-image -- <elf>` writes it
+(`target/xiaoc6.bin`, 1.77 MB today; `tgt-xiaoc6/README.md`). It is a
+24-byte header (magic `0xE9`, chip id 13 at bytes 12–13, the
+appended-digest flag at 23), up to 16 segments, padding and a checksum byte
+to a whole 16-byte line, then its **appended digest**: the SHA-256 of every
+byte before it. That digest is the firmware's identity: `Firmware` reports
+the running one's, and `BeginFirmware` names the image's.
+
+| request | answer |
+|---|---|
+| `Firmware` | `Firmware { sha256, slot, pending, max_len }`: the running image's digest; its app slot (n of `ota_n`); whether it is on trial (below); the longest image an update takes (the data slot: 1966080 on the C6; 0 without one) |
+| `BeginFirmware { len, sha256 }` | `Ready { offset, chunk, window }`: `len` is the image's length, `sha256` its last 32 bytes |
+| `data` writes, `Ack`, `Abort` | as a bundle's ("An upload") |
+| `Commit` | `Rebooting`, once every check passed; the box resets 0.5 s later |
+
+An update:
+
+1. `Firmware`: `max_len` must hold the image, and `pending` must be false.
+2. `BeginFirmware { len, sha256 }`. The box waits up to 10 s for bundle
+   downloads to finish, then gives the data slot over to the image until
+   its next reboot: every bundle leaves the registry (the active package
+   gives way to Choose; `List` gives Choose alone), the track continues in
+   RAM, the bundle store is closed. Nothing is erased yet. `Ready { 0, … }`.
+3. The image on `data`, exactly as a bundle ("An upload": in order, the
+   window, `Ack`s, gaps, resume within 60 s by a `BeginFirmware` of the same
+   length and digest). Each sector is erased just before its first write,
+   unless blank; the bytes are hashed as they come, all but the last 32.
+4. On the final `Ack { len }`: `Commit`. The box checks that every byte is
+   in (else `Length`, and the upload goes on), that the hash is `sha256`
+   (`Hash`), that the digest reads back from flash (`Flash`), and the
+   image's structure as the flash holds it (`Invalid`). Then it records the
+   update in its settings (`KEY_OTA`: from, to, the digest, a boot count),
+   makes `otadata` select the data slot (state `New`), answers `Rebooting`,
+   and resets. The link drops.
+5. The bootloader checks the new image and boots it (if it fails the check,
+   it boots the old one, which then drops the record). The new firmware
+   runs **on trial**: `Firmware` answers its digest with `pending: true`.
+6. 20 s after it booted it confirms itself: the record is removed, `otadata`
+   marks it `Valid`, `pending` turns false. From then on bundles can be
+   installed again, and the data slot is the old firmware's slot.
+
+`Abort`, a refusal at `Commit` (but `Length`), or an upload idle for 60 s
+ends the update, and the box restarts into the firmware it runs (0.5 s
+later): it gave its store and track up at `BeginFirmware`, so it starts
+them again from flash. Whatever the image overwrote is gone.
+
+**On trial** the data slot still holds the firmware the update came from,
+the way back, so nothing writes it: the track stays in RAM, and a bundle
+`Begin` or `Delete` is `Busy` (`Activate` is allowed: it writes only the
+settings), and so is a `BeginFirmware`. A panic resets the box (a halt
+otherwise, for a debugger), and an RTC watchdog (10 s) resets a hang. Each
+boot of the new firmware raises the record's boot count; at its third boot
+without confirming it makes `otadata` select the old slot again, removes
+the record and resets: the box runs its old firmware, and `Firmware` says
+so (the old digest, `pending: false`). A crash before that count is raised
+(in the first moments of boot) loops; only a bootloader with rollback
+catches that (`tgt-xiaoc6/README.md` "Before potting").
+
+**Errors** (`request` 8 for `BeginFirmware`, 2 for its `Commit`, 255 for a
+`data` write):
+
+| code | when; `detail` |
+|---|---|
+| `Busy` | the firmware is on trial (`pending`: wait for it); an upload of another connection, or a bundle upload, is live; a bundle download held on for 10 s |
+| `NoSpace` | `len` is more than `max_len` |
+| `Length`, `Sequence`, `NoUpload`, `Timeout` | as a bundle's; `Length` also for a `len` of 32 bytes or less |
+| `Hash` | the SHA-256 of all but the last 32 bytes is not `sha256` |
+| `Invalid` | the image does not check out: `detail` = `reason \| reason_detail << 8` (`extreme_protocol::firmware::reason`): 1 a read failed (the offset); 2 the first byte is not `0xE9` (it); 3 not an ESP32-C6 image (the chip id); 4 no appended digest (the flag); 5 no segments or more than 16 (the count); 6 a segment runs past the image or is not a multiple of 4 long (its index); 7 the checksum byte is wrong (the segments' checksum, the image's byte above it); 8 the image does not end with its digest at `len` (where it does) |
+| `Flash` | a flash write or erase failed, the digest did not read back, or the switch (the record, `otadata`) failed |
+| `NotFound` | a host that takes no updates (no data slot; `tgt-std`), for `Firmware` too |
+
+After a refusal at `Commit` the box restarts as above. **Identity check**:
+a client compares the digest `Firmware` gives after the reboot with the
+image's: the same, it was updated; the old one, the box kept (or went back
+to) its old firmware.
+
 ## GATT caching
 
 The box's GATT service (`0x1801`) has **Service Changed** (`0x2A05`,
@@ -512,6 +635,14 @@ the watch and pair again once. From then on it is told about changes: the
 firmware that added `bundle` and `data` changed the table again, and a
 bonded watch that subscribed to Service Changed is told so when it
 reconnects.
+
+**Across a firmware update** ("Firmware update") nothing of this is lost:
+the bonds, each client's GATT state and the hash last served are in the
+settings partition, which an update does not touch. The new firmware
+compares its table's hash at boot as above, so a bonded client reconnects
+without pairing, and is told of a changed table as above. In the updates
+so far the table was the same (`ble: database hash … (unchanged)`), and
+the bonded Mac reconnected encrypted and change-aware.
 
 ## State: `Envelope`
 
@@ -594,7 +725,7 @@ bytes (a Race bump is 16–24) needs the larger MTU too.
 | 1 | `SelectDefault` | — | back: Choose (or the only app without Choose) |
 | 2 | `Engine` | `package: u32`, `bytes` | an event for the active package's engine: its own `Event` as postcard; refused unless `package` is the active one and the engine takes the bytes |
 | 3 | `Ble` | `BleCommand` | the Kindle's pairing settings: refused over BLE |
-| 4 | `Bundle` | `BundleRequest` | the bundles on the box ("Bundles"): BLE only, refused on the websocket |
+| 4 | `Bundle` | `BundleRequest` | the bundles on the box ("Bundles") and its firmware ("Firmware update"): BLE only, refused on the websocket |
 
 Race's events (`RaceEvent`, inside `Engine.bytes`): `0 LineStbd` (set the
 starboard end of the line at the current position), `1 LinePort`,
@@ -644,6 +775,16 @@ and QuickJS (JS) and by `protocol-swift`'s tests (Swift). A few, with a
 | event | `01` | back |
 | event | `02 9885eff508 01 00` | race: line stbd |
 | event | `02 9885eff508 08 02 3c fbd8c1a28c34` | race: bump +30 s (zigzag 60), tapped at device time 1 790 000 000 123 |
+
+`protocol-js/test/vectors.json` also has `firmware`: a small synthetic
+firmware image (two segments, the checksum, the appended digest) with the
+image format's constants (`extreme_protocol::firmware`: magic, chip id,
+offsets, digest length), made by `tools/bindgen` and checked by
+`extreme_protocol::firmware::check` as it is written.
+`protocol-js/test/check.js` checks what a client's image check reads
+against it (magic, chip id, whole 16-byte lines, the digest at the end),
+and the studio's tests run its `checkImage` (`device/firmware.js`, which
+mirrors the constants) on it, so neither drifts from the Rust.
 
 ## On the watch
 

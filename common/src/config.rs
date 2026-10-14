@@ -46,9 +46,10 @@ pub const TRACK_FIXES: usize = 128;
 
 // The C6's data slot: the OTA app slot the running firmware was not booted
 // from (tgt-xiaoc6/src/storage.rs, `DataSlot`). Offsets from the slot's
-// start; both regions are whole 64 KiB MMU pages. A firmware update written
-// into the slot wipes both, by choice: they are installed and recorded
-// again afterwards.
+// start; both regions are whole 64 KiB MMU pages. A firmware update over
+// BLE writes its image over the slot and wipes both, by choice (BLE.md
+// "Firmware update"): the studio installs the bundles again afterwards, and
+// the track starts afresh.
 
 /// Where the bundles region starts in the data slot.
 pub const DATA_BUNDLES_OFFSET: u32 = 0;
