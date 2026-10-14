@@ -251,9 +251,11 @@ fn intersection(a: Vec<Key>, b: &[Key]) -> Vec<Key> {
     a.into_iter().filter(|k| b.contains(k)).collect()
 }
 
-pub fn check(ast: &Expr, iface: &Interface) -> Result<TExpr, Vec<Diag>> {
+pub fn check(ast: &Expr, iface: &Interface, src: &str) -> Result<TExpr, Vec<Diag>> {
     let mut c = Checker {
         iface,
+        src,
+        uses: HashMap::new(),
         scopes: Vec::new(),
         next_id: 0,
         diags: Vec::new(),
@@ -311,10 +313,217 @@ pub fn children(e: &TExpr) -> Vec<&TExpr> {
     }
 }
 
+/// A place where evaluating an expression can fail at run time (spec §5.2).
+#[derive(Clone, Debug)]
+pub struct Failure {
+    /// The expression that fails.
+    pub span: Span,
+    /// The run-time code (`R-DIV0`, `R-NIL`, …).
+    pub code: &'static str,
+    /// Why, with `{}` where the expression's text goes.
+    pub why: String,
+    /// A host builtin's call: treated as able to fail (spec §2.4: an
+    /// implementation may fail with `R-ARG`), whether or not this one can.
+    pub host: bool,
+}
+
+impl Failure {
+    /// "`1 % #`: `%` by a value that may be 0 (R-DIV0)".
+    pub fn describe(&self, src: &str) -> String {
+        format!("{} ({})", self.why.replace("{}", &crate::diag::snippet(src, self.span)), self.code)
+    }
+}
+
+/// Every place where evaluating `e` can fail at run time (spec §5.2), as far
+/// as the types show: a sound over-approximation, so an expression with none
+/// is **total** (it never fails, in Go expr or in the VM). Run-time failures
+/// are, for a program that type-checks:
+/// - `%` by an int whose range includes 0 (`R-DIV0`); `/` and `**` give
+///   floats (`x / 0` is ±Inf, `0 ** -1` is +Inf), so they never fail;
+/// - nil where nil fails (`R-NIL`): an operand of `+ - * / % ** < <= > >=`
+///   or `-x`, an argument of `abs`/`int`/`float`/`round`/`floor`/`ceil`/
+///   `min`/`max`, a `.f` (not `?.f`) on a record that may be nil, a list
+///   builtin's list (every one but `first`, `last`, `get` and `in` straight
+///   on the list, and `sort`, which reads nil as `[]`), a `concat` or
+///   `flatten` part, an index, a `sum`/`mean`/`median`/`min`/`max` item or
+///   `sum`'s mapped value, a `count(xs)` item;
+/// - `xs[i]` out of range (`R-INDEX`), unless `xs` is a literal and `i` a
+///   constant within it;
+/// - `reduce` with no initial value (`R-ARG` on an empty list), `take` with a
+///   count that may be negative (`R-ARG`);
+/// - every host builtin call (`R-ARG`, see [`Failure::host`]).
+///
+/// Everything else is total: comparisons with `==`/`!=`, `+ - *` and `-x`
+/// on ints (they wrap, in Go and in the VM), `abs` (wraps), `int` of a float
+/// (saturates on arm64, as the VM does; NaN gives 0), `round`/`floor`/
+/// `ceil`, `??`, `?.`, `&&`, `||`, conditions (never nil: `E-TYPE`), ranges
+/// (bounded by `E-UNBOUNDED`), slices (clamped), and sort keys (never nil:
+/// `E-TYPE`).
+pub fn failures(e: &TExpr) -> Vec<Failure> {
+    let mut out = Vec::new();
+    fail_sites(e, &mut out);
+    out
+}
+
+/// Whether `e` can fail at run time ([`failures`]).
+pub fn can_fail(e: &TExpr) -> bool {
+    !failures(e).is_empty()
+}
+
+fn fail_sites(e: &TExpr, out: &mut Vec<Failure>) {
+    let mut site = |at: &TExpr, code: &'static str, why: &str| out.push(Failure { span: at.span, code, why: why.to_string(), host: false });
+    let nil = |t: &TExpr| t.ty.may_be_nil();
+    let mut extra: Vec<Failure> = Vec::new();
+    let list_nil = "`{}` is a list that may be nil";
+    match &e.kind {
+        TKind::Unary(UnOp::Neg, a) if nil(a) => site(a, "R-NIL", "`{}` may be nil"),
+        TKind::Binary(op, a, b) => {
+            if matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow | BinOp::Mod | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge) {
+                for x in [a, b] {
+                    if nil(x) {
+                        site(x, "R-NIL", "`{}` may be nil");
+                    }
+                }
+            }
+            if *op == BinOp::Mod {
+                match b.ty.non_nil() {
+                    Some(Ty::Int(r)) if r.lo > 0 || r.hi < 0 => {}
+                    _ => site(e, "R-DIV0", "`{}` divides by a value that may be 0"),
+                }
+            }
+        }
+        TKind::Chain { first, rest } => {
+            for x in std::iter::once(&**first).chain(rest.iter().map(|(_, x)| x)) {
+                if nil(x) {
+                    site(x, "R-NIL", "`{}` may be nil");
+                }
+            }
+        }
+        TKind::Call(_, args) => {
+            for a in args {
+                if nil(a) {
+                    site(a, "R-NIL", "`{}` may be nil");
+                }
+            }
+        }
+        // A `.` step on a record that may be nil (and isn't narrowed), as
+        // the emitter checks it (`AssertNotNil`).
+        TKind::Path { base, steps, nonnil } => {
+            let mut cur = base.ty.clone();
+            for (i, s) in steps.iter().enumerate() {
+                let fields = match &cur {
+                    Ty::Rec(f, _) => f.clone(),
+                    Ty::Opt(inner) => {
+                        let Ty::Rec(f, _) = &**inner else { break };
+                        if !nonnil[i] && !s.optional {
+                            extra.push(Failure { span: e.span, code: "R-NIL", why: format!("`{{}}` reads `.{}` of a value that may be nil", s.field), host: false });
+                        }
+                        f.clone()
+                    }
+                    _ => break,
+                };
+                let Some(t) = fields.get(&s.field) else { break };
+                cur = t.clone();
+            }
+        }
+        TKind::HostCall { .. } => extra.push(Failure { span: e.span, code: "R-ARG", why: "`{}` calls a host builtin, which may fail".into(), host: true }),
+        TKind::Map { src, .. } | TKind::Filter { src, .. } | TKind::Slice { src, .. } | TKind::Reverse { src } | TKind::Uniq { src } | TKind::SortBy { src, .. }
+            if nil(src) =>
+        {
+            site(src, "R-NIL", list_nil)
+        }
+        TKind::Take { src, k } => {
+            if nil(src) {
+                site(src, "R-NIL", list_nil);
+            }
+            if !matches!(&k.ty, Ty::Int(r) if r.lo >= 0) {
+                site(e, "R-ARG", "`{}`'s count may be negative");
+            }
+        }
+        TKind::Flatten { src } => {
+            if nil(src) {
+                site(src, "R-NIL", list_nil);
+            }
+            if matches!(src.ty.non_nil(), Some(Ty::List(item, _)) if item.may_be_nil()) {
+                site(src, "R-NIL", "`{}` holds lists that may be nil");
+            }
+        }
+        TKind::Concat(parts) => {
+            for p in parts {
+                if nil(p) {
+                    site(p, "R-NIL", list_nil);
+                }
+            }
+        }
+        TKind::Sink { sink, src, f, init } => {
+            // `first`, `last`, `get` and `in` give nil (or false) for a nil
+            // list straight on it; through anything else the list fails.
+            if nil(src) && !(matches!(sink, Sink::First | Sink::Last | Sink::Get | Sink::In) && !is_pipeline(src)) {
+                site(src, "R-NIL", list_nil);
+            }
+            let item = match src.ty.non_nil() {
+                Some(Ty::List(item, _)) => *item,
+                _ => Ty::Unknown,
+            };
+            match sink {
+                Sink::At => {
+                    let n = match &src.kind {
+                        TKind::ListLit(items) if !nil(src) => items.len() as i128,
+                        _ => 0,
+                    };
+                    match f.as_deref().map(|i| &i.ty) {
+                        Some(Ty::Int(r)) if r.lo >= -n && r.hi < n => {}
+                        _ => site(e, "R-INDEX", "`{}` may be out of range"),
+                    }
+                }
+                Sink::Get if f.as_deref().is_some_and(nil) => site(f.as_deref().unwrap(), "R-NIL", "`{}` may be nil"),
+                Sink::Reduce if init.is_none() => site(e, "R-ARG", "`{}` has no initial value, so an empty list fails"),
+                Sink::Sum | Sink::Mean | Sink::Median | Sink::Min | Sink::Max | Sink::Count => match (sink, f.as_deref()) {
+                    (Sink::Sum, Some(v)) if nil(v) => site(v, "R-NIL", "`{}` may be nil"),
+                    (Sink::Count, Some(_)) | (Sink::Sum, Some(_)) => {}
+                    _ if item.may_be_nil() => site(src, "R-NIL", "`{}` may hold nils"),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+    out.extend(extra);
+    for c in children(e) {
+        fail_sites(c, out);
+    }
+}
+
+/// Whether a use of an inlined `let` (one of `uses`, by span) is evaluated
+/// every time `e` is: reached from `e` without passing a branch that may not
+/// run (one side of `?:`, the right of `&&`, `||` and `??`) or a body that
+/// runs once per item (a predicate, a `map` body, a sort key: never, for no
+/// items). A use in both branches of a `?:` counts.
+fn always_uses(e: &TExpr, uses: &[Span]) -> bool {
+    if is_pipeline(e) && uses.contains(&e.span) {
+        return true;
+    }
+    let a = |x: &TExpr| always_uses(x, uses);
+    match &e.kind {
+        TKind::Cond(c, x, y) => a(c) || (a(x) && a(y)),
+        TKind::And(x, _) | TKind::Or(x, _) | TKind::Coalesce(x, _) => a(x),
+        TKind::Map { src, .. } | TKind::Filter { src, .. } | TKind::SortBy { src, .. } => a(src),
+        TKind::Sink { sink, src, f, init } => {
+            a(src) || (matches!(sink, Sink::At | Sink::Get | Sink::In) && f.as_deref().is_some_and(a)) || init.as_deref().is_some_and(a)
+        }
+        _ => children(e).into_iter().any(a),
+    }
+}
+
 use crate::schema::EXPR_BUILTINS;
 
 struct Checker<'a> {
     iface: &'a Interface,
+    /// The program's text (for messages that quote it).
+    src: &'a str,
+    /// Each inlined `let`'s uses so far, by id: the spans of the names.
+    uses: HashMap<u32, Vec<Span>>,
     /// `let` bindings in scope, innermost last: (name, id, type, the value
     /// itself when it's a pipeline, which each use re-runs).
     scopes: Vec<(String, u32, Ty, Option<TExpr>)>,
@@ -414,6 +623,35 @@ impl Checker<'_> {
                 let body = self.expr(body);
                 self.scopes.pop();
                 if inlined {
+                    // Go evaluates the list here, in full, every time; each
+                    // use evaluates its own copy. So some use must be
+                    // evaluated every time, unless the list can't fail.
+                    let uses = self.uses.remove(&id).unwrap_or_default();
+                    if !always_uses(&body, &uses)
+                        && let Some(f) = failures(&value).first()
+                    {
+                        let total = if f.host {
+                            "take the host builtin's call out of it (host builtins are treated as able to fail)"
+                        } else {
+                            "make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`)"
+                        };
+                        let (when, help) = if uses.is_empty() {
+                            ("is never used, so it is never evaluated", format!("remove it, or {total}"))
+                        } else {
+                            (
+                                "is used only on some paths (in a branch, or once per item of another list), so it isn't always evaluated",
+                                format!("use it where it is always evaluated, or move the `let` into the branch that uses it, or {total}"),
+                            )
+                        };
+                        self.err(
+                            Diag::error(
+                                "E-SKIPPED",
+                                *name_span,
+                                format!("`{name}` {when}; Go evaluates a `let` in full where it is written, and this one can fail: {}", f.describe(self.src)),
+                            )
+                            .help(help),
+                        );
+                    }
                     return body;
                 }
                 let ty = body.ty.clone();
@@ -993,6 +1231,7 @@ impl Checker<'_> {
     fn raw_name(&mut self, n: &str, span: Span) -> TExpr {
         if let Some((_, id, ty, inline)) = self.scopes.iter().rev().find(|(m, _, _, _)| m == n) {
             if let Some(v) = inline {
+                self.uses.entry(*id).or_default().push(span);
                 return TExpr { span, ..v.clone() };
             }
             return node(TKind::Local(*id), ty.clone(), span);

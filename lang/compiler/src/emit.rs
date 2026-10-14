@@ -22,7 +22,7 @@
 
 use crate::check::{Ptr, Sink, TExpr, TKind, children, is_pipeline};
 use crate::diag::{Diag, Span};
-use crate::plan::{self, HoldKind, Pipeline, Source, Stage};
+use crate::plan::{self, HoldKind, Pipeline, Source, Stage, may_be_negative};
 use crate::schema::{GroupCheck, Interface, LeafCheck, group_checks, leaf_checks};
 use crate::syntax::{BinOp, Step, UnOp};
 use crate::types::{Ty, field_offset, int_to_float, leaves, list_converts, same_layout, unopt};
@@ -115,6 +115,14 @@ struct Emitter<'i> {
     /// The input and output leaves' checks, made before the code (their
     /// enum strings come first in the constants).
     checks: Option<(Vec<Check>, Vec<Check>)>,
+    /// The program's text (for messages that quote it).
+    src: &'i str,
+    /// Inside a replay (a pipeline run again only to count its items): its
+    /// lowering isn't checked for skips, as the one it counts for is.
+    replay: u32,
+    /// `E-SKIPPED`: a body a lowering evaluates for fewer items than Go
+    /// does (or a predicate for more), which can fail (spec §2.7).
+    skipped: Vec<Diag>,
 }
 
 /// The most slots of locals a program's list literals and held lists may
@@ -152,8 +160,9 @@ enum Cut {
 
 /// Where `direct` reads items: a list (its handle in `pre`) or a range (its
 /// start and count from `pre`), or a `concat`'s parts.
-enum Addr {
-    Leaf { pre: u16, range: bool },
+enum Addr<'e> {
+    /// `maps`: the `map` nodes the item goes through once read, in order.
+    Leaf { pre: u16, range: bool, maps: Vec<&'e TExpr> },
     Concat(Vec<Part>),
 }
 
@@ -189,18 +198,25 @@ struct SinkLocals {
     top: usize,
     /// `median`'s block of values, kept sorted: its first local and capacity.
     block: Option<(u16, u16)>,
+    /// A backwards `findLast`/`findLastIndex` (plan.rs): it stops at the
+    /// first match, and `findLastIndex`'s position counts from the local
+    /// holding the count less one.
+    backward: Option<u16>,
 }
 
 /// Emits the program. The first pass measures the blocks of locals the
 /// list literals and held lists reserve (its code is dropped); the second
 /// emits again with everything else allocated above them. Emitting is
 /// deterministic, so the second pass reserves the same blocks.
-pub fn emit(e: &TExpr, iface: &Interface) -> Result<Emitted, Diag> {
-    let first = pass(e, iface, 0);
+pub fn emit(e: &TExpr, iface: &Interface, src: &str) -> Result<Emitted, Vec<Diag>> {
+    let first = pass(e, iface, 0, src);
+    if !first.skipped.is_empty() {
+        return Err(first.skipped);
+    }
     if first.perm_next > MAX_HELD_SLOTS {
         let h = first.held.iter().max_by_key(|h| h.slots).unwrap();
         let (what, help) = h.why.words();
-        return Err(Diag::error(
+        return Err(vec![Diag::error(
             "E-HOLD",
             h.span,
             format!(
@@ -213,15 +229,15 @@ pub fn emit(e: &TExpr, iface: &Interface) -> Result<Emitted, Diag> {
                 first.perm_next
             ),
         )
-        .help(help));
+        .help(help)]);
     }
-    let m = pass(e, iface, first.perm_next as u16);
+    let m = pass(e, iface, first.perm_next as u16, src);
     assert_eq!(m.perm_next, first.perm_next, "the passes reserve the same blocks");
     Ok(m.finish_program(e, iface))
 }
 
 /// One pass over the program, with `perm` locals reserved below the rest.
-fn pass<'i>(e: &TExpr, iface: &'i Interface, perm: u16) -> Emitter<'i> {
+fn pass<'i>(e: &TExpr, iface: &'i Interface, perm: u16, src: &'i str) -> Emitter<'i> {
     let mut m = Emitter {
         iface,
         code: Vec::new(),
@@ -245,6 +261,9 @@ fn pass<'i>(e: &TExpr, iface: &'i Interface, perm: u16) -> Emitter<'i> {
         levels: Vec::new(),
         floats: false,
         checks: None,
+        src,
+        replay: 0,
+        skipped: Vec::new(),
     };
     // The checks' enum strings go into the constants first, as before.
     m.checks = Some(m.make_checks());
@@ -600,6 +619,13 @@ impl Emitter<'_> {
                         None => self.push_nils(leaves(dt)),
                     }
                 }
+                // Fields the destination doesn't have (a record argument
+                // with more than its parameter): Go evaluates them too.
+                for (k, fe) in fields {
+                    if !df.contains_key(k) {
+                        self.evaluate_for_failure(fe);
+                    }
+                }
             }
             TKind::Cond(c, a, b) => self.cond(c, a, b, e, dst),
             TKind::Let { id, value, body } => self.let_(*id, value, body, dst),
@@ -789,7 +815,8 @@ impl Emitter<'_> {
                         m.op(if *negate { Op::Ne } else { Op::Eq });
                     });
                 } else {
-                    // A record that can't be nil.
+                    // A record that can't be nil (Go still evaluates it).
+                    self.evaluate_for_failure(rec);
                     self.op(if *negate { Op::PushTrue } else { Op::PushFalse });
                 }
             }
@@ -803,6 +830,18 @@ impl Emitter<'_> {
             | TKind::SortBy { .. }
             | TKind::Uniq { .. }
             | TKind::Flatten { .. } => unreachable!("a pipeline is held above"),
+        }
+    }
+
+    /// Evaluates `e` and drops its value, if it can fail: an expression Go
+    /// evaluates whose value isn't needed (so a failure there fails here
+    /// too, spec §2.7). One that can't fail emits nothing.
+    fn evaluate_for_failure(&mut self, e: &TExpr) {
+        if crate::check::can_fail(e) {
+            self.emit(e);
+            for _ in 0..leaves(&e.ty) {
+                self.op(Op::Pop);
+            }
         }
     }
 
@@ -839,6 +878,7 @@ impl Emitter<'_> {
         }
         let cap = bound.min(u16::MAX as u32) as u16;
         let mut pipe = plan::for_write(e);
+        self.check_skips(&pipe, None, None);
         // A held list with no stages after it (`sortBy(…)` kept as a
         // value): its block is the list's.
         if pipe.stages.is_empty()
@@ -914,8 +954,28 @@ impl Emitter<'_> {
             Some(_) => plan::for_write(src),
             None => plan::for_sink(sink, f, src),
         };
+        if collect.is_none() {
+            self.check_skips(&pipe, Some(sink), f);
+        }
         pipe.pre = handle;
         self.lower(pipe, src, sink, f, init, e, collect);
+    }
+
+    /// `E-SKIPPED` (spec §2.7): what the lowering of `pipe` for `sink`
+    /// (`None`: a block write) evaluates for fewer items than Go does, or a
+    /// predicate for more, where it can fail. Not for a replay: the lowering
+    /// it counts for is checked.
+    fn check_skips(&mut self, pipe: &Pipeline, sink: Option<Sink>, f: Option<&TExpr>) {
+        if self.replay > 0 {
+            return;
+        }
+        for s in plan::skips(pipe, sink, f) {
+            let Some(fail) = crate::check::failures(s.node).into_iter().next() else { continue };
+            // One for each expression: the first reason found.
+            if !self.skipped.iter().any(|x| x.span == Some(s.node.span)) {
+                self.skipped.push(skip_diag(&s, &fail, self.src));
+            }
+        }
     }
 
     /// Lowers a pipeline: its holds first (each a loop of its own, writing
@@ -946,9 +1006,20 @@ impl Emitter<'_> {
         let pre = pipe.pre;
         if let (Source::List(_), Some(h), None) = (&pipe.source, pre, collect) {
             let item0 = pipe.item.clone();
-            // These give nil (or false) for a nil list; the rest fail, as in expr.
-            // (A hold's block is never nil.)
-            if !held && matches!(sink, Sink::First | Sink::Last | Sink::Get | Sink::In) {
+            // These give nil (or false) for a nil list straight on it; the
+            // rest fail, as in expr, and so does any list builtin between
+            // (`first(map(xs, …))`, `x in uniq(xs)`, even when it is left
+            // out). (A hold's block is never nil.)
+            if !held && matches!(sink, Sink::First | Sink::Last | Sink::Get | Sink::In) && pipe.stages.is_empty() && pipe.dropped.is_empty() {
+                // Go evaluates the index or the needle whether or not the
+                // list is nil: so does this, where it can fail.
+                if let Some(x) = f
+                    && matches!(sink, Sink::Get | Sink::In)
+                    && crate::check::can_fail(x)
+                {
+                    self.emit(x);
+                    self.op(Op::Pop);
+                }
                 self.op(Op::Load(h));
                 let have = self.jump(Op::JumpIfNotNil, e);
                 if sink == Sink::In {
@@ -1045,7 +1116,9 @@ impl Emitter<'_> {
                 // The same pipeline, counted (a replay, planned for a count).
                 let as_int = TExpr { kind: TKind::Nil, ty: Ty::Int(crate::types::Range::FULL), span: e.span };
                 self.op(Op::Load(target));
+                self.replay += 1;
                 self.consume(Sink::Len, src, None, None, &as_int, None, if held { None } else { pre });
+                self.replay -= 1;
                 self.op(Op::Add);
                 self.op(Op::Store(target));
                 let here = self.pc();
@@ -1065,13 +1138,34 @@ impl Emitter<'_> {
             },
         }
 
+        // A backwards `findLast`/`findLastIndex` (a list or range through
+        // `map`s and `filter`s): `findLastIndex`'s position of the first
+        // item from the end is the count less one.
+        let backward = pipe.backward.then(|| {
+            if sink != Sink::FindLastIndex {
+                return u16::MAX;
+            }
+            let last = self.alloc(1);
+            let h = pipe.pre.unwrap();
+            if matches!(pipe.source, Source::Range(_)) {
+                self.op(Op::Load(h + 1));
+            } else {
+                self.op(Op::Load(h));
+                self.op_at(Op::ListLen, e);
+            }
+            self.op(Op::PushInt(1));
+            self.op(Op::Sub);
+            self.op(Op::Store(last));
+            last
+        });
+
         // Every stage's state (and each window's bounds), before any loop.
         // The table is this sink's: a sink run inside it (a replay, or one
         // in a predicate) sets up its own and gives this one back.
         let outer = std::mem::take(&mut self.stages);
         self.init_stages(&mut pipe, false);
         let top = self.new_level();
-        let sl = SinkLocals { sink, r, aux, pos, target, acc_ty: acc_ty.clone(), top, block };
+        let sl = SinkLocals { sink, r, aux, pos, target, acc_ty: acc_ty.clone(), top, block, backward };
         self.loops(&pipe, top, &[], &sl, f, init, e, collect);
         self.stages = outer;
         let end = self.pc();
@@ -1287,11 +1381,8 @@ impl Emitter<'_> {
     /// part). Whether `sink` over `pipe` is one of them (its result is then
     /// on the stack).
     fn direct(&mut self, pipe: &mut Pipeline, sink: Sink, f: Option<&TExpr>, e: &TExpr) -> bool {
-        let windows = |stages: &[Stage]| stages.iter().all(|s| matches!(s, Stage::Window(_) | Stage::Reverse(_)));
-        if !matches!(sink, Sink::Len | Sink::First | Sink::Last | Sink::At | Sink::Get)
-            || matches!(pipe.item, Ty::Never)
-            || !windows(&pipe.stages)
-        {
+        // (`maps` whose bodies can't fail are allowed: plan::direct_ok.)
+        if !plan::direct_ok(pipe, sink) {
             return false;
         }
         // Where the items are read from, and the span over them.
@@ -1308,12 +1399,12 @@ impl Emitter<'_> {
                 (lo, hi, m) = (self.alloc(1), self.alloc(1), self.alloc(1));
                 self.source_span(pre, range, lo, hi, e);
                 rev = self.narrow(cuts, lo, hi, m);
-                addr = Addr::Leaf { pre, range };
+                // A `map` doesn't move items: its body is evaluated for the
+                // item read, after it is found.
+                let maps = pipe.stages.iter().filter_map(|s| if let Stage::Map(n) = s { Some(*n) } else { None }).collect();
+                addr = Addr::Leaf { pre, range, maps };
             }
             Source::Concat(ps) => {
-                if !ps.iter().all(|p| matches!(p.source, Source::List(_) | Source::Range(_) | Source::Hold(_)) && windows(&p.stages)) {
-                    return false;
-                }
                 // Each part's list or range, then its windows' bounds, in
                 // turn (as expr evaluates `concat`'s arguments). A part with
                 // no items (`[]`) has nothing to read.
@@ -1394,7 +1485,7 @@ impl Emitter<'_> {
                 rev = self.narrow(cuts, lo, hi, m);
                 addr = Addr::Concat(parts);
             }
-            Source::Hold(_) => return false,
+            Source::Hold(_) => unreachable!("a hold is resolved before `direct`"),
         }
         if sink == Sink::Len {
             self.op(Op::Load(hi));
@@ -1439,6 +1530,8 @@ impl Emitter<'_> {
                     self.patch(ok, here);
                     cuts.push(Some(Cut::Take(n)));
                 }
+                // A `map` moves no item (`direct` evaluates it on the one read).
+                (Stage::Map(_), _) => {}
                 _ => unreachable!("stage {:?}", st.kind),
             }
         }
@@ -1616,7 +1709,27 @@ impl Emitter<'_> {
         // The position in the span's source: `lo + k`, or backwards `hi - 1 - k`.
         self.position(lo, hi, k, rev);
         match addr {
-            Addr::Leaf { pre, range } => self.read_leaf(*pre, *range, k, item, e),
+            Addr::Leaf { pre, range, maps } if !maps.is_empty() => {
+                // The item, then each `map`'s body over it in turn.
+                let (mut at, mut ty) = if *range {
+                    self.op(Op::Load(*pre));
+                    self.op(Op::Load(k));
+                    self.op(Op::Add);
+                    self.op(Op::Store(k));
+                    (Place { root: Root::Local(k), off: 0 }, item.clone())
+                } else {
+                    (Place { root: Root::Item { h: *pre, i: k }, off: 0 }, item.clone())
+                };
+                for m in maps {
+                    let TKind::Map { body, .. } = &m.kind else { unreachable!() };
+                    self.in_ctx(body, Ctx { item: at, index: None, acc: None }, None);
+                    let tmp = self.store_new(leaves(&body.ty));
+                    at = Place { root: Root::Local(tmp), off: 0 };
+                    ty = body.ty.clone();
+                }
+                self.load_as(at, &ty, &e.ty);
+            }
+            Addr::Leaf { pre, range, .. } => self.read_leaf(*pre, *range, k, item, e),
             Addr::Concat(parts) => {
                 // The part it is in: the first whose count is more than
                 // what is left of `k`, less the counts before it. (`k` is
@@ -1783,7 +1896,11 @@ impl Emitter<'_> {
                             m.op_at(Op::ListLen, &as_int);
                         }
                     }
-                    _ => m.consume(Sink::Len, inner, None, None, &as_int, None, None),
+                    _ => {
+                        m.replay += 1;
+                        m.consume(Sink::Len, inner, None, None, &as_int, None, None);
+                        m.replay -= 1;
+                    }
                 }
                 m.store_new(1)
             };
@@ -2450,7 +2567,7 @@ impl Emitter<'_> {
                 };
                 self.load_as(item, item_ty, &e.ty);
                 self.store_into(r, &e.ty);
-                if matches!(sink, Sink::Find | Sink::First) {
+                if matches!(sink, Sink::Find | Sink::First) || sl.backward.is_some() {
                     breaks.push(self.jump(Op::Jump, e));
                 }
                 if let Some(s) = skip {
@@ -2461,9 +2578,17 @@ impl Emitter<'_> {
             Sink::FindIndex | Sink::FindLastIndex => {
                 self.in_ctx(f.unwrap(), pred_ctx.clone(), None);
                 let skip = self.jump(Op::JumpIfFalse, e);
-                self.op(Op::Load(pos));
+                match sl.backward {
+                    // From the end: the count less one, less the items passed.
+                    Some(last) => {
+                        self.op(Op::Load(last));
+                        self.op(Op::Load(pos));
+                        self.op(Op::Sub);
+                    }
+                    None => self.op(Op::Load(pos)),
+                }
                 self.op(Op::Store(r));
-                if sink == Sink::FindIndex {
+                if sink == Sink::FindIndex || sl.backward.is_some() {
                     breaks.push(self.jump(Op::Jump, e));
                 }
                 let here = self.pc();
@@ -2562,7 +2687,11 @@ impl Emitter<'_> {
 
     fn coalesce(&mut self, a: &TExpr, b: &TExpr, e: &TExpr, dst: &Ty) {
         match &a.ty {
-            Ty::Nil => self.emit_as(b, dst),
+            // Always nil: only `b` matters, but Go evaluates `a` first.
+            Ty::Nil => {
+                self.evaluate_for_failure(a);
+                self.emit_as(b, dst)
+            }
             t if !t.may_be_nil() => self.emit_as(a, dst),
             // A scalar:  a; Dup; JumpIfNotNil E; Pop; b; E:
             _ if leaves(&a.ty) == 1 => {
@@ -2729,6 +2858,82 @@ fn binop(op: BinOp) -> Op {
     }
 }
 
+/// The `E-SKIPPED` diagnostic for a skip (plan.rs) whose expression can
+/// fail (`fail`, its first failure): what isn't evaluated as in Go, why,
+/// and a fix that works.
+fn skip_diag(s: &plan::Skip, fail: &crate::check::Failure, src: &str) -> Diag {
+    use plan::Cause;
+    let snip = |e: &TExpr| crate::diag::snippet(src, e.span);
+    let what = s.role.replace("{}", &snip(s.node));
+    let total = if fail.host {
+        "take the host builtin's call out of it (host builtins are treated as able to fail, spec §2.4)"
+    } else {
+        "make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case)"
+    };
+    let (cause, help) = match s.cause {
+        Cause::Stops(sink) => {
+            let at = match sink {
+                Sink::First => "`first` stops at the first item".to_string(),
+                Sink::At => "indexing stops at the item it reads".to_string(),
+                Sink::Get => "`get` stops at the item it reads".to_string(),
+                Sink::In => "`in` stops at the first item equal to what it looks for".to_string(),
+                Sink::FindLast | Sink::FindLastIndex => format!("`{}` runs backwards and stops at the last match", sink.name()),
+                _ => format!("`{}` stops at the first item that decides it", sink.name()),
+            };
+            let fix = match sink {
+                Sink::First | Sink::At | Sink::Get => format!("{total}, or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)"),
+                Sink::In => format!("{total}, or test the items themselves: `any(xs, f(#) == x)` rather than `x in map(xs, f(#))` (Go stops that early too)"),
+                Sink::FindLast | Sink::FindLastIndex => total.to_string(),
+                _ => format!(
+                    "{total}, or put the body in `{n}`'s own predicate: `{n}(xs, f(#) > 0)` rather than `{n}(map(xs, f(#)), # > 0)` (Go stops that early too)",
+                    n = sink.name()
+                ),
+            };
+            (at, fix)
+        }
+        Cause::UniqFull(u) => (format!("`{}` stops once it has the items it needs", snip(u)), total.to_string()),
+        Cause::Window(w) => (
+            format!("`{}` leaves the loop at its end", snip(w)),
+            format!("{total}, or slice the list before the body (`map(take(xs, k), …)` rather than `take(map(xs, …), k)`)"),
+        ),
+        Cause::Dropped(sort, sink) => {
+            let by = sink.map_or(String::new(), |k| format!(" (`{}` doesn't depend on the order)", k.name()));
+            (format!("the sort `{}` is left out{by}, so its keys are never evaluated", snip(sort)), format!("{total}, or leave the sort out yourself: it doesn't change the result"))
+        }
+        Cause::Filtered(sort) => (
+            format!("the filter goes under the sort `{}`, which then evaluates the key only for the items that pass it", snip(sort)),
+            format!("{total}, or filter before sorting (`first(sortBy(filter(xs, p), k))` rather than `find(sortBy(xs, k), p)` or `first(filter(sortBy(xs, k), p))`): the same item"),
+        ),
+        Cause::EveryItem(sink) => {
+            let (how, fix) = match sink {
+                Sink::Find => (
+                    "goes under the sort (to keep one item) and runs for every item, where Go stops at the first match in sorted order (the last, for `findLast`)",
+                    format!("{total}, or filter before sorting (`first(sortBy(filter(xs, p), k))`): the same item"),
+                ),
+                _ => (
+                    "runs forwards over every item here (the list's stages can fail, or can't be walked from the end), where Go runs it backwards and stops at the last match",
+                    format!("{total}, or make the `map` and `filter` bodies before it total, so it can run backwards"),
+                ),
+            };
+            let d = Diag::error("E-SKIPPED", s.node.span, format!("{what} {how}, and it can fail: {}", fail.describe(src)));
+            return d.help(fix);
+        }
+    };
+    // A list that isn't built by a list builtin, bound with `let`, is
+    // evaluated where the `let` is (a list built by one is re-run at each use).
+    let help = if s.role == plan::CONCAT_LIST {
+        format!("{total}, or bind it with `let` first (`let ys = …; concat(xs, ys)`): it is then evaluated where the `let` is")
+    } else {
+        help
+    };
+    Diag::error(
+        "E-SKIPPED",
+        s.node.span,
+        format!("{what} isn't evaluated for every item here: {cause}; Go evaluates it for every item, and it can fail: {}", fail.describe(src)),
+    )
+    .help(help)
+}
+
 /// Whether `e` reads `#index` of the predicate at `depth` (not a nested one's).
 fn uses_index(e: &TExpr, depth: usize) -> bool {
     match &e.kind {
@@ -2824,12 +3029,3 @@ fn key_leaf(key: Option<&TExpr>, item: &Ty, block: &Ty) -> Option<u16> {
     };
     (leaf < bytecode::HOLD_KEY_MAX).then_some(leaf)
 }
-
-/// Whether an index may be negative (counting from the end).
-fn may_be_negative(e: &TExpr) -> bool {
-    match &e.ty {
-        Ty::Int(r) => r.lo < 0,
-        _ => true,
-    }
-}
-

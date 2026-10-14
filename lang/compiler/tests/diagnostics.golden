@@ -429,6 +429,94 @@ program.expr:1:9: error[E-VARIANT]: the output field `phase` must have exactly o
 program.expr:1:1: error[E-FIELD]: the output field `phase.countdown` is missing the field `gun`
   help: every required field must be written, e.g. `gun: …`
 
+── first(map(xs, 10 % #)) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── map(xs, 10 % #)[1]
+program.expr:1:9: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: indexing stops at the item it reads; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── get(map(xs, 10 % #), 1) ?? 0
+program.expr:1:13: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `get` stops at the item it reads; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── any(map(xs, 10 % #), # > 1)
+program.expr:1:13: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `any` stops at the first item that decides it; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or put the body in `any`'s own predicate: `any(xs, f(#) > 0)` rather than `any(map(xs, f(#)), # > 0)` (Go stops that early too)
+
+── 1 in map(xs, 10 % #)
+program.expr:1:14: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `in` stops at the first item equal to what it looks for; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or test the items themselves: `any(xs, f(#) == x)` rather than `x in map(xs, f(#))` (Go stops that early too)
+
+── sum(take(map(xs, 10 % #), 2))
+program.expr:1:18: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `take(map(xs, 10 % #), 2)` leaves the loop at its end; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or slice the list before the body (`map(take(xs, k), …)` rather than `take(map(xs, …), k)`)
+
+── sum(map(xs, 10 % #)[:2])
+program.expr:1:13: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `map(xs, 10 % #)[:2]` leaves the loop at its end; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or slice the list before the body (`map(take(xs, k), …)` rather than `take(map(xs, …), k)`)
+
+── sum(take(uniq(map(xs, 10 % #)), 2))
+program.expr:1:23: error[E-SKIPPED]: the `map` body `10 % #` isn't evaluated for every item here: `uniq(map(xs, 10 % #))` stops once it has the items it needs; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case)
+
+── sum(sortBy(xs, 10 % #))
+program.expr:1:16: error[E-SKIPPED]: the sort key `10 % #` isn't evaluated for every item here: the sort `sortBy(xs, 10 % #)` is left out (`sum` doesn't depend on the order), so its keys are never evaluated; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or leave the sort out yourself: it doesn't change the result
+
+── find(sortBy(xs, 10 % #), # > 1) ?? 0
+program.expr:1:17: error[E-SKIPPED]: the sort key `10 % #` isn't evaluated for every item here: the filter goes under the sort `sortBy(xs, 10 % #)`, which then evaluates the key only for the items that pass it; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or filter before sorting (`first(sortBy(filter(xs, p), k))` rather than `find(sortBy(xs, k), p)` or `first(filter(sortBy(xs, k), p))`): the same item
+
+── first(filter(sortBy(xs, 10 % #), # > 1)) ?? 0
+program.expr:1:25: error[E-SKIPPED]: the sort key `10 % #` isn't evaluated for every item here: the filter goes under the sort `sortBy(xs, 10 % #)`, which then evaluates the key only for the items that pass it; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or filter before sorting (`first(sortBy(filter(xs, p), k))` rather than `find(sortBy(xs, k), p)` or `first(filter(sortBy(xs, k), p))`): the same item
+
+── find(sortBy(xs, -#), 10 % # > 1) ?? 0
+program.expr:1:22: error[E-SKIPPED]: the predicate `10 % # > 1` goes under the sort (to keep one item) and runs for every item, where Go stops at the first match in sorted order (the last, for `findLast`), and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or filter before sorting (`first(sortBy(filter(xs, p), k))`): the same item
+
+── findLast(map(xs, 10 % #), 10 % # > 1) ?? 0
+program.expr:1:27: error[E-SKIPPED]: `findLast`'s predicate `10 % # > 1` runs forwards over every item here (the list's stages can fail, or can't be walked from the end), where Go runs it backwards and stops at the last match, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or make the `map` and `filter` bodies before it total, so it can run backwards
+
+── first(concat(filter(xs, # > 0), [10 % i])) ?? 0
+program.expr:1:33: error[E-SKIPPED]: the list `[10 % i]` in `concat` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `10 % i` divides by a value that may be 0 (R-DIV0)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or bind it with `let` first (`let ys = …; concat(xs, ys)`): it is then evaluated where the `let` is
+
+── let ys = map(xs, 10 % #); 1
+program.expr:1:5: error[E-SKIPPED]: `ys` is never used, so it is never evaluated; Go evaluates a `let` in full where it is written, and this one can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: remove it, or make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`)
+
+── let ys = map(xs, 10 % #); b ? sum(ys) : 0
+program.expr:1:5: error[E-SKIPPED]: `ys` is used only on some paths (in a branch, or once per item of another list), so it isn't always evaluated; Go evaluates a `let` in full where it is written, and this one can fail: `10 % #` divides by a value that may be 0 (R-DIV0)
+  help: use it where it is always evaluated, or move the `let` into the branch that uses it, or make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`)
+
+── first(map(ps, dist(p, #))) ?? 0.0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `dist(p, #)` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `dist(p, #)` calls a host builtin, which may fail (R-ARG)
+  help: take the host builtin's call out of it (host builtins are treated as able to fail, spec §2.4), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── first(map(xs, # + n)) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `# + n` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `n` may be nil (R-NIL)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── first(map(xs, xs[#])) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `xs[#]` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `xs[#]` may be out of range (R-INDEX)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── first(map(xs, s.count + #)) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `s.count + #` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `s.count` reads `.count` of a value that may be nil (R-NIL)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── first(map(xs, reduce(xs, #acc + #))) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `reduce(xs, #acc + #)` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `reduce(xs, #acc + #)` has no initial value, so an empty list fails (R-ARG)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
+── first(map(xs, len(take(xs, # - 5)))) ?? 0
+program.expr:1:15: error[E-SKIPPED]: the `map` body `len(take(xs, # - 5))` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `take(xs, # - 5)`'s count may be negative (R-ARG)
+  help: make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)
+
 ── 1
 interface: error[E-SCHEMA]: /inputs/0/schema/oneOf/0: an alternative of type "integer" isn't supported: every alternative is a record that names its variant
   help: each alternative names one variant: {"properties": {"<name>": {"type": "object", …}}, "required": ["<name>"]}

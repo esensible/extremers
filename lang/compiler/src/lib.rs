@@ -59,8 +59,8 @@ pub struct Compiled {
 pub fn compile(source: &str, interface: &Json, opts: &Options) -> Result<Compiled, Vec<Diag>> {
     let iface = schema::parse_interface(interface)?;
     let ast = syntax::parse(source).map_err(|d| vec![d])?;
-    let checked = check::check(&ast, &iface)?;
-    let em = emit::emit(&checked, &iface).map_err(|d| vec![d])?;
+    let checked = check::check(&ast, &iface, source)?;
+    let em = emit::emit(&checked, &iface, source)?;
     let slot_bytes = SLOT_BYTES as u32;
     let program_bytes = em.bytes.len() as u32;
     let mut total = (em.max_stack as u32 + em.locals as u32 + em.output_leaves as u32) * slot_bytes;

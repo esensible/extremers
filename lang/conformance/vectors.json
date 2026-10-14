@@ -13796,6 +13796,1264 @@
           }
         }
       ]
+    },
+    {
+      "name": "what Go evaluates: any, all, none, find and findIndex stop their own predicate at the item that decides",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "b": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "c": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "d": {
+                "int": "3",
+                "kind": "int"
+              },
+              "e": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "b": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "c": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "d": {
+                "int": "3",
+                "kind": "int"
+              },
+              "e": {
+                "int": "1",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "b": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "c": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "b": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "c": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: findLast and findLastIndex run from the end and stop at the last match",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "3",
+                "kind": "int"
+              },
+              "b": {
+                "int": "1",
+                "kind": "int"
+              },
+              "c": {
+                "int": "6",
+                "kind": "int"
+              },
+              "d": {
+                "int": "1",
+                "kind": "int"
+              },
+              "e": {
+                "int": "3",
+                "kind": "int"
+              },
+              "f": {
+                "int": "6",
+                "kind": "int"
+              },
+              "g": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "6",
+                "kind": "int"
+              },
+              "b": {
+                "int": "3",
+                "kind": "int"
+              },
+              "c": {
+                "int": "12",
+                "kind": "int"
+              },
+              "d": {
+                "int": "3",
+                "kind": "int"
+              },
+              "e": {
+                "int": "6",
+                "kind": "int"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "g": {
+                "int": "-99",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "12",
+                "kind": "int"
+              },
+              "g": {
+                "int": "4",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "b": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "c": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "d": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "e": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "f": {
+                "int": "1",
+                "kind": "int"
+              },
+              "g": {
+                "int": "0",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: one runs its predicate on every item",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:12)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:12)"
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: count runs its predicate on every item",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:14)"
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: len builds its list in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: len of a filter builds it in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:19)"
+        },
+        {
+          "ok": {
+            "int": "1",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: last builds its list in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:17)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: sum builds its list in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: max builds its list in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: reduce builds its list in full",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:19)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: first of a sort evaluates every key",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: take of a sort evaluates every key",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:22)"
+        },
+        {
+          "ok": {
+            "items": [
+              {
+                "int": "0",
+                "kind": "int"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: an index of a sort evaluates every key",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:17)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a window counted from the end first evaluates what comes before it",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:16)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a window reached backwards evaluates what comes before it",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:24)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:24)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: take reached backwards evaluates what comes before it",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:29)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a window of a concat part reached backwards",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:31)"
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: findLast's list is built in full before it runs from the end",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "ok": {
+            "int": "0",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: sinks that stop early, over bodies that can't fail",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fc": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fi": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fr": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fs": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fu": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "i": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "0",
+                "kind": "int"
+              },
+              "t": {
+                "items": [],
+                "kind": "list"
+              },
+              "tu": {
+                "items": [],
+                "kind": "list"
+              },
+              "w": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "f": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fc": {
+                "int": "12",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fi": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fr": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fs": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "fu": {
+                "int": "-99",
+                "kind": "int"
+              },
+              "i": {
+                "bool": false,
+                "kind": "bool"
+              },
+              "n": {
+                "int": "0",
+                "kind": "int"
+              },
+              "s": {
+                "int": "0",
+                "kind": "int"
+              },
+              "t": {
+                "items": [],
+                "kind": "list"
+              },
+              "tu": {
+                "items": [],
+                "kind": "list"
+              },
+              "w": {
+                "items": [],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fc": {
+                "int": "2",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fi": {
+                "int": "6",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fr": {
+                "int": "8",
+                "kind": "int"
+              },
+              "fs": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fu": {
+                "int": "1",
+                "kind": "int"
+              },
+              "i": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "n": {
+                "int": "4",
+                "kind": "int"
+              },
+              "s": {
+                "int": "10",
+                "kind": "int"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "6",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tu": {
+                "items": [
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "w": {
+                "items": [
+                  {
+                    "int": "2",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "3",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "f": {
+                "int": "6",
+                "kind": "int"
+              },
+              "fc": {
+                "int": "6",
+                "kind": "int"
+              },
+              "ff": {
+                "int": "3",
+                "kind": "int"
+              },
+              "fi": {
+                "int": "6",
+                "kind": "int"
+              },
+              "fl": {
+                "int": "1",
+                "kind": "int"
+              },
+              "fr": {
+                "int": "2",
+                "kind": "int"
+              },
+              "fs": {
+                "int": "1",
+                "kind": "int"
+              },
+              "fu": {
+                "int": "0",
+                "kind": "int"
+              },
+              "i": {
+                "bool": true,
+                "kind": "bool"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "s": {
+                "int": "7",
+                "kind": "int"
+              },
+              "t": {
+                "items": [
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "9",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "tu": {
+                "items": [
+                  {
+                    "int": "0",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "1",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              },
+              "w": {
+                "items": [
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  },
+                  {
+                    "int": "4",
+                    "kind": "int"
+                  }
+                ],
+                "kind": "list"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a map read where its item lies",
+      "results": [
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "4",
+                "kind": "int"
+              },
+              "c": {
+                "int": "9",
+                "kind": "int"
+              },
+              "g": {
+                "int": "4",
+                "kind": "int"
+              },
+              "l": {
+                "int": "6",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "p": {
+                "bits": "4014000000000000",
+                "kind": "float"
+              },
+              "q": {
+                "int": "2",
+                "kind": "int"
+              },
+              "r": {
+                "int": "6",
+                "kind": "int"
+              },
+              "s": {
+                "int": "9",
+                "kind": "int"
+              },
+              "t": {
+                "int": "30",
+                "kind": "int"
+              },
+              "u": {
+                "bits": "4012000000000000",
+                "kind": "float"
+              },
+              "v": {
+                "bits": "4000000000000000",
+                "kind": "float"
+              },
+              "w": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "6",
+                "kind": "int"
+              },
+              "c": {
+                "int": "9",
+                "kind": "int"
+              },
+              "g": {
+                "int": "6",
+                "kind": "int"
+              },
+              "l": {
+                "int": "6",
+                "kind": "int"
+              },
+              "n": {
+                "int": "2",
+                "kind": "int"
+              },
+              "p": {
+                "bits": "4008000000000000",
+                "kind": "float"
+              },
+              "q": {
+                "int": "2",
+                "kind": "int"
+              },
+              "r": {
+                "int": "6",
+                "kind": "int"
+              },
+              "s": {
+                "int": "-1",
+                "kind": "int"
+              },
+              "t": {
+                "int": "30",
+                "kind": "int"
+              },
+              "u": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              },
+              "v": {
+                "bits": "3ff0000000000000",
+                "kind": "float"
+              },
+              "w": {
+                "int": "3",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "ok": {
+            "fields": {
+              "a": {
+                "int": "8",
+                "kind": "int"
+              },
+              "c": {
+                "int": "21",
+                "kind": "int"
+              },
+              "g": {
+                "int": "8",
+                "kind": "int"
+              },
+              "l": {
+                "int": "14",
+                "kind": "int"
+              },
+              "n": {
+                "int": "3",
+                "kind": "int"
+              },
+              "p": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              },
+              "q": {
+                "int": "5",
+                "kind": "int"
+              },
+              "r": {
+                "int": "14",
+                "kind": "int"
+              },
+              "s": {
+                "int": "81",
+                "kind": "int"
+              },
+              "t": {
+                "int": "60",
+                "kind": "int"
+              },
+              "u": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              },
+              "v": {
+                "bits": "bff0000000000000",
+                "kind": "float"
+              },
+              "w": {
+                "int": "6",
+                "kind": "int"
+              }
+            },
+            "kind": "record"
+          }
+        },
+        {
+          "error": "index out of range: 3 (array length is 3) (1:51)"
+        },
+        {
+          "error": "index out of range: -1 (array length is 3) (1:51)"
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: map",
+      "results": [
+        {
+          "error": "reflect: call of reflect.Value.Len on zero Value (1:7)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: filter",
+      "results": [
+        {
+          "error": "reflect: call of reflect.Value.Len on zero Value (1:6)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: slice",
+      "results": [
+        {
+          "error": "invalid argument for len (type \u003cnil\u003e) (1:7)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: take",
+      "results": [
+        {
+          "error": "cannot take from invalid (1:7)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: reverse",
+      "results": [
+        {
+          "error": "cannot reverse invalid (1:7)"
+        },
+        {
+          "ok": {
+            "int": "3",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: uniq left out",
+      "results": [
+        {
+          "error": "cannot uniq invalid (1:11)"
+        },
+        {
+          "ok": {
+            "fields": {
+              "f": {
+                "int": "2",
+                "kind": "int"
+              },
+              "i": {
+                "bool": true,
+                "kind": "bool"
+              }
+            },
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list builtin through stages fails on a nil list: sort left out",
+      "results": [
+        {
+          "error": "reflect: call of reflect.Value.Len on zero Value (1:6)"
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: the left of ?? when it is always nil",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:5)"
+        },
+        {
+          "ok": {
+            "int": "5",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a record compared with nil",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:8)"
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a field a builtin's parameter doesn't have",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:33)"
+        },
+        {
+          "ok": {
+            "bits": "4008000000000000",
+            "kind": "float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: get's index, of a nil list",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:12)"
+        },
+        {
+          "ok": {
+            "int": "-1",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "4",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: what in looks for, in a nil list",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:4)"
+        },
+        {
+          "ok": {
+            "bool": false,
+            "kind": "bool"
+          }
+        },
+        {
+          "ok": {
+            "bool": true,
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list bound with let, used in both branches",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:21)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "7",
+            "kind": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "what Go evaluates: a list bound with let, used always and in a branch",
+      "results": [
+        {
+          "error": "runtime error: integer divide by zero (1:24)"
+        },
+        {
+          "error": "runtime error: integer divide by zero (1:24)"
+        },
+        {
+          "ok": {
+            "int": "2",
+            "kind": "int"
+          }
+        },
+        {
+          "ok": {
+            "int": "9",
+            "kind": "int"
+          }
+        }
+      ]
     }
   ],
   "oracle": "github.com/expr-lang/expr v1.17.9-0.20260412144015-3a46b1970b37 (v1.17.8 + PR #954), Optimize(false), arm64"

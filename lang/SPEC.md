@@ -159,7 +159,7 @@ Also, `-2 ** 2 == -4` and `2 ** 3 ** 2 == 512`.
 - An absent record field reads as `nil`.
 - `a.f` on `nil` is a run-time error. `a?.f` gives `nil` and short-circuits the rest of the chain.
 - On `nil` these fail with `R-NIL`: `+ - * / % < > -x !x`, `len`, `int`, `map`, `filter`, `sum`, `reverse`, `concat`.
-- On `nil` these don't fail: `first(nil)` and `last(nil)` give `nil`, and `x in nil` gives `false`.
+- On `nil` these don't fail: `first(nil)` and `last(nil)` give `nil`, and `x in nil` gives `false`; only straight on the nil list (through any list builtin it fails: `first(map(n, …))`, `x in uniq(n)`, §2.7).
 - `??`, `?.` and a test (`p != nil ? … : …`) are the tools for nil. At run time the language adds no nil rules of its own: narrowing (§3.3) is a typing rule, and a narrowed program does exactly what expr does.
 
 ### 2.3 Builtins from expr
@@ -257,7 +257,7 @@ The language crate itself ships only expr's builtins (§2.3). An application's b
 
 **Linking.** Each declaration has a **signature**: its name and the leaf shapes of its parameters and result, e.g. `distance({lat:f,lon:f},{lat:f,lon:f})f` and `courses_cross({lat:f,lon:f},f,{lat:f,lon:f},f,?f)?{lat:f,lon:f}` (`f` float, `i` int, `b` bool, `s` string, `{…}` a record's fields in name order, `?` nullable; ranges, enums and lengths aren't part of it). The bytecode lists the signatures of the builtins the program calls (§7.1), and the VM links each to the host builtin with exactly that signature at load. A missing or mismatched builtin fails the load, never an evaluation.
 
-**Purity and failure.** Builtins must be pure and deterministic: the same arguments always give the same result. An implementation may fail (e.g. a negative range), which fails the evaluation with `R-ARG`.
+**Purity and failure.** Builtins must be pure and deterministic: the same arguments always give the same result. An implementation may fail (e.g. a negative range), which fails the evaluation with `R-ARG`. So the compiler treats every call as able to fail (§2.7): a lowering may not skip one that Go would make (`first(map(xs, distance(p, #)))` is `E-SKIPPED`). A declaration can't say yet that a builtin never fails.
 
 **Not yet:**
 - Builtins that take lists (e.g. a weighted mean of headings) come with lists.
@@ -293,21 +293,66 @@ The checker is statically typed, so it rejects some programs that expr would run
 | a non-literal sort direction | checked at run time | `E-TYPE` |
 | `1 % 0` with constants | a compile error under expr's optimizer | `R-DIV0` at run time; the oracle runs unoptimised (§9) |
 | `{a: 1, a: 2}` | inconsistent | `E-DUP-KEY` |
-| errors in items that nothing consumes | raised, because expr is eager | not raised (§2.7) |
+| a body expr evaluates for items that nothing consumes (`first(map(xs, 1 % #))`, `sum(sortBy(xs, k))`, an unused `let ys = map(…)`) | evaluated, because expr builds every list in full: its failure fails the program | accepted only if the body can't fail, and then not evaluated (unobservable); otherwise `E-SKIPPED` (§2.7) |
 | ties in `sortBy`/`sort` of more than 12 items | `sort.Sort` (pdqsort) isn't stable past 12 items | stable: the insertion order Go gives up to 12 items; the corpus keeps ties within 12 items (§9) |
 | a sort key that may be nil | `R-NIL` when compared, none for a single item | `E-TYPE` |
 | `a..b` whose bound passes 65,535 | runs (and allocates) | `E-UNBOUNDED` |
 | `flatten` of lists nested more than one deep, or of mixed items | flattens every level | `E-UNSUPPORTED` / `E-TYPE` |
 
-### 2.7 Lazy evaluation
+### 2.7 What is evaluated
 
-Lists are **lazy**: an item is computed only if a sink consumes it.
-- `take(map(xs, 1 % #), 1)`, `first(map(…))`, `len(map(…))` and `map(…)[:1]` raise no error from items they never reach. expr runs `map` eagerly, so in expr they fail (probe).
-- Dropping a sort (H2) likewise skips evaluating its keys.
+Lists are lowered **lazily**: a pipeline (§6) computes an item only as far as its sink consumes it, and stops early where it can. expr is **eager**: every list builtin builds its list in full before the builtin that takes it runs. The only effect either can show is *which run-time errors fire*, so the rule is defined on that:
 
-This is a deliberate difference from expr. Two rules go with it:
+> **A lowering may skip evaluating a body, key, predicate or list that Go evaluates only if that expression can't fail** (it is *total*); then the skip can't be seen. A lowering that would skip an expression that can fail, or evaluate a predicate past where Go stops, is rejected at compile time: **`E-SKIPPED`** (§5.1), naming the expression, what skips it, and a fix.
+
+**What Go evaluates** (probed on the oracle, §9, each with a body that fails on one item, e.g. `1 % #` on a 0. The corpus's "what Go evaluates: …" cases cover these: with failing bodies wherever the lowering evaluates what Go does, so both fail or both stop at the same item, and with bodies that can't fail where it skips):
+
+| Construct | What Go evaluates |
+|---|---|
+| `map`, `filter`, `sortBy` (keys), `sort`, `uniq`, `reverse`, `take`, slices, `concat`, `flatten`, `a..b` | the whole list first, every body/key/predicate on every item, every `concat` list; before the builtin that consumes it runs |
+| `first`, `last`, `xs[i]`, `get`, `len`, `in`, `min`, `max`, `sum`, `mean`, `median` | no body of their own; their list is built in full (`first(map(xs, 1 % #))`, `len(map(…))`, `take(map(…), 1)`, `map(…)[:1]`, `map(…)[0]`, `get(map(…), 0)`, `0 in map(…)`, `first(reverse(map(…)))`, `first(concat(map(…), map(…)))`, `first(uniq(map(…)))`, `flatten(map(…))[0]` all fail on the 0) |
+| `any`, `none` | the predicate forwards, **stopping at the first true** (`any([1, 0, 2], 1 % # == 0)` is true; `any([0, 1], …)` fails) |
+| `all` | forwards, stopping at the first false |
+| `find`, `findIndex` | forwards, stopping at the first match |
+| `findLast`, `findLastIndex` | **backwards from the end**, stopping at the first match (`findLast([0, 1], 1 % # == 0)` is 1; `findLast([1, 0], …)` fails) |
+| `one`, `count`, `sum(xs, f)`, `reduce` | every item (`one` doesn't stop at a second match) |
+| `sum`, `len`, `first`, … of `sortBy(xs, k)` | every key (`sum(sortBy([1, 0], 1 % #))` fails) |
+| `let ys = <list>; …` | the list in full, where the `let` is, used or not |
+| `a ?? b`, `c ? a : b`, `a && b`, `a \|\| b`, `a < b < c` | `b` (the branch, the right side, the next comparison) only when needed, as here |
+| `{…}.f`, `[…][i]`, `rec == nil`, a builtin's record argument | the whole literal (every field, every item), the record compared with nil, every field of an argument (even those the parameter doesn't have), `get`'s index and `in`'s value even when the list is nil |
+| a list builtin over a nil list | fails (`R-NIL`), whatever consumes it: `first(map(n, …))`, `x in uniq(n)`, `get(n[1:], 0)` fail; only `first`, `last`, `get` and `in` straight on a nil list give nil (or false), and `sort(nil)` is `[]` |
+
+(expr's optimizer, which the oracle leaves off (§9), rewrites some of these, e.g. `first(filter(…))` into a `find`; the rule is defined against Go expr unoptimised.)
+
+**Can fail.** Whether an expression can fail is a sound static analysis on the typed tree (`check::failures`, from §5.2's run-time errors): an expression that can't fail never fails, in Go or here. These can fail:
+- `%` by an int whose range includes 0 (`R-DIV0`). `/` and `**` always give floats: `x / 0` is ±Inf, `0 / 0` NaN, `0 ** -1` +Inf (probed), so they never fail;
+- nil where nil fails (`R-NIL`): an operand of `+ - * / % ** < <= > >=` or `-x` that may be nil, an argument of `abs`, `int`, `float`, `round`, `floor`, `ceil`, `min`, `max` that may be nil, a `.f` (not `?.f`) on a record that may be nil and isn't narrowed, a list builtin's list that may be nil (all but `first`, `last`, `get` and `in` straight on the list, and `sort`), a `concat` part or `flatten` item that may be nil, a `get` index, a `sum`/`mean`/`median`/`min`/`max` item, `sum`'s value or a `count(xs)` item that may be nil;
+- `xs[i]` (`R-INDEX`), unless `xs` is a literal and `i` a constant within it;
+- `reduce` with no initial value, and `take` with a count that may be negative (`R-ARG`);
+- **every host builtin call** (`R-ARG`: an implementation may fail, §2.4). A declaration has no way yet to say a builtin can't fail.
+
+Everything else is total, in Go and in the VM (checked against both): `==`, `!=`, `+ - * -x` on ints (they wrap: `MaxInt + 1`, `-MinInt`, `abs(MinInt)` are `MinInt`, `MinInt % -1` is 0), `int` of a float (saturates on arm64 as in the VM; NaN gives 0), `round`, `floor`, `ceil`, `??`, `?.`, `&&`, `||`, conditions (never nil, `E-TYPE`), ranges (bounded by `E-UNBOUNDED`), slices (clamped), sort keys (never nil, `E-TYPE`).
+
+**Each lowering, against the table:**
+
+| Lowering | Evaluates what Go does? | As built |
+|---|---|---|
+| a sink that stops early (`first`, `xs[i]`, `get`, `in`, `find`, `findIndex`, `any`, `all`, `none`) over a `map`, `filter`, `flatten` or flat-map, or a walked `concat` | no: the stages' bodies (and the `concat` lists not yet reached) are skipped for the items after it stops | allowed for bodies that can't fail; else `E-SKIPPED`. The sink's own predicate stops where Go's does. (`xs[i]` and `get` with an index that is always negative count the whole pipeline first, by a replay that evaluates all of it: no skip) |
+| a window with an end (`take`, `[a:b]`, `[:b]`) over stages | no: the items after its end skip the stages before it | the same. Not a window whose bounds are counted first (a bound that may be negative, or a window reached backwards under a `reverse`, whose start becomes the end): the replay that counts evaluates everything before it for every item |
+| `take(uniq(…), k)`, a `uniq` held for `k` items | no: it stops once full | the same |
+| a sort dropped under `len`, `count`, `sum`, `mean`, `median`, `min`, `max`, `any`, `all`, `none`, `one`, `in` (H2) | no: its keys are never evaluated | allowed for keys that can't fail; else `E-SKIPPED` ("leave the sort out yourself") |
+| `find`/`findLast` of a sort, `first`/`take`/… of a `filter` of a sort (the predicate goes under the sort, H2) | no: the key is evaluated only for the items that pass; and `find`'s predicate runs for every item where Go stops at the first match | allowed when the key (and `find`'s predicate) can't fail; else `E-SKIPPED` ("filter before sorting: `first(sortBy(filter(xs, p), k))`") |
+| `findLast`, `findLastIndex` | yes, where the loop can run backwards for free: over a list or range through `map`s (and, for `findLast`, `filter`s) whose bodies can't fail and don't read `#index`, it runs from the end and stops at the first match, as Go does | otherwise it runs forwards over every item, evaluating the predicate past Go's stop: allowed when the predicate can't fail, else `E-SKIPPED` |
+| `len`, `first`, `last`, `xs[i]`, `get` read where the item lies (§7.6), over windows, `reverse`s and `map`s | no: a `map` body is evaluated for the item read only (`len`: none) | only for `map` bodies that can't fail and don't read `#index`; a body that can fail walks instead (`len` and `last` then evaluate it for every item, as Go does; `first`, `xs[i]`, `get` are `E-SKIPPED`) |
+| k-selections (`first`, `last`, `take`, `[c]`, `[-k:]` of a sort) | yes: every key | — |
+| a list bound with `let` (inlined: each use runs its own copy, §6) | yes when some use is evaluated every time the `let` is (not only in one branch, or in a per-item body) | allowed for a list that can't fail; else `E-SKIPPED` at the name ("use it where it is always evaluated, or move the `let` into the branch"). Each use is then checked as above |
+| a list builtin between `first`/`last`/`get`/`in` and a nil list, kept or left out | yes: it fails `R-NIL` | as Go (eager, as cheap) |
+| `nil ?? b`, `rec == nil` of a record that can't be nil, a record argument's extra fields, `get`'s index and `in`'s value on a nil list | yes | the unneeded value is evaluated (and dropped) when it can fail; one that can't is left out |
+| replays (a count before a negative index or a window counted from the end) | yes: they only evaluate stage bodies on items of lists Go builds in full | — |
+
+Two rules go with it:
 - **Fusion never runs code that expr would not run.** Aggregates are fused into one loop only when they are evaluated under the same condition (§6.2).
-- **Errors are the only observable effect,** so the evaluation order can't otherwise be seen.
+- **Errors are the only observable effect.** The order in which a lowering evaluates two bodies that can both fail is not checked: where Go evaluates a whole `map` before a `filter` over it, the loop evaluates them item by item, so if both fail on different items, the first error may differ (both fail).
 
 ---
 
@@ -517,7 +562,7 @@ A bound only matters for holds, for output positions and for work. A flowing lis
   - `first`, `last`, `[0]`, `[-1]` → min-by or max-by (H10).
   - `take(…, k)` or `[:k]`, with `hi(k)` known → a sorted buffer of `hi(k)` pairs. `[-k:]`, and `reverse` followed by `take`, are the same from the other end.
   - `find(…, p)` → min-by over `filter(xs, p)`.
-  - `sum`, `count`, `len`, `mean`, `min`, `max`, `any`, `all`, `none`, `one`, `in` → the sort is dropped. A float `sum` or `mean` may then differ in its last bits.
+  - `sum`, `count`, `len`, `mean`, `min`, `max`, `any`, `all`, `none`, `one`, `in` → the sort is dropped. A float `sum` or `mean` may then differ in its last bits. Its keys are then never evaluated, where Go evaluates every one: so a key that can fail is `E-SKIPPED` (§2.7), with the fix "leave the sort out yourself". Likewise `find` of a sort, and a `filter` that goes under one, evaluate the key only for the items that pass (and `find`'s predicate for every item): a key or predicate there that can fail is `E-SKIPPED` ("filter before sorting"). A sort's nil list still fails (`R-NIL`) when dropped.
 - Ties follow the stable sort. `first` of an ascending sort is the first minimum, and `last` is the last maximum.
 
 > **As built (H2–H5):** the holds are blocks of locals (there is no arena yet), reserved for the whole evaluation and counted in `held_slots` (H1), so the charge is in slots of 16 bytes: an item is its leaves, and a sorted block keeps one slot more per item for its key unless the key is one of the item's own leaves (`sort(xs)`, `sortBy(ps, .t)`; not `sortBy(xs, -#)`). The planner (§7.6) works out what each consumer needs of a list, through the stages between them, and holds only that:
@@ -685,6 +730,7 @@ Profiles may add their own wording to the help, for example naming their inputs.
 | `E-WORK` | `map(xs, count(xs, …))` against a work limit | "about {work} instructions (loops over {bounds} multiply)" / "slice the input (`xs[-N:]`), or carry a running total in the output" |
 | `E-SCHEMA` | an array without `maxItems` | "`{path}`: {problem}" / "add `maxItems`: every list needs a maximum length" |
 | `E-DUP-KEY` | `{a: 1, a: 2}` | "key `a` appears twice" / "keep one" |
+| `E-SKIPPED` | `first(map(xs, 10 % #))`; `sum(take(map(xs, 10 % #), 2))`; `sum(sortBy(xs, 10 % #))`; `find(sortBy(xs, k), 10 % # > 1)`; `let ys = map(xs, 10 % #); b ? sum(ys) : 0` | a body, key, predicate or `concat` list Go evaluates for every item, which this lowering would evaluate for fewer (or a predicate for more), and which can fail (§2.7). At the expression: "the `map` body `10 % #` isn't evaluated for every item here: `first` stops at the first item; Go evaluates it for every item, and it can fail: `10 % #` divides by a value that may be 0 (R-DIV0)" / "make it total (e.g. `a % max(b, 1)`, `(…) ?? 0`, a test that avoids the failing case), or read the item first and apply the body to it alone (`let x = xs[i]; …` rather than `map(xs, …)[i]`)". The help names a fix that works for each cause: a window, "slice the list before the body (`map(take(xs, k), …)`)"; `any`/`all`/`none`/`find`/`findIndex`, "put the body in the predicate"; `in`, "`any(xs, f(#) == x)`"; a dropped sort, "leave the sort out yourself"; a filter under a sort, "filter before sorting (`first(sortBy(filter(xs, p), k))`)"; a `concat` list, "bind it with `let` first"; a forwards `findLast`, "make the `map` and `filter` bodies before it total, so it can run backwards"; a host builtin, "take the host builtin's call out of it". A `let` of a list, at its name: "`ys` is used only on some paths …, so it isn't always evaluated; Go evaluates a `let` in full where it is written, and this one can fail: …" (or "is never used") / "use it where it is always evaluated, or move the `let` into the branch that uses it, or make it total" |
 
 ### 5.2 Run-time errors
 
@@ -961,7 +1007,8 @@ sink   = an aggregate (§2.3, `median` included) | a block write (a list kept as
 - **Planning** (`plan::for_sink`, `plan::for_write`) is deterministic, and decides every hold. It walks from the sink down the stages, carrying what the consumer needs of the list: every item in order, every item in any order, only which values appear, or only the first or last `k` (§4.3, as built). A `sortBy` or `uniq` becomes a `Hold` of the least that need allows, or is dropped. A `filter` straight on a sort, and `find`'s predicate, go under the sort. A second `reverse` in one pipeline holds what the first reversed. `flatten(map(xs, body))` whose `body` is a pipeline (under `let`s) becomes `FlatMap`: the body's own pipeline runs for each item, never held.
 - **Lowering** (`emit.rs`, one routine) emits each `Hold` first, as a loop of its own writing its block (into the value's block when the hold is the whole list kept as a value), then reads the block as a `List`. Each stage's state lives in locals and is set up before the loops (a map's value and `#index` counter, a window's counter and bounds); then one loop per list or range, the stages inlined in order, then the sink. A `Flatten` stage loops over the item's list there and then, running the stages after it and the sink inside; a `FlatMap` runs the body's pipeline the same way, with `#` (and `#index`) the outer item's.
 - **Reverse.** A loop whose stages include an odd number of `Reverse`s runs from its last index to its first (a `concat`'s parts last first). Each stage before the `Reverse` sees its items backwards: a `Map` reading `#index` counts down from the number of items that reach it less one, and a `Window` `[s:e)` over `n` items becomes `[n − e : n − s)` counted from the end; `n` is the list's length straight on a list, else a replay that counts. A window straight on a list or range sets the reversed loop's bounds instead.
-- **Indexing.** `len`, `first`, `last`, `xs[i]` and `get` over a `List` or `Range` source whose stages are only `Window`s and `Reverse`s (an input list, a literal, a held block or a range, and any slice, `take` or `reverse` of one) run no loop: each window, innermost first, narrows a span `[lo, hi)` of the source's positions by the rules a loop applies (a negative bound counts from the end of what it slices, each bound is clamped to the items there are, a start past the end is the end, a negative `take` fails with `R-ARG`), and the item is read where it lies, at `lo + i` (`hi − 1 − i` when reversed). That costs the same few instructions whatever the length, so `w[#index]` in a `map` over `w = gps[-61:]` keeps the `map` linear in the window. The same holds for a `Concat` source whose parts are each such a source (a list, literal, held block or range through its own windows and reverses; a part with nothing in it, `[]`, counts for nothing), with only windows and reverses after it: each part's span and count are worked out in turn (a nil part fails here, `R-NIL`, as `concat` does), the concat's positions are its parts' items in order (its length is the sum of the counts), its own windows narrow a span of those, and position `i` is read from the first part whose count is more than what is left of `i` (a few instructions per part passed over). `len` of a concat itself only adds the counts. A `Concat` walked (one with a part that isn't such a source) still evaluates every nil-able part and fails on a nil one before its loops, so a sink that stops early (`first`, `any`, `xs[0]`) fails as expr does. Over any other pipeline (one with a `Map`, `Filter`, `Flatten` or `FlatMap` stage, or a `Concat` with a part that has one, or a nested `Concat`), they walk it to the item: `xs[i]` and `get` cost `i + 1` items (a negative `i` a replay that counts the items first), and `len` and `last` the whole pipeline, so indexing one inside a loop over it is quadratic.
+- **What is evaluated (§2.7).** Planning each sink's pipeline (and each list kept as a value) also lists what its lowering evaluates for fewer items than Go (`plan::skips`): the stages' bodies (and the `concat` lists a walk reaches item by item) after a sink that stops early or a window's end (one whose bounds aren't counted first by a replay, which evaluates everything before it), a held `uniq`'s input once it is full, a dropped sort's keys, a sort's key under a filter moved below it, and a predicate that runs for more (`find` of a sort; a forwards `findLast`). Each one that can fail is `E-SKIPPED`. A replay isn't checked (the lowering it counts for is). `findLast`/`findLastIndex` over a list or range through `map`s (and `filter`s, for `findLast`) whose bodies can't fail and don't read `#index` run backwards (a `Reverse` stage added at the end) and stop at the first match, as Go does; `findLastIndex` gives the count less one less the items passed. `first`, `last`, `get` and `in` give nil (false) for a nil list only straight on it, with nothing between, not even a dropped sort or `uniq`; `get`'s index and `in`'s value are evaluated first there when they can fail. A value Go evaluates but nothing needs (the left of `nil ?? b`, a record compared with nil that can't be nil, a record argument's fields its parameter doesn't have) is evaluated and dropped when it can fail.
+- **Indexing.** `len`, `first`, `last`, `xs[i]` and `get` over a `List` or `Range` source whose stages are only `Window`s, `Reverse`s and `Map`s whose bodies can't fail and don't read `#index` (an input list, a literal, a held block or a range, and any slice, `take`, `reverse` or such `map` of one; `plan::direct_ok`) run no loop. A `map` moves no item: its body is evaluated for the item read only, after it is found (none for `len`), which can't be seen as it can't fail (§2.7): each window, innermost first, narrows a span `[lo, hi)` of the source's positions by the rules a loop applies (a negative bound counts from the end of what it slices, each bound is clamped to the items there are, a start past the end is the end, a negative `take` fails with `R-ARG`), and the item is read where it lies, at `lo + i` (`hi − 1 − i` when reversed). That costs the same few instructions whatever the length, so `w[#index]` in a `map` over `w = gps[-61:]` keeps the `map` linear in the window. The same holds for a `Concat` source whose parts are each such a source (a list, literal, held block or range through its own windows and reverses; a part with nothing in it, `[]`, counts for nothing), with only windows and reverses after it: each part's span and count are worked out in turn (a nil part fails here, `R-NIL`, as `concat` does), the concat's positions are its parts' items in order (its length is the sum of the counts), its own windows narrow a span of those, and position `i` is read from the first part whose count is more than what is left of `i` (a few instructions per part passed over). `len` of a concat itself only adds the counts. A `Concat` walked (one with a part that isn't such a source) still evaluates every nil-able part and fails on a nil one before its loops, so a sink that stops early (`first`, `any`, `xs[0]`) fails as expr does. Over any other pipeline (one with a `Filter`, `Flatten` or `FlatMap` stage, a `Map` whose body can fail or reads `#index`, a `Concat` with a part that has a stage other than a window or `reverse`, or a nested `Concat`), they walk it to the item (and `first`, `xs[i]` and `get` are then `E-SKIPPED` if a body they skip can fail): `xs[i]` and `get` cost `i + 1` items (a negative `i` a replay that counts the items first), and `len` and `last` the whole pipeline, so indexing one inside a loop over it is quadratic.
 - **Memory** is read off the lowered plan: each hold's block (and each literal's, and each list kept as a value) is reserved in locals for the whole evaluation (`held_slots`); everything else is per-loop locals, released when the loop ends. `langc check` and `Memory` report them; nothing is allocated at run time.
 
 ---
@@ -1061,13 +1108,13 @@ Each implementation must be exact: integer arithmetic, or floats with no transce
 |---|---|
 | `integer divide by zero` | `R-DIV0` |
 | `index out of range` / `out of bounds` | `R-INDEX` |
-| `from <nil>` / `<nil>` operands, `cannot concat invalid` (a nil `concat` argument), `cannot reverse invalid`, `cannot uniq invalid`, `cannot flatten invalid`, `invalid argument for median (type <nil>)` | `R-NIL` |
+| `from <nil>` / `<nil>` operands, `cannot concat invalid` (a nil `concat` argument), `cannot reverse invalid`, `cannot uniq invalid`, `cannot flatten invalid`, `cannot take from invalid`, `reflect: call of reflect.Value.Len on zero Value` (`map`, `filter`, `sortBy` of nil), `invalid argument for median (type <nil>)` | `R-NIL` |
 | test-builtin errors, `reduce of empty`, `unknown order`, a negative `take` (`reflect.Value.Slice: slice index out of bounds`) | `R-ARG` |
 
 `R-RANGE`, `R-INPUT` and `R-TYPE` never appear in the corpus.
 
 **Divergences**
-- **Lazy:** Go fails where the VM succeeds (§2.7). This is reported separately, not counted as a failure.
+- **Lazy:** none. A lowering never skips an expression Go evaluates that can fail (§2.7: such a program is `E-SKIPPED`), so where Go fails the VM fails too; the corpus counts any such run as a failure.
 - **Float edges:** a non-float result differs because of `**`. These are quarantined.
 
 **The corpus**
@@ -1089,7 +1136,7 @@ Profiles add their own corpora on top of this.
 - Mixed int/float branches become float.
 - NaN and ±Inf are ordinary values.
 - `E-RANGE` is checked statically.
-- Evaluation is lazy.
+- Evaluation is lazy, but never observably: a lowering may skip only what can't fail; skipping what can is `E-SKIPPED` (§2.7).
 - Floats are compared within a tolerance.
 
 **Open:**
@@ -1106,7 +1153,7 @@ Profiles add their own corpora on top of this.
 | Item | Source | Why it's deferred |
 |---|---|---|
 | Bit-exact floats | implementability review M2 | The user chose a tolerance. |
-| Eager stage evaluation | implementability M6(a), soundness M6 | The user chose lazy evaluation. Condition-aware fusion is kept. |
+| Eager stage evaluation | implementability M6(a), soundness M6 | The user chose lazy evaluation, then (2026-10-14) ruled that no skip may be observable: a skipped body that can fail is rejected at compile time (`E-SKIPPED`, §2.7) rather than evaluated eagerly. Condition-aware fusion is kept. |
 | A lower charge from scalar replacement of records | soundness m5 | An optimisation only; the charge stays. |
 | General monotone `#index` proven by range analysis | soundness m4 | Constant look-ahead is covered. Other cases hold for now. |
 | A `Cond` source without duplicating code | soundness m8 | Left to the emitter. |

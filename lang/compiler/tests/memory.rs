@@ -306,6 +306,45 @@ fn indexing_a_concat_reads_the_item_where_it_lies() {
     assert_eq!(steps("n?.[i] ?? -1", 20, 0), steps("n?.[i] ?? -1", 5, 0));
 }
 
+#[test]
+fn a_map_is_read_where_its_item_lies() {
+    // A `map` whose body can't fail is evaluated for the item read only
+    // (spec §2.7: the skip can't be seen), so reading one costs the same
+    // whatever the position and the length; `len` evaluates no body.
+    let ints = json!({"type": "array", "items": {"type": "integer", "format": "int32"}, "maxItems": 64});
+    let iface = json!({"inputs": [{"name": "a", "schema": ints}, {"name": "i", "schema": {"type": "integer", "format": "int32"}}], "output": {"type": "integer"}});
+    let list = |len: i32| json!((1..=len).collect::<Vec<i32>>());
+    let steps = |src: &str, len: i32, i: i32| -> u32 {
+        let c = compile(src, &iface, &Options::default()).unwrap_or_else(|d| panic!("{src}: {d:?}"));
+        let inputs = json!({"a": list(len), "i": i});
+        match run(&c.bytes, &iface, inputs.as_object().unwrap(), &[]).unwrap() {
+            RunResult::Ok { steps, .. } => steps,
+            RunResult::Failed { code, .. } => panic!("`{src}` failed with {code} at {i}"),
+        }
+    };
+    for src in ["map(a, # * 2)[i]", "get(map(a, # * 2), i) ?? -1", "map(a[1:], # + 1)[i]", "get(reverse(map(a, # * 3)), i) ?? -1", "len(map(a, # * 2)) + i"] {
+        let at: Vec<u32> = [0, 7, 30, -1, -20].iter().map(|&i| steps(src, 40, i)).collect();
+        if std::env::var("SHOW_MEMORY").is_ok() {
+            eprintln!("{src:45} {at:?}");
+        }
+        assert!(at[..3].iter().all(|&s| s == at[0]), "`{src}`: the work grows with `i` ({at:?})");
+        assert!(at[3..].iter().all(|&s| s == at[3]), "`{src}`: the work grows with a negative `i` ({at:?})");
+        assert_eq!(steps(src, 10, 7), at[1], "`{src}`: the work grows with the list");
+    }
+    for src in ["first(map(a, # * 2)) ?? -1", "last(map(a, # * 2)) ?? -1"] {
+        assert_eq!(steps(src, 40, 0), steps(src, 3, 0), "`{src}`: the work grows with the list");
+    }
+    // A body that can fail is evaluated for every item, as in Go: `last`
+    // walks the list (and `first` of one is refused, E-SKIPPED).
+    assert!(steps("last(map(a, 100 % #)) ?? -1", 40, 0) > steps("last(map(a, 100 % #)) ?? -1", 3, 0));
+    // `findLast` runs from the end and stops at the last match, as in Go.
+    // (The last item of 1..=35 and of 1..=63 is a match.)
+    for src in ["findLast(a, # % 7 == 0) ?? -1", "findLastIndex(a, # % 7 == 0) ?? -1", "findLast(map(a, # + 1), # % 7 == 1) ?? -1"] {
+        assert_eq!(steps(src, 35, 0), steps(src, 63, 0), "`{src}` reads from the end and stops at the last match");
+        assert!(steps(src, 36, 0) > steps(src, 35, 0), "`{src}` reads from the end");
+    }
+}
+
 /// Compiles `src`, checks the locals it holds for lists (`held_slots`), and
 /// runs it on each of `runs`: each must succeed within the static stack,
 /// and the deepest must reach it. Gives the figures.

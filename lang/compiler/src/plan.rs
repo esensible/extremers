@@ -30,8 +30,12 @@
 //!
 //! A `let` of a list isn't stored (the checker inlines it): each use plans
 //! its own pipeline, so each use is fused, or holds, on its own.
+//!
+//! A plan also says what its lowering evaluates for fewer items than Go expr
+//! (which builds every list in full), or a predicate for more ([`skips`]):
+//! the emitter rejects each one that can fail (`E-SKIPPED`, spec §2.7).
 
-use crate::check::{Ptr, Sink as Agg, TExpr, TKind, children};
+use crate::check::{Ptr, Sink as Agg, TExpr, TKind, can_fail, children};
 use crate::types::{Range, Ty};
 
 /// A source, its stages (innermost first), and what consumes the items.
@@ -46,6 +50,13 @@ pub struct Pipeline<'e> {
     /// whole: (the part's items' type, the whole's, the local the converted
     /// item goes in).
     pub convert: Option<(Ty, Ty, u16)>,
+    /// The `sortBy`/`sort`/`uniq` nodes left out because the consumer
+    /// doesn't need them (the order, or only which values appear): their
+    /// keys are never evaluated, and their list's nil is still `R-NIL`.
+    pub dropped: Vec<&'e TExpr>,
+    /// `findLast`/`findLastIndex` run backwards (the last stage is a
+    /// `Reverse` added for them), stopping at the first match, as Go does.
+    pub backward: bool,
 }
 
 pub enum Source<'e> {
@@ -145,9 +156,260 @@ pub fn for_sink<'e>(agg: Agg, f: Option<&'e TExpr>, src: &'e TExpr) -> Pipeline<
             }
             return p;
         }
-        Agg::Find | Agg::FindLast | Agg::FindIndex | Agg::FindLastIndex | Agg::Reduce => Need::Ordered,
+        // Go runs `findLast`'s predicate backwards from the end, stopping at
+        // the first match. The loop runs backwards too (a `Reverse` at the
+        // end), where the stages before the sink can be walked from the end
+        // for free and can't fail (they then run only for the items the
+        // predicate reaches): a list or range through `map`s and (for
+        // `findLast`) `filter`s. Otherwise it runs forwards over every item.
+        Agg::FindLast | Agg::FindLastIndex => {
+            let mut p = plan(src, Need::Ordered);
+            let total = |s: &Stage| match *s {
+                Stage::Map(m) => matches!(&m.kind, TKind::Map { body, .. } if !mentions_index(body) && !can_fail(body)),
+                Stage::Filter { pred, .. } => agg == Agg::FindLast && !can_fail(pred),
+                _ => false,
+            };
+            if matches!(p.source, Source::List(_) | Source::Range(_)) && p.stages.iter().all(total) {
+                p.stages.push(Stage::Reverse(src));
+                p.backward = true;
+            }
+            return p;
+        }
+        Agg::Find | Agg::FindIndex | Agg::Reduce => Need::Ordered,
     };
     plan(src, need)
+}
+
+/// Whether `len`, `first`, `last`, `xs[i]` or `get` over `p` reads what it
+/// needs where it lies, with no loop (emit.rs `direct`; spec §7.6): over a
+/// list or range (or a hold, read as one) through windows, `reverse`s and
+/// `map`s whose bodies can't fail and don't read `#index` (a body is then
+/// evaluated for the item read only, or not at all for `len`: unobservable,
+/// as it can't fail), or a `concat` of lists, ranges and holds through
+/// windows and `reverse`s, with only windows and `reverse`s after it.
+pub fn direct_ok(p: &Pipeline, sink: Agg) -> bool {
+    let windows = |stages: &[Stage]| stages.iter().all(|s| matches!(s, Stage::Window(_) | Stage::Reverse(_)));
+    let total_map = |s: &Stage| matches!(*s, Stage::Map(m) if matches!(&m.kind, TKind::Map { body, .. } if !mentions_index(body) && !can_fail(body)));
+    if !matches!(sink, Agg::Len | Agg::First | Agg::Last | Agg::At | Agg::Get) || matches!(p.item, Ty::Never) {
+        return false;
+    }
+    match &p.source {
+        Source::Hold(h) if h.cap == 0 => false,
+        Source::List(_) | Source::Range(_) | Source::Hold(_) => p.stages.iter().all(|s| windows(std::slice::from_ref(s)) || total_map(s)),
+        Source::Concat(parts) => windows(&p.stages) && parts.iter().all(|q| matches!(q.source, Source::List(_) | Source::Range(_) | Source::Hold(_)) && windows(&q.stages)),
+    }
+}
+
+/// An expression a lowering evaluates for fewer items than Go expr does (or,
+/// for a predicate, for more), and why (spec §2.7). Go builds every list in
+/// full before the builtin that takes it runs, so it evaluates every `map`
+/// body, `filter` predicate and sort key for every item, and every `concat`
+/// list; only `any`, `all`, `none`, `find`, `findIndex` (forwards) and
+/// `findLast`, `findLastIndex` (backwards) stop their own predicate early.
+pub struct Skip<'e> {
+    /// The body, predicate, key or list.
+    pub node: &'e TExpr,
+    /// What it is, with `{}` for its text: "the `map` body `{}`", …
+    pub role: &'static str,
+    pub cause: Cause<'e>,
+}
+
+/// The role of a `concat`'s list (not built by a list builtin) that its
+/// walk reaches only item by item.
+pub const CONCAT_LIST: &str = "the list `{}` in `concat`";
+
+#[derive(Clone, Copy)]
+pub enum Cause<'e> {
+    /// The sink leaves the loop early (`first`, `xs[i]`, `get`, `find`,
+    /// `findIndex`, `any`, `all`, `none`, `in`, a backwards `findLast`).
+    Stops(Agg),
+    /// A held `uniq` stops once it has its `k` items.
+    UniqFull(&'e TExpr),
+    /// A window (a slice with an end, or `take`) leaves the loop at its end.
+    Window(&'e TExpr),
+    /// The sort is dropped: the consumer doesn't depend on the order.
+    Dropped(&'e TExpr, Option<Agg>),
+    /// A `filter` (or `find`'s predicate) goes under the sort, which then
+    /// evaluates its key only for the items that pass.
+    Filtered(&'e TExpr),
+    /// More, not fewer: the predicate runs for every item, where Go stops
+    /// at the first match (`find`/`findLast` over a sort, which keeps one
+    /// item; a forwards `findLast`).
+    EveryItem(Agg),
+}
+
+/// What the lowering of `p` for `sink` (`None`: written into a block, every
+/// item in order) evaluates for fewer items than Go does, or (a predicate)
+/// for more. `f` is the sink's predicate.
+pub fn skips<'e>(p: &Pipeline<'e>, sink: Option<Agg>, f: Option<&'e TExpr>) -> Vec<Skip<'e>> {
+    let mut out = Vec::new();
+    let looped = !sink.is_some_and(|s| direct_ok(p, s));
+    // (`xs[i]` and `get` with an index that is always negative count the
+    // whole pipeline first, by a replay that evaluates all of it.)
+    let negative = f.is_some_and(|i| matches!(i.ty, Ty::Int(r) if r.hi < 0));
+    let stops = sink.filter(|s| {
+        matches!(s, Agg::First | Agg::Find | Agg::FindIndex | Agg::Any | Agg::All | Agg::NoneOf | Agg::In)
+            || (matches!(s, Agg::At | Agg::Get) && !negative)
+            || (matches!(s, Agg::FindLast | Agg::FindLastIndex) && p.backward)
+    });
+    level(p, sink, looped, stops.map(Cause::Stops), false, &mut out);
+    // A forwards `findLast` runs its predicate for every item (unless it
+    // reads a one-item hold, whose own predicate is accounted for).
+    if let (Some(s @ (Agg::FindLast | Agg::FindLastIndex)), Some(f), false) = (sink, f, p.backward)
+        && !pushed_find(p)
+    {
+        out.push(Skip { node: f, role: role_of_pred(s), cause: Cause::EveryItem(s) });
+    }
+    out
+}
+
+fn role_of_pred(s: Agg) -> &'static str {
+    match s {
+        Agg::Find => "`find`'s predicate `{}`",
+        Agg::FindLast => "`findLast`'s predicate `{}`",
+        Agg::FindLastIndex => "`findLastIndex`'s predicate `{}`",
+        _ => "the predicate `{}`",
+    }
+}
+
+/// `find`/`findLast` over a sort: the predicate went under the sort.
+fn pushed_find(p: &Pipeline) -> bool {
+    matches!(&p.source, Source::Hold(h) if h.inner.stages.iter().any(|s| matches!(s, Stage::Filter { node, .. } if std::ptr::eq(*node, h.node))))
+}
+
+/// The skips at one pipeline level (`p`, its holds, its parts, the
+/// pipelines nested in its items). `exit`: the loop over `p` may be left
+/// early, for this cause, skipping everything evaluated per item.
+/// `rev_after`: the items leave `p` backwards (an odd number of `reverse`s
+/// follow it, in the pipelines it is part of).
+fn level<'e>(p: &Pipeline<'e>, sink: Option<Agg>, looped: bool, exit: Option<Cause<'e>>, rev_after: bool, out: &mut Vec<Skip<'e>>) {
+    let odd = |stages: &[Stage]| stages.iter().filter(|s| matches!(s, Stage::Reverse(_))).count() % 2 == 1;
+    let all_rev = rev_after ^ odd(&p.stages);
+    for d in &p.dropped {
+        if let TKind::SortBy { key: Some(k), .. } = &d.kind {
+            out.push(Skip { node: k, role: "the sort key `{}`", cause: Cause::Dropped(d, sink) });
+        }
+    }
+    match &p.source {
+        Source::Hold(h) => hold(h, out),
+        Source::Concat(parts) => {
+            for q in parts {
+                // Each part's own windows leave only the part's loop.
+                level(q, sink, looped, None, all_rev, out);
+            }
+        }
+        _ => {}
+    }
+    // An empty hold, or a list with no items: no loop.
+    if !looped || matches!(p.item, Ty::Never) || matches!(&p.source, Source::Hold(h) if h.cap == 0) {
+        return;
+    }
+    // A window with an end leaves this level's loops there: what the items
+    // went through before it is skipped for the items after. Not where its
+    // bounds are counted first by a replay of what comes before it (a bound
+    // that may be negative, or items that reach it backwards, where its
+    // start is turned into the end): the replay evaluates all of that for
+    // every item. (A window straight on a list or range has nothing before
+    // it.)
+    let mut rev = all_rev;
+    for (j, s) in p.stages.iter().enumerate() {
+        let back = rev;
+        let w = match *s {
+            Stage::Reverse(_) => {
+                rev = !rev;
+                continue;
+            }
+            Stage::Window(w) => w,
+            _ => continue,
+        };
+        let ends = !back
+            && match &w.kind {
+                TKind::Slice { lo, hi, .. } => hi.is_some() && !lo.as_deref().is_some_and(may_be_negative) && !hi.as_deref().is_some_and(may_be_negative),
+                TKind::Take { .. } => true,
+                _ => false,
+            };
+        if ends {
+            per_item(p, j, &mut |node, role| out.push(Skip { node, role, cause: Cause::Window(w) }));
+        }
+    }
+    if let Some(c) = exit {
+        per_item(p, p.stages.len(), &mut |node, role| out.push(Skip { node, role, cause: c }));
+    }
+    // The pipelines nested in each item (`flatten(map(xs, <pipeline>))`),
+    // their items leaving backwards when the stages after them reverse.
+    for (j, s) in p.stages.iter().enumerate() {
+        if let Stage::FlatMap(m) = s
+            && let Some((_, body)) = flat_map_body(m)
+        {
+            level(&for_write(body), sink, true, None, rev_after ^ odd(&p.stages[j + 1..]), out);
+        }
+    }
+}
+
+/// Whether a slice bound or index may be negative (counting from the end).
+pub fn may_be_negative(e: &TExpr) -> bool {
+    match &e.ty {
+        Ty::Int(r) => r.lo < 0,
+        _ => true,
+    }
+}
+
+/// A hold is lowered in full, before the loop that reads it: its own loop
+/// stops early only for a `uniq` that has its `k` items. A `filter` (or
+/// `find`'s predicate) moved under a sort means the key is evaluated only
+/// for the items that pass, and `find`'s predicate for every item.
+fn hold<'e>(h: &Hold<'e>, out: &mut Vec<Skip<'e>>) {
+    let bound = match h.node.ty.non_nil() {
+        Some(Ty::List(_, n)) => n,
+        _ => 0,
+    };
+    let exit = (matches!(h.kind, HoldKind::Unique) && h.cap < bound).then_some(Cause::UniqFull(h.node));
+    level(&h.inner, None, true, exit, false, out);
+    if let HoldKind::Sorted { key, .. } = h.kind {
+        for s in &h.inner.stages {
+            let Stage::Filter { node, pred } = *s else { continue };
+            let find = std::ptr::eq(node, h.node);
+            let under = find || matches!(&node.kind, TKind::Filter { src, .. } if std::ptr::eq(&**src, h.node));
+            if !under {
+                continue;
+            }
+            if let Some(k) = key {
+                out.push(Skip { node: k, role: "the sort key `{}`", cause: Cause::Filtered(h.node) });
+            }
+            if find {
+                out.push(Skip { node: pred, role: "the predicate `{}`", cause: Cause::EveryItem(Agg::Find) });
+            }
+        }
+    }
+}
+
+/// Everything evaluated once per item in `p`'s loops, by the stages before
+/// stage `upto` (and every `concat` part's list and stages, which are
+/// reached item by item): `map` bodies (with what a flat-map's body
+/// evaluates), `filter` predicates, and the lists of a `concat`'s parts that
+/// aren't evaluated before the loops (those that can't be nil).
+fn per_item<'e>(p: &Pipeline<'e>, upto: usize, f: &mut dyn FnMut(&'e TExpr, &'static str)) {
+    if let Source::Concat(parts) = &p.source {
+        for q in parts {
+            match &q.source {
+                Source::List(s) if !s.ty.may_be_nil() && !matches!(q.item, Ty::Never) => f(s, CONCAT_LIST),
+                Source::Range(r) => f(r, "the range `{}` in `concat`"),
+                _ => {}
+            }
+            per_item(q, q.stages.len(), f);
+        }
+    }
+    for s in &p.stages[..upto] {
+        match *s {
+            Stage::Map(m) | Stage::FlatMap(m) => {
+                if let TKind::Map { body, .. } = &m.kind {
+                    f(body, "the `map` body `{}`");
+                }
+            }
+            Stage::Filter { node, pred } => f(pred, if matches!(node.kind, TKind::Filter { .. }) { "the `filter` predicate `{}`" } else { "the predicate `{}`" }),
+            _ => {}
+        }
+    }
 }
 
 /// The pipeline for a list kept as a value (written into a block).
@@ -237,7 +499,7 @@ pub fn plan(e: &TExpr, need: Need) -> Pipeline<'_> {
             let sorted = |tail| HoldKind::Sorted { key: key.as_deref(), desc: *desc, tail };
             match need {
                 // Order doesn't matter: the sort is dropped.
-                Need::Unordered | Need::Set => plan(src, need),
+                Need::Unordered | Need::Set => dropped(plan(src, need), e),
                 Need::Head(k) => with_cap(held(e, plan(src, Need::Ordered), sorted(false)), k),
                 Need::Tail(k) => with_cap(held(e, plan(src, Need::Ordered), sorted(true)), k),
                 Need::Ordered => held(e, plan(src, Need::Ordered), sorted(false)),
@@ -245,7 +507,7 @@ pub fn plan(e: &TExpr, need: Need) -> Pipeline<'_> {
         }
         TKind::Uniq { src } => match need {
             // `first(uniq(xs))` is `first(xs)`; `min`, `max` and `in` see the same values.
-            Need::Set | Need::Head(1) => plan(src, need),
+            Need::Set | Need::Head(1) => dropped(plan(src, need), e),
             Need::Head(k) => with_cap(held(e, plan(src, Need::Ordered), HoldKind::Unique), k),
             _ => held(e, plan(src, Need::Ordered), HoldKind::Unique),
         },
@@ -263,6 +525,11 @@ pub fn plan(e: &TExpr, need: Need) -> Pipeline<'_> {
 
 fn stage<'e>(mut p: Pipeline<'e>, s: Stage<'e>) -> Pipeline<'e> {
     p.stages.push(s);
+    p
+}
+
+fn dropped<'e>(mut p: Pipeline<'e>, node: &'e TExpr) -> Pipeline<'e> {
+    p.dropped.push(node);
     p
 }
 
@@ -286,7 +553,7 @@ fn with_cap(mut p: Pipeline<'_>, k: u32) -> Pipeline<'_> {
 
 impl<'e> Pipeline<'e> {
     pub fn new(source: Source<'e>, item: Ty) -> Pipeline<'e> {
-        Pipeline { source, stages: Vec::new(), item, pre: None, convert: None }
+        Pipeline { source, stages: Vec::new(), item, pre: None, convert: None, dropped: Vec::new(), backward: false }
     }
 
     /// The type of the items that come out of the stages.

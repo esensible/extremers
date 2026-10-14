@@ -96,6 +96,13 @@ pub fn runtime_help(code: &str) -> &'static str {
     }
 }
 
+/// The source text of `span`, on one line, shortened to about 40 characters.
+pub fn snippet(src: &str, span: Span) -> String {
+    let (a, b) = ((span.start as usize).min(src.len()), (span.end as usize).min(src.len()));
+    let text: String = src.get(a..b).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() > 40 { format!("{}…", text.chars().take(39).collect::<String>()) } else { text }
+}
+
 /// 1-based line and column (in characters) of a byte offset.
 pub fn line_col(src: &str, offset: u32) -> (usize, usize) {
     let offset = (offset as usize).min(src.len());
