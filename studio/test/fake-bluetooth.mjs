@@ -34,7 +34,8 @@
 //  - faults: c6.loseDataWrites (a Set of 1-based data-write numbers dropped on
 //    the air), c6.dropLinkAtBytes (the link drops once the upload has that
 //    many), c6.corruptAt (one byte flipped on reception → Hash at Commit),
-//    c6.expireUpload() (60 s idle), c6.busyOther (another connection's upload).
+//    c6.expireUpload() (60 s idle), c6.busyOther (another connection's upload),
+//    c6.refuseBundles (ids whose Commit the validator refuses: Invalid).
 //  - a firmware update (common/src/host.rs firmware_*, tgt-xiaoc6 main.rs):
 //    BeginFirmware takes the data slot (every bundle goes, Choose is active)
 //    and is Busy while a bundle upload is live or the firmware is on trial;
@@ -197,6 +198,7 @@ export class FakeC6 {
     this.dropLinkAtBytes = null;
     this.corruptAt = null;
     this.busyOther = false;
+    this.refuseBundles = new Set(); // ids whose Commit the validator refuses (Invalid, reason 4)
     this.device = null;
     // the running firmware (BundleResponse Firmware): its image's appended
     // digest (hex), the slot it runs from, whether it is on trial; null: the
@@ -344,6 +346,7 @@ export class FakeC6 {
         let m;
         try { m = manifestOf(u.buf); } catch { return this.error(code, 'Invalid', 1); }
         if (m.id !== u.id || m.id !== packageId(m.name)) return this.error(code, 'NotAllowed', 0);
+        if (this.refuseBundles.has(m.id)) return this.error(code, 'Invalid', 4); // engine.bin does not load (on this firmware)
         this.store.set(m.id, { bytes: u.buf, manifest: m, builtin: false });
         return this.answer({ tag: 'Committed', value: { id: m.id, content_hash: m.content_hash } });
       }

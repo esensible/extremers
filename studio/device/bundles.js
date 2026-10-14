@@ -374,6 +374,8 @@ export function createBundles(link, {
    * stallMs with the window full resends from the last Ack; a dropped link
    * waits for the reconnect and begins again (the box resumes at what it
    * has). onProgress({ phase: begin|upload|reconnect, sent, total, kbps }).
+   * A refusal of the first Begin rejects with .beforeReady true (the box
+   * took nothing).
    * → { chunk, window, resumedFrom, resumes, rewinds, resends, written, ms }
    */
   async function sendImage(bytes, beginReq, { onProgress = () => {} } = {}) {
@@ -384,7 +386,15 @@ export function createBundles(link, {
     const kbps = (n) => Math.round((n / Math.max(1, now() - start)) * 10) / 10; // bytes per ms = kB/s
     for (;;) {
       onProgress({ phase: 'begin', sent: 0, total: len, kbps: 0 });
-      const [ready] = await request(beginReq, (r) => r.tag === 'Ready');
+      let ready;
+      try {
+        [ready] = await request(beginReq, (r) => r.tag === 'Ready');
+      } catch (e) {
+        // the first Begin refused: the box took nothing (a firmware update
+        // has not wiped its bundles); a later one (after a drop) may not be
+        if (first && e && typeof e === 'object') e.beforeReady = true;
+        throw e;
+      }
       const { offset, chunk, window } = ready.value;
       out.chunk = chunk; out.window = window;
       if (first) out.resumedFrom = offset || null;

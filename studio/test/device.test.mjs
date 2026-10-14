@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createDevice } from '../device/index.js';
+import { createDevice, memoryBackups } from '../device/index.js';
 import { SERVICE, DEVICE_NAME } from '../device/ble.js';
 import { packageId, describeError, describeInvalid, errorHint, REASONS, LIMITS, FIRMWARE_REASONS } from '../device/bundles.js';
 import { checkImage } from '../device/firmware.js';
@@ -598,15 +598,34 @@ test("the validator's refusals in words: every reason and over-limit code valida
 
 const UPDATE = { dropWaitMs: 2000, rebootWaitMs: 3000, confirmWaitMs: 3000, pollMs: 20 };
 
-test('updateFirmware: checked, sent as a bundle is, Rebooting, the box back on the other slot, confirmed; its bundles gone', async () => {
-  const { dev, c6 } = setup({}, UPDATE);
-  c6.install(makeBundle({ name: 'race' }), { active: true });
+/** Race (active, boots), Mark and Tune2 on the box, as on the C6 in hand. */
+function threeBundles(c6) {
+  const b = { race: makeBundle({ name: 'race', size: 9000, seed: 11 }), mark: makeBundle({ name: 'mark', size: 6000, seed: 12 }), tune2: makeBundle({ name: 'tune2', size: 4000, seed: 13 }) };
+  c6.install(b.race, { active: true });
+  c6.install(b.mark);
+  c6.install(b.tune2);
+  return b;
+}
+function sameBundles(c6, b) {
+  for (const [name, bytes] of Object.entries(b)) assert.equal(sha(c6.store.get(packageId(name))?.bytes ?? new Uint8Array()), sha(bytes), `${name} is back, byte for byte`);
+}
+
+test('updateFirmware: saves the bundles, sends the image, the box reboots onto the other slot and confirms, the bundles go back, the boot one active; the backup is gone', async () => {
+  const backups = memoryBackups();
+  const { dev, c6 } = setup({}, { ...UPDATE, backups });
+  const b = threeBundles(c6);
   c6.update.pendingMs = 800; // longer than the reconnect takes here
   await dev.connect();
   const image = makeImage({ size: 20000 });
   const phases = [];
   let sawPending = false;
-  const r = await dev.updateFirmware(image, { onProgress: (p) => { if (phases.at(-1) !== p.phase) phases.push(p.phase); if (p.pending) sawPending = true; } });
+  let backupWhileRebooting = null;
+  const r = await dev.updateFirmware({ bytes: image }, {
+    onProgress: (p) => {
+      if (phases.at(-1) !== p.phase) phases.push(p.phase);
+      if (p.pending) { sawPending = true; backupWhileRebooting ??= dev.status(); }
+    },
+  });
   const digest = sha(image.subarray(0, image.length - 32));
   assert.equal(r.sha256, digest);
   assert.equal(r.updated, true);
@@ -615,61 +634,192 @@ test('updateFirmware: checked, sent as a bundle is, Rebooting, the box back on t
   assert.deepEqual(r.to, { sha256: digest, slot: 1, pending: false });
   assert.equal(r.len, image.length);
   assert.equal(r.chunk, c6.chunk);
-  assert.deepEqual(phases, ['firmware', 'reboot', 'done']);
+  assert.equal(r.resumed, false);
+  assert.deepEqual(r.saved.map((x) => x.name), ['race', 'mark', 'tune2']);
+  assert.deepEqual(r.restored.map((x) => x.name), ['race', 'mark', 'tune2']);
+  assert.equal(r.notRestored, undefined);
+  assert.equal(r.activated, 'race');
+  assert.deepEqual(phases, ['save', 'firmware', 'reboot', 'restore', 'done']);
   assert.equal(sawPending, true, 'it waited while the new firmware was on trial');
+  // while it rebooted the backup was there, committed
+  assert.equal(backupWhileRebooting.restorePending, true);
+  assert.equal(backupWhileRebooting.restorePhase, 'firmware');
+  assert.equal(backupWhileRebooting.restoreBundles, 3);
   assert.equal(c6.restarts, 1);
   assert.equal(c6.windowViolations, 0);
   // the requests, in order (the polls of Firmware while on trial aside)
-  assert.deepEqual([...new Set(c6.requests)], ['Firmware', 'BeginFirmware', 'Commit']);
-  // the data slot is the image's now: Choose only
-  assert.deepEqual((await dev.list()).bundles.map((b) => b.name), ['choose']);
-  assert.equal(dev.status().state, 'connected');
-  assert.equal(dev.status().progress.phase, 'done');
+  assert.deepEqual([...new Set(c6.requests)], ['Firmware', 'List', 'Get', 'BeginFirmware', 'Commit', 'Begin', 'Activate']);
+  assert.deepEqual(c6.requests.filter((x) => x === 'Get').length, 3);
+  // the box: the new firmware, the three bundles byte for byte, Race active and booting
+  sameBundles(c6, b);
+  assert.equal(c6.active, packageId('race'));
+  assert.equal(c6.boot, packageId('race'));
+  assert.deepEqual(c6.firmware, { sha: digest, slot: 1, pending: false });
+  assert.equal(backups._map.size, 0, 'the backup is deleted');
+  const s = dev.status();
+  assert.deepEqual([s.state, s.progress.phase, s.restorePending, s.restorePhase], ['connected', 'done', false, null]);
+  assert.deepEqual(s.firmware, { sha256: digest, slot: 1, pending: false, maxLen: c6.maxLen });
 });
 
-test('updateFirmware: refused at the commit (Hash, Invalid): the box restarts into its firmware; the words say so', async () => {
+test('updateFirmware: a box with only Choose: nothing saved, nothing restored, nothing activated', async () => {
   const { dev, c6 } = setup({}, UPDATE);
+  await dev.connect();
+  const r = await dev.updateFirmware(makeImage());
+  assert.equal(r.updated, true);
+  assert.deepEqual([r.saved, r.restored, r.activated], [[], [], null]);
+  assert.deepEqual([...new Set(c6.requests)], ['Firmware', 'List', 'BeginFirmware', 'Commit']);
+});
+
+test('updateFirmware: the link drops mid-image: it reconnects and the box resumes the upload; the bundles go back', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  const b = threeBundles(c6);
+  await dev.connect();
+  c6.dropLinkAtBytes = 8000;
+  const r = await dev.updateFirmware({ bytes: makeImage({ size: 24000 }) });
+  assert.equal(r.resumes, 1);
+  assert.equal(r.updated, true);
+  assert.equal(c6.requests.filter((x) => x === 'BeginFirmware').length, 2);
+  assert.equal(c6.writes.filter((w) => w.offset === 0).length, 4, 'the image from 0 once (and the three bundles)');
+  sameBundles(c6, b);
+});
+
+test('updateFirmware: the link drops mid-image and does not come back: the backup stays (saved); { resume: true } sends the rest and restores', async () => {
+  const backups = memoryBackups();
+  const { dev, c6, device } = setup({}, { ...UPDATE, backups, reconnectTries: 1 });
+  const b = threeBundles(c6);
+  await dev.connect();
+  c6.dropLinkAtBytes = 9000;
+  device.failConnects = 5;
+  const image = makeImage({ size: 24000 });
+  const e = await rejects(dev.updateFirmware({ bytes: image }), /dropped/);
+  assert.match(e.hint, /updateFirmware\(\) again within 60 s/);
+  c6.dropLinkAtBytes = null;
+  assert.deepEqual([dev.status().restorePending, dev.status().restorePhase, dev.status().restoreBundles], [true, 'saved', 3]);
+  assert.deepEqual((await dev.backup()).bundles.map((x) => x.name), ['race', 'mark', 'tune2']);
+  assert.equal(c6.store.size, 1, 'the box took the image: its bundles are gone');
+  // a new update meanwhile is refused: it would save an empty box over the backup
+  device.failConnects = 0;
+  await dev.connect();
+  const again = await rejects(dev.updateFirmware({ bytes: image }), /interrupted \(phase saved\): its 3 saved bundles are not back/);
+  assert.match(again.hint, /updateFirmware\(\{\}\)/);
+  const r = await dev.updateFirmware({ resume: true });
+  assert.equal(r.resumed, true);
+  assert.equal(r.updated, true);
+  assert.ok(c6.writes.filter((w) => w.offset === 0).length === 4, 'the image was not sent from 0 again');
+  assert.deepEqual(r.restored.map((x) => x.name), ['race', 'mark', 'tune2']);
+  assert.equal(r.activated, 'race');
+  sameBundles(c6, b);
+  assert.equal(backups._map.size, 0);
+  assert.equal(dev.status().restorePending, false);
+});
+
+test('updateFirmware: the box does not come back in time: a clear error, the backup kept (firmware); a reload (a new controller) resumes it', async () => {
+  const backups = memoryBackups();
+  const storage = memStorage();
+  const fake = makeFakeBluetooth({});
+  const mk = (o = {}) => createDevice({ bluetooth: fake.bluetooth, storage, backups, ...FAST, ...UPDATE, ...o });
+  const { c6 } = fake;
+  const b = threeBundles(c6);
+  c6.update.offMs = 2500; // off longer than this page waits (each connect tries for about 1 s here)
+  const dev = mk({ rebootWaitMs: 150, confirmWaitMs: 0 });
+  await dev.connect();
+  const e = await rejects(dev.updateFirmware({ bytes: makeImage() }), /^firmware update: it did not come back .*; its 3 bundles are saved in this browser$/);
+  assert.match(e.hint, /api\.device\.updateFirmware\(\{\}\) restores them/);
+  assert.match(dev.status().lastError, /^ota: firmware update: it did not come back/);
+  assert.deepEqual([dev.status().restorePending, dev.status().restorePhase], [true, 'firmware']);
+  dev.disconnect();
+  // the page reloads: a new controller, the same browser storage
+  const page = mk();
+  await page.refreshBackup();
+  const s = page.status();
+  assert.deepEqual([s.state, s.restorePending, s.restorePhase, s.restoreBundles], ['disconnected', true, 'firmware', 3]);
+  await new Promise((r) => setTimeout(r, 2500)); // the box is back
+  const r = await page.updateFirmware({ resume: true });
+  assert.equal(r.resumed, true);
+  assert.equal(r.updated, true);
+  assert.equal(r.rebootMs, null, 'this page did not see the reboot');
+  assert.equal(r.ms, null, 'nor send the image');
+  assert.equal(r.activated, 'race');
+  sameBundles(c6, b);
+  assert.equal(c6.requests.filter((x) => x === 'BeginFirmware').length, 1);
+  assert.equal(page.status().restorePending, false);
+  await rejects(page.updateFirmware({ resume: true }), /no interrupted firmware update for this box/);
+});
+
+test('updateFirmware: refused at the commit (Hash, Invalid): the box restarts into its firmware, the bundles still go back, then the refusal; the backup is gone', async () => {
+  const backups = memoryBackups();
+  const { dev, c6 } = setup({}, { ...UPDATE, backups });
+  const b = threeBundles(c6);
   await dev.connect();
   // a byte changed on the way
   const image = makeImage();
   c6.corruptAt = 5000;
-  let e = await rejects(dev.updateFirmware(image), /^Commit: the image's SHA-256 is not the digest it ends with .* the box keeps its firmware and restarts into it$/);
+  const onProgress = (p) => { if (p.phase === 'reboot') c6.corruptAt = null; }; // the image only
+  let e = await rejects(dev.updateFirmware({ bytes: image }, { onProgress }), /^Commit: the image's SHA-256 is not the digest it ends with .* the box keeps its firmware and restarts into it; 3 saved bundles are back on the box$/);
   assert.equal(e.code, 'Hash');
   assert.match(e.hint, /updateFirmware\(\) again/);
+  assert.deepEqual(e.restored.map((x) => x.name), ['race', 'mark', 'tune2']);
   assert.equal(c6.restarts, 1);
+  sameBundles(c6, b);
+  assert.equal(c6.active, packageId('race'));
+  assert.equal(backups._map.size, 0);
+  assert.equal(dev.status().restorePending, false);
   assert.notEqual(dev.status().state, 'busy');
   assert.match(dev.status().lastError, /^ota: Commit:/);
   // the box's own check of the image: reason 7, the checksum
-  c6.corruptAt = null;
-  await new Promise((r) => setTimeout(r, 100));
-  await dev.connect();
   c6.update.refuse = 'Invalid';
   c6.update.detail = 7 | (0x1234 << 8);
-  e = await rejects(dev.updateFirmware(image), /^Commit: not a firmware image the box can boot: the checksum byte is not the segments' \(detail 4660\)/);
+  e = await rejects(dev.updateFirmware({ bytes: image }), /^Commit: not a firmware image the box can boot: the checksum byte is not the segments' \(detail 4660\).*; 3 saved bundles are back on the box$/);
   assert.match(e.hint, /extreme-image/);
   assert.equal(c6.restarts, 2);
   assert.equal(c6.firmware.sha, 'f1'.repeat(32));
+  sameBundles(c6, b);
 });
 
-test('updateFirmware: the box comes back with its old firmware (the new one did not boot): updated false, with a note', async () => {
+test('updateFirmware: the box comes back with its old firmware (the new one did not boot): updated false, with a note; the bundles go back', async () => {
   const { dev, c6 } = setup({}, UPDATE);
+  const b = threeBundles(c6);
   await dev.connect();
   c6.update.fallBack = true;
-  const r = await dev.updateFirmware(makeImage());
+  const r = await dev.updateFirmware({ bytes: makeImage() });
   assert.equal(r.updated, false);
   assert.match(r.note, /kept \(or went back to\) the firmware it had/);
   assert.deepEqual(r.to, { sha256: 'f1'.repeat(32), slot: 0, pending: false });
+  assert.deepEqual(r.restored.map((x) => x.name), ['race', 'mark', 'tune2']);
+  assert.equal(r.activated, 'race');
+  sameBundles(c6, b);
 });
 
-test('updateFirmware: Busy while a bundle upload is live or the firmware is on trial; an image that is not one is refused before anything is sent', async () => {
+test('updateFirmware: a bundle the new firmware refuses is reported, the others go back', async () => {
   const { dev, c6 } = setup({}, UPDATE);
+  threeBundles(c6);
+  await dev.connect();
+  c6.refuseBundles.add(packageId('mark'));
+  const r = await dev.updateFirmware({ bytes: makeImage() });
+  assert.deepEqual(r.restored.map((x) => x.name), ['race', 'tune2']);
+  assert.equal(r.notRestored.length, 1);
+  assert.equal(r.notRestored[0].name, 'mark');
+  assert.match(r.notRestored[0].error, /^Commit: invalid bundle: engine.bin does not load/);
+  assert.equal(r.activated, 'race');
+  assert.equal(dev.status().restorePending, false);
+});
+
+test('updateFirmware: Busy while a bundle upload is live (nothing touched, no backup) or on trial; an image that is not one is refused before anything is sent', async () => {
+  const backups = memoryBackups();
+  const { dev, c6 } = setup({}, { ...UPDATE, backups });
+  const b = threeBundles(c6);
   await dev.connect();
   c6.busyOther = true;
-  let e = await rejects(dev.updateFirmware(makeImage()), /^BeginFirmware: busy: a bundle upload is in progress/);
+  let e = await rejects(dev.updateFirmware({ bytes: makeImage() }), /^BeginFirmware: busy: a bundle upload is in progress/);
   assert.match(e.hint, /20 s after it boots/);
+  assert.equal(backups._map.size, 0, 'the box took nothing: no backup left behind');
+  assert.equal(dev.status().restorePending, false);
+  sameBundles(c6, b);
   c6.busyOther = false;
   c6.firmware = { ...c6.firmware, pending: true };
-  e = await rejects(dev.updateFirmware(makeImage()), /^BeginFirmware: busy/);
+  const n = c6.requests.length;
+  e = await rejects(dev.updateFirmware({ bytes: makeImage() }), /^busy: the box runs a firmware still on trial/);
+  assert.deepEqual(c6.requests.slice(n), ['Firmware'], 'refused before saving anything');
   // and a bundle install while an update's image is going in: Busy
   c6.firmware = { ...c6.firmware, pending: false };
   c6.upload = { firmware: true, len: 100, sha: '', buf: new Uint8Array(100), received: 0, acked: 0, conn: null, expired: false };
@@ -679,10 +829,13 @@ test('updateFirmware: Busy while a bundle upload is live or the firmware is on t
   const before = c6.requests.length;
   await rejects(dev.updateFirmware(new Uint8Array([0x7f, 0x45, 0x4c, 0x46, ...new Array(200).fill(0)])), /this is the ELF, not the firmware image/);
   const cut = makeImage().subarray(0, 20000);
-  await rejects(dev.updateFirmware(cut), /not whole 16-byte lines|does not end with its digest/);
+  await rejects(dev.updateFirmware({ bytes: cut }), /not whole 16-byte lines|does not end with its digest/);
   c6.maxLen = 1000;
-  await rejects(dev.updateFirmware(makeImage()), /the box has room for 1000/);
+  await rejects(dev.updateFirmware({ bytes: makeImage() }), /the box has room for 1000/);
   assert.deepEqual(c6.requests.slice(before), ['Firmware', 'Firmware', 'Firmware']);
+  assert.equal(backups._map.size, 0);
+  sameBundles(c6, b);
+  await rejects(dev.updateFirmware({}), /expected \{ bytes \}/);
 });
 
 // protocol-js/test/vectors.json "firmware": tools/bindgen's synthetic image

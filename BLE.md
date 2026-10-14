@@ -440,14 +440,23 @@ Web Bluetooth needs Chrome and a secure origin) speaks this protocol with
 it, pairing and stale-key errors, reconnects) and
 `studio/device/bundles.js` (the requests above: Begin/Data/Ack/Commit with
 the box's chunk and window, rewinds, resends and resume; List, Activate,
-Delete, Get with its SHA-256 check), over the generated
-`protocol-js/protocol.js`. A person uses the **Device** panel (Connect /
-List / Install the open project / Activate / Delete / Get) and the
-header's **Choose device…** (Chrome opens its chooser only from a click);
-an agent calls `api.device.*` (`status`, `connect`, `list`, `install`,
-`activate`, `delete`, `get`; the studio-api skill). It replaced the
-earlier development page (`bundle/web/devtool.html`), which measured the
-numbers above.
+Delete, Get with its SHA-256 check; Firmware, BeginFirmware and the
+firmware Commit), over the generated `protocol-js/protocol.js`. A person
+uses the **Device** panel (Connect / List / Install the open project /
+Activate / Delete / Get / Firmware, and a firmware image dropped on the
+panel, confirmed inline) and the header's **Choose the box…** (Chrome opens
+its chooser only from a click); an agent calls `api.device.*` (`status`,
+`connect`, `list`, `install`, `activate`, `delete`, `get`, `firmware`,
+`updateFirmware`; the studio-api skill). A firmware update overwrites the
+slot that holds the bundles and the track, so `studio/device/index.js`
+`updateFirmware` first downloads (Get) every bundle that is not built in
+and keeps them in the browser's IndexedDB (`deviceBackups`, per box, with
+the image), then sends and commits the image, reconnects after the reboot,
+waits for `Firmware` to answer `pending: false`, and uploads the bundles
+again (Begin/Commit each, then Activate the one the box booted with); the
+track is lost. A backup left by an interrupted update is resumed with
+`api.device.updateFirmware({})`. It replaced the earlier development page
+(`bundle/web/devtool.html`), which measured the numbers above.
 
 **Pairing without a Kindle.** Firmware built with `--features dev-pairing`
 (`tgt-xiaoc6`, off by default) opens the pairing window once, at boot,

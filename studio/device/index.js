@@ -5,7 +5,7 @@
 // { ok: false, error, hint } (the studio's never-throws convention).
 
 import { createLink, LinkError, HINTS, DEVICE_NAME, SERVICE } from './ble.js';
-import { createBundles, archiveFiles, bundleManifest, hex } from './bundles.js';
+import { createBundles, archiveFiles, bundleManifest, hex, BundleError } from './bundles.js';
 import { checkImage } from './firmware.js';
 
 export { DEVICE_NAME, SERVICE, HINTS };
@@ -25,22 +25,51 @@ function entryOut(e) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * createDevice({ bluetooth, log, ...timing }) → controller. Timing options go
- * to createLink and createBundles (tests shorten them), and these to a
- * firmware update:
+ * Device backups kept in memory (a page without IndexedDB, and the tests):
+ * the store.js interface, putBackup/getBackup/deleteBackup. The api gives the
+ * controller its IndexedDB store instead (useBackups), so a backup outlives
+ * a reload.
+ */
+export function memoryBackups() {
+  const m = new Map();
+  return {
+    putBackup: async (rec) => { m.set(rec.deviceId, structuredClone(rec)); return rec; },
+    getBackup: async (id) => (m.has(id) ? structuredClone(m.get(id)) : null),
+    deleteBackup: async (id) => m.delete(id),
+    _map: m,
+  };
+}
+
+// a box's refusal of a restored bundle that trying again cannot change (the
+// new firmware does not take it): reported, the others go on
+const kbpsOf = (up) => Math.round(((up.len - (up.resumedFrom ?? 0)) / Math.max(1, up.ms)) * 10) / 10;
+const PERMANENT = new Set(['Invalid', 'OverLimit', 'NotAllowed', 'NoSpace', 'Full']);
+// a refusal at a firmware Commit after which the box restarts into the
+// firmware it runs (common/src/host.rs firmware_commit)
+const RESTARTS = new Set(['Hash', 'Invalid', 'Flash']);
+
+/**
+ * createDevice({ bluetooth, log, backups, ...timing }) → controller. Timing
+ * options go to createLink and createBundles (tests shorten them), and these
+ * to a firmware update:
  *   dropWaitMs (10000)        the box restarting after Rebooting (the link drops)
  *   rebootWaitMs (90000)      it coming back (connected again)
  *   confirmWaitMs (40000)     then confirming the new firmware (pending false)
  *   pollMs (2000)             between tries meanwhile
+ * backups: where a firmware update keeps what it saved off the box (store.js
+ * putBackup/getBackup/deleteBackup; default memoryBackups(); the api sets its
+ * IndexedDB store with useBackups).
  */
 export function createDevice({
   bluetooth = globalThis.navigator?.bluetooth,
   log = () => {},
   now = () => globalThis.performance?.now?.() ?? Date.now(),
+  wallNow = () => Date.now(),
   dropWaitMs = 10000,
   rebootWaitMs = 90000,
   confirmWaitMs = 40000,
   pollMs = 2000,
+  backups = memoryBackups(),
   ...opts
 } = {}) {
   const L = (level, msg) => { try { log(level, `device: ${msg}`); } catch { /* ignore */ } };
@@ -54,12 +83,43 @@ export function createDevice({
   let lastError = null;
   let lastHint = null;
   let lastList = null; // [entryOut] from the last list
+  let lastFirmware = null; // the last firmwareInfo: { sha256, slot, pending, maxLen }
+  let backupMeta = null; // { deviceId, phase, at, bundles } of the box's backup, when one exists
   const changeListeners = new Set();
   const changed = () => { for (const cb of [...changeListeners]) { try { cb(status()); } catch { /* ignore */ } } };
-  link.onState(changed);
+
+  // the backup of the box in hand, for status(): looked up again when the
+  // link (and so maybe the box) changes, and after every write
+  let backupFor;
+  async function refreshBackup() {
+    const id = link.info().deviceId;
+    let meta = null;
+    if (id && backups) {
+      try {
+        const b = await backups.getBackup(id);
+        if (b) meta = { deviceId: id, phase: b.phase, at: b.at, bundles: b.bundles?.length ?? 0 };
+      } catch (e) { L('warn', `device backups: ${e?.message ?? e}`); }
+    }
+    backupFor = id;
+    if (JSON.stringify(meta) !== JSON.stringify(backupMeta)) { backupMeta = meta; changed(); }
+    return meta;
+  }
+  link.onState(() => {
+    changed();
+    if (link.info().deviceId !== backupFor) refreshBackup();
+  });
+  refreshBackup();
+
+  async function firmwareInfo() {
+    const f = await bundles.firmwareInfo();
+    lastFirmware = f;
+    changed();
+    return f;
+  }
 
   function status() {
     const i = link.info();
+    const pending = !!backupMeta && backupMeta.deviceId === i.deviceId;
     return {
       state: op ? 'busy' : i.state,
       op,
@@ -75,6 +135,10 @@ export function createDevice({
       hint: lastError ? lastHint : i.hint,
       reconnects: i.reconnects,
       bluetooth: i.bluetooth,
+      firmware: lastFirmware,
+      restorePending: pending,
+      restorePhase: pending ? backupMeta.phase : null,
+      restoreBundles: pending ? backupMeta.bundles : null,
     };
   }
 
@@ -135,6 +199,221 @@ export function createDevice({
     return { id: hit.id, name: hit.name };
   }
 
+  // ------------------------------------------------------- firmware update
+  //
+  // One run('ota'). A new update: firmwareInfo → checkImage → list → get
+  // every bundle that is not built in → the backup (phase 'saved': the image,
+  // the bundles, which one is active and which one the box boots) →
+  // uploadFirmware → commitFirmware → (phase 'firmware') the link drops as
+  // the box restarts → connect again until it is back → firmwareInfo until
+  // the firmware it runs is confirmed (pending false) → compare its sha256
+  // with the image's → (phase 'restore') upload + commit each saved bundle →
+  // activate the boot one → delete the backup. Any failure once the backup
+  // exists leaves it (status().restorePending); { resume: true } picks it up:
+  // a box that does not run the image yet and whose update was never
+  // committed gets the image again (the box resumes an upload it still
+  // holds), otherwise it goes straight to waiting for the box and restoring.
+  // A refusal at the commit (Hash, Invalid, Flash: the box restarts into its
+  // firmware) still restores the bundles, then rejects with the refusal.
+
+  async function ota(what, onProgress) {
+    const report = (p) => { setProgress(p); try { onProgress?.(p); } catch { /* ignore */ } };
+    const fail = (message, hint) => Object.assign(new Error(message), { hint });
+    if (what instanceof Uint8Array || what instanceof ArrayBuffer) what = { bytes: what };
+    if (!isPlain(what) || (!what.bytes && what.resume !== true)) throw fail('expected { bytes } (a firmware image) or { resume: true }', 'api.device.updateFirmware({ base64 }) to update, api.device.updateFirmware({}) to finish one that was interrupted');
+    const resumed = !what.bytes;
+    // a new update needs the link (its first request says "not connected"
+    // otherwise); a resume finds the backup by the id the page remembers and
+    // connects (below) once the box is back
+    let deviceId = link.info().deviceId;
+    if (resumed && !deviceId) { await link.connect(); deviceId = link.info().deviceId; }
+    const save = async (r) => { await backups.putBackup(r); await refreshBackup(); return r; };
+    let rec = deviceId ? await backups.getBackup(deviceId) : null;
+
+    // ---- the backup: a new one, or the one to resume
+    let before;
+    let up = null;
+    if (resumed) {
+      if (!rec) throw fail('no interrupted firmware update for this box: nothing to resume', 'api.device.updateFirmware({ base64 }) starts one');
+      L('info', `firmware update: resuming from its backup (phase ${rec.phase}, ${rec.bundles.length} bundles, saved ${new Date(rec.at).toISOString()})`);
+      before = { sha256: rec.fromSha, slot: rec.fromSlot };
+    } else {
+      if (rec) {
+        throw fail(`a firmware update of this box was interrupted (phase ${rec.phase}): its ${rec.bundles.length} saved bundles are not back on the box yet`,
+          'api.device.updateFirmware({}) finishes it (restores the bundles) first; then update again');
+      }
+      const bytes = what.bytes instanceof Uint8Array ? what.bytes : new Uint8Array(what.bytes);
+      before = await firmwareInfo();
+      deviceId = link.info().deviceId;
+      if (!deviceId) throw fail('the box in hand has no id to keep its backup under', 'api.device.connect(), then again');
+      const image = await checkImage(bytes, before.maxLen || null);
+      if (before.pending) throw fail(`busy: the box runs a firmware still on trial (${before.sha256.slice(0, 8)}…; it confirms itself 20 s after it boots)`, 'wait for it (api.device.firmware().pending false), then api.device.updateFirmware() again');
+      L('info', `firmware update: ota_${before.slot} runs ${before.sha256}; image ${image.len} B, sha256 ${image.sha256}`);
+      const l = await list();
+      const keep = l.bundles.filter((b) => !b.builtin);
+      const saved = [];
+      for (const [i, b] of keep.entries()) {
+        const g = await bundles.get(b.id, { onProgress: (p) => report({ ...p, phase: 'save', bundle: b.name, index: i + 1, of: keep.length }) });
+        saved.push({ id: b.id, name: b.name, version: b.version, len: g.len, sha256: g.sha256, bytes: g.bytes });
+        report({ phase: 'save', bundle: b.name, index: i + 1, of: keep.length, sent: g.len, total: g.len, kbps: Math.round((g.len / Math.max(1, g.ms)) * 10) / 10 });
+      }
+      rec = await save({
+        deviceId, at: wallNow(), phase: 'saved',
+        fromSha: before.sha256, fromSlot: before.slot, toSha: image.sha256, image: bytes,
+        bundles: saved,
+        active: l.bundles.find((b) => b.active)?.id ?? 0,
+        boot: l.bundles.find((b) => b.boot)?.id ?? 0,
+      });
+      L('info', `firmware update: saved ${saved.length} bundles (${saved.map((b) => b.name).join(', ') || 'none'}); boots ${l.bundles.find((b) => b.boot)?.name ?? 'choose'}`);
+    }
+
+    // ---- the image (unless the box runs it already, or took it at a commit)
+    let runs = null; // a resumed update not committed yet: what the box runs now
+    if (resumed && rec.phase === 'saved') {
+      if (!link.isConnected()) await link.connect();
+      runs = await firmwareInfo();
+    }
+    let refusal = null;
+    const sendImage = rec.phase === 'saved' && (!runs || runs.sha256 !== rec.toSha);
+    let t0 = now(); // the commit, once there is one
+    if (sendImage) {
+      try {
+        up = await bundles.uploadFirmware(rec.image, { onProgress: (p) => report({ ...p, phase: 'firmware' }) });
+      } catch (e) {
+        if (e?.beforeReady && !resumed) {
+          // the box refused before it took anything: its bundles are where they were
+          await backups.deleteBackup(deviceId);
+          await refreshBackup();
+        }
+        throw e;
+      }
+      chunk = up.chunk; window = up.window;
+      report({ phase: 'reboot', sent: up.len, total: up.len, kbps: kbpsOf(up) });
+      let dropped = false;
+      const offDrop = link.onDrop(() => { dropped = true; });
+      t0 = now();
+      try {
+        try {
+          await bundles.commitFirmware();
+          L('info', 'firmware update: the box checked the image and is rebooting into it');
+        } catch (e) {
+          if (e instanceof BundleError && RESTARTS.has(e.code)) {
+            refusal = e;
+            L('warn', `firmware update: ${e.message}; the bundles go back once it is up again`);
+          } else if (e?.code === 'DROPPED') {
+            L('warn', 'firmware update: the link dropped at the commit (the box may be rebooting into the image); waiting for it');
+          } else {
+            throw e;
+          }
+        }
+        rec = await save({ ...rec, phase: 'firmware', ...(refusal ? { refused: refusal.message } : {}) });
+        while (!dropped && link.isConnected()) {
+          if (now() - t0 > dropWaitMs) {
+            throw fail(`the box answered ${refusal ? 'the commit with a refusal' : 'Rebooting'} but the link did not drop in ${dropWaitMs / 1000} s`, 'api.device.firmware() says what it runs; its boot log (defmt) says why it did not restart; api.device.updateFirmware({}) then restores the bundles');
+          }
+          await sleep(Math.min(100, pollMs));
+        }
+      } finally {
+        offDrop();
+      }
+    }
+
+    // ---- back, and confirmed: every failure meanwhile (the box restarting
+    // again: a firmware that fails is rolled back after 3 boots) is tried
+    // again until the deadline
+    const deadline = now() + rebootWaitMs + confirmWaitMs;
+    let after = null;
+    let last = null;
+    while (now() < deadline) {
+      try {
+        if (!link.isConnected() && !(await link.waitConnected(Math.max(0, deadline - now())))) await link.connect();
+        after = await firmwareInfo();
+        if (!after.pending) break;
+        report({ phase: 'reboot', sent: up?.len ?? 0, total: up?.len ?? 0, kbps: up ? kbpsOf(up) : 0, pending: true });
+      } catch (e) {
+        last = e;
+        L('info', `firmware update: waiting for the box (${e?.message ?? e})`);
+      }
+      await sleep(pollMs);
+    }
+    if (!after || after.pending) {
+      const why = after ? `it still runs ${after.sha256} on trial` : `it did not come back (${last?.message ?? 'no answer'})`;
+      throw fail(`firmware update: ${why} after ${Math.round((now() - t0) / 1000)} s; its ${rec.bundles.length} bundles are saved in this browser`, 'api.device.connect(), then api.device.updateFirmware({}) restores them (api.device.status().restorePending); the boot log (defmt) says what the box did');
+    }
+    const rebootMs = sendImage ? Math.round(now() - t0) : null;
+    const updated = after.sha256 === rec.toSha;
+    const note = refusal || updated
+      ? undefined
+      : after.sha256 === rec.fromSha
+          ? 'the box kept (or went back to) the firmware it had: the new one did not boot, or did not confirm itself (its boot log says why)'
+          : `the box runs ${after.sha256}, neither the old firmware nor the image`;
+    L(updated ? 'info' : 'warn', `firmware update: ota_${after.slot} runs ${after.sha256}${updated ? ', the image sent' : note ? `: ${note}` : ''}${rebootMs !== null ? ` (${rebootMs} ms after the commit)` : ''}`);
+
+    // ---- the bundles back
+    rec = await save({ ...rec, phase: 'restore' });
+    const r = await restore(rec, report);
+    await backups.deleteBackup(deviceId);
+    await refreshBackup();
+    lastList = null;
+    report({ phase: 'done', sent: up?.len ?? 0, total: up?.len ?? 0, kbps: up ? kbpsOf(up) : 0 });
+    if (refusal) {
+      const n = r.restored.length;
+      const back = rec.bundles.length ? `; ${n} saved bundle${n === 1 ? ' is' : 's are'} back on the box${r.notRestored.length ? `, ${r.notRestored.length} not` : ''}` : '';
+      throw Object.assign(new Error(`${refusal.message}${back}`),
+        { code: refusal.code, detail: refusal.detail, response: refusal.response, hint: refusal.hint, restored: r.restored });
+    }
+    return {
+      updated, ...(note ? { note } : {}),
+      from: { sha256: before.sha256, slot: before.slot },
+      to: { sha256: after.sha256, slot: after.slot, pending: after.pending },
+      sha256: rec.toSha, len: rec.image?.length ?? null,
+      saved: rec.bundles.map((b) => ({ id: b.id, name: b.name, version: b.version, len: b.len })),
+      restored: r.restored, ...(r.notRestored.length ? { notRestored: r.notRestored } : {}),
+      activated: r.activated, resumed,
+      ms: up?.ms ?? null, kbps: up ? kbpsOf(up) : null, rebootMs,
+      chunk: up?.chunk ?? null, window: up?.window ?? null, rewinds: up?.rewinds ?? 0, resends: up?.resends ?? 0, resumes: up?.resumes ?? 0,
+      progress,
+    };
+  }
+
+  /**
+   * Upload + commit each saved bundle the box does not hold yet (one with
+   * the same id, length and content hash is there already: a resumed
+   * restore), then activate the one it booted with. A refusal trying again
+   * cannot change (PERMANENT: the new firmware does not take the bundle) is
+   * reported and the others go on; anything else rejects (the backup stays).
+   * → { restored: [{ id, name, version, already? }], notRestored: [{ id, name, error, hint }], activated: name|null }
+   */
+  async function restore(rec, report) {
+    const l = await bundles.list();
+    const restored = [];
+    const notRestored = [];
+    for (const [i, b] of rec.bundles.entries()) {
+      const m = bundleManifest(b.bytes);
+      const there = l.entries.find((e) => e.manifest.id === b.id && e.len === b.len && hex(e.manifest.content_hash) === hex(m.content_hash));
+      if (there) { restored.push({ id: b.id, name: b.name, version: b.version, already: true }); continue; }
+      const at = { bundle: b.name, index: i + 1, of: rec.bundles.length };
+      try {
+        await bundles.upload(b.bytes, { onProgress: (p) => report({ ...p, ...at, phase: 'restore' }) });
+        await bundles.commit();
+        restored.push({ id: b.id, name: b.name, version: b.version });
+        L('info', `firmware update: ${b.name} v${b.version} is back on the box (${i + 1} of ${rec.bundles.length})`);
+      } catch (e) {
+        if (!(e instanceof BundleError && PERMANENT.has(e.code))) throw e;
+        notRestored.push({ id: b.id, name: b.name, error: e.message, hint: e.hint });
+        L('warn', `firmware update: the box does not take ${b.name} back: ${e.message}`);
+      }
+    }
+    let activated = null;
+    const boot = rec.boot ? restored.find((b) => b.id === rec.boot) : null;
+    if (boot) {
+      report({ phase: 'restore', bundle: boot.name, activate: true, sent: 0, total: 0, kbps: 0 });
+      await bundles.activate(boot.id);
+      activated = boot.name;
+    }
+    return { restored, notRestored, activated };
+  }
+
   return {
     status,
     onChange: (cb) => { changeListeners.add(cb); return () => changeListeners.delete(cb); },
@@ -161,91 +440,26 @@ export function createDevice({
     list: () => run('list', list),
 
     /** The firmware the box runs → { sha256 (hex: the image's appended digest), slot (n of ota_n), pending, maxLen }. */
-    firmware: () => run('firmware', () => bundles.firmwareInfo()),
+    firmware: () => run('firmware', firmwareInfo),
 
     /**
-     * Update the box's firmware with `bytes` (target/xiaoc6.bin): firmwareInfo,
-     * checkImage (against the box's room), uploadFirmware, commitFirmware
-     * (Rebooting), the link drops as the box restarts, connect again until it
-     * is back, firmwareInfo until the new firmware confirms itself (pending
-     * false), then compare its sha256 with the image's: a box that kept (or
-     * went back to) the firmware it had says so in `updated: false` and
-     * `note`. Progress phases: firmware (the upload), reboot (from the commit
-     * until confirmed).
-     * → { updated, note?, from: { sha256, slot }, to: { sha256, slot, pending },
-     *     sha256, len, ms, kbps, rebootMs, chunk, window, rewinds, resends, resumes, progress }
+     * Update the box's firmware, saving its bundles first and putting them
+     * back after (the update writes the image over the slot that holds them
+     * and the track): updateFirmware({ bytes }) (target/xiaoc6.bin; a
+     * Uint8Array alone works too), or updateFirmware({ resume: true }) to
+     * finish one a reload or a lost link interrupted (from its backup). See
+     * ota() below. → { updated, note?, from, to, sha256, len, saved,
+     * restored, notRestored?, activated, resumed, ms, kbps, rebootMs, … }
      */
-    updateFirmware: (bytes, { onProgress } = {}) => run('ota', async () => {
-      const report = (p) => { setProgress(p); try { onProgress?.(p); } catch { /* ignore */ } };
-      bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-      const before = await bundles.firmwareInfo();
-      const image = await checkImage(bytes, before.maxLen || null);
-      L('info', `firmware update: ota_${before.slot} runs ${before.sha256}; sending ${image.len} B, sha256 ${image.sha256}`);
-      // TODO(O3): the update wipes the data slot (the bundles and the
-      // track): save every non-builtin bundle (api.device.get) and the boot
-      // one first, restore them after the reboot (plan "Studio",
-      // device/index.js updateFirmware, store.js deviceBackups).
-      const up = await bundles.uploadFirmware(bytes, { onProgress: (p) => report({ ...p, phase: 'firmware' }) });
-      chunk = up.chunk; window = up.window;
-      const sentBytes = up.len - (up.resumedFrom ?? 0);
-      const kbps = Math.round((sentBytes / Math.max(1, up.ms)) * 10) / 10;
-      const rebooting = { phase: 'reboot', sent: up.len, total: up.len, kbps };
-      report(rebooting);
-      let dropped = false;
-      const offDrop = link.onDrop(() => { dropped = true; });
-      const t0 = now();
-      try {
-        await bundles.commitFirmware();
-        L('info', 'firmware update: the box checked the image and is rebooting into it');
-        while (!dropped && link.isConnected()) {
-          if (now() - t0 > dropWaitMs) {
-            throw Object.assign(new Error(`the box answered Rebooting but the link did not drop in ${dropWaitMs / 1000} s`), { hint: 'api.device.firmware() says what it runs; its boot log (defmt) says why it did not restart' });
-          }
-          await sleep(Math.min(100, pollMs));
-        }
-      } finally {
-        offDrop();
-      }
-      // back, and confirmed: every failure meanwhile (the box restarting
-      // again: a firmware that fails is rolled back after 3 boots) is tried
-      // again until the deadline
-      const deadline = now() + rebootWaitMs + confirmWaitMs;
-      let after = null;
-      let last = null;
-      while (now() < deadline) {
-        try {
-          if (!link.isConnected() && !(await link.waitConnected(Math.max(0, deadline - now())))) await link.connect();
-          after = await bundles.firmwareInfo();
-          if (!after.pending) break;
-          report({ ...rebooting, pending: true });
-        } catch (e) {
-          last = e;
-          L('info', `firmware update: waiting for the box (${e?.message ?? e})`);
-        }
-        await sleep(pollMs);
-      }
-      if (!after || after.pending) {
-        const why = after ? `it still runs ${after.sha256} on trial` : `it did not come back (${last?.message ?? 'no answer'})`;
-        throw Object.assign(new Error(`firmware update: ${why} after ${Math.round((now() - t0) / 1000)} s`), { hint: 'api.device.connect(), then api.device.firmware(); the boot log (defmt) says what the box did' });
-      }
-      const rebootMs = Math.round(now() - t0);
-      const updated = after.sha256 === image.sha256;
-      const note = updated
-        ? undefined
-        : after.sha256 === before.sha256
-          ? 'the box kept (or went back to) the firmware it had: the new one did not boot, or did not confirm itself (its boot log says why)'
-          : `the box runs ${after.sha256}, neither the old firmware nor the image`;
-      L(updated ? 'info' : 'warn', `firmware update: ota_${after.slot} runs ${after.sha256}${updated ? ', the image sent' : `: ${note}`} (${rebootMs} ms after the commit)`);
-      report({ phase: 'done', sent: up.len, total: up.len, kbps });
-      lastList = null;
-      return {
-        updated, ...(note ? { note } : {}),
-        from: { sha256: before.sha256, slot: before.slot },
-        to: { sha256: after.sha256, slot: after.slot, pending: after.pending },
-        sha256: image.sha256, len: image.len, ms: up.ms, kbps, rebootMs,
-        chunk: up.chunk, window: up.window, rewinds: up.rewinds, resends: up.resends, resumes: up.resumes, progress,
-      };
-    }),
+    updateFirmware: (what, { onProgress } = {}) => run('ota', () => ota(what, onProgress)),
+
+    /** Whether a firmware update's backup waits to be restored on the box in hand (looked up again). → { deviceId, phase, at, bundles } | null */
+    refreshBackup,
+
+    /** The page's IndexedDB backups (store.js) instead of the in-memory ones. */
+    useBackups: (b) => { backups = b; backupFor = undefined; return refreshBackup(); },
+    /** The image, the bundles and the rest of the box's backup (null: none). For the page and tests. */
+    backup: () => { const id = link.info().deviceId; return id ? backups.getBackup(id) : Promise.resolve(null); },
 
     /**
      * Upload, commit, optionally activate an archive. → { installed: { id, name,

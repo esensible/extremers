@@ -11,7 +11,7 @@ import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
 import { toBase64, fromBase64 } from './zip.js';
-import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml, deviceTableAfter } from './ui.js';
+import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText } from './ui.js';
 import { createEditor } from './editor.js';
 import { isJsonPath, prettyJson } from './json.js';
 import { mountPanels } from './panels.js';
@@ -461,6 +461,11 @@ let deviceUrl = null;
 function renderDevice(s) {
   $('device-status').textContent = deviceStatusText(s);
   $('device-progress').textContent = s?.progress ? `${s.state === 'busy' ? '' : 'last transfer: '}${deviceProgressText(s.progress)}` : '';
+  $('device-firmware').textContent = deviceFirmwareText(s?.firmware);
+  const restore = deviceRestoreText(s);
+  $('device-restore').hidden = !restore || s?.state === 'busy';
+  $('device-restore-text').textContent = restore;
+  $('device-update-yes').disabled = $('device-restore-resume').disabled = $('device-firmware-ask').disabled = s?.state === 'busy';
   renderDeviceHead(s);
 }
 
@@ -511,6 +516,43 @@ $('device-list').onclick = () => window.api.device.list();
 $('device-install').onclick = async () => {
   await flushAll();
   const r = await window.api.device.install({ activate: $('device-install-activate').checked });
+  if (r.ok) await window.api.device.list();
+};
+
+// A firmware update: a person drops the image (.bin) on the Device panel (no
+// native picker, as #files-pane), confirms inline within 15 s, and
+// api.device.updateFirmware does the rest (saves the bundles, updates,
+// restores them). A stopped one shows #device-restore; Resume finishes it.
+$('device-firmware-ask').onclick = () => window.api.device.firmware();
+$('device-restore-resume').onclick = async () => {
+  const r = await window.api.device.updateFirmware({});
+  if (r.ok) await window.api.device.list();
+};
+let fwPending = null; // { name, len, base64 } waiting for its inline confirm
+let fwTimer;
+function cancelFirmware() { clearTimeout(fwTimer); fwPending = null; $('device-update-confirm').hidden = true; }
+const devPanel = $('device');
+devPanel.addEventListener('dragover', (e) => { e.preventDefault(); devPanel.classList.add('drag'); });
+devPanel.addEventListener('dragleave', () => devPanel.classList.remove('drag'));
+devPanel.addEventListener('drop', async (e) => {
+  e.preventDefault(); devPanel.classList.remove('drag');
+  const f = e.dataTransfer?.files?.[0];
+  if (!f) return;
+  if (!/\.bin$/i.test(f.name)) { setStatus(`Firmware: ${f.name} is not a firmware image (.bin, as cargo run -p extreme-image writes)`, true); return; }
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  cancelFirmware();
+  fwPending = { name: f.name, len: bytes.length, base64: toBase64(bytes) };
+  const listed = deviceTable.list && !deviceTable.stale ? deviceTable.list.bundles.filter((b) => !b.builtin).length : null;
+  $('device-update-text').textContent = deviceUpdateConfirmText(fwPending, listed);
+  $('device-update-confirm').hidden = false;
+  fwTimer = setTimeout(cancelFirmware, 15000);
+});
+$('device-update-no').onclick = cancelFirmware;
+$('device-update-yes').onclick = async () => {
+  const p = fwPending;
+  cancelFirmware();
+  if (!p) return;
+  const r = await window.api.device.updateFirmware({ base64: p.base64 });
   if (r.ok) await window.api.device.list();
 };
 

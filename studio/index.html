@@ -137,6 +137,9 @@
   .dev-table .btn { min-height: 26px; padding: 0 8px; font-size: 13px; }
   .dev-log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 6px 0 0; max-height: 220px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--raised); }
   .dev-log:empty { display: none; }
+  .dev-fw { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dev-fw .btn { min-height: 26px; padding: 0 8px; font-size: 13px; }
+  #device.drag { outline: 2px dashed var(--info); outline-offset: -4px; }
 
   /* The pane keeps its scrollbar's gutter whether it scrolls or not: with a
      classic scrollbar, one coming and going changed the Kindle viewport's
@@ -293,6 +296,14 @@
             </ol>
             <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. Chrome remembers each box chosen separately (all named <code>nacra</code>); Connect takes the one chosen last, else the one that advertises. For a different box than before, click <b>Choose another box…</b> and pick <code>nacra</code>.</p>
           </details>
+          <div id="device-restore" class="confirm dev-line" data-testid="device-restore" role="alert" hidden><span id="device-restore-text" data-testid="device-restore-text"></span>
+            <button type="button" class="btn danger solid" id="device-restore-resume" data-testid="device-restore-resume">Resume</button></div>
+          <div class="dev-line dev-fw"><span id="device-firmware" data-testid="device-firmware">Firmware: not asked yet (Firmware asks the box)</span>
+            <button type="button" class="btn" id="device-firmware-ask" data-testid="device-firmware-ask">Firmware</button></div>
+          <p class="hint dev-line" id="device-update-hint" data-testid="device-update-hint">To update the box's firmware, drop its image (<code>target/xiaoc6.bin</code>) on this panel: the studio saves the bundles, updates, then restores them.</p>
+          <div class="confirm dev-line" id="device-update-confirm" data-testid="device-update-confirm" hidden><span id="device-update-text" data-testid="device-update-text"></span>
+            <button type="button" class="btn danger solid" id="device-update-yes" data-testid="device-update-yes">Update</button>
+            <button type="button" class="btn" id="device-update-no" data-testid="device-update-no">Cancel</button></div>
           <div id="device-progress" class="dev-line hint" data-testid="device-progress" aria-live="polite"></div>
           <div id="device-bundles" data-testid="device-bundles"><p class="hint">List shows the bundles on the box.</p></div>
           <div id="device-download" class="dev-line"></div>

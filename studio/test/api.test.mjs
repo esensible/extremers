@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 
 import { createApi, createLogger, withUnknownGuard, parsePath } from '../api.js';
-import { openStore } from '../store.js';
+import { openStore, DB_NAME, DB_VERSION } from '../store.js';
 import { zipStore, unzip, toBase64, fromBase64, crc32 } from '../zip.js';
 import { racePath } from '../templates.js';
 import { prettyJson } from '../json.js';
@@ -545,6 +545,59 @@ test('parsePath accepts project paths and rejects escapes', () => {
 });
 
 // ===================================================================== store
+
+test('store: version 2 adds deviceBackups to a version-1 database, keeping its projects; opening again changes nothing; put/get/delete a backup', async () => {
+  const indexedDB = createFakeIndexedDB();
+  // a studio from before: version 1, projects and files only
+  const v1 = indexedDB.open(DB_NAME, 1);
+  v1.onupgradeneeded = () => { v1.result.createObjectStore('projects', { keyPath: 'name' }); v1.result.createObjectStore('files', { keyPath: ['project', 'path'] }).createIndex('byProject', 'project'); };
+  await new Promise((r) => { v1.onsuccess = r; });
+  const old = await openStore({ indexedDB });
+  await old.createProject({ name: 'kept', created: 1 }, [{ path: 'x', text: '1' }]);
+  assert.equal(DB_VERSION, 2);
+  const s = await openStore({ indexedDB });
+  assert.equal(indexedDB._dbs.get(DB_NAME).version, 2);
+  assert.deepEqual((await s.listProjects()).map((p) => p.name), ['kept']);
+  assert.equal(await s.getBackup('box'), null);
+  const rec = { deviceId: 'box', at: 1, phase: 'saved', fromSha: 'aa', toSha: 'bb', image: new Uint8Array([1, 2, 3]), bundles: [{ id: 7, name: 'race', version: 1, len: 2, sha256: 'cc', bytes: new Uint8Array([9, 9]) }], active: 7, boot: 7 };
+  await s.putBackup(rec);
+  const again = await openStore({ indexedDB });
+  const got = await again.getBackup('box');
+  assert.deepEqual(got, rec);
+  assert.ok(got.image instanceof Uint8Array);
+  await again.putBackup({ ...rec, phase: 'firmware' });
+  assert.equal((await again.getBackup('box')).phase, 'firmware', 'one backup per box, replaced');
+  assert.equal(await again.deleteBackup('box'), true);
+  assert.equal(await again.deleteBackup('box'), false);
+  assert.equal(await again.getBackup('box'), null);
+  await assert.rejects(again.putBackup({ phase: 'saved' }), /deviceId/);
+});
+
+test('store: an open blocked by another tab on an older version answers at once (never hangs) until that tab lets go, then opens', async () => {
+  const real = createFakeIndexedDB();
+  let opens = 0;
+  let release = null;
+  // the browser's behaviour: the open fires blocked and stays queued until the other tab closes
+  const blocking = {
+    open(name, version) {
+      opens++;
+      const r = real.open(name, version);
+      const req = { onsuccess: null, onerror: null, onblocked: null, onupgradeneeded: null, get result() { return r.result; }, get error() { return r.error; } };
+      r.onupgradeneeded = (e) => req.onupgradeneeded?.(e);
+      r.onsuccess = () => { release = () => req.onsuccess?.(); };
+      setTimeout(() => req.onblocked?.(), 0);
+      return req;
+    },
+  };
+  await assert.rejects(openStore({ indexedDB: blocking }), /blocked by another studio tab/);
+  await assert.rejects(openStore({ indexedDB: blocking }), /blocked by another studio tab/, 'answers at once, not queued behind the first');
+  assert.equal(opens, 1);
+  release(); // the other tab closed: the queued open completes
+  const s = await openStore({ indexedDB: blocking });
+  assert.equal(opens, 1, 'the open that was held up is the one used');
+  assert.deepEqual(await s.listProjects(), []);
+  assert.equal(typeof s.db.onversionchange, 'function', 'this tab gives way to a newer version');
+});
 
 test('store: a failed multi-record write leaves nothing behind (atomic)', async () => {
   const s = await openStore({ indexedDB: createFakeIndexedDB() });

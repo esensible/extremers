@@ -1,14 +1,20 @@
-// store.js — projects in IndexedDB. Two object stores:
-//   projects  { name, template, created, modified, opened }        key: name
-//   files     { project, path, text | bytes, modified }            key: [project, path], index byProject
+// store.js — projects in IndexedDB. Three object stores:
+//   projects       { name, template, created, modified, opened }        key: name
+//   files          { project, path, text | bytes, modified }            key: [project, path], index byProject
+//   deviceBackups  { deviceId, at, phase, fromSha, toSha, image,        key: deviceId
+//                    bundles: [{ id, name, version, len, sha256, bytes }], active, boot }
 // A file holds `text` (a string) or `bytes` (a Uint8Array, for binary
 // files). Every operation that changes several records runs in one
 // transaction, so a project is never half-created, half-renamed or
-// half-deleted. Everything is async; errors reject with an Error whose
-// `code` is 'EXISTS' or 'NOT_FOUND' where the caller wants to tell them apart.
+// half-deleted. A device backup is what a firmware update saved off a box
+// before the update wiped its bundles (device/index.js updateFirmware): it
+// stays until they are back on the box, so a reload or a lost link can
+// resume. Everything is async; errors reject with an Error whose `code` is
+// 'EXISTS' or 'NOT_FOUND' where the caller wants to tell them apart.
 
 export const DB_NAME = 'extremers-studio';
-export const DB_VERSION = 1;
+/** 1: projects, files; 2: deviceBackups. */
+export const DB_VERSION = 2;
 
 function req(r) {
   return new Promise((resolve, reject) => {
@@ -19,26 +25,49 @@ function req(r) {
 
 function coded(code, message) { const e = new Error(message); e.code = code; return e; }
 
+// An open that another tab's older version held up ("blocked") stays queued
+// in the browser: a second open would queue behind it and never answer. So
+// it is kept here (per indexedDB, per name) until it completes: meanwhile
+// openStore answers "blocked" at once; once the other tab let go, the next
+// openStore takes the database it opened.
+const heldOpens = new WeakMap(); // indexedDB → Map(name → { db: IDBDatabase | null })
+const blockedError = () => new Error('IndexedDB is blocked by another studio tab running an older version: close (or reload) the other studio tabs, then try again');
+
 /**
  * openStore({ indexedDB, name }) → the store (below). Rejects when IndexedDB
- * is unavailable or blocked (a private window, site data blocked).
+ * is unavailable or blocked (a private window, site data blocked, another
+ * tab on an older version). This tab closes its database when a newer
+ * version wants it (another tab's upgrade), so it never blocks one itself.
  */
 export async function openStore({ indexedDB = globalThis.indexedDB, name = DB_NAME } = {}) {
   if (!indexedDB || typeof indexedDB.open !== 'function') throw new Error('IndexedDB is not available in this browser');
-  const open = indexedDB.open(name, DB_VERSION);
-  open.onupgradeneeded = () => {
-    const db = open.result;
-    if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'name' });
-    if (!db.objectStoreNames.contains('files')) {
-      const f = db.createObjectStore('files', { keyPath: ['project', 'path'] });
-      f.createIndex('byProject', 'project');
-    }
-  };
-  const db = await new Promise((resolve, reject) => {
-    open.onsuccess = () => resolve(open.result);
-    open.onerror = () => reject(open.error || new Error('could not open IndexedDB'));
-    open.onblocked = () => reject(new Error('IndexedDB is blocked by another tab holding an older version; close the other studio tabs'));
-  });
+  if (!heldOpens.has(indexedDB)) heldOpens.set(indexedDB, new Map());
+  const held = heldOpens.get(indexedDB);
+  let db;
+  if (held.has(name)) {
+    const h = held.get(name);
+    if (!h.db) throw blockedError();
+    held.delete(name);
+    db = h.db;
+  } else {
+    const open = indexedDB.open(name, DB_VERSION);
+    open.onupgradeneeded = () => {
+      const d = open.result;
+      if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'name' });
+      if (!d.objectStoreNames.contains('files')) {
+        const f = d.createObjectStore('files', { keyPath: ['project', 'path'] });
+        f.createIndex('byProject', 'project');
+      }
+      if (!d.objectStoreNames.contains('deviceBackups')) d.createObjectStore('deviceBackups', { keyPath: 'deviceId' });
+    };
+    db = await new Promise((resolve, reject) => {
+      let h = null;
+      open.onsuccess = () => { if (h) h.db = open.result; else resolve(open.result); };
+      open.onerror = () => { if (h) held.delete(name); else reject(open.error || new Error('could not open IndexedDB')); };
+      open.onblocked = () => { if (h) return; h = { db: null }; held.set(name, h); reject(blockedError()); };
+    });
+  }
+  db.onversionchange = () => { try { db.close(); } catch { /* closed */ } };
 
   /** Run body(stores) in one transaction; resolves with its result once committed. */
   function run(names, mode, body) {
@@ -126,6 +155,20 @@ export async function openStore({ indexedDB = globalThis.indexedDB, name = DB_NA
       await req(s.files.put({ ...f, path: to, modified: now }));
       await req(s.files.delete([project, from]));
       await req(s.projects.put({ ...p, modified: now }));
+    }),
+    /** A firmware update's backup of a box (replaces the one it had). */
+    putBackup: (rec) => run(['deviceBackups'], 'readwrite', async (s) => {
+      if (typeof rec?.deviceId !== 'string' || !rec.deviceId) throw new Error('a device backup needs the box\'s deviceId');
+      await req(s.deviceBackups.put(rec));
+      return rec;
+    }),
+    getBackup: (deviceId) => run(['deviceBackups'], 'readonly', async (s) => (typeof deviceId === 'string' && deviceId ? (await req(s.deviceBackups.get(deviceId))) ?? null : null)),
+    /** → whether there was one. */
+    deleteBackup: (deviceId) => run(['deviceBackups'], 'readwrite', async (s) => {
+      if (typeof deviceId !== 'string' || !deviceId) return false;
+      const had = await req(s.deviceBackups.get(deviceId));
+      await req(s.deviceBackups.delete(deviceId));
+      return !!had;
     }),
   };
 }

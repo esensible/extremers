@@ -24,7 +24,7 @@ Licence: MIT (`LICENSE`).
 | `ui.build` | wired (`toolchain/`: a Web Worker; the last good build per project in its own IndexedDB) |
 | `preview.*` `open, status, text, press, close` | wired (S5: see "The previews") |
 | `bundle.*` `pack, inspect` | wired |
-| `device.*` `status, connect, disconnect, list, install, activate, delete, get` | wired (S7: see "The box"); tested against a fake of the box, not yet run on the hardware |
+| `device.*` `status, connect, disconnect, list, install, activate, delete, get, firmware, updateFirmware` | wired (S7, O1–O3: see "The box"); tested against a fake of the box and run on the C6 from Chrome |
 
 ## A project's settings: `studio.json`
 
@@ -208,7 +208,31 @@ Bluetooth, by its bundle service (BLE.md "Bundles"). Three layers:
 |---|---|
 | `device/ble.js` | the link: one GATT operation at a time; `connect()` finds the remembered device (`navigator.bluetooth.getDevices()`; after a reload, `watchAdvertisements()` first) and never opens the chooser; `choose()` (only from the page's `#device-choose` click, via `api._device.choose`) calls `requestDevice({ filters: [{ name: 'nacra' }], optionalServices: [SERVICE] })` before anything else is awaited; subscribing to `bundle` and `data`, with a write request to `event` between refused attempts (that is what makes macOS pair); reconnecting after a drop (3 tries, with backoff); Chrome's errors mapped to what a person must do (`HINTS`) |
 | `device/bundles.js` | the protocol on `protocol-js` (`encodeHostEvent({ tag: 'Bundle', value })`, `decodeBundleResponse`): List, Begin → `data` writes → Acks → Commit, Abort, Delete, Activate, Get; every `BundleError` in words with a hint |
-| `device/index.js` | the controller `api.device.*` calls: one operation at a time (`busy`), progress, names → ids from the last list |
+| `device/index.js` | the controller `api.device.*` calls: one operation at a time (`busy`), progress, names → ids from the last list; a firmware update with its save and restore of the bundles (below) |
+| `device/firmware.js` | `checkImage(bytes, maxLen)`: a firmware image checked before it is sent (magic, chip id, 16-byte lines, room, its appended digest) |
+
+**A firmware update** (`api.device.updateFirmware({ base64 })`, or a `.bin`
+dropped on the Device panel and confirmed inline) writes the image over the
+box's other app slot, which also holds its bundles and its GPS track. So the
+controller, in one `run('ota')`: asks which firmware runs (`Firmware`),
+checks the image, lists the box and downloads (`Get`) every bundle that is
+not built in, saves them with the image and the boot/active ids in
+IndexedDB (`store.js` `deviceBackups`, keyed by the box's `deviceId`, phase
+`saved`), sends the image (`BeginFirmware`, the same upload pump), commits
+it (`Rebooting`; phase `firmware`), waits for the link to drop, connects
+again until the box answers, polls `Firmware` until the new firmware has
+confirmed itself (`pending` false, 20 s after it boots), compares the sha256
+(the box that kept its old firmware: `updated: false` and a note), then
+(phase `restore`) uploads and commits each saved bundle the box does not
+hold yet, activates the one it booted with, and deletes the backup. The
+track is not saved. A refusal at the commit (Hash, Invalid, Flash: the box
+restarts into its firmware) still restores the bundles, then answers the
+refusal. Anything that stops the flow once the backup exists leaves it:
+`api.device.status().restorePending` (and the Device panel's
+`#device-restore` banner with **Resume**), and `api.device.updateFirmware({})`
+finishes it (the image again if it was never committed). A new update is
+refused while one is pending, so a second save can never overwrite the
+first with an empty box.
 
 The upload: `Ready { offset, chunk, window }` sets the chunk (240 B at the
 box's MTU) and the window (1920 B); writes go in order, `[offset u32
@@ -257,7 +281,10 @@ while it is open), the stale-pairing drop, chunk and window from the MTU, Acks
 every `min(1 KiB, window / 2)` and at the end, one `Sequence` per gap, repeats
 ignored, resume across connections, Commit's checks, Get's stream, and faults
 to inject (a lost write, a drop at N bytes, a corrupted byte, an expired
-upload, another connection's upload). `test/device.test.mjs` drives the
+upload, another connection's upload, a bundle the validator refuses), and a
+firmware update (`BeginFirmware` wipes the bundles; Commit → `Rebooting`,
+off for a while, back on the other slot on trial; refusals at the commit;
+a fallback to the old firmware). `test/device.test.mjs` drives the
 controller with it, `test/device-api.test.mjs` the api (a Race project built,
 packed and installed), `test/device-ui.test.mjs` the panel's text.
 

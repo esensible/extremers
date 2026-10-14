@@ -208,6 +208,8 @@ export function statusLine(name, r) {
       case 'device.activate': return `Activated ${r.name ?? r.id} on the box`;
       case 'device.delete': return `Deleted ${r.name ?? r.id} from the box`;
       case 'device.get': return `Downloaded ${r.name} v${r.version} from the box: ${fmtBytes(r.sizes.bundle)}, SHA-256 checked`;
+      case 'device.firmware': return `The box runs ota_${r.slot}, sha256 ${r.sha256.slice(0, 16)}…${r.pending ? ' (on trial)' : ''}`;
+      case 'device.updateFirmware': return `${r.updated ? `Firmware updated: ota_${r.to.slot}, sha256 ${r.to.sha256.slice(0, 16)}…` : `Firmware not updated: ${r.note ?? 'the box runs another firmware'}`}${r.kbps ? ` (${r.kbps} kB/s)` : ''}; ${r.restored.length} bundle${r.restored.length === 1 ? '' : 's'} back${r.notRestored?.length ? `, ${r.notRestored.length} refused (${r.notRestored.map((b) => b.name).join(', ')})` : ''}${r.activated ? `; ${r.activated} active` : ''}`;
       default: return `${name}: ok`;
     }
   }
@@ -241,12 +243,49 @@ ${x.checks.length ? `<ul>${x.checks.map((c) => `<li data-check="${esc(c.name)}" 
 
 // ------------------------------------------------------------ the #device panel
 
-/** A transfer's progress { phase, sent, total, kbps } as one line. */
+/**
+ * A transfer's progress { phase, sent, total, kbps } as one line. A firmware
+ * update's phases: save (each bundle downloaded: bundle, index, of),
+ * firmware (the image), reboot (pending: on trial), restore (each bundle
+ * installed again; activate: the boot one).
+ */
 export function deviceProgressText(p) {
   if (!p) return '';
   const pct = p.total ? Math.floor((p.sent / p.total) * 100) : 0;
-  const what = { begin: 'starting', upload: 'uploading', reconnect: 'link dropped: reconnecting to resume', commit: 'committing (the box validates it)', activate: 'activating', download: 'downloading', done: 'done' }[p.phase] ?? p.phase;
-  return `${what}${p.total ? ` · ${fmtBytes(p.sent)} of ${fmtBytes(p.total)} (${pct}%)` : ''}${p.kbps ? ` · ${p.kbps} kB/s` : ''}`;
+  const which = p.bundle ? ` ${p.bundle}${p.of ? ` (${p.index} of ${p.of})` : ''}` : '';
+  const what = {
+    begin: 'starting', upload: 'uploading', reconnect: 'link dropped: reconnecting to resume', commit: 'committing (the box validates it)', activate: 'activating', download: 'downloading', done: 'done',
+    save: `saving${which}`,
+    firmware: 'sending the firmware',
+    reboot: p.pending ? 'the new firmware is on trial (it confirms itself 20 s after it boots)' : 'the box is rebooting into the firmware',
+    restore: p.activate ? `activating${which}` : `restoring${which}`,
+  }[p.phase] ?? p.phase;
+  const bytes = p.total && p.phase !== 'reboot' && !p.activate;
+  return `${what}${bytes ? ` · ${fmtBytes(p.sent)} of ${fmtBytes(p.total)} (${pct}%)` : ''}${p.kbps && p.phase !== 'reboot' ? ` · ${p.kbps} kB/s` : ''}`;
+}
+
+/** status().firmware as the panel's firmware line: 'ota_0 · sha 12ab34cd…' (', on trial' while pending). */
+export function deviceFirmwareText(fw) {
+  if (!fw) return 'Firmware: not asked yet (Firmware asks the box)';
+  return `Firmware: ota_${fw.slot} · sha ${String(fw.sha256).slice(0, 8)}…${fw.pending ? ' · on trial' : ''}`;
+}
+
+/**
+ * The inline confirm for a firmware image dropped on the Device panel:
+ * { name, len } of the file, and how many bundles the box holds (the last
+ * list's, besides Choose; null: not listed).
+ */
+export function deviceUpdateConfirmText({ name, len }, bundles = null) {
+  const n = bundles === null ? 'every bundle on the box' : bundles === 1 ? 'the 1 bundle on the box' : `the ${bundles} bundles on the box`;
+  return `Update the box's firmware with ${name} (${fmtBytes(len)})? This saves ${n} in this browser, updates the firmware, then restores them; the GPS track is lost.`;
+}
+
+/** The "restore pending" banner's text from api.device.status() ('' when there is nothing to restore). */
+export function deviceRestoreText(s) {
+  if (!s?.restorePending) return '';
+  const n = s.restoreBundles ?? 0;
+  const where = { saved: 'before the firmware was committed', firmware: 'after the firmware was committed', restore: 'while the bundles were going back' }[s.restorePhase] ?? '';
+  return `A firmware update of this box stopped ${where}: ${n} bundle${n === 1 ? ' is' : 's are'} saved in this browser and not back on the box yet. Resume finishes it.`;
 }
 
 /** api.device.status() as the panel's status line. */
@@ -348,9 +387,11 @@ export function deviceRowsHtml(list, confirm = null, stale = false) {
  * clears it. → the same object when nothing changed.
  */
 export function deviceTableAfter(t, name, r) {
+  // a firmware update that failed may still have changed the box (wiped, or the bundles put back)
+  if (name === 'device.updateFirmware' && r) return t.list && !t.stale ? { ...t, stale: true } : t;
   if (!r?.ok || !name.startsWith('device.')) return t;
   if (name === 'device.list') return { list: r, stale: false };
-  if (['device.install', 'device.activate', 'device.delete'].includes(name)) return t.list && !t.stale ? { ...t, stale: true } : t;
+  if (['device.install', 'device.activate', 'device.delete', 'device.updateFirmware'].includes(name)) return t.list && !t.stale ? { ...t, stale: true } : t;
   if (name === 'device.disconnect') return t.list ? { list: null, stale: false } : t;
   return t;
 }

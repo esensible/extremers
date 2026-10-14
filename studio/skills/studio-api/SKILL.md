@@ -52,7 +52,7 @@ an agent calls shows on the page.
 | `ui.build` | wired (a Web Worker in the page); the last good build per project is kept |
 | `bundle.*`: `pack, inspect` | wired; the Kindle page is a placeholder until `ui.build` has run |
 | `preview.*`: `open, status, text, press, close` | wired (the Kindle page and the watch app on the sim) |
-| `device.*`: `status, connect, disconnect, list, install, activate, delete, get` | wired (Web Bluetooth to the box; "The box" below) |
+| `device.*`: `status, connect, disconnect, list, install, activate, delete, get, firmware, updateFirmware` | wired (Web Bluetooth to the box; "The box" below) |
 
 ## The bundle's name: `studio.json`
 
@@ -260,8 +260,35 @@ fake of the box; it has not yet run against the hardware itself.
   from; `slot` (0 or 1: `ota_N`), `pending` (a new firmware on trial, not
   yet confirmed), `maxLen` (the largest image an update can bring).
 - `api.device.updateFirmware({ base64 })` updates it with an image
-  (`target/xiaoc6.bin`): the box reboots into it and the call waits until it
-  confirms itself; it wipes the box's bundles (install them again after).
+  (`target/xiaoc6.bin`, which `cargo run -p extreme-image -- <elf>`
+  writes), keeping the bundles. The image goes into the app slot that holds
+  the box's bundles and its GPS track, so the call, in one go:
+  1. checks the image (`IMAGE` errors: the ELF instead of the `.bin`, a cut
+     image, no room) before anything is sent;
+  2. downloads every bundle that is not built in and saves them in this
+     browser (IndexedDB, one backup per box, with the image and the bundle
+     the box boots with);
+  3. sends the image (resumed after a dropped link), commits it, the box
+     reboots into it, and the call connects again and waits until the new
+     firmware confirms itself (20 s after it boots);
+  4. installs the saved bundles again and activates the one the box booted
+     with, then deletes the backup.
+  → `{ updated, from, to, saved, restored, activated, kbps, rebootMs, … }`.
+  `updated: false` with a `note`: the box kept its old firmware (the bundles
+  still go back). `notRestored`: bundles the new firmware refused (the
+  others go back). A refusal at the commit (`Commit: the image's SHA-256 …`)
+  answers `ok: false`, after the bundles are back. **The GPS track is
+  lost**: it is not saved. Progress (`api.device.status().progress.phase`):
+  `save`, `firmware`, `reboot` (`pending: true` while on trial), `restore`,
+  `done`. About 1.7 MB at ~30 kB/s plus ~25 s of reboot: give it 2–3
+  minutes and poll `status()` meanwhile.
+- **Resume.** If the flow stops once the bundles are saved (a reload, the
+  box not back in time, a lost link), the backup stays and
+  `api.device.status()` says `restorePending: true` (`restorePhase`:
+  `saved`, `firmware` or `restore`; `restoreBundles`: how many). Then
+  `api.device.updateFirmware({})` (no image) finishes it: it sends the image
+  again if it was never committed, else it waits for the box and restores.
+  A new update is refused while one is pending.
 - One device call at a time: another one meanwhile answers `busy: …`.
   `api.device.status()` never waits.
 
@@ -329,6 +356,11 @@ fake of the box; it has not yet run against the hardware itself.
   chooser (`navigator.bluetooth.getDevices()`),
   `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
   Enabled (then relaunch Chrome). Without it `connect()` says so.
+- **Update the firmware from the page.** A person drops the image
+  (`xiaoc6.bin`) on the Device panel and confirms inline within 15 s
+  (`#device-update-yes`); there is no file picker. From script give the image
+  as base64 instead (`api.device.updateFirmware({ base64 })`), and only when
+  asked to update: it wipes the GPS track.
 - Deleting a project or a file from the page asks inline; from `window.api`
   it does not ask: only delete what you were asked to.
 
@@ -363,7 +395,12 @@ open until the page remembers a box), `#device-progress`, `#device-bundles`
 `#device-activate-<id>`, `#device-delete-<id>`, `#device-get-<id>`; an
 inline confirm `#device-confirm-yes` / `#device-confirm-no`; under it
 `#device-space`, and `#device-stale` once the box changed since the list),
-`#device-log`.
+`#device-log`; the firmware: `#device-firmware` (`Firmware: ota_0 · sha
+12ab34cd…`, `· on trial` while pending; from the last `device.firmware`)
+with `#device-firmware-ask`, `#device-update-hint`, the drop's inline
+confirm `#device-update-confirm` (`#device-update-text`,
+`#device-update-yes`, `#device-update-no`), and `#device-restore` (shown
+while `restorePending`: `#device-restore-text`, `#device-restore-resume`).
 Previews `#preview-kindle`, `#preview-watch`. No modals, no `alert`, no
 native pickers: Chrome's Bluetooth chooser, from `#device-choose`, is the
 one native dialog.

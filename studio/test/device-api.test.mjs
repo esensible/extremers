@@ -16,7 +16,8 @@ import { createToolchain, setDefaultToolchain } from '../toolchain/index.js';
 import { createService } from '../toolchain/service.js';
 import { openToolchainDb } from '../toolchain/idb.js';
 import { installFileFetch } from './toolchain-node.mjs';
-import { makeFakeBluetooth, makeBundle } from './fake-bluetooth.mjs';
+import { makeFakeBluetooth, makeBundle, makeImage } from './fake-bluetooth.mjs';
+import { packageId } from '../device/bundles.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -42,17 +43,17 @@ before(async () => {
   setDefaultToolchain(createToolchain({ worker: () => worker, db: async () => tcDb }));
 });
 
-function world(fakeOpts = {}) {
-  const fake = makeFakeBluetooth({ latencyMs: 0, ...fakeOpts });
+function world(fakeOpts = {}, devOpts = {}, given = {}) {
+  const fake = given.fake ?? makeFakeBluetooth({ latencyMs: 0, ...fakeOpts });
   const logger = createLogger();
-  const indexedDB = createFakeIndexedDB();
+  const indexedDB = given.indexedDB ?? createFakeIndexedDB();
   const read = (url) => { const p = join(studioDir, url.replace(/^\.\//, '')); if (!existsSync(p)) throw new Error(`HTTP 404 for ${url}`); return p; };
-  const device = createDevice({ bluetooth: fake.bluetooth, log: (l, m) => logger.log(l, m), ...FAST });
+  const device = createDevice({ bluetooth: fake.bluetooth, log: (l, m) => logger.log(l, m), ...FAST, ...devOpts });
   const api = createApi({
     store: () => openStore({ indexedDB }), log: logger, engine: nodeEngineLoader(), device,
     fetchText: async (url) => readFileSync(read(url), 'utf8'), fetchBytes: async (url) => new Uint8Array(readFileSync(read(url))),
   });
-  return { ...fake, api, guarded: withUnknownGuard(api), logger };
+  return { ...fake, fake, indexedDB, api, guarded: withUnknownGuard(api), logger };
 }
 
 test('describe(): the device group, wired, with its final shapes', async () => {
@@ -174,6 +175,65 @@ test('the guarded api: wrong arguments answer, never throw', async () => {
   notOk(assert, await guarded.device.get('race', 5), /options argument must be an object/);
   notOk(assert, await guarded.device.install('yes'), /options argument must be an object/);
   notOk(assert, await guarded.device.choose(), /api\.device\.choose does not exist/);
+});
+
+const UPDATE = { dropWaitMs: 2000, rebootWaitMs: 3000, confirmWaitMs: 3000, pollMs: 20 };
+const b64 = (u8) => Buffer.from(u8).toString('base64');
+function memStorage() { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); } }; }
+
+test('updateFirmware({ base64 }): the bundles saved, the image sent, the box back, the bundles restored and the boot one active; status follows', async () => {
+  const { api, c6, indexedDB } = world({}, UPDATE);
+  c6.install(makeBundle({ name: 'race', size: 6000, seed: 5 }), { active: true });
+  c6.install(makeBundle({ name: 'mark', size: 3000, seed: 6 }));
+  ok(assert, await api.device.connect());
+  const image = makeImage({ size: 16000 });
+  const running = api.device.updateFirmware({ base64: b64(image) });
+  const seen = new Set();
+  let pendingSeen = null;
+  for (let i = 0; i < 4000; i++) {
+    await new Promise((r) => setTimeout(r, 1));
+    const s = await api.device.status();
+    if (s.progress?.phase && s.state === 'busy') seen.add(s.progress.phase);
+    if (s.restorePending && !pendingSeen) pendingSeen = s;
+    if (s.state !== 'busy' && seen.size) break;
+  }
+  const r = ok(assert, await running);
+  assert.equal(r.updated, true);
+  assert.deepEqual(r.restored.map((b) => b.name), ['race', 'mark']);
+  assert.equal(r.activated, 'race');
+  assert.equal(c6.active, packageId('race'));
+  for (const ph of ['save', 'firmware', 'reboot', 'restore']) assert.ok(seen.has(ph), `status() showed ${ph}`);
+  assert.ok(pendingSeen, 'restorePending while the backup existed');
+  assert.equal(await (await openStore({ indexedDB })).getBackup('fake-nacra-id'), null, 'the backup is gone');
+  const s = ok(assert, await api.device.status());
+  assert.deepEqual([s.restorePending, s.restorePhase, s.firmware.sha256], [false, null, r.sha256]);
+  notOk(assert, await api.device.updateFirmware({ base64: 42 }), /base64 must be the firmware image/);
+  notOk(assert, await api.device.updateFirmware(), /no interrupted firmware update for this box/);
+});
+
+test('updateFirmware: the box not back in time leaves the backup in IndexedDB; after a reload status says restorePending and updateFirmware({}) finishes it', async () => {
+  const storage = memStorage();
+  const first = world({}, { ...UPDATE, rebootWaitMs: 150, confirmWaitMs: 0, storage });
+  const { c6 } = first;
+  c6.install(makeBundle({ name: 'race', size: 6000, seed: 5 }), { active: true });
+  c6.install(makeBundle({ name: 'mark', size: 3000, seed: 6 }));
+  c6.update.offMs = 2500;
+  ok(assert, await first.api.device.connect());
+  const e = notOk(assert, await first.api.device.updateFirmware({ base64: b64(makeImage()) }), /did not come back .*its 2 bundles are saved in this browser/);
+  assert.match(e.hint, /api\.device\.updateFirmware\(\{\}\) restores them/);
+  const kept = await (await openStore({ indexedDB: first.indexedDB })).getBackup('fake-nacra-id');
+  assert.deepEqual([kept.phase, kept.bundles.map((b) => b.name), kept.boot, kept.image.length > 0], ['firmware', ['race', 'mark'], packageId('race'), true]);
+  ok(assert, await first.api.device.disconnect());
+  // the reload: a new page (api + controller) over the same IndexedDB and localStorage
+  const page = world({}, { ...UPDATE, storage }, { fake: first.fake, indexedDB: first.indexedDB });
+  const s = ok(assert, await page.api.device.status());
+  assert.deepEqual([s.state, s.restorePending, s.restorePhase, s.restoreBundles], ['disconnected', true, 'firmware', 2]);
+  await new Promise((r) => setTimeout(r, 2500));
+  const r = ok(assert, await page.api.device.updateFirmware({}));
+  assert.deepEqual([r.updated, r.resumed, r.activated], [true, true, 'race']);
+  assert.deepEqual(r.restored.map((b) => b.name), ['race', 'mark']);
+  assert.equal(ok(assert, await page.api.device.status()).restorePending, false);
+  assert.deepEqual(ok(assert, await page.api.device.list()).bundles.map((b) => [b.name, b.active]), [['choose', false], ['race', true], ['mark', false]]);
 });
 
 test('a fake bundle installs through the controller the api holds (no project needed)', async () => {

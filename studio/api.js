@@ -499,11 +499,30 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
   // The device controller (device/index.js): given, or made on navigator.bluetooth on first use.
   let deviceImpl = device ?? null;
   let deviceLoading = null;
+  // A firmware update's backup of a box (device/index.js updateFirmware)
+  // lives in the project store's deviceBackups (IndexedDB), so a reload can
+  // resume it; without IndexedDB, in this page's memory.
+  const memBackups = new Map();
+  const viaStore = (op, mem) => async (...a) => {
+    let s;
+    try { s = await getStore(); } catch (e) { if (e instanceof ApiError) return mem(...a); throw e; }
+    return s[op](...a);
+  };
+  const deviceBackups = {
+    putBackup: viaStore('putBackup', (r) => { memBackups.set(r.deviceId, r); return r; }),
+    getBackup: viaStore('getBackup', (id) => memBackups.get(id) ?? null),
+    deleteBackup: viaStore('deleteBackup', (id) => memBackups.delete(id)),
+  };
+  let backupsWired = false;
+  function wired(d) {
+    if (!backupsWired && typeof d?.useBackups === 'function') { backupsWired = true; d.useBackups(deviceBackups).catch?.(() => {}); }
+    return d;
+  }
   function dev() {
-    if (deviceImpl) return Promise.resolve(deviceImpl);
+    if (deviceImpl) return Promise.resolve(wired(deviceImpl));
     if (!deviceLoading) {
       deviceLoading = import('./device/index.js').then(
-        (m) => { deviceImpl = m.createDevice({ log: (level, msg) => L(level, msg) }); return deviceImpl; },
+        (m) => { deviceImpl = wired(m.createDevice({ log: (level, msg) => L(level, msg) })); return deviceImpl; },
         (e) => { deviceLoading = null; throw new ApiError(`the device client did not load: ${errText(e)}`, 'reload the page (studio/device/ and studio/vendor/runtimes/protocol-js/ must be served)'); },
       );
     }
@@ -1283,11 +1302,11 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // ------------------------------------------------------------- device (Web Bluetooth to the C6)
     {
       name: 'device.status', kind: 'info',
-      summary: "The Bluetooth link to the box ('nacra'): state (disconnected, connecting, connected, or busy while a device call runs), the device's name, deviceId (the BluetoothDevice.id connect works with: the box in hand, else the one last chosen or connected to if Chrome still grants it; null: none), candidates (how many boxes named 'nacra' Chrome has granted this page: each box ever chosen counts separately; null: not looked yet), bonded (true once subscribed on an encrypted link, false when the box refused this computer, null not known yet), remembered (true when Chrome has given this page the box, so connect works without the chooser; false: a person must click #device-choose; null: not looked yet), the chunk and window the box set for the last transfer, the running call and its progress, the last error and what to do about it.",
+      summary: "The Bluetooth link to the box ('nacra'): state (disconnected, connecting, connected, or busy while a device call runs), the device's name, deviceId (the BluetoothDevice.id connect works with: the box in hand, else the one last chosen or connected to if Chrome still grants it; null: none), candidates (how many boxes named 'nacra' Chrome has granted this page: each box ever chosen counts separately; null: not looked yet), bonded (true once subscribed on an encrypted link, false when the box refused this computer, null not known yet), remembered (true when Chrome has given this page the box, so connect works without the chooser; false: a person must click #device-choose; null: not looked yet), the chunk and window the box set for the last transfer, the running call and its progress, the last error and what to do about it; firmware is the last api.device.firmware() answer (null: not asked yet); restorePending is true while a firmware update of this box saved its bundles in this browser and has not put them back yet (restorePhase: saved = the image never committed, firmware = committed, restore = putting the bundles back; restoreBundles: how many): api.device.updateFirmware({}) finishes it.",
       args: [],
-      returns: "{ ok, state: 'disconnected'|'connecting'|'connected'|'busy', op, deviceName, deviceId, candidates, bonded, remembered, chunk, window, progress: { phase, sent, total, kbps }|null, lastError, hint, reconnects, bluetooth }",
+      returns: "{ ok, state: 'disconnected'|'connecting'|'connected'|'busy', op, deviceName, deviceId, candidates, bonded, remembered, chunk, window, progress: { phase, sent, total, kbps, bundle?, index?, of?, pending? }|null, lastError, hint, reconnects, bluetooth, firmware: { sha256, slot, pending, maxLen }|null, restorePending, restorePhase: 'saved'|'firmware'|'restore'|null, restoreBundles: integer|null }",
       example: 'await api.device.status()',
-      run: async () => ({ ok: true, ...(await dev()).status() }),
+      run: async () => { const d = await dev(); await d.refreshBackup?.(); return { ok: true, ...d.status() }; },
     },
     {
       name: 'device.connect', kind: 'device',
@@ -1323,17 +1342,18 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     },
     {
       name: 'device.updateFirmware', kind: 'device',
-      summary: "Update the box's firmware over Bluetooth with an image (target/xiaoc6.bin, which `cargo run -p extreme-image -- <elf>` writes) given as base64. The image is checked first (the C6's magic and chip id, whole 16-byte lines, room on the box, and that it ends with its digest: its last 32 bytes are the SHA-256 of the rest, the identity api.device.firmware() reports), then sent as a bundle is (resumed after a dropped link) into the box's other app slot, which holds its bundles and track: the update WIPES THEM (bundles are not saved and restored yet: install them again after). At the commit the box checks the image again and answers that it is rebooting into it; the studio connects again, waits for the new firmware to confirm itself (20 s after it boots; one that fails 3 boots in a row is rolled back) and compares what it runs with the image. While it runs, api.device.status().progress says how far: { phase: firmware|reboot|done, sent, total, kbps }.",
-      args: [{ name: 'opts.base64', type: 'string', required: true, description: 'the firmware image (target/xiaoc6.bin), base64' }],
-      returns: '{ ok, updated, note?, from: { sha256, slot }, to: { sha256, slot, pending }, sha256, len, ms, kbps, rebootMs, chunk, window, rewinds, resends, resumes, progress }',
+      summary: "Update the box's firmware over Bluetooth with an image (target/xiaoc6.bin, which `cargo run -p extreme-image -- <elf>` writes) given as base64, keeping its bundles. The update writes the image over the app slot that holds the box's bundles and its GPS track, so: the image is checked first (the C6's magic and chip id, whole 16-byte lines, room on the box, and that it ends with its digest: its last 32 bytes are the SHA-256 of the rest, the identity api.device.firmware() reports); every bundle that is not built in is downloaded and saved in this browser (IndexedDB, with the image and which bundle the box boots); the image is sent as a bundle is (resumed after a dropped link); at the commit the box checks it again and reboots into it; the studio connects again, waits for the new firmware to confirm itself (20 s after it boots; one that fails 3 boots in a row is rolled back) and compares what it runs with the image; then it installs the saved bundles again, activates the one the box booted with, and deletes the backup. The GPS track is lost (it is not saved). A box that kept its old firmware still gets its bundles back (updated: false, note). A refusal at the commit (the image changed on the way) puts the bundles back, then answers the refusal. If anything stops the flow once the bundles are saved (a reload, the box not coming back in time), the backup stays: api.device.status().restorePending is true and api.device.updateFirmware({}) (no image) finishes it: the image again if it was never committed, else straight to waiting for the box and restoring. A new update is refused while one is pending. While it runs, api.device.status().progress says how far: { phase: save|firmware|reboot|restore|done, sent, total, kbps, bundle?, index?, of?, pending? }.",
+      args: [{ name: 'opts.base64', type: 'string', required: false, description: 'the firmware image (target/xiaoc6.bin), base64; leave it out to resume an interrupted update (api.device.status().restorePending)' }],
+      returns: '{ ok, updated, note?, from: { sha256, slot }, to: { sha256, slot, pending }, sha256, len, saved: [{ id, name, version, len }], restored: [{ id, name, version, already? }], notRestored?: [{ id, name, error, hint }], activated: string|null, resumed, ms, kbps, rebootMs, chunk, window, rewinds, resends, resumes, progress }',
       example: "await api.device.updateFirmware({ base64: btoa(String.fromCharCode(...new Uint8Array(await (await fetch('xiaoc6.bin')).arrayBuffer()))) })",
       run: async (opts = {}) => {
-        if (typeof opts.base64 !== 'string' || !opts.base64) throw new ApiError('base64 (the firmware image) is required', "the image `cargo run -p extreme-image -- <elf>` writes (target/xiaoc6.bin), as base64");
+        const d = await dev();
+        const onProgress = (pr) => { if (busy) busy.progress = pr; };
+        if (opts.base64 === undefined) return { ok: true, ...(await d.updateFirmware({ resume: true }, { onProgress })) };
+        if (typeof opts.base64 !== 'string' || !opts.base64) throw new ApiError('base64 must be the firmware image', "the image `cargo run -p extreme-image -- <elf>` writes (target/xiaoc6.bin), as base64; api.device.updateFirmware({}) resumes an interrupted update");
         let bytes;
         try { bytes = fromBase64(opts.base64); } catch (e) { throw new ApiError(`base64: ${errText(e)}`); }
-        const d = await dev();
-        const r = await d.updateFirmware(bytes, { onProgress: (pr) => { if (busy) busy.progress = pr; } });
-        return { ok: true, ...r };
+        return { ok: true, ...(await d.updateFirmware({ bytes }, { onProgress })) };
       },
     },
     {
@@ -1389,7 +1409,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     { name: 'ui', summary: 'bundle the Kindle and watch clients in the browser (a Web Worker: rollup, Babel, terser); the last good build per project is what bundle.pack, sim.start and the previews carry' },
     { name: 'preview', summary: 'the Kindle page and the watch app of the last build, live on the sim host: open, read the text, press buttons, console errors' },
     { name: 'bundle', summary: 'pack the project into a bundle archive (the engine wasm\'s pack), and inspect one' },
-    { name: 'device', summary: "bundles on the box over Web Bluetooth: connect (never the chooser), list, install the project, activate, delete, download; which firmware the box runs, and updating it" },
+    { name: 'device', summary: "bundles on the box over Web Bluetooth: connect (never the chooser), list, install the project, activate, delete, download; which firmware the box runs, and updating it (its bundles saved in this browser and put back; the GPS track is lost)" },
   ];
   const groupOf = (n) => (n.includes('.') ? n.split('.')[0] : 'core');
 
@@ -1412,6 +1432,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         '8. api.bundle.pack() (the name and version from the settings; it refuses a UI build made under another name).',
         "9. api.device.connect() — if it says no box was chosen, ask the person to follow the Device panel's how-to (Kindle: Choose → Settings → Pair watch; 'Choose the box…' (#device-choose) and pick 'nacra'; accept macOS's pairing prompt); then api.device.install({ activate: true }) and api.device.list().",
         '10. On any { ok:false }: read error + hint, then api.status() and api.log({ last: 50 }).',
+        "Firmware (only when asked to update the box's firmware): api.device.firmware() says what it runs; api.device.updateFirmware({ base64 }) with the image (target/xiaoc6.bin) saves every bundle in this browser, updates, waits for the box to confirm the new firmware, and puts the bundles back (the boot one active again); the GPS track is lost. If it stops midway, api.device.status().restorePending is true: api.device.updateFirmware({}) finishes it.",
       ],
       groups: GROUPS.map((g) => ({ ...g, functions: FUNCTIONS.filter((f) => groupOf(f.name) === g.name).map((f) => f.name) })),
       functions: FUNCTIONS.map((f) => ({ name: f.name, group: groupOf(f.name), available: f.available !== false, summary: f.summary, args: f.args.map((a) => ({ name: a.name, type: a.type, required: !!a.required, description: a.description })), returns: f.returns, example: f.example })),
@@ -1425,6 +1446,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         'Large results are paged (skill, files.read, engine.disassemble, sim.history): follow nextOffset.',
         "A browser harness whose tool output is cut short (a few kB): api.skill(name, { show: true }) and api.describe({ show: true }) render the whole text into the page's <article id=\"skill-view\"> (the Reading tab, selected for you) and answer only { shown, chars }; read it with one page-text call, or document.getElementById('skill-view').innerText. The person at the page sees it too.",
         "From script the Bluetooth chooser can never open (Chrome requires a person's click): the person clicks #device-choose ('Choose the box…') once per browser origin, even if the Mac is already paired, then api.device.connect() works, also after a reload; Chrome remembers each box chosen separately and connect prefers the last one chosen, else the one that advertises; for a different box than before the person clicks 'Choose another box…'. The first connection pairs: the box's pairing window must be open (the Kindle's Choose → Settings → Pair watch: 2 minutes, any device, one per window) and the person accepts macOS's pairing prompt; a refusal's hint says what the person must do (pairing window, forgetting 'nacra' in macOS Bluetooth settings, chrome://flags). One device call at a time: another one meanwhile answers busy.",
+        "A firmware update (api.device.updateFirmware) wipes the box's bundles and GPS track: the studio saves the bundles in this browser's IndexedDB first (store deviceBackups, one per box) and installs them again after; the track is not saved. A person can start one too, by dropping the .bin on the Device panel and confirming there (the drop and its confirm are the person's way in; from script give the image as base64). The backup stays until the bundles are back; while it does, api.device.status().restorePending is true and a new update is refused: api.device.updateFirmware({}) resumes.",
         'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
         "The sim is the real common::Host (HostHandle). Each evaluation it makes is in its log (cause, accepted, the R-code, instruction and span of a failure, the state, view and wake after it): that log is the history, and sim.state().state is the engine's own state (the leaves the host keeps, decoded with the state schema). A rejected evaluation is in the result's errors[] (sim.gps, sim.advance, sim.event): the input still happened (a fix stays on the track), the state did not change. Checked on every call: W-WIRE (each envelope is one logged evaluation whose view changed; its bytes are the log's, and the vendored JS codec decodes and re-encodes them unchanged), W-HOST (the call's answer agrees with the log: wakes fired, an event accepted or refused; envelopes stamped with the evaluation's time; the pending wake is the last evaluation's). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
         "The sim's `gps` holds the newest 20,480 fixes, as the C6's track ring does (its maxItems); the C6 drops its oldest 128 at a time once full (a flash sector), the sim one at a time. The wasm keeps 24 bytes a fix, as they arrive (480 KB when full).",

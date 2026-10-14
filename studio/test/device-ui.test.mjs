@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter } from '../ui.js';
+import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText } from '../ui.js';
 import { studioDir } from './engine-world.mjs';
 
 const LIST = {
@@ -34,6 +34,29 @@ test('deviceProgressText: phases in words', () => {
   assert.equal(deviceProgressText(null), '');
   assert.equal(deviceProgressText({ phase: 'reconnect', sent: 0, total: 1000, kbps: 0 }), 'link dropped: reconnecting to resume · 0 B of 1000 B (0%)');
   assert.equal(deviceProgressText({ phase: 'done', sent: 1000, total: 1000, kbps: 10 }), 'done · 1000 B of 1000 B (100%) · 10 kB/s');
+});
+
+test('deviceProgressText: a firmware update\'s phases', () => {
+  assert.equal(deviceProgressText({ phase: 'save', bundle: 'race', index: 1, of: 3, sent: 4608, total: 9216, kbps: 9.5 }), 'saving race (1 of 3) · 4.5 KB of 9.0 KB (50%) · 9.5 kB/s');
+  assert.equal(deviceProgressText({ phase: 'firmware', sent: 870400, total: 1740800, kbps: 31.1 }), 'sending the firmware · 850.0 KB of 1.66 MB (50%) · 31.1 kB/s');
+  assert.equal(deviceProgressText({ phase: 'reboot', sent: 1740800, total: 1740800, kbps: 31.1 }), 'the box is rebooting into the firmware');
+  assert.equal(deviceProgressText({ phase: 'reboot', sent: 1740800, total: 1740800, kbps: 31.1, pending: true }), 'the new firmware is on trial (it confirms itself 20 s after it boots)');
+  assert.equal(deviceProgressText({ phase: 'restore', bundle: 'mark', index: 2, of: 3, sent: 1024, total: 2048, kbps: 8 }), 'restoring mark (2 of 3) · 1.0 KB of 2.0 KB (50%) · 8 kB/s');
+  assert.equal(deviceProgressText({ phase: 'restore', bundle: 'race', activate: true, sent: 0, total: 0, kbps: 0 }), 'activating race');
+});
+
+test('the firmware line, the drop\'s confirm, the restore banner', () => {
+  assert.equal(deviceFirmwareText(null), 'Firmware: not asked yet (Firmware asks the box)');
+  assert.equal(deviceFirmwareText({ sha256: '12ab34cd'.repeat(8), slot: 0, pending: false, maxLen: 1 }), 'Firmware: ota_0 · sha 12ab34cd…');
+  assert.equal(deviceFirmwareText({ sha256: 'ffee0011'.repeat(8), slot: 1, pending: true, maxLen: 1 }), 'Firmware: ota_1 · sha ffee0011… · on trial');
+  const f = { name: 'xiaoc6.bin', len: 1740800 };
+  assert.equal(deviceUpdateConfirmText(f, 3), "Update the box's firmware with xiaoc6.bin (1.66 MB)? This saves the 3 bundles on the box in this browser, updates the firmware, then restores them; the GPS track is lost.");
+  assert.match(deviceUpdateConfirmText(f, 1), /saves the 1 bundle on the box/);
+  assert.match(deviceUpdateConfirmText(f), /saves every bundle on the box/);
+  assert.equal(deviceRestoreText({ restorePending: false }), '');
+  assert.equal(deviceRestoreText(null), '');
+  assert.equal(deviceRestoreText({ restorePending: true, restorePhase: 'firmware', restoreBundles: 3 }), 'A firmware update of this box stopped after the firmware was committed: 3 bundles are saved in this browser and not back on the box yet. Resume finishes it.');
+  assert.match(deviceRestoreText({ restorePending: true, restorePhase: 'saved', restoreBundles: 1 }), /before the firmware was committed: 1 bundle is saved/);
 });
 
 test('deviceRowsHtml: one row per bundle, its actions; Choose has no Delete; the active one no Activate; an inline confirm', () => {
@@ -75,6 +98,9 @@ test('deviceTableAfter: a list replaces the table; install/activate/delete mark 
   assert.doesNotMatch(deviceRowsHtml(LIST), /device-stale/);
   assert.deepEqual(deviceTableAfter(deviceTableAfter(listed, 'device.delete', { ok: true }), 'device.list', LIST), { list: LIST, stale: false }, 'List again clears it');
   assert.deepEqual(deviceTableAfter(listed, 'device.disconnect', { ok: true }), empty);
+  // a firmware update changes the box even when it fails (the image wiped it; the bundles may be back)
+  assert.deepEqual(deviceTableAfter(listed, 'device.updateFirmware', { ok: true }), { list: LIST, stale: true });
+  assert.deepEqual(deviceTableAfter(listed, 'device.updateFirmware', { ok: false, error: 'Commit: …' }), { list: LIST, stale: true });
 });
 
 test('statusLine for the device calls', () => {
@@ -84,6 +110,10 @@ test('statusLine for the device calls', () => {
   assert.equal(statusLine('device.delete', { ok: true, id: 1, name: 'race' }), 'Deleted race from the box');
   assert.equal(statusLine('device.get', { ok: true, name: 'race', version: 3, sizes: { bundle: 2048 } }), 'Downloaded race v3 from the box: 2.0 KB, SHA-256 checked');
   assert.equal(statusLine('device.install', { ok: false, error: 'busy', hint: 'wait' }), 'device.install failed: busy — wait');
+  assert.equal(statusLine('device.firmware', { ok: true, sha256: 'ab'.repeat(32), slot: 1, pending: true }), 'The box runs ota_1, sha256 abababababababab… (on trial)');
+  const fw = { ok: true, updated: true, to: { sha256: 'cd'.repeat(32), slot: 1, pending: false }, kbps: 31.1, restored: [{ name: 'race' }, { name: 'mark' }], activated: 'race' };
+  assert.equal(statusLine('device.updateFirmware', fw), 'Firmware updated: ota_1, sha256 cdcdcdcdcdcdcdcd… (31.1 kB/s); 2 bundles back; race active');
+  assert.equal(statusLine('device.updateFirmware', { ...fw, updated: false, note: 'the box kept its firmware', kbps: null, restored: [{ name: 'race' }], notRestored: [{ name: 'mark' }], activated: null }), 'Firmware not updated: the box kept its firmware; 1 bundle back, 1 refused (mark)');
 });
 
 test('deviceHead: the box\'s state in the header; the chooser prominent only with no remembered box', () => {
@@ -126,6 +156,17 @@ test('the page: #device-choose enabled, the header\'s device group, the #device 
   for (const id of ['device-connect', 'device-disconnect', 'device-list', 'device-install', 'device-install-activate', 'device-status', 'device-progress', 'device-bundles', 'device-log']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
+  // the firmware update: the firmware line, the drop's hint and inline confirm (hidden until a drop), the restore banner (hidden until one is pending)
+  for (const id of ['device-firmware', 'device-firmware-ask', 'device-update-hint', 'device-update-text', 'device-update-yes', 'device-update-no', 'device-restore-text', 'device-restore-resume']) {
+    assert.match(html, new RegExp(`id="${id}" data-testid="${id}"`), id);
+  }
+  assert.match(html, /id="device-update-confirm" data-testid="device-update-confirm" hidden/);
+  assert.match(html, /id="device-restore" class="confirm dev-line" data-testid="device-restore" role="alert" hidden/);
+  assert.doesNotMatch(html, /type="file"/, 'no native file picker');
+  const page = readFileSync(join(studioDir, 'app.js'), 'utf8');
+  assert.match(page, /devPanel\.addEventListener\('drop'/);
+  assert.match(page, /fwTimer = setTimeout\(cancelFirmware, 15000\)/);
+  assert.match(page, /window\.api\.device\.updateFirmware\(\{\}\)/);
   const app = readFileSync(join(studioDir, 'app.js'), 'utf8');
   assert.equal((app.match(/requestDevice/g) ?? []).length, 0, 'the page opens the chooser only through api._device.choose');
   assert.match(app, /\$\('device-choose'\)\.onclick = \(\) => \{ api\._device\.choose\(\); \}/);
