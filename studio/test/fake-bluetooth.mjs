@@ -158,6 +158,11 @@ export class FakeC6 {
     this.corruptAt = null;
     this.busyOther = false;
     this.device = null;
+    // the running firmware (BundleResponse Firmware): its image's appended
+    // digest (hex), the slot it runs from, whether it is on trial; null: the
+    // box doesn't know (answers NotFound)
+    this.firmware = { sha: 'f1'.repeat(32), slot: 0, pending: false };
+    this.maxLen = 0x1e0000;
   }
   get chunk() { return Math.floor((this.mtu - 3 - 4) / 4) * 4; }
   get window() { return Math.min(2048, 8 * this.chunk); }
@@ -304,6 +309,11 @@ export class FakeC6 {
           this.send('data', pkt);
         }
         return this.answer({ tag: 'Sent', value: { id: v.id } });
+      }
+      case 'Firmware': {
+        const f = this.firmware;
+        if (!f) return this.error(REQ('Firmware'), 'NotFound', 0);
+        return this.answer({ tag: 'Firmware', value: { sha256: Array.from(Buffer.from(f.sha, 'hex')), slot: f.slot, pending: f.pending, max_len: this.maxLen } });
       }
       default: return undefined;
     }

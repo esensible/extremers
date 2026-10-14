@@ -1,5 +1,6 @@
 // device/bundles.js — the bundle protocol over the link (BLE.md "Bundles"):
-// List, Begin → data → Ack → Commit, Abort, Delete, Activate, Get. The
+// List, Begin → data → Ack → Commit, Abort, Delete, Activate, Get, and
+// Firmware (which firmware the box runs). The
 // messages are tools/bindgen's, from the vendored protocol-js
 // (encodeHostEvent({ tag: 'Bundle', value: request }), decodeBundleResponse).
 //
@@ -128,9 +129,10 @@ export function describeError(r) {
     case 'OverLimit': why = `the engine needs more than the C6 has: ${LIMITS[detail] ?? `limit ${detail}`}`; break;
     case 'NoSpace': why = 'no run of free sectors holds it'; break;
     case 'Full': why = 'the box holds 7 bundles besides Choose'; break;
-    case 'NotFound': why = 'no bundle with that id on the box'; break;
+    case 'NotFound': why = what === 'Firmware' ? 'the box does not know which firmware it runs (its image did not check out at boot: its log says why)' : 'no bundle with that id on the box'; break;
     case 'NotAllowed':
-      if (detail === 1) why = 'not allowed: a bundle without an engine';
+      if (what === 'BeginFirmware') why = 'not allowed: this firmware takes no firmware updates';
+      else if (detail === 1) why = 'not allowed: a bundle without an engine';
       else if (what === 'Delete') why = 'not allowed: Choose (id 0) is built into the firmware and cannot be deleted';
       else if (what === 'Begin') why = "not allowed: Choose's id, or an id that is not the hash of the manifest's name";
       else why = "not allowed: Choose's id, or the manifest's id is not the one Begin named";
@@ -158,8 +160,10 @@ export function errorHint(r) {
       return "the engine is over the C6's limits: make it smaller (api.engine.check() shows its sizes), then install again";
     case 'NoSpace': return 'delete a bundle to make room (api.device.list() shows largestFree; api.device.delete(name))';
     case 'Full': return 'delete a bundle first (api.device.list(), then api.device.delete(name))';
-    case 'NotFound': return 'api.device.list() shows the ids and names on the box';
-    case 'NotAllowed': return detail === 1 ? 'a bundle needs an engine (engine/engine.expr)' : 'Choose (id 0) is built into the firmware: it can be activated and downloaded, never deleted or replaced';
+    case 'NotFound': return r.value.request === VARIANTS.BundleRequest.indexOf('Firmware') ? "the box's boot log (defmt) has a 'firmware:' line saying why" : 'api.device.list() shows the ids and names on the box';
+    case 'NotAllowed':
+      if (r.value.request === VARIANTS.BundleRequest.indexOf('BeginFirmware')) return 'the box runs a firmware from before updates over BLE: flash a newer one with the probe once';
+      return detail === 1 ? 'a bundle needs an engine (engine/engine.expr)' : 'Choose (id 0) is built into the firmware: it can be activated and downloaded, never deleted or replaced';
     case 'Flash': return "the box's log (defmt) says which sector; try again";
     default: return undefined;
   }
@@ -197,7 +201,7 @@ const DROPPED = 'the link dropped';
 // ----------------------------------------------------------------- client ----
 
 /**
- * createBundles(link, { log, now, ...timing }) → { list, upload, commit, abort, activate, remove, get }.
+ * createBundles(link, { log, now, ...timing }) → { list, upload, commit, abort, activate, remove, get, firmwareInfo }.
  *   stallMs (4000)            no Ack for this long with the window full: send again from the last Ack
  *   maxStalls (3)             then give up
  *   requestTimeoutMs (20000)  an answer to a request
@@ -390,6 +394,12 @@ export function createBundles(link, {
     return { id: c.value.id, contentHash: hex(c.value.content_hash) };
   }
 
+  /** The running firmware → { sha256 (hex), slot, pending, maxLen }. */
+  async function firmwareInfo() {
+    const [f] = await request({ tag: 'Firmware', value: null }, (r) => r.tag === 'Firmware');
+    return { sha256: hex(f.value.sha256), slot: f.value.slot, pending: f.value.pending, maxLen: f.value.max_len };
+  }
+
   async function abort() { await request({ tag: 'Abort', value: null }, (r) => r.tag === 'Aborted'); }
   async function activate(id) { await request({ tag: 'Activate', value: { id } }, (r) => r.tag === 'Activated'); }
   async function remove(id) { await request({ tag: 'Delete', value: { id } }, (r) => r.tag === 'Deleted'); }
@@ -430,7 +440,7 @@ export function createBundles(link, {
     return { bytes: buf, len: buf.length, sha256: sha, chunk: sending.chunk, ms };
   }
 
-  return { list, upload, commit, abort, activate, remove, get };
+  return { list, upload, commit, abort, activate, remove, get, firmwareInfo };
 }
 
 export { HINTS };

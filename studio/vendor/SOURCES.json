@@ -1,5 +1,5 @@
 {
-  "source_sha": "unknown",
+  "source_sha": "ccee8133a746653e7f28800a420b53446f8d4f3b",
   "toolchain": {
     "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "wasm-bindgen": "wasm-bindgen 0.2.129",
@@ -16,7 +16,7 @@
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm": {
-      "sha256": "a82d16fbd49a7bb6e7e5d67753226fb22ae06d651ebf18cd55000d65c28051f1",
+      "sha256": "8f3647eb490fecbc20c2817521fcbbc3f65378ebdd9956c4895dd344efe71128",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm.d.ts": {
@@ -152,7 +152,7 @@
       "from": "lang/examples/tune/samples.json"
     },
     "fixtures/race.bundle": {
-      "sha256": "49924408429f1f9574d13cb475b421f235639b5d0ccde08c455823c05f033f9f",
+      "sha256": "8c0de066d537b841e95b13c72cc5d52a8d262be46b86cdecb30e3839d3b5125f",
       "from": "target/packages/race.bundle"
     },
     "fixtures/race.layout.json": {
@@ -176,7 +176,7 @@
       "from": "target/packages/race/layout.bin"
     },
     "fixtures/race.pack/manifest.bin": {
-      "sha256": "0beb7362967dc09d5289d50fed6b96e2bc78a4b3fef4f4d345c65debf0e1f4cf",
+      "sha256": "ccff630cf946fe4248f5b99f16262af6e481f76b5ba8778bd2ccb5e84b6501c9",
       "from": "target/packages/race/manifest.bin"
     },
     "fixtures/race.pack/source.json": {
@@ -192,19 +192,19 @@
       "from": "target/packages/race/view.map"
     },
     "fixtures/race.pack/watch.js": {
-      "sha256": "c9f1ebde79396c21d420a289988f6e41f0f384afc919f6f58a0b0af13f60f312",
+      "sha256": "dda2066b56c99604153b5a60a6a7d587b02bb9199476727e44087823829462fb",
       "from": "target/packages/race/watch.js"
     },
-    "fixtures/race.pack/web/bundle-6bfc240c.css": {
+    "fixtures/race.pack/web/bundle-81e811f8.css": {
       "sha256": "6bd3a5c8da9d2c76cfbbb93241334bbb288f703dfecd775c0b9aaea655446173",
-      "from": "target/packages/race/web/bundle-6bfc240c.css"
+      "from": "target/packages/race/web/bundle-81e811f8.css"
     },
-    "fixtures/race.pack/web/bundle-6bfc240c.js": {
-      "sha256": "85cf0037740ed029f2eb45da8b0afa53b9271cfae1f6ae2ec426b0cf751d8da9",
-      "from": "target/packages/race/web/bundle-6bfc240c.js"
+    "fixtures/race.pack/web/bundle-81e811f8.js": {
+      "sha256": "fafd22a99199c76540ea5de07535355ba95472e2ab4493b6b4c403f4707815f2",
+      "from": "target/packages/race/web/bundle-81e811f8.js"
     },
     "fixtures/race.pack/web/index.html": {
-      "sha256": "c748418841c62caaa9d5dfd04a00d5ecd3d78fbc45ae8ec90ed852a628131e4b",
+      "sha256": "c076734202792516b9c3ddeed648d75e186cc85a5120ec5adbbcf1b3c202521d",
       "from": "target/packages/race/web/index.html"
     },
     "fixtures/race.samples.expected.json": {
@@ -224,7 +224,7 @@
       "from": "client-common/host.js"
     },
     "runtimes/protocol-js/protocol.js": {
-      "sha256": "47d88dca573f9a4ee1233496c6e2b35d73fcfd1864bd844cb98962d6862a76af",
+      "sha256": "ff1032e5f5830eee5659f4d43c526cb1681f9189948a4ae04be5e1f7b5132da2",
       "from": "protocol-js/protocol.js"
     },
     "runtimes/solid-watch/js/index.js": {

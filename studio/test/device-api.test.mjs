@@ -59,7 +59,7 @@ test('describe(): the device group, wired, with its final shapes', async () => {
   const { api } = world();
   const d = ok(assert, await api.describe());
   const fns = d.functions.filter((f) => f.group === 'device');
-  assert.deepEqual(fns.map((f) => f.name), ['device.status', 'device.connect', 'device.disconnect', 'device.list', 'device.install', 'device.activate', 'device.delete', 'device.get']);
+  assert.deepEqual(fns.map((f) => f.name), ['device.status', 'device.connect', 'device.disconnect', 'device.list', 'device.firmware', 'device.install', 'device.activate', 'device.delete', 'device.get']);
   assert.ok(fns.every((f) => f.available));
   const by = Object.fromEntries(fns.map((f) => [f.name, f]));
   assert.deepEqual(by['device.install'].args.map((a) => a.name), ['opts.activate']);
@@ -85,6 +85,20 @@ test('status, connect without the chooser, list, disconnect — through the api'
   ok(assert, await api.device.disconnect());
   s = ok(assert, await api.device.status());
   assert.equal(s.state, 'disconnected');
+});
+
+test('firmware: the running image\'s digest, slot, trial and room; a box that does not know says why', async () => {
+  const { api, c6 } = world();
+  ok(assert, await api.device.connect());
+  const f = ok(assert, await api.device.firmware());
+  assert.deepEqual([f.sha256, f.slot, f.pending, f.maxLen], ['f1'.repeat(32), 0, false, 0x1e0000]);
+  c6.firmware = { sha: '0a'.repeat(32), slot: 1, pending: true };
+  const g = ok(assert, await api.device.firmware());
+  assert.deepEqual([g.sha256, g.slot, g.pending], ['0a'.repeat(32), 1, true]);
+  assert.deepEqual(c6.requests.slice(-2), ['Firmware', 'Firmware']);
+  c6.firmware = null;
+  const r = notOk(assert, await api.device.firmware(), /^Firmware: the box does not know which firmware it runs/);
+  assert.match(r.hint, /boot log/);
 });
 
 test('no remembered device: connect refuses with the chooser hint; the page\'s _device.choose opens it', async () => {

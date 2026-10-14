@@ -143,6 +143,9 @@ export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log 
 
     list: () => run('list', list),
 
+    /** The firmware the box runs → { sha256 (hex: the image's appended digest), slot (n of ota_n), pending, maxLen }. */
+    firmware: () => run('firmware', () => bundles.firmwareInfo()),
+
     /**
      * Upload, commit, optionally activate an archive. → { installed: { id, name,
      * version, contentHash, bytes }, activated, ms, kbps, resumedFrom, chunk,

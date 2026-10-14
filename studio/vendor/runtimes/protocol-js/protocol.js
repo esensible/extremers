@@ -297,6 +297,8 @@ function r_BundleRequest(r) {
     case 4: return { tag: "Delete", value: { id: ru32(r) } };
     case 5: return { tag: "Activate", value: { id: ru32(r) } };
     case 6: return { tag: "Get", value: { id: ru32(r), from: ru32(r) } };
+    case 7: return { tag: "Firmware", value: null };
+    case 8: return { tag: "BeginFirmware", value: { len: ru32(r), sha256: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)] } };
     default: throw new Error("BundleRequest: no variant " + i);
   }
 }
@@ -310,6 +312,8 @@ function w_BundleRequest(w, v) {
     case "Delete": wtag(w, 4); wobj(v.value, "BundleRequest::Delete"); wu32(w, v.value.id); return;
     case "Activate": wtag(w, 5); wobj(v.value, "BundleRequest::Activate"); wu32(w, v.value.id); return;
     case "Get": wtag(w, 6); wobj(v.value, "BundleRequest::Get"); wu32(w, v.value.id); wu32(w, v.value.from); return;
+    case "Firmware": wtag(w, 7); return;
+    case "BeginFirmware": wtag(w, 8); wobj(v.value, "BundleRequest::BeginFirmware"); wu32(w, v.value.len); wlen(v.value.sha256, 32, "[T; N]"); wu8(w, v.value.sha256[0]); wu8(w, v.value.sha256[1]); wu8(w, v.value.sha256[2]); wu8(w, v.value.sha256[3]); wu8(w, v.value.sha256[4]); wu8(w, v.value.sha256[5]); wu8(w, v.value.sha256[6]); wu8(w, v.value.sha256[7]); wu8(w, v.value.sha256[8]); wu8(w, v.value.sha256[9]); wu8(w, v.value.sha256[10]); wu8(w, v.value.sha256[11]); wu8(w, v.value.sha256[12]); wu8(w, v.value.sha256[13]); wu8(w, v.value.sha256[14]); wu8(w, v.value.sha256[15]); wu8(w, v.value.sha256[16]); wu8(w, v.value.sha256[17]); wu8(w, v.value.sha256[18]); wu8(w, v.value.sha256[19]); wu8(w, v.value.sha256[20]); wu8(w, v.value.sha256[21]); wu8(w, v.value.sha256[22]); wu8(w, v.value.sha256[23]); wu8(w, v.value.sha256[24]); wu8(w, v.value.sha256[25]); wu8(w, v.value.sha256[26]); wu8(w, v.value.sha256[27]); wu8(w, v.value.sha256[28]); wu8(w, v.value.sha256[29]); wu8(w, v.value.sha256[30]); wu8(w, v.value.sha256[31]); return;
     default: throw new Error("BundleRequest: no variant " + v.tag);
   }
 }
@@ -420,6 +424,8 @@ function r_BundleResponse(r) {
     case 8: return { tag: "Sending", value: { id: ru32(r), len: ru32(r), sha256: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], chunk: ru16(r) } };
     case 9: return { tag: "Sent", value: { id: ru32(r) } };
     case 10: return { tag: "Error", value: { request: ru8(r), code: r_BundleError(r), detail: ru32(r) } };
+    case 11: return { tag: "Firmware", value: { sha256: [ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r), ru8(r)], slot: ru8(r), pending: rbool(r), max_len: ru32(r) } };
+    case 12: return { tag: "Rebooting", value: null };
     default: throw new Error("BundleResponse: no variant " + i);
   }
 }
@@ -437,6 +443,8 @@ function w_BundleResponse(w, v) {
     case "Sending": wtag(w, 8); wobj(v.value, "BundleResponse::Sending"); wu32(w, v.value.id); wu32(w, v.value.len); wlen(v.value.sha256, 32, "[T; N]"); wu8(w, v.value.sha256[0]); wu8(w, v.value.sha256[1]); wu8(w, v.value.sha256[2]); wu8(w, v.value.sha256[3]); wu8(w, v.value.sha256[4]); wu8(w, v.value.sha256[5]); wu8(w, v.value.sha256[6]); wu8(w, v.value.sha256[7]); wu8(w, v.value.sha256[8]); wu8(w, v.value.sha256[9]); wu8(w, v.value.sha256[10]); wu8(w, v.value.sha256[11]); wu8(w, v.value.sha256[12]); wu8(w, v.value.sha256[13]); wu8(w, v.value.sha256[14]); wu8(w, v.value.sha256[15]); wu8(w, v.value.sha256[16]); wu8(w, v.value.sha256[17]); wu8(w, v.value.sha256[18]); wu8(w, v.value.sha256[19]); wu8(w, v.value.sha256[20]); wu8(w, v.value.sha256[21]); wu8(w, v.value.sha256[22]); wu8(w, v.value.sha256[23]); wu8(w, v.value.sha256[24]); wu8(w, v.value.sha256[25]); wu8(w, v.value.sha256[26]); wu8(w, v.value.sha256[27]); wu8(w, v.value.sha256[28]); wu8(w, v.value.sha256[29]); wu8(w, v.value.sha256[30]); wu8(w, v.value.sha256[31]); wu16(w, v.value.chunk); return;
     case "Sent": wtag(w, 9); wobj(v.value, "BundleResponse::Sent"); wu32(w, v.value.id); return;
     case "Error": wtag(w, 10); wobj(v.value, "BundleResponse::Error"); wu8(w, v.value.request); w_BundleError(w, v.value.code); wu32(w, v.value.detail); return;
+    case "Firmware": wtag(w, 11); wobj(v.value, "BundleResponse::Firmware"); wlen(v.value.sha256, 32, "[T; N]"); wu8(w, v.value.sha256[0]); wu8(w, v.value.sha256[1]); wu8(w, v.value.sha256[2]); wu8(w, v.value.sha256[3]); wu8(w, v.value.sha256[4]); wu8(w, v.value.sha256[5]); wu8(w, v.value.sha256[6]); wu8(w, v.value.sha256[7]); wu8(w, v.value.sha256[8]); wu8(w, v.value.sha256[9]); wu8(w, v.value.sha256[10]); wu8(w, v.value.sha256[11]); wu8(w, v.value.sha256[12]); wu8(w, v.value.sha256[13]); wu8(w, v.value.sha256[14]); wu8(w, v.value.sha256[15]); wu8(w, v.value.sha256[16]); wu8(w, v.value.sha256[17]); wu8(w, v.value.sha256[18]); wu8(w, v.value.sha256[19]); wu8(w, v.value.sha256[20]); wu8(w, v.value.sha256[21]); wu8(w, v.value.sha256[22]); wu8(w, v.value.sha256[23]); wu8(w, v.value.sha256[24]); wu8(w, v.value.sha256[25]); wu8(w, v.value.sha256[26]); wu8(w, v.value.sha256[27]); wu8(w, v.value.sha256[28]); wu8(w, v.value.sha256[29]); wu8(w, v.value.sha256[30]); wu8(w, v.value.sha256[31]); wu8(w, v.value.slot); wbool(w, v.value.pending); wu32(w, v.value.max_len); return;
+    case "Rebooting": wtag(w, 12); return;
     default: throw new Error("BundleResponse: no variant " + v.tag);
   }
 }
@@ -610,8 +618,8 @@ export function encodeBundleResponse(value) {
 export var VARIANTS = {
   HostEvent: ["Select", "SelectDefault", "Engine", "Ble", "Bundle"],
   BleCommand: ["Pair", "Cancel", "ForgetAll"],
-  BundleRequest: ["List", "Begin", "Commit", "Abort", "Delete", "Activate", "Get"],
+  BundleRequest: ["List", "Begin", "Commit", "Abort", "Delete", "Activate", "Get", "Firmware", "BeginFirmware"],
   BleNote: ["None", "Paired", "PairedNotSaved", "Rejected", "Failed", "Expired", "StaleBond", "Forgotten"],
-  BundleResponse: ["Entry", "ListEnd", "Ready", "Ack", "Committed", "Aborted", "Deleted", "Activated", "Sending", "Sent", "Error"],
+  BundleResponse: ["Entry", "ListEnd", "Ready", "Ack", "Committed", "Aborted", "Deleted", "Activated", "Sending", "Sent", "Error", "Firmware", "Rebooting"],
   BundleError: ["Busy", "NoUpload", "Sequence", "Length", "Hash", "Invalid", "OverLimit", "NoSpace", "Full", "NotFound", "NotAllowed", "Flash", "Timeout"],
 };

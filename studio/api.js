@@ -1314,6 +1314,14 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
       run: async () => ({ ok: true, ...(await (await dev()).list()) }),
     },
     {
+      name: 'device.firmware', kind: 'device',
+      summary: "The firmware the box runs: sha256 (hex) is its image's appended digest (the image's last 32 bytes, the SHA-256 of the rest), the same the box logs at boot ('firmware: running ota_N, …') and `cargo run -p extreme-image -- <elf>` prints for the ELF it was built from; slot is the app slot it runs from (n of ota_n); pending is true while a newly updated firmware is on trial (not yet confirmed); maxLen is the largest image an update can bring (the other slot's length, 0 without one).",
+      args: [],
+      returns: '{ ok, sha256, slot, pending, maxLen }',
+      example: 'await api.device.firmware()',
+      run: async () => ({ ok: true, ...(await (await dev()).firmware()) }),
+    },
+    {
       name: 'device.install', kind: 'device',
       summary: "Pack the open project (as api.bundle.pack(): the engine and the last good api.ui.build of each target) and install it on the box: Begin, then the bytes in the chunks the box sets with at most a window unacknowledged (a gap rewinds to where the box asks, 4 s without an Ack resends from the last one, a dropped link reconnects and resumes where the box is), Commit (the box checks the SHA-256 and validates the bundle; it replaces a bundle of the same name, and keeps a running engine's state when only the UI changed), then Activate when asked. Refused when the project has no Kindle UI build (the placeholder page). While it runs, api.device.status().progress says how far: { phase: begin|upload|reconnect|commit|activate|done, sent, total, kbps }. kbps is thousands of bytes per second (about 10 on the C6 from Chrome on a Mac).",
       args: [{ name: 'opts.activate', type: 'boolean', required: false, description: 'make it the active bundle (and the one the box boots) after the commit (default false)' }],
@@ -1366,7 +1374,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     { name: 'ui', summary: 'bundle the Kindle and watch clients in the browser (a Web Worker: rollup, Babel, terser); the last good build per project is what bundle.pack, sim.start and the previews carry' },
     { name: 'preview', summary: 'the Kindle page and the watch app of the last build, live on the sim host: open, read the text, press buttons, console errors' },
     { name: 'bundle', summary: 'pack the project into a bundle archive (the engine wasm\'s pack), and inspect one' },
-    { name: 'device', summary: "bundles on the box over Web Bluetooth: connect (never the chooser), list, install the project, activate, delete, download" },
+    { name: 'device', summary: "bundles on the box over Web Bluetooth: connect (never the chooser), list, install the project, activate, delete, download; which firmware the box runs" },
   ];
   const groupOf = (n) => (n.includes('.') ? n.split('.')[0] : 'core');
 

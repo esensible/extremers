@@ -253,6 +253,12 @@ fake of the box; it has not yet run against the hardware itself.
   true })` → manifest and sizes, and `base64`, which
   `api.bundle.inspect({ base64 })` opens. A name is looked up in the box's
   list.
+- `api.device.firmware()` → which firmware the box runs: `sha256` (hex) is
+  its app image's appended digest (the image's last 32 bytes, the SHA-256 of
+  the rest), the same the box logs at boot (`firmware: running ota_0, …`)
+  and `cargo run -p extreme-image -- <elf>` prints for the ELF it was built
+  from; `slot` (0 or 1: `ota_N`), `pending` (a new firmware on trial, not
+  yet confirmed), `maxLen` (the largest image an update can bring).
 - One device call at a time: another one meanwhile answers `busy: …`.
   `api.device.status()` never waits.
 
