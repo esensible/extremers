@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { setText, setProp, setClass, kindleFit, applyKindleFit, kindleStatusText, watchStatusText, renderStatus, throttle } from '../preview/panel.js';
+import { setText, setProp, setClass, kindleFit, applyKindleFit, kindleStatusText, watchStatusText, renderStatus, renderWaiting, WAITING_FOR_SIM_TEXT, throttle } from '../preview/panel.js';
 import { studioDir } from './engine-world.mjs';
 
 /** An element that counts writes (text, props, classes, styles) and node changes. */
@@ -132,6 +132,44 @@ test('the Kindle fit in a short window: scaled to the height too, centred in the
   assert.equal(applyKindleFit(vp, frame, size, last, { maxHeight: 1000 }), true);
   assert.equal(frame.style.transform, `scale(${317 / 600})`);
   assert.equal(vp.style.height, '423px');
+});
+
+test('"simulator not running": the notice shows while waitingForSim, written once, and the status line says the socket is connecting', () => {
+  const el = fakeEl();
+  el.hidden = true; el.counts.prop = 0; // index.html: hidden at first
+  assert.equal(WAITING_FOR_SIM_TEXT, 'Simulator not running — start it (Sim → Start) to see the app.');
+  assert.equal(renderWaiting(el, true), 2);
+  assert.deepEqual([el.hidden, el.textContent], [false, WAITING_FOR_SIM_TEXT]);
+  for (let k = 0; k < 20; k++) assert.equal(renderWaiting(el, true), 0, 'nothing new: no write');
+  assert.equal(renderWaiting(el, false), 1, 'the sim started: hidden, once');
+  assert.equal(el.hidden, true);
+  assert.equal(el.counts.nodes, 1, 'its text node only, once');
+  const w = { state: 'active', error: null };
+  assert.match(kindleStatusText(kOpen({ socketOpen: false, socketConnecting: true, envelopes: 0 }), w), /· socket connecting ·/);
+  assert.match(kindleStatusText(kOpen({ socketOpen: false, socketConnecting: false }), w), /· socket closed ·/);
+});
+
+test('the page has the notices over each preview screen (absolute: they move nothing), hidden at first', () => {
+  const html = readFileSync(join(studioDir, 'index.html'), 'utf8');
+  for (const [id, parent] of [['preview-kindle-waiting', 'preview-kindle-viewport'], ['preview-watch-waiting', 'preview-watch-bezel']]) {
+    const tag = (html.match(new RegExp(`<div[^>]*\\bid="${id}"[^>]*>`)) ?? [])[0];
+    assert.ok(tag, `#${id} is in index.html`);
+    assert.match(tag, new RegExp(`data-testid="${id}"`));
+    assert.match(tag, /\bhidden\b/);
+    assert.match(tag, /class="pv-waiting"/);
+    // inside its pane's screen box (the viewport or the bezel), not in the flow below it
+    const open = html.indexOf(`id="${parent}"`);
+    const at = html.indexOf(`id="${id}"`);
+    assert.ok(open > 0 && at > open && !html.slice(open, at).includes('pv-status'), `#${id} is inside #${parent}`);
+  }
+  const rule = (sel) => (html.match(new RegExp(`\\n\\s*${sel.replace(/[.[\]]/g, '\\$&')} \\{([^}]*)\\}`)) ?? [])[1] ?? '';
+  assert.match(rule('.pv-waiting'), /position: absolute/);
+  assert.match(rule('.pv-waiting[hidden]'), /display: none/);
+  assert.match(rule('.pv-viewport'), /position: relative/);
+  assert.match(rule('.pv-bezel'), /position: relative/);
+  const src = readFileSync(join(studioDir, 'preview', 'index.js'), 'utf8');
+  assert.match(src, /renderWaiting\(\$\('preview-kindle-waiting'\), s\.waitingForSim\)/);
+  assert.match(src, /renderWaiting\(\$\('preview-watch-waiting'\), s\.waitingForSim\)/);
 });
 
 test('throttle: at most one call per window, the last of a burst at its end; timers called on their global', async () => {

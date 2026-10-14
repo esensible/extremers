@@ -180,7 +180,15 @@ again (or pack with that name). A project without the file uses its own name.
    preview (Kindle, watch or both) whose target built, also a watch app that
    failed to mount, and says so in `previews` (`{ watch: { reopened: true,
    build: { at } } }`); `preview.status().watch.build.at` is then the new
-   build's.
+   build's. **A preview needs a running sim** (it is the host the page
+   connects to): opened with none, the pane says "Simulator not running",
+   `preview.open` answers `waitingForSim: true` with a warning,
+   `preview.status().kindle` has `waitingForSim: true, socketOpen: false,
+   socketConnecting: true`, and the Kindle page shows only its own first
+   screen (Loading…, then its "Connection lost" after 15 s): that is not a
+   broken build. `api.sim.start()` connects an open preview at once
+   (`socketOpen: true`, the current envelope delivered); opening one while
+   the sim runs connects at once too.
 8. `api.bundle.pack()` (the settings' name and version; the version is an
    integer 0-65535; `{ name, version }` override them), `api.bundle.inspect()`.
 9. `api.device.connect()`, `api.device.install({ activate: true })`,

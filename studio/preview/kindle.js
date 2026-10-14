@@ -9,6 +9,15 @@
 //                 after 15 s of silence)
 //   page → host   each HostEvent the page sends → api._sim.send(bytes)
 //
+// The page's socket connects as a device's does: only once there is a host.
+// A new socket asks ('socket-connect'); while the sim runs it is accepted at
+// once, else it waits (status().waitingForSim) and is accepted the moment a
+// sim starts (api._sim.onRunning). A page that gave its waiting socket up
+// (its 15 s silence timeout) and is sitting out its reconnect delay — 5 s,
+// far longer in a background tab, where Chrome throttles timers — has no
+// socket to accept: a sim start reloads it, and the fresh page connects at
+// once. So the view never waits on the page's own timers.
+//
 // The envelope's `active` and `ui.web` stay the same for a session (the sim
 // carries the build), so the page's staleness() never fires; when it does
 // (the sim runs another package or another build), the page navigates to '/'
@@ -59,6 +68,7 @@ export class KindlePreview {
     this.frame = null;
     this.reset();
     this.unsub = sim.onEnvelope((bytes, decoded) => this.onEnvelope(bytes, decoded));
+    this.unsubRunning = typeof sim.onRunning === 'function' ? sim.onRunning((up) => this.hostChanged(up)) : () => {};
     this.onMessage = (ev) => this.message(ev);
     win.addEventListener('message', this.onMessage);
   }
@@ -67,7 +77,7 @@ export class KindlePreview {
     clearInterval(this.beat);
     this.beat = null;
     this.sid = null; this.build = null; this.size = null; this.files = [];
-    this.loaded = false; this.socketOpen = 0; this.envelopes = 0; this.events = [];
+    this.loaded = false; this.socketOpen = 0; this.socketWaiting = 0; this.envelopes = 0; this.events = [];
     this.errors = []; this.console = []; this.reloads = []; this.served = null; this.lastEnvelope = null;
     this.note = null; this.waiters = []; this._firstWeb = null;
   }
@@ -169,7 +179,7 @@ export class KindlePreview {
     const now = Date.now();
     this.reloads = this.reloads.filter((t) => now - t < RELOAD_WINDOW_MS);
     this.reloads.push(now);
-    this.loaded = false; this.socketOpen = 0;
+    this.loaded = false; this.socketOpen = 0; this.socketWaiting = 0;
     const why = this.staleReason();
     this._firstWeb = null; // the reopened page pins the next one
     const msg = `page requested reload (reloadEntry → ${path ?? '?'})${why ? `: ${why}` : ''}`;
@@ -237,6 +247,33 @@ export class KindlePreview {
     else this.lastEnvelope = decoded;
   }
 
+  /** Tell the page its connecting socket(s) reached the host. */
+  accept() {
+    const w = this.frame?.contentWindow;
+    if (!w || !this.sid) return false;
+    w.postMessage({ __preview: this.sid, type: 'accept' }, this.win.location.origin);
+    return true;
+  }
+
+  /**
+   * The sim started (up) or was reset (api._sim.onRunning). On a start, a
+   * waiting socket is accepted now; a loaded page with no socket at all (in
+   * its reconnect delay) is reloaded so it connects now. A page still
+   * loading connects when it has loaded (accepted at once then).
+   */
+  hostChanged(up) {
+    this.onChange(); // waitingForSim
+    if (!up || !this.sid || !this.frame) return;
+    if (this.socketWaiting > 0) { this.accept(); return; }
+    if (this.socketOpen > 0 || !this.loaded) return;
+    this.log('the sim started while the page had no socket (it was waiting out its reconnect delay): reloading it so it connects now');
+    this.loaded = false; // until it has (frameLoaded)
+    this.frame.src = this.sessionUrl;
+  }
+
+  /** Open and the sim not running: the page has nothing to show until a sim starts. */
+  get waitingForSim() { return !!this.sid && typeof this.sim.running === 'function' && !this.sim.running(); }
+
   heartbeat() {
     if (!this.sid || !this.socketOpen || !this.sim.running()) return;
     const b = this.sim.current();
@@ -247,14 +284,27 @@ export class KindlePreview {
     const d = ev.data;
     if (!this.frame || ev.source !== this.frame.contentWindow || !d || (d.__preview !== this.sid && d.__preview !== '*')) return;
     switch (d.type) {
+      case 'socket-connect':
+        if (this.sim.running()) { this.accept(); break; }
+        this.socketWaiting++;
+        this.log('the page is connecting; the sim is not running, so its socket waits: it connects when a sim starts (Sim → Start, api.sim.start())');
+        this.onChange();
+        break;
       case 'socket-open': {
         this.socketOpen++;
+        this.socketWaiting = Math.max(0, this.socketWaiting - 1);
         const b = this.sim.running() ? this.sim.current() : null;
         if (b) this.post(b);
-        else this.log('the page connected; the sim is not running (api.sim.start()), so it waits for an envelope');
+        else this.log('the page connected; the sim stopped meanwhile, so it waits for an envelope');
+        this.onChange();
         break;
       }
-      case 'socket-close': this.socketOpen = Math.max(0, this.socketOpen - 1); break;
+      case 'socket-close':
+        if (d.wasOpen === false) this.socketWaiting = Math.max(0, this.socketWaiting - 1);
+        else this.socketOpen = Math.max(0, this.socketOpen - 1);
+        this.onChange();
+        break;
+      case 'unload': this.socketOpen = 0; this.socketWaiting = 0; break; // its sockets went with it
       case 'hostEvent': {
         const bytes = new Uint8Array(d.bytes);
         const r = this.sim.send(bytes);
@@ -285,7 +335,7 @@ export class KindlePreview {
     return {
       open: !!this.sid, loaded: this.loaded, sid: this.sid, sessionUrl: this.sessionUrl, size: this.size,
       build: this.build ? { name: this.build.name, packageId: this.build.packageId, at: this.build.targets?.kindle?.at ?? this.build.at ?? null } : null,
-      socketOpen: this.socketOpen > 0, envelopes: this.envelopes, events: this.events.slice(-20),
+      waitingForSim: this.waitingForSim, socketOpen: this.socketOpen > 0, socketConnecting: this.socketWaiting > 0, envelopes: this.envelopes, events: this.events.slice(-20),
       served: this.served, errors: this.errors.slice(), console: this.console.slice(-50), note: this.note,
     };
   }
@@ -328,6 +378,7 @@ export class KindlePreview {
   dispose() {
     this.close();
     this.unsub();
+    this.unsubRunning();
     this.win.removeEventListener('message', this.onMessage);
   }
 }

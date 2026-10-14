@@ -225,6 +225,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
   let lastPack = null; // { bytes, json, name, project }
   const engineCache = new Map(); // source hash → buildEngine() result
   const envelopeListeners = new Set(); // api._sim.onEnvelope: survive sim restarts
+  const runningListeners = new Set(); // api._sim.onRunning: likewise
 
   async function wasm() {
     if (!engine) throw new ApiError('engine wasm not available: no engine loader', 'reload the page');
@@ -412,8 +413,10 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     const st = sim.state();
     return { now: st.now, view: st.view, state: st.state, wake: st.wake };
   }
-  function stopSim() {
-    if (sim) { sim.free(); sim = null; simInfo = null; }
+  /** api._sim.onRunning subscribers: told when a sim starts (true) and when none runs any more (false). */
+  function notifyRunning(up) { for (const cb of runningListeners) { try { cb(up); } catch { /* the subscriber's */ } } }
+  function stopSim({ notify = true } = {}) {
+    if (sim) { sim.free(); sim = null; simInfo = null; if (notify) notifyRunning(false); }
   }
 
   /**
@@ -1026,7 +1029,8 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         const p = await packProject({ dir: opts.dir, name: opts.name });
         if (p.failed) return p.failed;
         const mod = await wasm();
-        stopSim();
+        const replaced = !!sim;
+        stopSim({ notify: false }); // a replacement is one start, not a stop and a start
         try {
           sim = new Sim({
             mod, bundle: p.bytes, name: p.name, program: p.built.program, ifaceJson: p.built.ifaceJson,
@@ -1034,8 +1038,9 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
             ...(timers ? { timers } : {}),
             onEnvelope: (bytes, e) => { for (const cb of envelopeListeners) { try { cb(bytes, e); } catch { /* the subscriber's */ } } },
           });
-        } catch (e) { throw simErr(e); }
+        } catch (e) { if (replaced) notifyRunning(false); throw simErr(e); }
         simInfo = { project: p.project, name: p.name };
+        notifyRunning(true); // after simInfo: a subscriber may ask for the current envelope at once
         const st = sim.state();
         return { ok: true, clock, now: st.now, id: sim.id, name: p.name, ui: st.ui, uiSource: p.uiSource, ...(p.uiNotes.length ? { uiNotes: p.uiNotes } : {}), state: st.state, view: st.view, wake: st.wake, evaluations: evaluationOut(sim.history), ...failuresOf(sim.history) };
       },
@@ -1216,18 +1221,18 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
     // preview/index.js does the work (it needs the DOM); the page hands it in with api._setPreview.
     {
       name: 'preview.open', kind: 'pure',
-      summary: "Show the open project's last successful ui.build in a preview, connected to the sim host as a device client is. kindle: the built page in #preview-kindle-frame, served byte for byte by the studio's service worker under /preview/<sid>/ (index.html with its /pkg/<id>/ paths moved under the session and a websocket shim first in <head>); the page's websocket carries the sim's envelopes (each one published, the current one on connect and every 5 s) and its HostEvents go to the host. watch: the built watch.js on solid-watch's browser host in a fresh realm, envelopes to its state, its send(bytes) to the host. Each open is a new session; ui.build reopens an open preview on the new build before it answers (also one whose watch app failed to mount), so there is no need to open it again. Start the sim with the build's name (api.sim.start({ name })) or the page shows another package's envelopes and asks to reload.",
+      summary: "Show the open project's last successful ui.build in a preview, connected to the sim host as a device client is. kindle: the built page in #preview-kindle-frame, served byte for byte by the studio's service worker under /preview/<sid>/ (index.html with its /pkg/<id>/ paths moved under the session and a websocket shim first in <head>); the page's websocket carries the sim's envelopes (each one published, the current one on connect and every 5 s) and its HostEvents go to the host. watch: the built watch.js on solid-watch's browser host in a fresh realm, envelopes to its state, its send(bytes) to the host. Each open is a new session; ui.build reopens an open preview on the new build before it answers (also one whose watch app failed to mount), so there is no need to open it again. Start the sim with the build's name (api.sim.start({ name })) or the page shows another package's envelopes and asks to reload. Without a running sim there is no host: the Kindle page's socket stays connecting (as a device's does with no server) and the page shows only its own first screen (e.g. Loading…, then its Connection lost after its 15 s silence timeout); the pane says the simulator is not running, the result's waitingForSim is true and its warnings say so. Starting the sim (or opening while it runs) connects the page at once and delivers the current envelope.",
       args: [{ name: 'opts.target', type: "'kindle' | 'watch'", required: true, description: 'which preview' },
         { name: 'opts.size', type: "kindle: '600x800' | '758x1024' | 'WxH' | { width, height }; watch: '41mm' | '45mm' | '49mm'", required: false, description: "CSS px for the Kindle (default '600x800'), the case for the watch (default '45mm': 198×242 pt; 41mm 176×215, 49mm 205×251)" }],
-      returns: '{ ok, target, sessionUrl?, sid?, size, build: { name, packageId, at }, warnings: string[] }',
+      returns: '{ ok, target, sessionUrl?, sid?, size, build: { name, packageId, at }, waitingForSim: boolean (no sim runs: nothing to show until api.sim.start()), warnings: string[] }',
       example: "await api.preview.open({ target: 'kindle' })",
       run: async (opts = {}) => preview().open(opts),
     },
     {
       name: 'preview.status', kind: 'pure', quiet: true,
-      summary: "Both previews: open, loaded, which build, envelopes delivered, the events they sent (and the host's answer), console lines and errors (the Kindle page's console.error and uncaught errors; the watch bundle's errors), served == built for the Kindle files, and the service worker's state ('active', or 'unavailable' with why: the watch preview still works).",
+      summary: "Both previews: open, loaded, waitingForSim (open with no sim running: the pane says so, and the preview shows nothing of the engine until api.sim.start()), which build, envelopes delivered, the Kindle page's socket (socketOpen; socketConnecting: waiting for a sim), the events they sent (and the host's answer), console lines and errors (the Kindle page's console.error and uncaught errors; the watch bundle's errors), served == built for the Kindle files, and the service worker's state ('active', or 'unavailable' with why: the watch preview still works).",
       args: [],
-      returns: "{ ok, kindle: { open, loaded, sid, sessionUrl, size, build, socketOpen, envelopes, events: [{ at, bytes, accepted, refused, evaluations: [record] }|{ at, bytes, error }], served: { checked, identical, mismatches }|null, errors: string[], console: string[], note }, watch: { open, loaded, size, build, envelopes, commits, events, haptics, errors, console }, serviceWorker: 'active'|'unavailable'|'failed'|…, serviceWorkerError, sim: { running } }",
+      returns: "{ ok, kindle: { open, loaded, waitingForSim, sid, sessionUrl, size, build, socketOpen, socketConnecting, envelopes, events: [{ at, bytes, accepted, refused, evaluations: [record] }|{ at, bytes, error }], served: { checked, identical, mismatches }|null, errors: string[], console: string[], note }, watch: { open, loaded, waitingForSim, size, build, envelopes, commits, events, haptics, errors, console }, serviceWorker: 'active'|'unavailable'|'failed'|…, serviceWorkerError, sim: { running } }",
       example: 'await api.preview.status()',
       run: async () => preview().status(),
     },
@@ -1450,7 +1455,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         'Diagnostics (engine.*, sim.runSamples) all have one shape: { rule, severity, path (the project file), span: { line, col, offset, end } (1-based; col/offset in UTF-16 units) | null, message, help }. E-* from the compiler and the schemas (E-SCHEMA: the bitwire subset or the profile), R-* from a run (R-NIL: nil where a value is needed), E-SAMPLES: a malformed samples run.',
         "The sim is the real common::Host (HostHandle). Each evaluation it makes is in its log (cause, accepted, the R-code, instruction and span of a failure, the state, view and wake after it): that log is the history, and sim.state().state is the engine's own state (the leaves the host keeps, decoded with the state schema). A rejected evaluation is in the result's errors[] (sim.gps, sim.advance, sim.event): the input still happened (a fix stays on the track), the state did not change. Checked on every call: W-WIRE (each envelope is one logged evaluation whose view changed; its bytes are the log's, and the vendored JS codec decodes and re-encodes them unchanged), W-HOST (the call's answer agrees with the log: wakes fired, an event accepted or refused; envelopes stamped with the evaluation's time; the pending wake is the last evaluation's). Findings are in sim.state().findings and in the history records; an empty list is the expected state.",
         "The sim's `gps` holds the newest 20,480 fixes, as the C6's track ring does (its maxItems); the C6 drops its oldest 128 at a time once full (a flash sector), the sim one at a time. The wasm keeps 24 bytes a fix, as they arrive (480 KB when full).",
-        'Envelopes (what a device websocket client receives) from the sim: api._sim.onEnvelope(cb) → cb(bytes: Uint8Array, decoded: { timestamp, active, ui, state }) (survives sim.start/reset); api._sim.current() → the heartbeat envelope (the state now) or null; api._sim.send(hostEventBytes) → what a client sends. The last one is also sim.state().envelopeHex.',
+        'Envelopes (what a device websocket client receives) from the sim: api._sim.onEnvelope(cb) → cb(bytes: Uint8Array, decoded: { timestamp, active, ui, state }) (survives sim.start/reset); api._sim.current() → the heartbeat envelope (the state now) or null; api._sim.send(hostEventBytes) → what a client sends; api._sim.onRunning(cb) → cb(true) when a sim starts (a replacing start too), cb(false) on sim.reset. The last envelope is also sim.state().envelopeHex.',
         'Words: an engine is evaluated once per event; never call it a step or a tick.',
         ...notes,
       ],
@@ -1542,6 +1547,7 @@ export function createApi({ store, fetchText, fetchBytes, log, engine, device, t
         try { const r = sim.hostEvent(bytes); return { ok: true, accepted: r.accepted, refused: r.refused ?? null, evaluations: evaluationOut(r.evaluations) }; } catch (e) { return { ok: false, error: errText(e) }; }
       },
       running: () => !!sim,
+      onRunning: (cb) => { runningListeners.add(cb); return () => runningListeners.delete(cb); },
     },
   });
   // The previews' controller (preview/index.js): the page sets it; without it api.preview.* says so.

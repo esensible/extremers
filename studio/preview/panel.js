@@ -84,7 +84,7 @@ function setStyle(el, prop, v) {
 /** The Kindle panel's status line from KindlePreview.status() and the worker's status. */
 export function kindleStatusText(s, w) {
   if (!s.open) return `closed · service worker: ${w.state}${w.error ? ` (${w.error})` : ''}`;
-  return `${s.build.name} · ${s.size.width}×${s.size.height} · ${s.loaded ? 'loaded' : 'loading'} · socket ${s.socketOpen ? 'open' : 'closed'} · ${s.envelopes} envelopes · ${s.events.length} events · ${s.errors.length} errors${s.served ? ` · served==built ${s.served.identical}/${s.served.checked}` : ''}${s.note ? ` · ${s.note}` : ''}`;
+  return `${s.build.name} · ${s.size.width}×${s.size.height} · ${s.loaded ? 'loaded' : 'loading'} · socket ${s.socketOpen ? 'open' : s.socketConnecting ? 'connecting' : 'closed'} · ${s.envelopes} envelopes · ${s.events.length} events · ${s.errors.length} errors${s.served ? ` · served==built ${s.served.identical}/${s.served.checked}` : ''}${s.note ? ` · ${s.note}` : ''}`;
 }
 
 /** The watch panel's status line from WatchPreview.status(). */
@@ -104,6 +104,22 @@ export function renderStatus({ statusEl, closeEl }, text, { open, errors }) {
   n += setProp(statusEl, 'title', text);
   n += setClass(statusEl, 'err', errors > 0);
   n += setProp(closeEl, 'disabled', !open);
+  return n;
+}
+
+/** What a preview pane says while it is open and no sim runs (status().waitingForSim). */
+export const WAITING_FOR_SIM_TEXT = 'Simulator not running — start it (Sim → Start) to see the app.';
+
+/**
+ * The pane's "simulator not running" notice (#preview-kindle-waiting,
+ * #preview-watch-waiting): shown while `waiting`, hidden otherwise. It is
+ * laid over the screen (position: absolute), so showing it moves nothing.
+ * → the number of writes.
+ */
+export function renderWaiting(el, waiting) {
+  let n = 0;
+  n += setText(el, WAITING_FOR_SIM_TEXT);
+  n += setProp(el, 'hidden', !waiting);
   return n;
 }
 

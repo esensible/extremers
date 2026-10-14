@@ -3,12 +3,16 @@
 // data-sid="<sid>"> at the top of <head>). It stands in for the device:
 //
 //   window.WebSocket → a postMessage bridge to the studio (the parent page,
-//     preview/kindle.js). Any URL opens (the page asks for ws://<host>/socket);
-//     the socket opens asynchronously, as a real one does. The studio sends
-//     the sim host's envelopes: { __preview: sid, type: 'envelope', bytes:
-//     ArrayBuffer } → onmessage({ data }) (an ArrayBuffer with binaryType
-//     'arraybuffer', else a Blob). send(buf) → { type: 'hostEvent', bytes }
-//     to the studio, which gives it to the host (api._sim.send).
+//     preview/kindle.js). Any URL connects (the page asks for
+//     ws://<host>/socket): a new socket is CONNECTING and asks the studio
+//     ({ type: 'socket-connect' }); it opens when the studio answers
+//     { type: 'accept' }, which it does at once while the sim host runs, else
+//     as soon as a sim starts — as a real socket opens only once there is a
+//     server. The studio sends the sim host's envelopes: { __preview: sid,
+//     type: 'envelope', bytes: ArrayBuffer } → onmessage({ data }) (an
+//     ArrayBuffer with binaryType 'arraybuffer', else a Blob). send(buf) →
+//     { type: 'hostEvent', bytes } to the studio, which gives it to the host
+//     (api._sim.send). close() → { type: 'socket-close', wasOpen }.
 //   console.* and uncaught errors → { type: 'console' | 'error' } to the
 //     studio (api.preview.status()), and still to the real console.
 //
@@ -58,14 +62,20 @@
       this.bufferedAmount = 0;
       this.onopen = this.onmessage = this.onclose = this.onerror = null;
       this._listeners = {};
-      var self = this;
       sockets.push(this);
-      later(function () {
-        if (self.readyState !== CONNECTING) return;
-        self.readyState = OPEN;
-        fire(self, 'open', {});
-        post('socket-open', { url: self.url });
-      });
+      post('socket-connect', { url: this.url });
+    }
+    // The studio accepts: every socket still connecting opens (a socket the
+    // page gave up on meanwhile has left `sockets` or is no longer CONNECTING).
+    function accept() {
+      var waiting = sockets.slice();
+      for (var i = 0; i < waiting.length; i++) {
+        var s = waiting[i];
+        if (s.readyState !== CONNECTING) continue;
+        s.readyState = OPEN;
+        fire(s, 'open', {});
+        post('socket-open', { url: s.url });
+      }
     }
     PreviewSocket.CONNECTING = PreviewSocket.prototype.CONNECTING = CONNECTING;
     PreviewSocket.OPEN = PreviewSocket.prototype.OPEN = OPEN;
@@ -80,8 +90,9 @@
     PreviewSocket.prototype.close = function (code, reason) {
       if (this.readyState === CLOSING || this.readyState === CLOSED) return;
       var self = this;
+      var wasOpen = this.readyState === OPEN;
       this.readyState = CLOSING;
-      post('socket-close', { url: this.url });
+      post('socket-close', { url: this.url, wasOpen: wasOpen });
       later(function () {
         self.readyState = CLOSED;
         for (var i = 0; i < sockets.length; i++) if (sockets[i] === self) { sockets.splice(i, 1); break; }
@@ -112,6 +123,7 @@
       var d = ev.data;
       if (ev.source !== parent || !d || d.__preview !== sid) return;
       if (d.type === 'envelope' && Object.prototype.toString.call(d.bytes) === '[object ArrayBuffer]') deliver(d.bytes);
+      else if (d.type === 'accept') accept();
     });
 
     // ---- console and errors
@@ -153,7 +165,7 @@
 
     win.WebSocket = PreviewSocket;
     post('shim', { href: win.location.href });
-    return { PreviewSocket: PreviewSocket, sockets: sockets, deliver: deliver };
+    return { PreviewSocket: PreviewSocket, sockets: sockets, deliver: deliver, accept: accept };
   }
 
   root.__installPreviewShim = install;

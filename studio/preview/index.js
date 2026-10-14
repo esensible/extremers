@@ -12,7 +12,7 @@
 import { KindlePreview, parseKindleSize, KINDLE_SIZES } from './kindle.js';
 import { WatchPreview, parseWatchSize, WATCH_SIZES } from './watch.js';
 import { decodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
-import { applyKindleFit, kindleStatusText, watchStatusText, renderStatus, setProp, throttle } from './panel.js';
+import { applyKindleFit, kindleStatusText, watchStatusText, renderStatus, renderWaiting, setProp, throttle } from './panel.js';
 
 const SCOPE_URL = new URL('../', import.meta.url);
 const SW_URL = new URL('../sw.js', import.meta.url);
@@ -70,7 +70,7 @@ export function createController({ api, getLastBuild, kindle, watch, worker }) {
 
   function simWarnings(build) {
     const w = [];
-    if (!api._sim.running()) { w.push("the sim is not running: the preview shows its first screen until api.sim.start({ name: '" + build.name + "' })"); return w; }
+    if (!api._sim.running()) { w.push(`the simulator is not running (waitingForSim): there is no host, so the preview shows only its own first screen (the Kindle page's socket waits to connect) and the pane says so; api.sim.start({ name: '${build.name}' }) connects it at once`); return w; }
     const cur = api._sim.current();
     if (cur) {
       try {
@@ -94,7 +94,7 @@ export function createController({ api, getLastBuild, kindle, watch, worker }) {
       const warnings = simWarnings(build);
       const st = p.status();
       if (target === 'kindle' && !st.loaded) warnings.push(st.note ?? 'the page has not loaded yet: api.preview.status()');
-      return { ok: true, target, ...(r.sessionUrl ? { sessionUrl: r.sessionUrl, sid: r.sid } : {}), size: r.size, build: { name: build.name, packageId: build.packageId, at: t.at ?? null }, warnings };
+      return { ok: true, target, ...(r.sessionUrl ? { sessionUrl: r.sessionUrl, sid: r.sid } : {}), size: r.size, build: { name: build.name, packageId: build.packageId, at: t.at ?? null }, waitingForSim: !api._sim.running(), warnings };
     },
     async status() {
       return { ok: true, kindle: kindle.status(), watch: watch.status(), serviceWorker: worker.status().state, serviceWorkerError: worker.status().error, sim: { running: api._sim.running() } };
@@ -194,6 +194,7 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
     fitKindle();
     const s = kindle.status();
     renderStatus({ statusEl: $('preview-kindle-status'), closeEl: $('preview-kindle-close') }, kindleStatusText(s, worker.status()), { open: s.open, errors: s.errors.length });
+    renderWaiting($('preview-kindle-waiting'), s.waitingForSim);
     if (s.size) {
       const key = `${s.size.width}x${s.size.height}`;
       const sel = $('preview-kindle-size');
@@ -204,6 +205,7 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
   function renderWatch() {
     const s = watch.status();
     renderStatus({ statusEl: $('preview-watch-status'), closeEl: $('preview-watch-close') }, watchStatusText(s), { open: s.open, errors: s.errors.length });
+    renderWaiting($('preview-watch-waiting'), s.waitingForSim);
     const bezel = $('preview-watch-bezel');
     if (bezel && bezel.dataset.size !== (s.size?.name ?? '')) bezel.dataset.size = s.size?.name ?? '';
     if (s.size) setProp($('preview-watch-size'), 'value', s.size.name); // an agent's open shows here too

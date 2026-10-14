@@ -153,10 +153,13 @@
   .pv-head h2 { margin-right: auto; }
   .pv-head .btn { min-height: 28px; padding: 0 8px; font-size: 13px; }
   .pv-head select, .pv-head input { min-height: 28px; font-size: 13px; }
-  .pv-viewport { width: 100%; min-height: 120px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
+  .pv-viewport { position: relative; width: 100%; min-height: 120px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
   #preview-kindle-frame { border: 0; display: block; background: #FFFFFF; }
-  .pv-bezel { align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 5px #2A2A28; }
+  .pv-bezel { position: relative; align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 5px #2A2A28; }
   #preview-watch-screen { width: 198px; height: 242px; background: #000000; color: #FFFFFF; overflow: hidden; }
+  /* laid over the screen (absolute): showing or hiding it moves nothing */
+  .pv-waiting { position: absolute; z-index: 1; left: 8px; right: 8px; top: 8px; padding: 6px 8px; border: 1px solid var(--warn-line); border-radius: 6px; background: var(--warn-bg); color: var(--ink); font-size: 13px; line-height: 1.4; }
+  .pv-waiting[hidden] { display: none; }
   .pv-status { font-size: 12px; line-height: 1.4; height: calc(3 * 1.4em); overflow: hidden; overflow-wrap: anywhere; flex: none; }
   .pv-status.err { color: var(--danger); }
   .pv-log { height: 96px; flex: none; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; background: var(--raised); }
@@ -325,7 +328,7 @@
           <button type="button" class="btn pri" id="preview-kindle-open" data-testid="preview-kindle-open">Open</button>
           <button type="button" class="btn" id="preview-kindle-close" data-testid="preview-kindle-close" disabled>Close</button>
         </div>
-        <div class="pv-viewport" id="preview-kindle-viewport"><div id="preview-kindle-screen" data-testid="preview-kindle-screen"><p class="hint" style="padding:12px">Build (Build log tab), start the sim with the build's name, then Open: the built page runs here on the sim host.</p></div></div>
+        <div class="pv-viewport" id="preview-kindle-viewport"><div id="preview-kindle-screen" data-testid="preview-kindle-screen"><p class="hint" style="padding:12px">Build (Build log tab), start the sim with the build's name, then Open: the built page runs here on the sim host.</p></div><div class="pv-waiting" id="preview-kindle-waiting" data-testid="preview-kindle-waiting" role="status" hidden></div></div>
         <div class="pv-status hint" id="preview-kindle-status" data-testid="preview-kindle-status" aria-live="polite"></div>
         <div class="pv-log" id="preview-kindle-log" data-testid="preview-kindle-log"></div>
       </section>
@@ -335,7 +338,7 @@
           <button type="button" class="btn pri" id="preview-watch-open" data-testid="preview-watch-open">Open</button>
           <button type="button" class="btn" id="preview-watch-close" data-testid="preview-watch-close" disabled>Close</button>
         </div>
-        <div class="pv-bezel" id="preview-watch-bezel"><div id="preview-watch-screen" data-testid="preview-watch-screen"></div></div>
+        <div class="pv-bezel" id="preview-watch-bezel"><div id="preview-watch-screen" data-testid="preview-watch-screen"></div><div class="pv-waiting" id="preview-watch-waiting" data-testid="preview-watch-waiting" role="status" hidden></div></div>
         <div class="pv-status hint" id="preview-watch-status" data-testid="preview-watch-status" aria-live="polite"></div>
         <div class="pv-log" id="preview-watch-log" data-testid="preview-watch-log"></div>
       </section>

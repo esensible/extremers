@@ -101,7 +101,11 @@ export class WatchPreview {
     this.host = null; this.realmFrame = null; this.app = null;
     this.reset();
     this.unsub = sim.onEnvelope((bytes) => this.deliver(bytes));
+    this.unsubRunning = typeof sim.onRunning === 'function' ? sim.onRunning(() => this.onChange()) : () => {}; // waitingForSim
   }
+
+  /** Open and the sim not running: the watch has no state to show until a sim starts. */
+  get waitingForSim() { return !!this.build && typeof this.sim.running === 'function' && !this.sim.running(); }
 
   reset() {
     this.build = null; this.size = null; this.loaded = false; this.envelopes = 0;
@@ -205,7 +209,7 @@ export class WatchPreview {
 
   status() {
     return {
-      open: !!this.build, loaded: this.loaded, size: this.size,
+      open: !!this.build, loaded: this.loaded, waitingForSim: this.waitingForSim, size: this.size,
       build: this.build ? { name: this.build.name, packageId: this.build.packageId, at: this.build.targets?.watch?.at ?? this.build.at ?? null, sha256: this.sha256 } : null,
       envelopes: this.envelopes, commits: this.commits, events: this.events.slice(-20), haptics: this.haptics.slice(-20),
       errors: this.errors.slice(), console: this.console.slice(-50),
@@ -240,5 +244,5 @@ export class WatchPreview {
     return { pressed: b.text, tag: b.tag, eventsBefore: before };
   }
 
-  dispose() { this.close(); this.unsub(); }
+  dispose() { this.close(); this.unsub(); this.unsubRunning(); }
 }

@@ -17,7 +17,9 @@ import { CACHE, SID_RE, newSid, mimeOf, routePreview, rewriteIndexHtml, sessionF
 import { KindlePreview, parseKindleSize } from '../preview/kindle.js';
 import { bootWatchRealm, treeText, treeButtons, parseWatchSize, WATCH_SIZES, WatchPreview } from '../preview/watch.js';
 import { ownPackage, packageId } from '../vendor/runtimes/client-common/host.js';
-import { decodeHostEvent, encodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
+import { decodeHostEvent, encodeEnvelope, decodeEnvelope } from '../vendor/runtimes/protocol-js/protocol.js';
+import { createController } from '../preview/index.js';
+import { engineWorld, haveVendor } from './engine-world.mjs';
 import wire from '../vendor/runtimes/wire/js/codec.esm.js';
 import compiler from '../vendor/runtimes/wire/js/compile.esm.js';
 
@@ -264,7 +266,15 @@ test('the shim: WebSocket is a postMessage bridge to the studio', async () => {
   ws.onmessage = (e) => got.push(e.data);
   const viaListener = [];
   ws.addEventListener('message', (e) => viaListener.push(e.data));
+  // it asks the studio, and stays connecting until the studio accepts (a host exists)
+  assert.deepEqual(toParent.find((x) => x.m.type === 'socket-connect').m, { __preview: sid, type: 'socket-connect', url: 'ws://localhost:5190/socket' });
   await tick();
+  assert.equal(ws.readyState, WS.CONNECTING, 'no host yet: still connecting');
+  assert.equal(opened, 0);
+  emit('message', { source: {}, data: { __preview: sid, type: 'accept' } }); // not from the parent
+  emit('message', { source: win.parent, data: { __preview: 's-other001', type: 'accept' } }); // another session
+  assert.equal(ws.readyState, WS.CONNECTING);
+  emit('message', { source: win.parent, data: { __preview: sid, type: 'accept' } });
   assert.equal(ws.readyState, WS.OPEN);
   assert.equal(opened, 1);
   const open = toParent.find((x) => x.m.type === 'socket-open');
@@ -303,7 +313,15 @@ test('the shim: WebSocket is a postMessage bridge to the studio', async () => {
   await tick();
   assert.equal(ws.readyState, WS.CLOSED);
   assert.equal(closed.code, 1000);
-  assert.ok(toParent.some((x) => x.m.type === 'socket-close'));
+  assert.deepEqual(toParent.find((x) => x.m.type === 'socket-close').m, { __preview: sid, type: 'socket-close', url: 'ws://localhost:5190/socket', wasOpen: true });
+  // a socket the page gives up on while it is still connecting: wasOpen false, and a later accept leaves it closed
+  const ws2 = new WS('ws://localhost:5190/socket');
+  ws2.close();
+  assert.equal(toParent.filter((x) => x.m.type === 'socket-close')[1].m.wasOpen, false);
+  emit('message', { source: win.parent, data: { __preview: sid, type: 'accept' } });
+  await tick();
+  assert.equal(ws2.readyState, WS.CLOSED);
+  assert.equal(toParent.filter((x) => x.m.type === 'socket-open').length, 1);
   emit('message', { source: win.parent, data: { __preview: sid, type: 'envelope', bytes: new Uint8Array([1]).buffer } });
   assert.equal(got.length, 2);
   ws.send(new Uint8Array([1])); // a closed socket drops it
@@ -359,6 +377,212 @@ test('api.preview.*: without the page, a clear error; with the controller, its a
   assert.deepEqual([p.ok, p.error, p.hint], [false, "no button 'Nope'", 'buttons now: "Port"']);
   assert.equal((await api.preview.close('watch')).wasOpen, true);
   assert.equal((await api.preview.status()).serviceWorker, 'active');
+});
+
+// ------------------------------------- the Kindle page connecting to the sim ----
+//
+// The studio half (KindlePreview, over the real api and its sim host) and the
+// page half (the real shim, under a page that does what the Race page's
+// api.js does: connect on DOMContentLoaded, a 15 s silence timeout that
+// abandons the socket and reconnects 5 s later) joined by postMessage, which
+// is asynchronous (setImmediate) as in a browser. The page's timers run on a
+// manual clock that a test moves by hand: a connect that waited on them would
+// need the clock moved, so "the clock never moved" proves it did not.
+
+/** A manual clock for the page's setTimeout/clearTimeout. */
+function manualClock() {
+  let now = 0; let next = 1; const due = new Map();
+  return {
+    get now() { return now; },
+    setTimeout: (fn, ms = 0) => { const id = next++; due.set(id, { at: now + ms, fn }); return id; },
+    clearTimeout: (id) => { due.delete(id); },
+    advance(ms) {
+      const until = now + ms;
+      for (;;) {
+        const [id, t] = [...due].filter(([, x]) => x.at <= until).sort((a, b) => a[1].at - b[1].at)[0] ?? [];
+        if (!id) break;
+        due.delete(id); now = t.at; t.fn();
+      }
+      now = until;
+    },
+  };
+}
+
+const flush = async (n = 6) => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
+
+/** What the Race page's api.js does with its socket (vendor/examples/race/client-js/src/api.js). */
+function racePage(win) {
+  const st = { envelopes: [], text: 'Loading...', connects: 0 };
+  let socket = null; let silence = null;
+  function connect() {
+    const ws = new win.WebSocket(`ws://${win.location.host}/socket`);
+    ws.binaryType = 'arraybuffer';
+    socket = ws; st.connects++;
+    const reconnect = () => {
+      if (socket !== ws) return;
+      socket = null; win.clearTimeout(silence); st.text = 'Loading...\nConnection lost, reconnecting';
+      ws.onmessage = ws.onclose = null; ws.close();
+      win.setTimeout(connect, 5000);
+    };
+    const restart = () => { win.clearTimeout(silence); silence = win.setTimeout(() => { win.console.log('WebSocket silent. Reconnecting...'); reconnect(); }, 15000); };
+    restart();
+    ws.onmessage = (e) => { restart(); st.envelopes.push(decodeEnvelope(e.data)); st.text = 'the view'; };
+    ws.onclose = () => reconnect();
+  }
+  win.addEventListener('DOMContentLoaded', () => connect());
+  return st;
+}
+
+/**
+ * The studio window and the iframe for KindlePreview: setting the frame's src
+ * loads a page (the shim, then racePage) on a fresh window; contentWindow is
+ * one WindowProxy for all of them, as in a browser.
+ */
+function previewWorld() {
+  const origin = 'http://localhost:5190';
+  const caches = fakeCaches();
+  const studioListeners = [];
+  const install = loadShim();
+  const clock = manualClock();
+  const pages = [];
+  let page = null; // { win, listeners, st }
+  const proxy = {
+    postMessage: (m) => { const p = page; setImmediate(() => { for (const fn of p?.listeners.message ?? []) fn({ source: p.win.parent, data: m }); }); },
+    get location() { return page?.win.location; },
+    fetch: async (path) => (await (await caches.open(CACHE)).match(origin + path)) ?? new Response('', { status: 404 }),
+  };
+  const parent = { postMessage: (m) => { setImmediate(() => { for (const fn of studioListeners) fn({ source: proxy, data: m }); }); } };
+  const loadListeners = [];
+  const frame = {
+    dataset: {}, style: {}, contentWindow: proxy,
+    addEventListener: (t, fn) => { if (t === 'load') loadListeners.push(fn); },
+    remove() {},
+    set src(url) {
+      this._src = url;
+      setImmediate(() => {
+        if (page) for (const fn of page.listeners.pagehide ?? []) fn({});
+        const u = new URL(url, origin);
+        const listeners = {};
+        const win = {
+          location: { origin, host: u.host, href: u.href, pathname: u.pathname },
+          addEventListener: (t, fn) => { (listeners[t] ??= []).push(fn); },
+          setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+          console: { log() {}, error() {}, info() {}, warn() {}, debug() {} },
+          TextEncoder, Blob, parent,
+        };
+        page = { win, listeners };
+        install(win, /\/preview\/(s-[a-z0-9]+)\//.exec(u.pathname)[1]);
+        page.st = racePage(win);
+        pages.push(page);
+        for (const fn of listeners.DOMContentLoaded ?? []) fn({});
+        for (const fn of loadListeners) fn({});
+      });
+    },
+    get src() { return this._src; },
+  };
+  const win = {
+    caches, crypto: globalThis.crypto, location: { origin },
+    addEventListener: (t, fn) => { if (t === 'message') studioListeners.push(fn); },
+    removeEventListener: (t, fn) => { const i = studioListeners.indexOf(fn); if (i >= 0) studioListeners.splice(i, 1); },
+    document: { createElement: () => frame },
+  };
+  return { win, frame, clock, pages, page: () => page, host: { textContent: '', appendChild() {} } };
+}
+
+async function kindleOnRace() {
+  const w = await engineWorld();
+  assert.equal((await w.api.project.create('race', { template: 'race' })).ok, true);
+  const pw = previewWorld();
+  const kp = new KindlePreview({ host: pw.host, sim: w.api._sim, scope: '/', worker: async () => ({ ok: true }), win: pw.win });
+  const watch = { status: () => ({ open: false }) };
+  const controller = createController({ api: w.api, getLastBuild: async () => BUILD, kindle: kp, watch, worker: { status: () => ({ state: 'active', error: null }) } });
+  return { ...w, ...pw, kp, controller };
+}
+
+test('the Kindle preview with the sim stopped: waitingForSim, its socket connecting (no host), the open result says so', { skip: !haveVendor && 'studio/vendor/ not generated' }, async () => {
+  const x = await kindleOnRace();
+  try {
+    const r = await x.controller.open({ target: 'kindle' });
+    await flush();
+    assert.equal(r.ok, true);
+    assert.equal(r.waitingForSim, true);
+    assert.ok(r.warnings.some((s) => /simulator is not running \(waitingForSim\)/.test(s) && /api\.sim\.start\(\{ name: 'race' \}\)/.test(s)), r.warnings.join(' | '));
+    const k = (await x.controller.status()).kindle;
+    assert.deepEqual([k.loaded, k.waitingForSim, k.socketOpen, k.socketConnecting, k.envelopes], [true, true, false, true, 0]);
+    assert.equal(x.page().st.connects, 1);
+    assert.equal(x.page().st.envelopes.length, 0);
+  } finally { x.kp.dispose(); }
+});
+
+test('sim.start connects the waiting page at once and delivers the first envelope (no page timer involved)', { skip: !haveVendor && 'studio/vendor/ not generated' }, async () => {
+  const x = await kindleOnRace();
+  try {
+    await x.controller.open({ target: 'kindle' });
+    await flush();
+    assert.equal(x.kp.status().socketConnecting, true);
+    const t0 = performance.now();
+    assert.equal((await x.api.sim.start({ clock: 'virtual' })).ok, true);
+    await flush();
+    const ms = performance.now() - t0;
+    const k = x.kp.status();
+    assert.deepEqual([k.waitingForSim, k.socketOpen, k.socketConnecting], [false, true, false]);
+    assert.ok(k.envelopes >= 1, `envelopes ${k.envelopes}`);
+    const st = x.page().st;
+    assert.equal(st.envelopes.length >= 1, true, 'the page got the current envelope');
+    assert.equal(st.envelopes[0].active, RACE_ID);
+    assert.equal(st.connects, 1, 'the same socket: it opened, nothing reconnected');
+    assert.equal(x.clock.now, 0, "the page's clock never moved: no silence timeout, no reconnect delay");
+    assert.equal(x.pages.length, 1, 'no reload');
+    assert.ok(ms < 1000, `${ms} ms`);
+  } finally { x.kp.dispose(); }
+});
+
+test('a sim start while the page sits out its reconnect delay reloads it, and it connects at once', { skip: !haveVendor && 'studio/vendor/ not generated' }, async () => {
+  const x = await kindleOnRace();
+  try {
+    await x.controller.open({ target: 'kindle' });
+    await flush();
+    // no host for 15 s: the page gives its socket up and waits 5 s to reconnect
+    x.clock.advance(15000);
+    await flush();
+    assert.equal(x.page().st.text, 'Loading...\nConnection lost, reconnecting');
+    assert.deepEqual([x.kp.status().socketOpen, x.kp.status().socketConnecting], [false, false], 'no socket at all');
+    assert.equal((await x.api.sim.start({ clock: 'virtual' })).ok, true);
+    await flush(10);
+    assert.equal(x.pages.length, 2, 'reloaded once');
+    const st = x.page().st;
+    assert.ok(st.envelopes.length >= 1, 'the fresh page got the current envelope');
+    assert.equal(st.text, 'the view');
+    assert.equal(x.clock.now, 15000, 'the reconnect delay never ran');
+    const k = x.kp.status();
+    assert.deepEqual([k.loaded, k.socketOpen, k.waitingForSim], [true, true, false]);
+    assert.equal(k.errors.length, 0, k.errors.join(' | '));
+  } finally { x.kp.dispose(); }
+});
+
+test('a Kindle preview opened while the sim runs connects at once; sim.reset says waitingForSim again', { skip: !haveVendor && 'studio/vendor/ not generated' }, async () => {
+  const x = await kindleOnRace();
+  try {
+    const seen = [];
+    x.api._sim.onRunning((up) => seen.push(up));
+    assert.equal((await x.api.sim.start({ clock: 'virtual' })).ok, true);
+    const t0 = performance.now();
+    const r = await x.controller.open({ target: 'kindle' });
+    await flush();
+    const ms = performance.now() - t0;
+    assert.equal(r.waitingForSim, false);
+    assert.ok(!r.warnings.some((s) => /not running/.test(s)), r.warnings.join(' | '));
+    const k = x.kp.status();
+    assert.deepEqual([k.socketOpen, k.waitingForSim], [true, false]);
+    assert.ok(x.page().st.envelopes.length >= 1);
+    assert.equal(x.clock.now, 0);
+    assert.ok(ms < 1000, `${ms} ms`);
+    // a replacing start is one start; a reset is a stop
+    assert.equal((await x.api.sim.start({ clock: 'virtual' })).ok, true);
+    assert.equal((await x.api.sim.reset()).ok, true);
+    assert.deepEqual(seen, [true, true, false]);
+    assert.equal(x.kp.status().waitingForSim, true);
+  } finally { x.kp.dispose(); }
 });
 
 // ------------------------------------------------------------- the watch realm ----
@@ -460,6 +684,18 @@ test('the watch preview\'s status: open while a session is on a build (also one 
   const s = wp.status();
   assert.deepEqual([s.open, s.loaded], [true, false]);
   assert.equal(s.build.at, 1_790_000_000_123, "the watch target's time");
+  // waitingForSim: open with no sim running; a start or reset redraws the pane (onRunning)
+  let running = false; const subs = new Set(); let changes = 0;
+  const sim2 = { onEnvelope: () => () => {}, onRunning: (cb) => { subs.add(cb); return () => subs.delete(cb); }, running: () => running };
+  const wp2 = new WatchPreview({ host: { textContent: '' }, sim: sim2, win: {}, onChange: () => { changes++; } });
+  assert.equal(wp2.status().waitingForSim, false, 'closed: nothing to wait for');
+  Object.assign(wp2, { build, size: parseWatchSize('45mm') });
+  assert.equal(wp2.status().waitingForSim, true);
+  running = true; for (const cb of subs) cb(true);
+  assert.equal(wp2.status().waitingForSim, false);
+  assert.equal(changes, 1, 'the start redrew the pane');
+  wp2.dispose();
+  assert.equal(subs.size, 0, 'dispose unsubscribes');
   assert.equal(wp.close(), true, 'there was a session to close');
   assert.equal(wp.status().open, false);
 });

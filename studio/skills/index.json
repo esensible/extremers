@@ -28,7 +28,7 @@
     "dir": "studio-api",
     "description": "How to drive the extremers studio from window.api in Chrome: the calling convention, the workflow from an empty browser to a bundle running on the C6 (describe → skill → project.create → engine.check → ui.build → preview → bundle.pack → device.*), what a person must do (the Bluetooth chooser, pairing at the Kindle, Chrome flags), and which groups are wired today. Read this first.",
     "path": "skills/studio-api/SKILL.md",
-    "chars": 26099,
+    "chars": 26699,
     "assets": []
   },
   {
