@@ -16,7 +16,7 @@
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm": {
-      "sha256": "13d6bed0d04049cb20eb5e1db6165b56630473a6822bd0065243898c4f06d08f",
+      "sha256": "a82d16fbd49a7bb6e7e5d67753226fb22ae06d651ebf18cd55000d65c28051f1",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm.d.ts": {
