@@ -176,6 +176,9 @@ async fn main(spawner: Spawner) -> ! {
         track.map(|t| t as &'static mut (dyn TrackLog + Send)),
         store.map(|s| s as &'static mut (dyn Bundles + Send)),
     ));
+    if let Some(identity) = storage::running_identity() {
+        runtime.set_identity(identity);
+    }
     memory::log("host up");
     spawner.spawn(boot_package_task(runtime).unwrap());
 

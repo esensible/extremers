@@ -16,6 +16,7 @@ members = [
     # tools
     "tools/bindgen",
     "tools/package",
+    "tools/image",
 
     # targets
     "tgt-std",

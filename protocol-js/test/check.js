@@ -82,6 +82,18 @@ export function runVectors(suite, protocol, vectors) {
     check(`decode ${v.type} ${v.what}: refuses truncation`, truncated === 0, truncated + " prefixes decoded");
     check(`decode ${v.type} ${v.what}: refuses a trailing byte`, throws(() => decode(bytes.concat([0]))), "decoded");
   }
+  // the host's: a firmware image, laid out as the format's constants say
+  // (what a client's image check reads; the SHA-256 itself it can't check
+  // here, QuickJS has no WebCrypto)
+  const fw = vectors.firmware;
+  if (fw) {
+    const image = hexBytes(fw.image);
+    const chip = image[fw.at_chip_id] | (image[fw.at_chip_id + 1] << 8);
+    check("firmware image: magic", image[0] === fw.magic, image[0]);
+    check("firmware image: chip id", chip === fw.chip_id, chip);
+    check("firmware image: whole 16-byte lines", image.length % 16 === 0, image.length);
+    check("firmware image: ends with its digest", toHex(image.slice(image.length - fw.digest_len)) === fw.sha256, "");
+  }
   return results;
 }
 
@@ -103,7 +115,7 @@ export function runRefusals() {
   check("varint too long refused", throws(() => D([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0].concat(H, [0]))), "decoded");
   check("state longer than the bytes refused", throws(() => D([0, 0].concat(H, [2, 1]))), "decoded");
   check("unknown host event refused", throws(() => host.decodeHostEvent([5])), "decoded");
-  check("unknown bundle request refused", throws(() => host.decodeHostEvent([4, 7])), "decoded");
+  check("unknown bundle request refused", throws(() => host.decodeHostEvent([4, 9])), "decoded");
   check("bad Option tag refused", throws(() => host.decodeChooseView([0, 2])), "decoded");
   check("not bytes refused", throws(() => D(42)), "decoded");
   // the encoders refuse values they cannot write exactly
@@ -126,7 +138,8 @@ export function runRefusals() {
   check("unit variant without value", toHex(host.encodeHostEvent({ tag: "SelectDefault" })) === "01", "");
   check("race events in wire order", race.VARIANTS.RaceEvent.join() === "LineStbd,LinePort,BumpSeq,RaceFinish", race.VARIANTS.RaceEvent.join());
   check("host events in wire order", host.VARIANTS.HostEvent.join() === "Select,SelectDefault,Engine,Ble,Bundle", host.VARIANTS.HostEvent.join());
-  check("bundle requests in wire order", host.VARIANTS.BundleRequest.join() === "List,Begin,Commit,Abort,Delete,Activate,Get", host.VARIANTS.BundleRequest.join());
+  check("bundle requests in wire order", host.VARIANTS.BundleRequest.join() === "List,Begin,Commit,Abort,Delete,Activate,Get,Firmware,BeginFirmware", host.VARIANTS.BundleRequest.join());
+  check("bundle responses end with the firmware's", host.VARIANTS.BundleResponse.slice(-2).join() === "Firmware,Rebooting", host.VARIANTS.BundleResponse.join());
   const begin = (sha256) => host.encodeHostEvent({ tag: "Bundle", value: { tag: "Begin", value: { id: 1, len: 2, sha256 } } });
   check("a Begin's SHA-256 is 32 bytes", begin(new Array(32).fill(7)).length === 2 + 1 + 1 + 32, "");
   check("short SHA-256 refused", throws(() => begin([1, 2, 3])), "encoded");

@@ -42,7 +42,9 @@ use common::{
         DATA_BUNDLES_LEN, DATA_BUNDLES_OFFSET, DATA_SLOT_USED, DATA_TRACKS_LEN, DATA_TRACKS_OFFSET,
         MAX_BLE_BONDS,
     },
+    host::Identity,
 };
+use extreme_protocol::firmware;
 use defmt::{info, warn};
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -373,6 +375,7 @@ fn locate_data_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashSto
         );
         return;
     }
+    identify(&booted, flash);
 
     let mut ota_slots = 0usize;
     let mut otadata = None;
@@ -418,6 +421,58 @@ fn locate_data_slot(table: &partitions::PartitionTable<'_>, flash: &mut FlashSto
         offset: slot.offset(),
         len: slot.len(),
     });
+}
+
+static RUNNING: embassy_sync::once_lock::OnceLock<Identity> = embassy_sync::once_lock::OnceLock::new();
+
+/// The running firmware, as [`init`] found it (`firmware: running ...` at
+/// boot), with the data slot's length as the largest update; `None` if its
+/// image did not check out (logged).
+pub fn running_identity() -> Option<Identity> {
+    let running = RUNNING.try_get()?;
+    Some(Identity { max_len: data_slot().map_or(0, |s| s.len), ..*running })
+}
+
+/// Walks the image in the running slot `booted` (the app image format,
+/// `extreme_protocol::firmware`) and keeps its appended digest, its
+/// identity, for [`running_identity`]. Reads only. The digest is not
+/// checked against the image: the bootloader did that before booting it.
+fn identify(booted: &partitions::PartitionEntry, flash: &mut FlashStorage<'static>) {
+    let started = esp_hal::time::Instant::now();
+    let (offset, len) = (booted.offset(), booted.len());
+    let read = |at: u32, buf: &mut [u8]| embedded_storage::nor_flash::ReadNorFlash::read(flash, offset + at, buf);
+    let image = match firmware::walk(len, read) {
+        Ok(image) => image,
+        Err((reason, detail)) => {
+            warn!(
+                "firmware: the image in {=str} does not check out (reason {=u8}, detail {=u32:#x}); no identity",
+                booted.label_as_str(),
+                reason,
+                detail
+            );
+            return;
+        }
+    };
+    let mut sha256 = [0u8; 32];
+    if let Err(e) = embedded_storage::nor_flash::ReadNorFlash::read(flash, offset + image.digest_at, &mut sha256) {
+        warn!("firmware: cannot read the digest: {:?}; no identity", defmt::Debug2Format(&e));
+        return;
+    }
+    let slot = booted.raw_subtype() - OTA_SUBTYPES.start();
+    let mut hex = [0u8; 64];
+    for (i, b) in sha256.iter().enumerate() {
+        hex[2 * i] = b"0123456789abcdef"[(b >> 4) as usize];
+        hex[2 * i + 1] = b"0123456789abcdef"[(b & 0xF) as usize];
+    }
+    info!(
+        "firmware: running ota_{=u8}, {=u32} B, sha256 {=str}, version {=str} (walked in {=u64} us)",
+        slot,
+        image.len(),
+        core::str::from_utf8(&hex).unwrap_or("?"),
+        crate::ESP_APP_DESC.version(),
+        started.elapsed().as_micros()
+    );
+    let _ = RUNNING.init(Identity { sha256, slot, len: image.len(), max_len: 0 });
 }
 
 /// Logs which slot `otadata` selects, with each sector's `ota_seq`. Reads

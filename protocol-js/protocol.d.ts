@@ -25,7 +25,9 @@ export type BundleRequest =
   | { tag: "Abort"; value: null }
   | { tag: "Delete"; value: { id: number } }
   | { tag: "Activate"; value: { id: number } }
-  | { tag: "Get"; value: { id: number; from: number } };
+  | { tag: "Get"; value: { id: number; from: number } }
+  | { tag: "Firmware"; value: null }
+  | { tag: "BeginFirmware"; value: { len: number; sha256: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] } };
 
 export type ChooseView = { packages: Array<PackageInfo>; ble: BleStatusView | null };
 
@@ -60,7 +62,9 @@ export type BundleResponse =
   | { tag: "Activated"; value: { id: number } }
   | { tag: "Sending"; value: { id: number; len: number; sha256: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number]; chunk: number } }
   | { tag: "Sent"; value: { id: number } }
-  | { tag: "Error"; value: { request: number; code: BundleError; detail: number } };
+  | { tag: "Error"; value: { request: number; code: BundleError; detail: number } }
+  | { tag: "Firmware"; value: { sha256: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number]; slot: number; pending: boolean; max_len: number } }
+  | { tag: "Rebooting"; value: null };
 
 export type BundleEntry = { manifest: Manifest; len: number; active: boolean; boot: boolean; builtin: boolean };
 

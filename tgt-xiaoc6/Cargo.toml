@@ -79,8 +79,10 @@ portable-atomic = { workspace = true, features = ["critical-section"] }
 # Choose's bundle, embedded in flash
 extreme-packages = { path = "../extreme-packages" }
 
-# feature `selftest` (src/selftest.rs)
-extreme-protocol = { path = "../extreme-protocol", optional = true }
+# the firmware image format (src/storage.rs: the running image's identity),
+# and the messages feature `selftest` (src/selftest.rs) sends
+extreme-protocol = { path = "../extreme-protocol" }
+# feature `selftest`
 postcard = { workspace = true, optional = true }
 
 [features]
@@ -88,7 +90,7 @@ default = ["esp32c6"]
 # Drives the host from inside the firmware (Choose -> Race -> back, with
 # synthetic GPS fixes, every 30 s) and logs what happens; for measuring on
 # a box with no client and no GPS.
-selftest = ["dep:extreme-protocol", "dep:postcard"]
+selftest = ["dep:postcard"]
 # Opens the BLE pairing window for 120 s at boot, as "Pair watch" on the
 # Kindle does, so a browser can bond with no Kindle at hand (src/main.rs,
 # BLE.md "Bundles"). Development only: anyone in range can bond meanwhile.

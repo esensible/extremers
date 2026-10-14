@@ -22,7 +22,7 @@ use embassy_time::{Duration, Instant, with_timeout};
 use portable_atomic::{AtomicU32, AtomicU64};
 
 use extreme_protocol::{
-    ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, CHOOSE, ChooseView,
+    ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, BundleResponse, CHOOSE, ChooseView,
     Envelope, GetAsset, HostEvent, PackageId, PackageInfo, REGISTRY_MAX, STATE_MAX, UiHashes,
     package_id,
 };
@@ -310,6 +310,26 @@ pub struct Host {
     /// The upload in progress as BLE bundle requests see it: its connection
     /// and its last activity ([`crate::ble_bundles`]).
     pub(crate) upload: BlockingMutex<CriticalSectionRawMutex, Cell<Option<Session>>>,
+    /// The running firmware; `None` until the target says
+    /// ([`set_identity`](Self::set_identity)), and on a host that doesn't.
+    identity: BlockingMutex<CriticalSectionRawMutex, Cell<Option<Identity>>>,
+}
+
+/// The running firmware, as the target found it at boot
+/// ([`Host::set_identity`]): what a `Firmware` request is answered with
+/// ([`Host::firmware_info`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Identity {
+    /// The image's appended digest (its last 32 bytes, the SHA-256 of the
+    /// rest; `extreme_protocol::firmware`): which firmware this is.
+    pub sha256: [u8; 32],
+    /// The app slot it runs from: n for `ota_n`.
+    pub slot: u8,
+    /// The image's length, bytes.
+    pub len: u32,
+    /// The largest image an update can bring: the data slot's length (0
+    /// without one).
+    pub max_len: u32,
 }
 
 /// A reader of bundle bytes ([`Host::lease`]); dropping it ends the read.
@@ -381,6 +401,7 @@ impl Host {
             leases: AtomicU32::new(0),
             boot_changes: Signal::new(),
             upload: BlockingMutex::new(Cell::new(None)),
+            identity: BlockingMutex::new(Cell::new(None)),
         };
         if let Ok(mut active) = host.active.try_lock() {
             host.start(&mut active, boot);
@@ -591,6 +612,27 @@ impl Host {
     /// The upload in progress, if any.
     pub async fn bundle_uploading(&self) -> Option<Uploading> {
         self.store.lock().await.as_deref().and_then(|s| s.uploading())
+    }
+
+    // ---- the firmware ----
+
+    /// The running firmware, as the target found it at boot.
+    pub fn set_identity(&self, identity: Identity) {
+        self.identity.lock(|i| i.set(Some(identity)));
+    }
+
+    /// The answer to a `Firmware` request: the running firmware; `None` on
+    /// a host that hasn't said which ([`set_identity`](Self::set_identity)).
+    pub fn firmware_info(&self) -> Option<BundleResponse> {
+        let identity = self.identity.lock(|i| i.get())?;
+        Some(BundleResponse::Firmware {
+            sha256: identity.sha256,
+            slot: identity.slot,
+            // on trial after an update until it confirms itself: no
+            // updates yet, so never
+            pending: false,
+            max_len: identity.max_len,
+        })
     }
 
     // ---- inputs ----

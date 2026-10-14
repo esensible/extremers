@@ -6,7 +6,7 @@ use extreme_protocol::{
     ASSET_HASH_NOT_CURRENT, ASSET_OK, ASSET_UNKNOWN_PACKAGE, AssetHeader, BleCommand, BleNote,
     BleStatusView, BundleEntry, BundleError, BundleRequest, BundleResponse, CHOOSE, ChooseView,
     Envelope, GetAsset, HostEvent, Manifest, NO_WATCH_BUNDLE, Name, PackageInfo, REQUEST_DATA,
-    UiHashes, package_id,
+    UiHashes, firmware, package_id,
 };
 use extreme_race::{LineView, Phase, RaceEvent, RaceView};
 use extreme_tune::TuneView;
@@ -232,7 +232,9 @@ pub fn host_vectors() -> Value {
     ] {
         all.push(vector("AssetHeader", what, &header));
     }
-    file("The host protocol.", all)
+    let mut out = file("The host protocol; `firmware`: a firmware image (hex) with its appended digest and the image format's constants.", all);
+    out["firmware"] = firmware_image();
+    out
 }
 
 /// A SHA-256 for the vectors.
@@ -253,6 +255,9 @@ pub fn bundle_requests() -> Vec<(&'static str, BundleRequest)> {
         ("activate choose", BundleRequest::Activate { id: CHOOSE }),
         ("get race from 0", BundleRequest::Get { id: RACE, from: 0 }),
         ("get race from 9600", BundleRequest::Get { id: RACE, from: 9600 }),
+        ("firmware", BundleRequest::Firmware),
+        ("begin firmware, 1734160 bytes", BundleRequest::BeginFirmware { len: 1_734_160, sha256: SHA }),
+        ("begin firmware, largest", BundleRequest::BeginFirmware { len: u32::MAX, sha256: [0xff; 32] }),
     ]
 }
 
@@ -288,7 +293,57 @@ pub fn bundle_responses() -> Vec<(&'static str, BundleResponse)> {
         ("flash", error(REQUEST_DATA, BundleError::Flash, 0)),
         ("timeout", error(2, BundleError::Timeout, 0)),
         ("largest detail", error(u8::MAX, BundleError::Invalid, u32::MAX)),
+        ("firmware: ota_0, confirmed", BundleResponse::Firmware { sha256: SHA, slot: 0, pending: false, max_len: 0x1E_0000 }),
+        ("firmware: ota_1, pending", BundleResponse::Firmware { sha256: SHA, slot: 1, pending: true, max_len: 0x1E_0000 }),
+        ("firmware: largest", BundleResponse::Firmware { sha256: [0xff; 32], slot: u8::MAX, pending: true, max_len: u32::MAX }),
+        ("rebooting", BundleResponse::Rebooting),
+        ("begin firmware not allowed", error(8, BundleError::NotAllowed, 0)),
+        ("invalid image: checksum", error(2, BundleError::Invalid, firmware::reason::CHECKSUM as u32 | 0x12_34 << 8)),
     ]
+}
+
+/// A firmware image to check a client's image checks against (the studio's
+/// `checkImage`): two small segments, its checksum and its appended
+/// digest, as `extreme_protocol::firmware` takes them, with the format's
+/// constants.
+pub fn firmware_image() -> Value {
+    use extreme_protocol::firmware::{
+        AT_APPEND_DIGEST, AT_CHIP_ID, AT_ENTRY, AT_SEGMENTS, CHECKSUM_SEED, CHIP_ID_C6, DIGEST_LEN, HEADER_LEN, IMAGE_MAGIC,
+    };
+    use sha2::{Digest, Sha256};
+    let segments: [&[u8]; 2] = [&[0x13, 0x00, 0x00, 0x00, 0x6f, 0x00, 0x00, 0x00], &[0xa5; 20]];
+    let mut image = vec![0u8; HEADER_LEN as usize];
+    image[0] = IMAGE_MAGIC;
+    image[AT_SEGMENTS] = segments.len() as u8;
+    image[AT_ENTRY..AT_ENTRY + 4].copy_from_slice(&0x4080_0000u32.to_le_bytes());
+    image[AT_CHIP_ID..AT_CHIP_ID + 2].copy_from_slice(&CHIP_ID_C6.to_le_bytes());
+    image[AT_APPEND_DIGEST] = 1;
+    let mut checksum = CHECKSUM_SEED;
+    for (i, s) in segments.iter().enumerate() {
+        image.extend_from_slice(&(0x4200_0000u32 + 0x1_0000 * i as u32).to_le_bytes());
+        image.extend_from_slice(&(s.len() as u32).to_le_bytes());
+        image.extend_from_slice(s);
+        checksum = s.iter().fold(checksum, |c, b| c ^ b);
+    }
+    while image.len() % 16 != 15 {
+        image.push(0);
+    }
+    image.push(checksum);
+    let digest = Sha256::digest(&image);
+    image.extend_from_slice(&digest);
+    let read = |at: u32, buf: &mut [u8]| {
+        buf.copy_from_slice(&image[at as usize..at as usize + buf.len()]);
+        Ok::<(), ()>(())
+    };
+    firmware::check(image.len() as u32, read).expect("the synthetic image checks out");
+    json!({
+        "magic": IMAGE_MAGIC,
+        "chip_id": CHIP_ID_C6,
+        "at_chip_id": AT_CHIP_ID,
+        "digest_len": DIGEST_LEN,
+        "image": hex(&image),
+        "sha256": hex(&digest),
+    })
 }
 
 /// The race package's vectors.

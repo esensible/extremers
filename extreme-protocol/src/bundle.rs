@@ -11,6 +11,9 @@
 //! `Ack` → `Ack{len}` → `Commit` → `Committed`. A `Begin` of the same
 //! upload (id, length, SHA-256) within [`UPLOAD_IDLE_SECS`] of its last
 //! activity resumes it, from any connection.
+//!
+//! The firmware goes the same way: `Firmware` says which is running, and a
+//! `BeginFirmware` upload replaces it.
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -48,6 +51,15 @@ pub enum BundleRequest {
     /// [`BundleResponse::Sending`], the bytes on `data`, then
     /// [`BundleResponse::Sent`].
     Get { id: PackageId, from: u32 },
+    /// The running firmware: [`BundleResponse::Firmware`].
+    Firmware,
+    /// Starts (or resumes) a firmware update: an image (see
+    /// [`firmware`](crate::firmware)) of `len` bytes whose appended digest
+    /// (its last 32 bytes, the SHA-256 of the rest) is `sha256`, uploaded
+    /// as a bundle is (`Ready`, `data`, `Ack`, then `Commit` or `Abort`)
+    /// into the data slot, which it wipes. A host that cannot take one
+    /// answers [`BundleError::NotAllowed`].
+    BeginFirmware { len: u32, sha256: [u8; 32] },
 }
 
 impl BundleRequest {
@@ -61,6 +73,8 @@ impl BundleRequest {
             BundleRequest::Delete { .. } => 4,
             BundleRequest::Activate { .. } => 5,
             BundleRequest::Get { .. } => 6,
+            BundleRequest::Firmware => 7,
+            BundleRequest::BeginFirmware { .. } => 8,
         }
     }
 }
@@ -98,6 +112,13 @@ pub enum BundleResponse {
     /// The request ([`BundleRequest::code`], or [`REQUEST_DATA`]) was
     /// refused; `detail` per [`BundleError`].
     Error { request: u8, code: BundleError, detail: u32 },
+    /// The running firmware: its image's appended digest, the app slot it
+    /// runs from (n for `ota_n`), whether it is still on trial after an
+    /// update (not yet confirmed), and the largest image an update can
+    /// bring (the data slot's length; 0 without one).
+    Firmware { sha256: [u8; 32], slot: u8, pending: bool, max_len: u32 },
+    /// A firmware update was committed: the host restarts into it now.
+    Rebooting,
 }
 
 /// A bundle as `List` gives it.
@@ -137,7 +158,8 @@ pub enum BundleError {
     Hash,
     /// The bundle doesn't validate: `detail` is the reason
     /// (`extreme_bundle::validate::reason`) in its low 8 bits and the
-    /// reason's own detail's low 24 bits above them.
+    /// reason's own detail's low 24 bits above them (a firmware image's
+    /// reason is a [`firmware::reason`](crate::firmware::reason)).
     Invalid,
     /// The engine needs more than the host has: `detail` is which limit
     /// (`extreme_bundle::validate::limit`).
@@ -235,5 +257,6 @@ impl<'a> DataPacket<'a> {
 pub const BUNDLE_RESPONSE_MAX: usize = 1 + (5 + 1 + crate::NAME_MAX + 3 + 3 + 8 + 16 + 5) + 5 + 3;
 
 /// Largest [`HostEvent::Bundle`](crate::HostEvent::Bundle): its tag, then a
-/// `Begin` (tag, two 5-byte varints, the SHA-256).
+/// `Begin` (tag, two 5-byte varints, the SHA-256; a `BeginFirmware` is one
+/// varint less).
 pub const BUNDLE_EVENT_MAX: usize = 1 + 1 + 5 + 5 + 32;

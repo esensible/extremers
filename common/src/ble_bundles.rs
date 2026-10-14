@@ -251,6 +251,10 @@ impl Host {
                 let sha256 = Sha256::digest(bytes).into();
                 BundleAnswer::Download(Download { id, bytes, from, chunk: client.chunk, sha256, _lease: lease })
             }
+            BundleRequest::Firmware => one(self.firmware_info().unwrap_or(error(code, BundleError::NotFound, 0))),
+            // no host takes a firmware upload yet (it needs somewhere to
+            // write the image, and a way to boot it)
+            BundleRequest::BeginFirmware { .. } => one(error(code, BundleError::NotAllowed, 0)),
         }
     }
 

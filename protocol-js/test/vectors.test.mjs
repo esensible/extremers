@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { SUITES, runVectors, runRefusals } from "./check.js";
 
 const load = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
@@ -17,6 +18,17 @@ test("the vectors cover every message", () => {
   // envelopes of Choose and of both packages
   assert.equal(new Set(host.filter((v) => v.type === "Envelope").map((v) => v.value.active)).size, 3);
   assert.ok(host.length > 60);
+  // the firmware's requests and responses, and an image
+  assert.ok(["Firmware", "BeginFirmware"].every((tag) => host.some((v) => v.type === "BundleRequest" && v.value.tag === tag)));
+  assert.ok(["Firmware", "Rebooting"].every((tag) => host.some((v) => v.type === "BundleResponse" && v.value.tag === tag)));
+  assert.ok(load(SUITES[0][2]).firmware);
+});
+
+test("the firmware image's digest is the SHA-256 of the rest", () => {
+  const fw = load(SUITES[0][2]).firmware;
+  const image = Buffer.from(fw.image, "hex");
+  const body = image.subarray(0, image.length - fw.digest_len);
+  assert.equal(createHash("sha256").update(body).digest("hex"), fw.sha256);
 });
 
 for (const [suite, protocol, path] of SUITES) {

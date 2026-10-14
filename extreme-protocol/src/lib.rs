@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 mod bundle;
 pub use bundle::*;
+pub mod firmware;
 
 /// A package's identity: [`package_id`] of its name, stable across
 /// versions. [`CHOOSE`] is the built-in chooser.
@@ -420,9 +421,20 @@ mod tests {
             BundleResponse::Ready { offset: u32::MAX, chunk: u16::MAX, window: u16::MAX },
             BundleResponse::Sending { id: u32::MAX, len: u32::MAX, sha256: [0xff; 32], chunk: u16::MAX },
             BundleResponse::Error { request: REQUEST_DATA, code: BundleError::Timeout, detail: u32::MAX },
+            BundleResponse::Firmware { sha256: [0xff; 32], slot: u8::MAX, pending: true, max_len: u32::MAX },
+            BundleResponse::Rebooting,
         ];
         for r in others {
             assert!(postcard::to_stdvec(&r).unwrap().len() <= BUNDLE_RESPONSE_MAX, "{r:?}");
+        }
+        let firmware = BundleResponse::Firmware { sha256: [0xff; 32], slot: u8::MAX, pending: true, max_len: u32::MAX };
+        assert_eq!(postcard::to_stdvec(&firmware).unwrap().len(), 1 + 32 + 1 + 1 + 5);
+        let begin_firmware = HostEvent::Bundle(BundleRequest::BeginFirmware { len: u32::MAX, sha256: [0xff; 32] });
+        assert_eq!(b(&begin_firmware).len(), 1 + 1 + 5 + 32);
+        assert!(b(&begin_firmware).len() <= BUNDLE_EVENT_MAX);
+        assert_eq!(postcard::from_bytes::<HostEvent>(&b(&begin_firmware)).unwrap(), begin_firmware);
+        for r in [BundleRequest::Firmware, BundleRequest::BeginFirmware { len: 1, sha256: [0; 32] }] {
+            assert_eq!(postcard::to_stdvec(&r).unwrap()[0], r.code());
         }
         assert!(BUNDLE_RESPONSE_MAX <= 185 - 3);
 

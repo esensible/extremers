@@ -1,0 +1,13 @@
+[package]
+name = "extreme-image"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Writes the C6 firmware's app image from its ELF, byte for byte what probe-rs flashes into ota_0: the file a firmware update uploads"
+
+[dependencies]
+extreme-protocol = { path = "../../extreme-protocol" }
+# The image format, from the same espflash release probe-rs builds it with
+# (its library only: no CLI, no serial port)
+espflash = { version = "4.3", default-features = false }
+sha2 = "0.10"

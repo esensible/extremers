@@ -1022,6 +1022,22 @@ fn bundle_requests_only_over_ble() {
     assert_eq!(ask1(&host, C0, begin_of(RACE, race_bytes())), err(BEGIN, BundleError::NotFound, 0));
 }
 
+/// `Firmware` answers what the target said is running; a host that said
+/// nothing has none to tell. No host takes a firmware upload yet.
+#[test]
+fn the_running_firmware_over_ble() {
+    let host = full();
+    assert_eq!(ask1(&host, C0, BundleRequest::Firmware), err(7, BundleError::NotFound, 0));
+    let sha256 = [0x5a; 32];
+    host.set_identity(Identity { sha256, slot: 0, len: 1_729_376, max_len: 0x1E_0000 });
+    assert_eq!(
+        ask1(&host, C1, BundleRequest::Firmware),
+        BundleResponse::Firmware { sha256, slot: 0, pending: false, max_len: 0x1E_0000 }
+    );
+    let begin = BundleRequest::BeginFirmware { len: 1_729_376, sha256 };
+    assert_eq!(ask1(&host, C0, begin), err(8, BundleError::NotAllowed, 0));
+}
+
 // ---- a list in the state: Tune ----
 
 const TUNE: PackageId = package_id("tune");

@@ -297,6 +297,8 @@ public enum BundleRequest: Equatable, PostcardCodable {
     case delete(id: UInt32)
     case activate(id: UInt32)
     case get(id: UInt32, from: UInt32)
+    case firmware
+    case beginFirmware(len: UInt32, sha256: [UInt8])
 
     public init(from r: inout PostcardReader) throws {
         let tag = try r.u32()
@@ -308,6 +310,8 @@ public enum BundleRequest: Equatable, PostcardCodable {
         case 4: self = .delete(id: try r.u32())
         case 5: self = .activate(id: try r.u32())
         case 6: self = .get(id: try r.u32(), from: try r.u32())
+        case 7: self = .firmware
+        case 8: self = .beginFirmware(len: try r.u32(), sha256: try r.array(32) { r in try r.u8() })
         default: throw PostcardError.unknownVariant("BundleRequest", tag)
         }
     }
@@ -321,6 +325,8 @@ public enum BundleRequest: Equatable, PostcardCodable {
         case .delete(let id): w.u32(4); w.u32(id)
         case .activate(let id): w.u32(5); w.u32(id)
         case .get(let id, let from): w.u32(6); w.u32(id); w.u32(from)
+        case .firmware: w.u32(7)
+        case .beginFirmware(let len, let sha256): w.u32(8); w.u32(len); w.array(sha256, 32) { w, v in w.u8(v) }
         }
     }
 }
@@ -532,6 +538,8 @@ public enum BundleResponse: Equatable, PostcardCodable {
     case sending(id: UInt32, len: UInt32, sha256: [UInt8], chunk: UInt16)
     case sent(id: UInt32)
     case error(request: UInt8, code: BundleError, detail: UInt32)
+    case firmware(sha256: [UInt8], slot: UInt8, pending: Bool, max_len: UInt32)
+    case rebooting
 
     public init(from r: inout PostcardReader) throws {
         let tag = try r.u32()
@@ -547,6 +555,8 @@ public enum BundleResponse: Equatable, PostcardCodable {
         case 8: self = .sending(id: try r.u32(), len: try r.u32(), sha256: try r.array(32) { r in try r.u8() }, chunk: try r.u16())
         case 9: self = .sent(id: try r.u32())
         case 10: self = .error(request: try r.u8(), code: try BundleError(from: &r), detail: try r.u32())
+        case 11: self = .firmware(sha256: try r.array(32) { r in try r.u8() }, slot: try r.u8(), pending: try r.bool(), max_len: try r.u32())
+        case 12: self = .rebooting
         default: throw PostcardError.unknownVariant("BundleResponse", tag)
         }
     }
@@ -564,6 +574,8 @@ public enum BundleResponse: Equatable, PostcardCodable {
         case .sending(let id, let len, let sha256, let chunk): w.u32(8); w.u32(id); w.u32(len); w.array(sha256, 32) { w, v in w.u8(v) }; w.u16(chunk)
         case .sent(let id): w.u32(9); w.u32(id)
         case .error(let request, let code, let detail): w.u32(10); w.u8(request); code.encode(to: &w); w.u32(detail)
+        case .firmware(let sha256, let slot, let pending, let max_len): w.u32(11); w.array(sha256, 32) { w, v in w.u8(v) }; w.u8(slot); w.bool(pending); w.u32(max_len)
+        case .rebooting: w.u32(12)
         }
     }
 }
