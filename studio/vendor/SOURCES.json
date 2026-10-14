@@ -1,5 +1,5 @@
 {
-  "source_sha": "ccee8133a746653e7f28800a420b53446f8d4f3b",
+  "source_sha": "c638153f0f0e61f2039ad97227da38a23f40d178",
   "toolchain": {
     "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "wasm-bindgen": "wasm-bindgen 0.2.129",
@@ -16,7 +16,7 @@
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm": {
-      "sha256": "8f3647eb490fecbc20c2817521fcbbc3f65378ebdd9956c4895dd344efe71128",
+      "sha256": "e25aebb31ffe2e6f0a6cf4a8f827bc99e39e086c86adcf9816fec10992b01a95",
       "from": "engine/wasm (wasm-bindgen --target web)"
     },
     "engine-wasm/engine_wasm_bg.wasm.d.ts": {
