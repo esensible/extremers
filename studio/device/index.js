@@ -6,6 +6,7 @@
 
 import { createLink, LinkError, HINTS, DEVICE_NAME, SERVICE } from './ble.js';
 import { createBundles, archiveFiles, bundleManifest, hex } from './bundles.js';
+import { checkImage } from './firmware.js';
 
 export { DEVICE_NAME, SERVICE, HINTS };
 
@@ -21,14 +22,30 @@ function entryOut(e) {
   };
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * createDevice({ bluetooth, log, ...timing }) → controller. Timing options go
- * to createLink and createBundles (tests shorten them).
+ * to createLink and createBundles (tests shorten them), and these to a
+ * firmware update:
+ *   dropWaitMs (10000)        the box restarting after Rebooting (the link drops)
+ *   rebootWaitMs (90000)      it coming back (connected again)
+ *   confirmWaitMs (40000)     then confirming the new firmware (pending false)
+ *   pollMs (2000)             between tries meanwhile
  */
-export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log = () => {}, ...opts } = {}) {
+export function createDevice({
+  bluetooth = globalThis.navigator?.bluetooth,
+  log = () => {},
+  now = () => globalThis.performance?.now?.() ?? Date.now(),
+  dropWaitMs = 10000,
+  rebootWaitMs = 90000,
+  confirmWaitMs = 40000,
+  pollMs = 2000,
+  ...opts
+} = {}) {
   const L = (level, msg) => { try { log(level, `device: ${msg}`); } catch { /* ignore */ } };
   const link = createLink({ bluetooth, log: (lv, m) => L(lv, m), ...opts });
-  const bundles = createBundles(link, { log: (lv, m) => L(lv, m), ...opts });
+  const bundles = createBundles(link, { log: (lv, m) => L(lv, m), now, ...opts });
 
   let op = null; // the running operation's name
   let progress = null; // { phase, sent, total, kbps } of the running (or last) transfer
@@ -145,6 +162,90 @@ export function createDevice({ bluetooth = globalThis.navigator?.bluetooth, log 
 
     /** The firmware the box runs → { sha256 (hex: the image's appended digest), slot (n of ota_n), pending, maxLen }. */
     firmware: () => run('firmware', () => bundles.firmwareInfo()),
+
+    /**
+     * Update the box's firmware with `bytes` (target/xiaoc6.bin): firmwareInfo,
+     * checkImage (against the box's room), uploadFirmware, commitFirmware
+     * (Rebooting), the link drops as the box restarts, connect again until it
+     * is back, firmwareInfo until the new firmware confirms itself (pending
+     * false), then compare its sha256 with the image's: a box that kept (or
+     * went back to) the firmware it had says so in `updated: false` and
+     * `note`. Progress phases: firmware (the upload), reboot (from the commit
+     * until confirmed).
+     * → { updated, note?, from: { sha256, slot }, to: { sha256, slot, pending },
+     *     sha256, len, ms, kbps, rebootMs, chunk, window, rewinds, resends, resumes, progress }
+     */
+    updateFirmware: (bytes, { onProgress } = {}) => run('ota', async () => {
+      const report = (p) => { setProgress(p); try { onProgress?.(p); } catch { /* ignore */ } };
+      bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const before = await bundles.firmwareInfo();
+      const image = await checkImage(bytes, before.maxLen || null);
+      L('info', `firmware update: ota_${before.slot} runs ${before.sha256}; sending ${image.len} B, sha256 ${image.sha256}`);
+      // TODO(O3): the update wipes the data slot (the bundles and the
+      // track): save every non-builtin bundle (api.device.get) and the boot
+      // one first, restore them after the reboot (plan "Studio",
+      // device/index.js updateFirmware, store.js deviceBackups).
+      const up = await bundles.uploadFirmware(bytes, { onProgress: (p) => report({ ...p, phase: 'firmware' }) });
+      chunk = up.chunk; window = up.window;
+      const sentBytes = up.len - (up.resumedFrom ?? 0);
+      const kbps = Math.round((sentBytes / Math.max(1, up.ms)) * 10) / 10;
+      const rebooting = { phase: 'reboot', sent: up.len, total: up.len, kbps };
+      report(rebooting);
+      let dropped = false;
+      const offDrop = link.onDrop(() => { dropped = true; });
+      const t0 = now();
+      try {
+        await bundles.commitFirmware();
+        L('info', 'firmware update: the box checked the image and is rebooting into it');
+        while (!dropped && link.isConnected()) {
+          if (now() - t0 > dropWaitMs) {
+            throw Object.assign(new Error(`the box answered Rebooting but the link did not drop in ${dropWaitMs / 1000} s`), { hint: 'api.device.firmware() says what it runs; its boot log (defmt) says why it did not restart' });
+          }
+          await sleep(Math.min(100, pollMs));
+        }
+      } finally {
+        offDrop();
+      }
+      // back, and confirmed: every failure meanwhile (the box restarting
+      // again: a firmware that fails is rolled back after 3 boots) is tried
+      // again until the deadline
+      const deadline = now() + rebootWaitMs + confirmWaitMs;
+      let after = null;
+      let last = null;
+      while (now() < deadline) {
+        try {
+          if (!link.isConnected() && !(await link.waitConnected(Math.max(0, deadline - now())))) await link.connect();
+          after = await bundles.firmwareInfo();
+          if (!after.pending) break;
+          report({ ...rebooting, pending: true });
+        } catch (e) {
+          last = e;
+          L('info', `firmware update: waiting for the box (${e?.message ?? e})`);
+        }
+        await sleep(pollMs);
+      }
+      if (!after || after.pending) {
+        const why = after ? `it still runs ${after.sha256} on trial` : `it did not come back (${last?.message ?? 'no answer'})`;
+        throw Object.assign(new Error(`firmware update: ${why} after ${Math.round((now() - t0) / 1000)} s`), { hint: 'api.device.connect(), then api.device.firmware(); the boot log (defmt) says what the box did' });
+      }
+      const rebootMs = Math.round(now() - t0);
+      const updated = after.sha256 === image.sha256;
+      const note = updated
+        ? undefined
+        : after.sha256 === before.sha256
+          ? 'the box kept (or went back to) the firmware it had: the new one did not boot, or did not confirm itself (its boot log says why)'
+          : `the box runs ${after.sha256}, neither the old firmware nor the image`;
+      L(updated ? 'info' : 'warn', `firmware update: ota_${after.slot} runs ${after.sha256}${updated ? ', the image sent' : `: ${note}`} (${rebootMs} ms after the commit)`);
+      report({ phase: 'done', sent: up.len, total: up.len, kbps });
+      lastList = null;
+      return {
+        updated, ...(note ? { note } : {}),
+        from: { sha256: before.sha256, slot: before.slot },
+        to: { sha256: after.sha256, slot: after.slot, pending: after.pending },
+        sha256: image.sha256, len: image.len, ms: up.ms, kbps, rebootMs,
+        chunk: up.chunk, window: up.window, rewinds: up.rewinds, resends: up.resends, resumes: up.resumes, progress,
+      };
+    }),
 
     /**
      * Upload, commit, optionally activate an archive. → { installed: { id, name,

@@ -59,7 +59,7 @@ test('describe(): the device group, wired, with its final shapes', async () => {
   const { api } = world();
   const d = ok(assert, await api.describe());
   const fns = d.functions.filter((f) => f.group === 'device');
-  assert.deepEqual(fns.map((f) => f.name), ['device.status', 'device.connect', 'device.disconnect', 'device.list', 'device.firmware', 'device.install', 'device.activate', 'device.delete', 'device.get']);
+  assert.deepEqual(fns.map((f) => f.name), ['device.status', 'device.connect', 'device.disconnect', 'device.list', 'device.firmware', 'device.updateFirmware', 'device.install', 'device.activate', 'device.delete', 'device.get']);
   assert.ok(fns.every((f) => f.available));
   const by = Object.fromEntries(fns.map((f) => [f.name, f]));
   assert.deepEqual(by['device.install'].args.map((a) => a.name), ['opts.activate']);

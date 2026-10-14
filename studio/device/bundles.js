@@ -104,20 +104,51 @@ export const LIMITS = {
   10: 'state lists',
 };
 
-/** A BundleResponse Error in words (BLE.md "Errors"). */
-export function describeError(r) {
+// extreme_protocol::firmware::reason: why the box refused a firmware image
+// at its Commit (BundleError Invalid's detail: the reason, then its own
+// detail above it)
+export const FIRMWARE_REASONS = {
+  1: 'a flash read failed (at the offset given)',
+  2: 'the first byte is not 0xe9 (not an image)',
+  3: "not the ESP32-C6's chip id",
+  4: 'the header does not say a digest is appended',
+  5: 'no segments, or more than 16',
+  6: 'a segment runs past the image or is not a multiple of 4 long',
+  7: "the checksum byte is not the segments'",
+  8: 'the image does not end with its digest',
+};
+
+/**
+ * A BundleResponse Error in words (BLE.md "Errors"). firmware: the request
+ * was about a firmware update (a Commit or Abort can be either kind).
+ */
+export function describeError(r, { firmware = false } = {}) {
   const { request, code, detail } = r.value;
   const what = request === REQUEST_DATA ? 'data' : VARIANTS.BundleRequest[request] ?? `request ${request}`;
+  const fw = firmware || what === 'BeginFirmware';
   let why;
   switch (code.tag) {
-    case 'Busy': why = "busy: another connection's upload is in progress (or a deleted bundle is still being read)"; break;
+    case 'Busy':
+      why = fw
+        ? 'busy: a bundle upload is in progress, or the box runs a firmware still on trial (it confirms itself 20 s after it boots), or a bundle is still being read'
+        : "busy: another connection's upload is in progress, a firmware update is under way or on trial (or a deleted bundle is still being read)";
+      break;
     case 'NoUpload': why = 'no upload in progress'; break;
     case 'Sequence': why = `not the next bytes: send from ${detail}`; break;
     case 'Length':
       why = what === 'Commit' ? `not every byte is in: the box has ${detail}` : what === 'Get' ? `from past the end (the archive is ${detail} bytes)` : `length (${detail})`;
       break;
-    case 'Hash': why = "the bytes' SHA-256 is not the one Begin gave: the box dropped the upload"; break;
+    case 'Hash':
+      why = fw
+        ? "the image's SHA-256 is not the digest it ends with (a byte changed on the way, or the image is not whole): the box keeps its firmware and restarts into it"
+        : "the bytes' SHA-256 is not the one Begin gave: the box dropped the upload";
+      break;
     case 'Invalid': {
+      if (fw) {
+        const reason = detail & 0xff;
+        why = `not a firmware image the box can boot: ${FIRMWARE_REASONS[reason] ?? `reason ${reason}`} (detail ${detail >>> 8}); the box keeps its firmware and restarts into it`;
+        break;
+      }
       const reason = detail & 0xff;
       const sub = detail >>> 8;
       why = `invalid bundle: ${REASONS[reason] ?? `reason ${reason}`}`;
@@ -127,9 +158,13 @@ export function describeError(r) {
       break;
     }
     case 'OverLimit': why = `the engine needs more than the C6 has: ${LIMITS[detail] ?? `limit ${detail}`}`; break;
-    case 'NoSpace': why = 'no run of free sectors holds it'; break;
+    case 'NoSpace': why = fw ? "the image is larger than the box's other app slot" : 'no run of free sectors holds it'; break;
     case 'Full': why = 'the box holds 7 bundles besides Choose'; break;
-    case 'NotFound': why = what === 'Firmware' ? 'the box does not know which firmware it runs (its image did not check out at boot: its log says why)' : 'no bundle with that id on the box'; break;
+    case 'NotFound':
+      why = what === 'Firmware'
+        ? 'the box does not know which firmware it runs (its image did not check out at boot: its log says why)'
+        : fw ? 'the box has nowhere to write an update (no data slot: its boot log says why)' : 'no bundle with that id on the box';
+      break;
     case 'NotAllowed':
       if (what === 'BeginFirmware') why = 'not allowed: this firmware takes no firmware updates';
       else if (detail === 1) why = 'not allowed: a bundle without an engine';
@@ -137,18 +172,35 @@ export function describeError(r) {
       else if (what === 'Begin') why = "not allowed: Choose's id, or an id that is not the hash of the manifest's name";
       else why = "not allowed: Choose's id, or the manifest's id is not the one Begin named";
       break;
-    case 'Flash': why = 'a flash write or erase failed on the box'; break;
+    case 'Flash':
+      why = fw && what === 'Commit'
+        ? 'the image checked out, but the box could not make it the next boot (otadata): it restarts into the firmware it runs'
+        : 'a flash write or erase failed on the box';
+      break;
     case 'Timeout': why = 'the upload was idle for 60 s and the box dropped it'; break;
     default: why = code.tag;
   }
   return `${what}: ${why}`;
 }
 
-/** What to do about a BundleResponse Error. */
-export function errorHint(r) {
+/** What to do about a BundleResponse Error (firmware: as describeError). */
+export function errorHint(r, { firmware = false } = {}) {
   const { code, detail } = r.value;
+  const fw = firmware || r.value.request === VARIANTS.BundleRequest.indexOf('BeginFirmware');
+  if (fw) {
+    switch (code.tag) {
+      case 'Busy': return 'wait for the bundle upload to finish (or the box to confirm its firmware, 20 s after it boots), then api.device.updateFirmware() again';
+      case 'NoUpload': case 'Timeout': return 'api.device.updateFirmware() again: the box restarted, the upload starts over';
+      case 'Hash': return 'api.device.updateFirmware() again; if it happens every time, check the image (cargo run -p extreme-image -- <elf> prints its digest)';
+      case 'Invalid': return 'make the image again with `cargo run -p extreme-image -- <elf>` (target/xiaoc6.bin) and api.device.updateFirmware() with it';
+      case 'NoSpace': return 'the firmware has outgrown its app slot (tgt-xiaoc6/partitions.csv)';
+      case 'NotFound': if (r.value.request !== VARIANTS.BundleRequest.indexOf('Firmware')) return "the box's boot log (defmt) has 'storage:' and 'data slot' lines saying why"; break;
+      case 'Flash': return "the box's log (defmt) says what failed; it restarted into its firmware: api.device.updateFirmware() again";
+      default: break;
+    }
+  }
   switch (code.tag) {
-    case 'Busy': return 'another connection (a second tab or computer) is uploading: wait for it, or up to 60 s for the box to drop it, then try again';
+    case 'Busy': return 'another connection (a second tab or computer) is uploading, or a firmware update is under way or on trial: wait for it, or up to 60 s for the box to drop it, then try again';
     case 'NoUpload': case 'Timeout': return 'install again: the upload starts over';
     case 'Hash': return 'install again (the box dropped the upload); if it happens every time, api.device.status() and api.log() say how the upload went';
     case 'Invalid':
@@ -187,12 +239,12 @@ export function describeInvalid(text) {
 }
 
 export class BundleError extends Error {
-  constructor(r) {
-    super(describeError(r));
+  constructor(r, context = {}) {
+    super(describeError(r, context));
     this.response = r;
     this.code = r.value.code.tag;
     this.detail = r.value.detail;
-    this.hint = errorHint(r);
+    this.hint = errorHint(r, context);
   }
 }
 
@@ -201,7 +253,7 @@ const DROPPED = 'the link dropped';
 // ----------------------------------------------------------------- client ----
 
 /**
- * createBundles(link, { log, now, ...timing }) → { list, upload, commit, abort, activate, remove, get, firmwareInfo }.
+ * createBundles(link, { log, now, ...timing }) → { list, upload, sendImage, uploadFirmware, commit, commitFirmware, abort, activate, remove, get, firmwareInfo }.
  *   stallMs (4000)            no Ack for this long with the window full: send again from the last Ack
  *   maxStalls (3)             then give up
  *   requestTimeoutMs (20000)  an answer to a request
@@ -281,12 +333,8 @@ export function createBundles(link, {
   }
 
   /**
-   * Upload one archive: Begin → Ready { offset, chunk, window } → the bytes
-   * from offset to `data` in order, `chunk` per write, at most `window` past
-   * the last Ack → the final Ack. Then the caller commits. A gap (Error
-   * Sequence on data) rewinds to where the box asks; no Ack for stallMs with
-   * the window full resends from the last Ack; a dropped link waits for the
-   * reconnect and Begins again (the box resumes at what it has).
+   * Upload one archive (sendImage with Begin), checked first: its manifest's
+   * id is the hash of its name. Then the caller commits.
    * → { id, name, version, len, sha256, chunk, window, resumedFrom, resumes, rewinds, resends, written, ms }
    */
   async function upload(bytes, { onProgress = () => {} } = {}) {
@@ -297,20 +345,53 @@ export function createBundles(link, {
     const len = bytes.length;
     const sha = await sha256(bytes);
     L('info', `upload ${manifest.name} v${manifest.version}: ${len} B, sha256 ${hex(sha)}`);
-    const out = { id, name: manifest.name, version: manifest.version, len, sha256: hex(sha), chunk: null, window: null, resumedFrom: null, resumes: 0, rewinds: 0, resends: 0, written: 0, ms: 0 };
+    const sent = await sendImage(bytes, { tag: 'Begin', value: { id, len, sha256: Array.from(sha) } }, { onProgress });
+    return { id, name: manifest.name, version: manifest.version, len, sha256: hex(sha), ...sent };
+  }
+
+  /**
+   * Upload a firmware image (sendImage with BeginFirmware; the box writes
+   * it over its data slot, taking its bundles and track out of service
+   * until it restarts). `bytes` is checked by firmware.js checkImage first:
+   * its last 32 bytes are its digest. Then the caller commits
+   * (commitFirmware).
+   * → { len, sha256, chunk, window, resumedFrom, resumes, rewinds, resends, written, ms }
+   */
+  async function uploadFirmware(bytes, { onProgress = () => {} } = {}) {
+    bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const len = bytes.length;
+    const digest = bytes.subarray(len - 32);
+    L('info', `upload firmware: ${len} B, sha256 ${hex(digest)}`);
+    const sent = await sendImage(bytes, { tag: 'BeginFirmware', value: { len, sha256: Array.from(digest) } }, { onProgress });
+    return { len, sha256: hex(digest), ...sent };
+  }
+
+  /**
+   * Send `bytes` after `beginReq` (Begin or BeginFirmware): → Ready {
+   * offset, chunk, window } → the bytes from offset to `data` in order,
+   * `chunk` per write, at most `window` past the last Ack → the final Ack. A
+   * gap (Error Sequence on data) rewinds to where the box asks; no Ack for
+   * stallMs with the window full resends from the last Ack; a dropped link
+   * waits for the reconnect and begins again (the box resumes at what it
+   * has). onProgress({ phase: begin|upload|reconnect, sent, total, kbps }).
+   * → { chunk, window, resumedFrom, resumes, rewinds, resends, written, ms }
+   */
+  async function sendImage(bytes, beginReq, { onProgress = () => {} } = {}) {
+    const len = bytes.length;
+    const out = { chunk: null, window: null, resumedFrom: null, resumes: 0, rewinds: 0, resends: 0, written: 0, ms: 0 };
     const start = now();
     let first = true;
     const kbps = (n) => Math.round((n / Math.max(1, now() - start)) * 10) / 10; // bytes per ms = kB/s
     for (;;) {
       onProgress({ phase: 'begin', sent: 0, total: len, kbps: 0 });
-      const [ready] = await request({ tag: 'Begin', value: { id, len, sha256: Array.from(sha) } }, (r) => r.tag === 'Ready');
+      const [ready] = await request(beginReq, (r) => r.tag === 'Ready');
       const { offset, chunk, window } = ready.value;
       out.chunk = chunk; out.window = window;
       if (first) out.resumedFrom = offset || null;
       L('info', `ready at ${offset}${offset ? ' (resumed)' : ''}: chunks of ${chunk}, window ${window}`);
       first = false;
       try {
-        await pump(bytes, { offset, chunk, window, len, out, onProgress: (acked) => onProgress({ phase: 'upload', sent: acked, total: len, kbps: kbps(acked - (out.resumedFrom ?? 0)) }) });
+        await pump(bytes, { offset, chunk, window, len, out, context: { firmware: beginReq.tag === 'BeginFirmware' }, onProgress: (acked) => onProgress({ phase: 'upload', sent: acked, total: len, kbps: kbps(acked - (out.resumedFrom ?? 0)) }) });
         break;
       } catch (e) {
         if (e.code !== 'DROPPED' || out.resumes >= resumeTries) throw e;
@@ -318,7 +399,8 @@ export function createBundles(link, {
         L('warn', `the link dropped mid-upload; waiting for the reconnect to resume (${out.resumes} of ${resumeTries})`);
         onProgress({ phase: 'reconnect', sent: 0, total: len, kbps: 0 });
         if (!(await link.waitConnected(reconnectWaitMs))) {
-          throw new LinkError('the link dropped mid-upload and did not come back', 'DROPPED', 'api.device.connect(), then api.device.install() again within 60 s: the box resumes from what it has');
+          const again = beginReq.tag === 'BeginFirmware' ? 'api.device.updateFirmware()' : 'api.device.install()';
+          throw new LinkError('the link dropped mid-upload and did not come back', 'DROPPED', `api.device.connect(), then ${again} again within 60 s: the box resumes from what it has`);
         }
       }
     }
@@ -327,7 +409,7 @@ export function createBundles(link, {
     return out;
   }
 
-  async function pump(bytes, { offset, chunk, window, len, out, onProgress }) {
+  async function pump(bytes, { offset, chunk, window, len, out, context, onProgress }) {
     let sent = offset;
     let acked = offset;
     let failure = null;
@@ -343,7 +425,7 @@ export function createBundles(link, {
           acked = Math.min(acked, sent);
           rewound = true;
         } else {
-          failure = new BundleError(r);
+          failure = new BundleError(r, context);
         }
       }
       if (wake) wake();
@@ -394,6 +476,22 @@ export function createBundles(link, {
     return { id: c.value.id, contentHash: hex(c.value.content_hash) };
   }
 
+  /**
+   * Commit a firmware upload: the box checks the image (its digest, then its
+   * structure in flash), makes it the next boot's and answers Rebooting, then
+   * restarts into it (the link drops). A refusal (Hash, Invalid with a
+   * firmware reason) rejects; the box then restarts into the firmware it
+   * runs. → { rebooting: true }
+   */
+  async function commitFirmware() {
+    try {
+      await request({ tag: 'Commit', value: null }, (r) => r.tag === 'Rebooting', { ms: commitTimeoutMs });
+    } catch (e) {
+      throw e instanceof BundleError ? new BundleError(e.response, { firmware: true }) : e;
+    }
+    return { rebooting: true };
+  }
+
   /** The running firmware → { sha256 (hex), slot, pending, maxLen }. */
   async function firmwareInfo() {
     const [f] = await request({ tag: 'Firmware', value: null }, (r) => r.tag === 'Firmware');
@@ -440,7 +538,7 @@ export function createBundles(link, {
     return { bytes: buf, len: buf.length, sha256: sha, chunk: sending.chunk, ms };
   }
 
-  return { list, upload, commit, abort, activate, remove, get, firmwareInfo };
+  return { list, upload, sendImage, uploadFirmware, commit, commitFirmware, abort, activate, remove, get, firmwareInfo };
 }
 
 export { HINTS };

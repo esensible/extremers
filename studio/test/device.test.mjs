@@ -5,13 +5,14 @@
 // drops and resumes, Commit's checks, the busy guard, and the other requests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createDevice } from '../device/index.js';
 import { SERVICE, DEVICE_NAME } from '../device/ble.js';
-import { packageId, describeError, describeInvalid, errorHint, REASONS, LIMITS } from '../device/bundles.js';
-import { makeFakeBluetooth, makeBundle } from './fake-bluetooth.mjs';
+import { packageId, describeError, describeInvalid, errorHint, REASONS, LIMITS, FIRMWARE_REASONS } from '../device/bundles.js';
+import { checkImage } from '../device/firmware.js';
+import { makeFakeBluetooth, makeBundle, makeImage } from './fake-bluetooth.mjs';
 import { VENDOR } from './engine-world.mjs';
 
 const FAST = { connectTimeoutMs: 1000, advertTimeoutMs: 200, reconnectDelayMs: 5, pairRetryMs: 5, stallMs: 60, requestTimeoutMs: 2000, reconnectWaitMs: 2000 };
@@ -591,4 +592,119 @@ test("the validator's refusals in words: every reason and over-limit code valida
   assert.deepEqual(describeInvalid('invalid bundle: OverLimit { which: 3 }'), { why: 'the engine needs more than the C6 has: locals', hint: errorHint(commit('OverLimit', 3)) });
   assert.equal(describeInvalid('invalid bundle: Reason { reason: 16, detail: 0 }').why, "invalid bundle: a state list in layout.bin's list table is not the program's (detail 0)");
   assert.equal(describeInvalid('something else'), null);
+});
+
+// ======================================================= firmware updates
+
+const UPDATE = { dropWaitMs: 2000, rebootWaitMs: 3000, confirmWaitMs: 3000, pollMs: 20 };
+
+test('updateFirmware: checked, sent as a bundle is, Rebooting, the box back on the other slot, confirmed; its bundles gone', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  c6.install(makeBundle({ name: 'race' }), { active: true });
+  c6.update.pendingMs = 800; // longer than the reconnect takes here
+  await dev.connect();
+  const image = makeImage({ size: 20000 });
+  const phases = [];
+  let sawPending = false;
+  const r = await dev.updateFirmware(image, { onProgress: (p) => { if (phases.at(-1) !== p.phase) phases.push(p.phase); if (p.pending) sawPending = true; } });
+  const digest = sha(image.subarray(0, image.length - 32));
+  assert.equal(r.sha256, digest);
+  assert.equal(r.updated, true);
+  assert.equal(r.note, undefined);
+  assert.deepEqual(r.from, { sha256: 'f1'.repeat(32), slot: 0 });
+  assert.deepEqual(r.to, { sha256: digest, slot: 1, pending: false });
+  assert.equal(r.len, image.length);
+  assert.equal(r.chunk, c6.chunk);
+  assert.deepEqual(phases, ['firmware', 'reboot', 'done']);
+  assert.equal(sawPending, true, 'it waited while the new firmware was on trial');
+  assert.equal(c6.restarts, 1);
+  assert.equal(c6.windowViolations, 0);
+  // the requests, in order (the polls of Firmware while on trial aside)
+  assert.deepEqual([...new Set(c6.requests)], ['Firmware', 'BeginFirmware', 'Commit']);
+  // the data slot is the image's now: Choose only
+  assert.deepEqual((await dev.list()).bundles.map((b) => b.name), ['choose']);
+  assert.equal(dev.status().state, 'connected');
+  assert.equal(dev.status().progress.phase, 'done');
+});
+
+test('updateFirmware: refused at the commit (Hash, Invalid): the box restarts into its firmware; the words say so', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  await dev.connect();
+  // a byte changed on the way
+  const image = makeImage();
+  c6.corruptAt = 5000;
+  let e = await rejects(dev.updateFirmware(image), /^Commit: the image's SHA-256 is not the digest it ends with .* the box keeps its firmware and restarts into it$/);
+  assert.equal(e.code, 'Hash');
+  assert.match(e.hint, /updateFirmware\(\) again/);
+  assert.equal(c6.restarts, 1);
+  assert.notEqual(dev.status().state, 'busy');
+  assert.match(dev.status().lastError, /^ota: Commit:/);
+  // the box's own check of the image: reason 7, the checksum
+  c6.corruptAt = null;
+  await new Promise((r) => setTimeout(r, 100));
+  await dev.connect();
+  c6.update.refuse = 'Invalid';
+  c6.update.detail = 7 | (0x1234 << 8);
+  e = await rejects(dev.updateFirmware(image), /^Commit: not a firmware image the box can boot: the checksum byte is not the segments' \(detail 4660\)/);
+  assert.match(e.hint, /extreme-image/);
+  assert.equal(c6.restarts, 2);
+  assert.equal(c6.firmware.sha, 'f1'.repeat(32));
+});
+
+test('updateFirmware: the box comes back with its old firmware (the new one did not boot): updated false, with a note', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  await dev.connect();
+  c6.update.fallBack = true;
+  const r = await dev.updateFirmware(makeImage());
+  assert.equal(r.updated, false);
+  assert.match(r.note, /kept \(or went back to\) the firmware it had/);
+  assert.deepEqual(r.to, { sha256: 'f1'.repeat(32), slot: 0, pending: false });
+});
+
+test('updateFirmware: Busy while a bundle upload is live or the firmware is on trial; an image that is not one is refused before anything is sent', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  await dev.connect();
+  c6.busyOther = true;
+  let e = await rejects(dev.updateFirmware(makeImage()), /^BeginFirmware: busy: a bundle upload is in progress/);
+  assert.match(e.hint, /20 s after it boots/);
+  c6.busyOther = false;
+  c6.firmware = { ...c6.firmware, pending: true };
+  e = await rejects(dev.updateFirmware(makeImage()), /^BeginFirmware: busy/);
+  // and a bundle install while an update's image is going in: Busy
+  c6.firmware = { ...c6.firmware, pending: false };
+  c6.upload = { firmware: true, len: 100, sha: '', buf: new Uint8Array(100), received: 0, acked: 0, conn: null, expired: false };
+  e = await rejects(dev.install(makeBundle({ name: 'race' })), /^Begin: busy/);
+  c6.upload = null;
+  // checkImage: before anything goes
+  const before = c6.requests.length;
+  await rejects(dev.updateFirmware(new Uint8Array([0x7f, 0x45, 0x4c, 0x46, ...new Array(200).fill(0)])), /this is the ELF, not the firmware image/);
+  const cut = makeImage().subarray(0, 20000);
+  await rejects(dev.updateFirmware(cut), /not whole 16-byte lines|does not end with its digest/);
+  c6.maxLen = 1000;
+  await rejects(dev.updateFirmware(makeImage()), /the box has room for 1000/);
+  assert.deepEqual(c6.requests.slice(before), ['Firmware', 'Firmware', 'Firmware']);
+});
+
+// protocol-js/test/vectors.json "firmware": tools/bindgen's synthetic image
+// with its digest and the format's constants, from extreme_protocol::firmware
+const FIRMWARE_VECTORS = join(VENDOR, '..', '..', 'protocol-js', 'test', 'vectors.json');
+test('checkImage: the bindgen vectors\' image passes, its digest the vectors\'; the constants are the Rust ones', { skip: !existsSync(FIRMWARE_VECTORS) && 'protocol-js is not here' }, async () => {
+  const fw = JSON.parse(readFileSync(FIRMWARE_VECTORS, 'utf8')).firmware;
+  const image = Uint8Array.from(fw.image.match(/../g).map((h) => parseInt(h, 16)));
+  const { IMAGE_MAGIC, CHIP_ID_C6, AT_CHIP_ID, DIGEST_LEN } = await import('../device/firmware.js');
+  assert.deepEqual([IMAGE_MAGIC, CHIP_ID_C6, AT_CHIP_ID, DIGEST_LEN], [fw.magic, fw.chip_id, fw.at_chip_id, fw.digest_len]);
+  assert.deepEqual(await checkImage(image, image.length), { len: image.length, sha256: fw.sha256 });
+  const wrongChip = image.slice();
+  wrongChip[AT_CHIP_ID] = 5;
+  await assert.rejects(checkImage(wrongChip), /chip id 5/);
+});
+
+test("a firmware image's refusals in words: every reason extreme_protocol::firmware has", () => {
+  assert.deepEqual(Object.keys(FIRMWARE_REASONS).map(Number), [1, 2, 3, 4, 5, 6, 7, 8]);
+  const commit = (tag, detail) => ({ value: { request: 2, code: { tag }, detail } });
+  for (const reason of Object.keys(FIRMWARE_REASONS).map(Number)) assert.doesNotMatch(describeError(commit('Invalid', reason), { firmware: true }), /reason \d/);
+  // a bundle's Commit reads the same detail as a bundle's reason
+  assert.match(describeError(commit('Invalid', 2)), /invalid bundle: manifest.bin/);
+  assert.match(describeError({ value: { request: 8, code: { tag: 'NoSpace' }, detail: 0 } }), /^BeginFirmware: the image is larger than the box's other app slot$/);
+  assert.match(describeError(commit('Flash', 0), { firmware: true }), /could not make it the next boot/);
 });

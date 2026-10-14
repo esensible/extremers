@@ -35,6 +35,18 @@
 //    the air), c6.dropLinkAtBytes (the link drops once the upload has that
 //    many), c6.corruptAt (one byte flipped on reception → Hash at Commit),
 //    c6.expireUpload() (60 s idle), c6.busyOther (another connection's upload).
+//  - a firmware update (common/src/host.rs firmware_*, tgt-xiaoc6 main.rs):
+//    BeginFirmware takes the data slot (every bundle goes, Choose is active)
+//    and is Busy while a bundle upload is live or the firmware is on trial;
+//    its bytes go as a bundle's; Commit checks that the SHA-256 of all but
+//    the last 32 bytes is the digest Begin gave (Hash), answers Rebooting and
+//    restarts: the link drops, the box is off for c6.update.offMs, then runs
+//    the image from the other slot, on trial (pending) for
+//    c6.update.pendingMs. c6.update.refuse ('Hash' | 'Invalid', with
+//    c6.update.detail): refused at the commit, then a restart into the same
+//    firmware; c6.update.fallBack: the new image does not boot, the box comes
+//    back with the old one. Abort of an update restarts too. c6.restarts
+//    counts the restarts.
 
 import { createHash } from 'node:crypto';
 import { SERVICE, EVENT, BUNDLE, DATA } from '../device/ble.js';
@@ -79,6 +91,34 @@ export function makeBundle({ name = 'demo', version = 1, size = 5000, id = packa
   const ch = Array.from(sha256(engine).subarray(0, 8));
   const manifest = Uint8Array.from(encodeManifest({ id, name, version, abi: 2, content_hash: ch, ui: { web: [1, 2, 3, 4, 5, 6, 7, 8], watch: [8, 7, 6, 5, 4, 3, 2, 1] }, watch_len: 0 }));
   return archive([['manifest.bin', manifest], ['engine.bin', engine]]);
+}
+
+/**
+ * A firmware image (extreme_protocol::firmware's format, as common's tests
+ * make one): a header for the C6, one segment of `size` pseudo-random bytes
+ * (a multiple of 4), the checksum, and the appended digest.
+ */
+export function makeImage({ size = 20000, seed = 3 } = {}) {
+  let x = seed >>> 0 || 1;
+  const segment = new Uint8Array(size).map(() => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x & 0xff; });
+  const head = new Uint8Array(24 + 8);
+  const dv = new DataView(head.buffer);
+  head[0] = 0xe9;
+  head[1] = 1; // segments
+  dv.setUint32(4, 0x40800000, true); // entry
+  dv.setUint16(12, 13, true); // the ESP32-C6
+  head[23] = 1; // a digest is appended
+  dv.setUint32(24, 0x42000000, true);
+  dv.setUint32(28, size, true);
+  let len = head.length + size;
+  const pad = (15 - (len % 16) + 16) % 16;
+  len += pad + 1;
+  const out = new Uint8Array(len + 32);
+  out.set(head, 0);
+  out.set(segment, head.length);
+  out[len - 1] = segment.reduce((c, b) => c ^ b, 0xef);
+  out.set(sha256(out.subarray(0, len)), len);
+  return out;
 }
 
 function manifestOf(bytes) {
@@ -163,6 +203,26 @@ export class FakeC6 {
     // box doesn't know (answers NotFound)
     this.firmware = { sha: 'f1'.repeat(32), slot: 0, pending: false };
     this.maxLen = 0x1e0000;
+    this.update = { offMs: 30, pendingMs: 60, refuse: null, detail: 0, fallBack: false };
+    this.restarts = 0;
+  }
+
+  /** The box restarts (a firmware action): the link drops, it is off for update.offMs, then runs `next`. */
+  restart(next = this.firmware) {
+    this.restarts++;
+    const d = this.device;
+    setTimeout(() => {
+      d.dropLink();
+      d.powered = false;
+      d.advertising = false;
+      this.upload = null;
+      setTimeout(() => {
+        this.firmware = next;
+        d.powered = true;
+        d.advertising = true;
+        if (next?.pending) setTimeout(() => { if (this.firmware === next) this.firmware = { ...next, pending: false }; }, this.update.pendingMs);
+      }, this.update.offMs);
+    }, 1);
   }
   get chunk() { return Math.floor((this.mtu - 3 - 4) / 4) * 4; }
   get window() { return Math.min(2048, 8 * this.chunk); }
@@ -248,6 +308,8 @@ export class FakeC6 {
         if (v.id === 0) return this.error(code, 'NotAllowed', 0);
         if (v.len === 0) return this.error(code, 'Length', 0);
         if (this.busyOther) return this.error(code, 'Busy', 0);
+        // the data slot is the firmware's: on trial, or an update under way
+        if (this.firmware?.pending || this.upload?.firmware) return this.error(code, 'Busy', 0);
         const u = this.upload;
         if (u && !u.expired && u.id === v.id && u.len === v.len && u.sha === sha) {
           u.conn = conn; u.acked = u.received; u.gapTold = false;
@@ -268,6 +330,16 @@ export class FakeC6 {
         if (u.expired) { this.upload = null; return this.error(code, 'Timeout', 0); }
         if (u.received < u.len) return this.error(code, 'Length', u.received);
         this.upload = null;
+        if (u.firmware) {
+          const refuse = sha256(u.buf.subarray(0, u.len - 32)).toString('hex') !== u.sha ? 'Hash' : this.update.refuse;
+          if (refuse) {
+            this.error(code, refuse, refuse === 'Invalid' ? this.update.detail : 0);
+            return this.restart();
+          }
+          this.answer({ tag: 'Rebooting', value: null });
+          const old = this.firmware;
+          return this.restart(this.update.fallBack ? old : { sha: u.sha, slot: 1 - old.slot, pending: true });
+        }
         if (sha256(u.buf).toString('hex') !== u.sha) return this.error(code, 'Hash', 0);
         let m;
         try { m = manifestOf(u.buf); } catch { return this.error(code, 'Invalid', 1); }
@@ -277,8 +349,27 @@ export class FakeC6 {
       }
       case 'Abort': {
         if (!this.upload) return this.error(REQ('Abort'), 'NoUpload', 0);
+        const firmware = this.upload.firmware;
         this.upload = null;
-        return this.answer({ tag: 'Aborted', value: null });
+        this.answer({ tag: 'Aborted', value: null });
+        return firmware ? this.restart() : undefined;
+      }
+      case 'BeginFirmware': {
+        const code = REQ('BeginFirmware');
+        const sha = Buffer.from(v.sha256).toString('hex');
+        const u = this.upload;
+        if (this.busyOther || this.firmware?.pending || (u && !u.expired && !u.firmware)) return this.error(code, 'Busy', 0);
+        if (v.len <= 32) return this.error(code, 'Length', 0);
+        if (v.len > this.maxLen) return this.error(code, 'NoSpace', 0);
+        if (u && !u.expired && u.len === v.len && u.sha === sha) {
+          u.conn = conn; u.acked = u.received; u.gapTold = false;
+          return this.answer({ tag: 'Ready', value: { offset: u.received, chunk: this.chunk, window: this.window } });
+        }
+        // the data slot is the image's now: the bundles go, Choose is active
+        for (const [id, b] of [...this.store]) if (!b.builtin) this.store.delete(id);
+        this.active = 0;
+        this.upload = { firmware: true, id: null, len: v.len, sha, buf: new Uint8Array(v.len), received: 0, acked: 0, gapTold: false, conn, expired: false, dropped: false };
+        return this.answer({ tag: 'Ready', value: { offset: 0, chunk: this.chunk, window: this.window } });
       }
       case 'Delete': {
         const code = REQ('Delete');

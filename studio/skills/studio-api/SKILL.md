@@ -259,6 +259,9 @@ fake of the box; it has not yet run against the hardware itself.
   and `cargo run -p extreme-image -- <elf>` prints for the ELF it was built
   from; `slot` (0 or 1: `ota_N`), `pending` (a new firmware on trial, not
   yet confirmed), `maxLen` (the largest image an update can bring).
+- `api.device.updateFirmware({ base64 })` updates it with an image
+  (`target/xiaoc6.bin`): the box reboots into it and the call waits until it
+  confirms itself; it wipes the box's bundles (install them again after).
 - One device call at a time: another one meanwhile answers `busy: …`.
   `api.device.status()` never waits.
 

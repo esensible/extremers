@@ -85,7 +85,7 @@ const B7 = {
   ui: ['build'],
   preview: ['open', 'status', 'text', 'press', 'close'], // + close: the S5 brief
   bundle: ['pack', 'inspect'],
-  device: ['status', 'connect', 'disconnect', 'list', 'firmware', 'install', 'activate', 'delete', 'get'],
+  device: ['status', 'connect', 'disconnect', 'list', 'firmware', 'updateFirmware', 'install', 'activate', 'delete', 'get'],
 };
 const WIRED = new Set(['core', 'project', 'files', 'engine', 'sim', 'ui', 'bundle', 'preview', 'device']);
 const OTHERS = new Set([]);
