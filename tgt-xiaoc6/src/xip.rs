@@ -18,6 +18,13 @@
 //! exactly the range of every write and erase (ROM `Cache_Invalidate_Addr`)
 //! before returning. esp-storage does that only for encrypted writes.
 //!
+//! Three [`XipFlash`] regions share the slot: tracks, bundles, and the
+//! whole slot, which a firmware update's image is written over
+//! (`common::firmware::FirmwareSink`). That one overlaps the other two, and
+//! is safe all the same: nothing writes it until the host has dropped the
+//! store and moved the track to RAM (`Host::firmware_begin`), and nothing
+//! writes those again before the reboot that ends every update.
+//!
 //! esp-storage keeps its MMU API to itself; the repo's copy
 //! (vendor/esp-storage, the root Cargo.toml's `[patch.crates-io]`) makes it
 //! public.

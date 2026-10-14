@@ -259,4 +259,22 @@ mod tests {
         };
         assert_eq!(walk(image.len() as u32, failing), Err((reason::READ, 32)));
     }
+
+    /// The real image (`target/xiaoc6.bin`, which `cargo run -p
+    /// extreme-image -- <elf>` writes), when it has been built.
+    #[test]
+    fn the_real_image() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/xiaoc6.bin");
+        let Ok(image) = std::fs::read(path) else {
+            std::eprintln!("{path} not built (cargo run -p extreme-image -- <elf>): skipped");
+            return;
+        };
+        let found = walk_bytes(&image).unwrap();
+        assert_eq!(found.len() as usize, image.len());
+        assert!(found.segments > 1);
+        // a byte flipped in a segment: the checksum no longer holds
+        let mut flipped = image.clone();
+        flipped[HEADER_LEN as usize + SEGMENT_HEADER_LEN as usize + 1000] ^= 0x10;
+        assert!(matches!(walk_bytes(&flipped), Err((reason::CHECKSUM, _))));
+    }
 }

@@ -113,6 +113,27 @@ pub enum Error {
     NotFound,
     /// A flash write or erase failed (logged).
     Flash,
+    /// A firmware image doesn't check out (`extreme_protocol::firmware`'s
+    /// `reason` and its detail).
+    Image { reason: u8, detail: u32 },
+}
+
+/// What an upload is of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// A bundle, into the store.
+    Bundle(PackageId),
+    /// A firmware image, into the data slot ([`crate::firmware`]).
+    Firmware,
+}
+
+impl core::fmt::Display for Target {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Target::Bundle(id) => write!(f, "bundle {}", Hex(&id.to_be_bytes())),
+            Target::Firmware => f.write_str("the firmware"),
+        }
+    }
 }
 
 /// One item of the region.
@@ -182,18 +203,61 @@ impl Region {
         Record::parse(&b).ok()
     }
 
-    /// Whether every byte of `sector` is 0xFF.
-    fn blank(&self, sector: u16) -> bool {
-        let from = sector as usize * SECTOR;
-        // SAFETY: as in `record`; word reads, the region being sector-aligned.
-        (from..from + SECTOR).step_by(4).all(|o| unsafe { ptr::read_volatile(self.bytes.as_ptr().add(o).cast::<[u8; 4]>()) } == [0xFF; 4])
-    }
-
     /// The archive of the extent at `first`, `len` bytes.
     fn archive(&self, first: u16, len: u32) -> &'static [u8] {
         let at = archive_offset(first);
         &self.bytes[at..at + len as usize]
     }
+}
+
+/// Whether every byte of `sector` of `bytes` (flash read in place, whole
+/// sectors) is 0xFF.
+fn blank(bytes: &[u8], sector: u16) -> bool {
+    let from = sector as usize * SECTOR;
+    assert!(from + SECTOR <= bytes.len());
+    // SAFETY: in bounds (above); flash read in place, hence volatile (see
+    // `Region::record`); word reads, the region being sector-aligned.
+    (from..from + SECTOR).step_by(4).all(|o| unsafe { ptr::read_volatile(bytes.as_ptr().add(o).cast::<[u8; 4]>()) } == [0xFF; 4])
+}
+
+/// Writes `data` at `at` (from the start of `flash`'s region) as the next
+/// bytes of an upload into the sectors from `first`, of which the first
+/// `ready` are erased or blank: each sector the bytes reach beyond those is
+/// erased first unless it is blank, and counted. Word writes; a last
+/// partial word is padded with 0xFF, which programs nothing (the sector has
+/// room: sectors are words). The bundle store's and the firmware's uploads
+/// both write this way.
+pub(crate) fn program<F: TrackFlash>(flash: &mut F, ready: &mut u16, first: u16, at: u32, data: &[u8]) -> Result<(), Error> {
+    if data.is_empty() {
+        return Ok(());
+    }
+    let bytes = flash.bytes();
+    let padded_end = at + (data.len() as u32).next_multiple_of(4);
+    let last = ((padded_end - 1) / SECTOR as u32) as u16;
+    while first + *ready <= last {
+        let s = first + *ready;
+        if !blank(bytes, s) {
+            flash.erase_sector(s as u32).map_err(|e| {
+                error!("flash: erasing sector {} failed: {:?}", s, Dbg(&e));
+                Error::Flash
+            })?;
+        }
+        *ready += 1;
+    }
+    let whole = data.len() / 4 * 4;
+    let written = flash.write(at, &data[..whole]).and_then(|()| {
+        let tail = &data[whole..];
+        if tail.is_empty() {
+            return Ok(());
+        }
+        let mut word = [0xFF; 4];
+        word[..tail.len()].copy_from_slice(tail);
+        flash.write(at + whole as u32, &word)
+    });
+    written.map_err(|e| {
+        error!("flash: writing {} B at {} failed: {:?}", data.len(), at, Dbg(&e));
+        Error::Flash
+    })
 }
 
 /// The region's items, in order ([`walk`]).
@@ -235,10 +299,13 @@ pub struct Space {
     pub largest_free: u32,
 }
 
-/// What [`Bundles::uploading`] tells of the upload in progress.
+/// What [`Bundles::uploading`] (or [`Firmware::uploading`]) tells of the
+/// upload in progress.
+///
+/// [`Firmware::uploading`]: crate::firmware::Firmware::uploading
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Uploading {
-    pub id: PackageId,
+    pub target: Target,
     pub len: u32,
     pub sha256: [u8; 32],
     /// Bytes written so far.
@@ -457,7 +524,7 @@ impl<F: TrackFlash> Bundles for BundleStore<F> {
             // (it is out of the registry): no sector is stale any more
             self.stale = 0;
         }
-        if !self.region.blank(first) {
+        if !blank(self.region.bytes, first) {
             self.erase(first)?;
         }
         let record = Record { state: WRITING, seq: self.next_seq, id, len, sectors, sha256: *sha256 };
@@ -480,7 +547,6 @@ impl<F: TrackFlash> Bundles for BundleStore<F> {
     }
 
     fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<u32, Error> {
-        let region = self.region;
         let u = self.upload.as_mut().ok_or(Error::NoUpload)?;
         if offset != u.written {
             return Err(Error::Sequence { expected: u.written });
@@ -493,35 +559,7 @@ impl<F: TrackFlash> Bundles for BundleStore<F> {
             return Ok(u.written);
         }
         let at = u.first as u32 * SECTOR as u32 + RECORD_BYTES as u32 + offset;
-        // the last chunk is padded to a word with 0xFF, which programs
-        // nothing; the extent's last sector has room (sectors are words)
-        let padded_end = at + (bytes.len() as u32).next_multiple_of(4);
-        let last = ((padded_end - 1) / SECTOR as u32) as u16;
-        let first = u.first;
-        while first + u.ready <= last {
-            let s = first + u.ready;
-            if !region.blank(s) {
-                self.flash.erase_sector(s as u32).map_err(|e| {
-                    error!("store: erasing sector {} failed: {:?}", s, Dbg(&e));
-                    Error::Flash
-                })?;
-            }
-            u.ready += 1;
-        }
-        let whole = bytes.len() / 4 * 4;
-        let written = self.flash.write(at, &bytes[..whole]).and_then(|()| {
-            let tail = &bytes[whole..];
-            if tail.is_empty() {
-                return Ok(());
-            }
-            let mut word = [0xFF; 4];
-            word[..tail.len()].copy_from_slice(tail);
-            self.flash.write(at + whole as u32, &word)
-        });
-        if let Err(e) = written {
-            error!("store: writing {} B at {} failed: {:?}", bytes.len(), at, Dbg(&e));
-            return Err(Error::Flash);
-        }
+        program(&mut self.flash, &mut u.ready, u.first, at, bytes)?;
         u.hasher.update(bytes);
         u.written = end;
         Ok(end)
@@ -607,7 +645,7 @@ impl<F: TrackFlash> Bundles for BundleStore<F> {
     }
 
     fn uploading(&self) -> Option<Uploading> {
-        self.upload.as_ref().map(|u| Uploading { id: u.record.id, len: u.record.len, sha256: u.record.sha256, written: u.written })
+        self.upload.as_ref().map(|u| Uploading { target: Target::Bundle(u.record.id), len: u.record.len, sha256: u.record.sha256, written: u.written })
     }
 
     fn entries(&self) -> Walk {

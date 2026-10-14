@@ -14,6 +14,12 @@
 //! ([`Host::bundle_expire`], which the BLE task runs at
 //! [`Host::bundle_deadline`]) and its owner is told `Timeout` at its next
 //! request.
+//!
+//! A firmware update (`BeginFirmware`, BLE.md "Firmware update") is an
+//! upload like a bundle's, of a [`Target::Firmware`]: the same session, the
+//! same `data` writes and Acks, `Commit` and `Abort` act on it, and it is
+//! dropped the same way when idle. While either kind is live the other is
+//! refused (`Busy`), whichever connection asks.
 
 use embassy_time::{Duration, Instant};
 use extreme_protocol::{
@@ -25,9 +31,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     bulk,
-    fmt::{Disp, Hex},
+    fmt::Disp,
     host::{Host, InstallError, Lease},
-    store::Error as StoreError,
+    store::{Error as StoreError, Target, Uploading},
 };
 
 /// An upload idle this long is dropped.
@@ -99,13 +105,13 @@ impl Download<'_> {
     }
 }
 
-/// The upload in progress, as the BLE side keeps it (the store keeps its
-/// bytes).
+/// The upload in progress, as the BLE side keeps it (the store, or the
+/// firmware's sink, keeps its bytes).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Session {
     /// The connection that owns it.
     client: u8,
-    id: PackageId,
+    target: Target,
     len: u32,
     /// Its last request or bytes.
     last: Instant,
@@ -152,6 +158,8 @@ pub fn store_error(request: u8, e: StoreError) -> BundleResponse {
         StoreError::Install(InstallError::Full) => (BundleError::Full, 0),
         StoreError::NotFound => (BundleError::NotFound, 0),
         StoreError::Flash => (BundleError::Flash, 0),
+        // `firmware::reason`, then its detail, as a bundle's
+        StoreError::Image { reason, detail } => (BundleError::Invalid, reason as u32 | detail << 8),
     };
     error(request, code, detail)
 }
@@ -186,15 +194,19 @@ impl Host {
         let one = BundleAnswer::one;
         match request {
             BundleRequest::List => BundleAnswer::Responses(self.bundle_list().await),
-            BundleRequest::Begin { id, len, sha256 } => one(self.ble_begin(client, id, len, &sha256).await),
+            BundleRequest::Begin { id, len, sha256 } => one(self.ble_begin(client, Target::Bundle(id), len, &sha256).await),
+            BundleRequest::BeginFirmware { len, sha256 } => one(self.ble_begin(client, Target::Firmware, len, &sha256).await),
             BundleRequest::Commit => {
                 if let Err(refused) = self.may_touch_upload(client, code) {
                     return one(refused);
                 }
                 let session = self.session();
+                if session.is_some_and(|s| s.target == Target::Firmware) {
+                    return one(self.ble_firmware_commit(code, session).await);
+                }
                 one(match self.bundle_commit().await {
                     Ok(package) => {
-                        if let Some(s) = session {
+                        if let Some(s) = session.filter(|s| matches!(s.target, Target::Bundle(_))) {
                             let ms = s.started.elapsed().as_millis();
                             let sent = (s.len - s.from) as usize;
                             info!(
@@ -225,8 +237,13 @@ impl Host {
                 if let Err(refused) = self.may_touch_upload(client, code) {
                     return one(refused);
                 }
+                let session = self.session();
                 self.set_session(None);
-                one(if self.bundle_abort().await { BundleResponse::Aborted } else { error(code, BundleError::NoUpload, 0) })
+                let aborted = match session.map(|s| s.target) {
+                    Some(Target::Firmware) => self.firmware_abort().await,
+                    _ => self.bundle_abort().await,
+                };
+                one(if aborted { BundleResponse::Aborted } else { error(code, BundleError::NoUpload, 0) })
             }
             BundleRequest::Delete { id } if id == CHOOSE => one(error(code, BundleError::NotAllowed, NOT_ALLOWED_ID)),
             BundleRequest::Delete { id } => one(match self.bundle_delete(id).await {
@@ -252,9 +269,41 @@ impl Host {
                 BundleAnswer::Download(Download { id, bytes, from, chunk: client.chunk, sha256, _lease: lease })
             }
             BundleRequest::Firmware => one(self.firmware_info().unwrap_or(error(code, BundleError::NotFound, 0))),
-            // no host takes a firmware upload yet (it needs somewhere to
-            // write the image, and a way to boot it)
-            BundleRequest::BeginFirmware { .. } => one(error(code, BundleError::NotAllowed, 0)),
+        }
+    }
+
+    /// `Commit` of a firmware update: `Rebooting` once the image checked
+    /// out and the next boot runs it (the target restarts shortly after);
+    /// why not, otherwise (then the target restarts into the running
+    /// firmware), but for an image not all in yet, which goes on.
+    async fn ble_firmware_commit(&self, code: u8, session: Option<Session>) -> BundleResponse {
+        match self.firmware_commit().await {
+            Ok(_) => {
+                if let Some(s) = session {
+                    let ms = s.started.elapsed().as_millis();
+                    let sent = (s.len - s.from) as usize;
+                    info!("bundles: firmware uploaded and checked: {} B in {} ms ({} B/s); rebooting", sent, ms, bulk::throughput(sent, ms));
+                }
+                self.set_session(None);
+                BundleResponse::Rebooting
+            }
+            Err(StoreError::Length) => {
+                let written = self.firmware_uploading().await.map_or(0, |u| u.written);
+                error(code, BundleError::Length, written)
+            }
+            Err(e) => {
+                warn!("bundles: firmware refused at its commit: {:?}", crate::fmt::Dbg(&e));
+                self.set_session(None);
+                store_error(code, e)
+            }
+        }
+    }
+
+    /// The upload in progress, of either kind.
+    async fn uploading(&self) -> Option<Uploading> {
+        match self.firmware_uploading().await {
+            Some(u) => Some(u),
+            None => self.bundle_uploading().await,
         }
     }
 
@@ -286,9 +335,13 @@ impl Host {
         out
     }
 
-    /// `Begin`: a new upload, or the one in progress resumed.
-    async fn ble_begin(&self, client: BleClient, id: PackageId, len: u32, sha256: &[u8; 32]) -> BundleResponse {
-        let code = 1;
+    /// `Begin` (or `BeginFirmware`): a new upload of `target`, or the one in
+    /// progress resumed.
+    async fn ble_begin(&self, client: BleClient, target: Target, len: u32, sha256: &[u8; 32]) -> BundleResponse {
+        let code = match target {
+            Target::Bundle(_) => 1,
+            Target::Firmware => 8,
+        };
         if client.chunk == 0 {
             return error(code, BundleError::Length, 0);
         }
@@ -297,7 +350,7 @@ impl Host {
         let ready = |offset| BundleResponse::Ready { offset, chunk: client.chunk, window: w };
         let session = |from| Session {
             client: client.id,
-            id,
+            target,
             len,
             last: now,
             started: now,
@@ -307,28 +360,30 @@ impl Host {
             gap_told: false,
             expired: false,
         };
-        if let Some(u) = self.bundle_uploading().await {
+        if let Some(u) = self.uploading().await {
             let live = self.session().is_some_and(|s| s.live(now));
-            if live && (u.id, u.len, &u.sha256) == (id, len, sha256) {
-                info!(
-                    "bundles: upload of {} resumed by connection {} at {} of {} B",
-                    Disp(&Hex(&id.to_be_bytes())),
-                    client.id,
-                    u.written,
-                    len
-                );
+            if live && (u.target, u.len, &u.sha256) == (target, len, sha256) {
+                info!("bundles: upload of {} resumed by connection {} at {} of {} B", Disp(&target), client.id, u.written, len);
                 self.set_session(Some(session(u.written)));
                 return ready(u.written);
             }
-            if live && self.session().is_some_and(|s| s.client != client.id) {
+            let same_kind = matches!((u.target, target), (Target::Bundle(_), Target::Bundle(_)) | (Target::Firmware, Target::Firmware));
+            if live && (!same_kind || self.session().is_some_and(|s| s.client != client.id)) {
                 return error(code, BundleError::Busy, 0);
             }
             // this connection's own, or idle: it makes way for the new one
-            info!("bundles: upload of {} dropped for a new one", Disp(&Hex(&u.id.to_be_bytes())));
-            self.bundle_abort().await;
+            // (a firmware image's is started afresh by its begin)
+            info!("bundles: upload of {} dropped for a new one", Disp(&u.target));
+            if let Target::Bundle(_) = u.target {
+                self.bundle_abort().await;
+            }
             self.set_session(None);
         }
-        match self.bundle_begin(id, len, sha256).await {
+        let begun = match target {
+            Target::Bundle(id) => self.bundle_begin(id, len, sha256).await,
+            Target::Firmware => self.firmware_begin(len, sha256).await,
+        };
+        match begun {
             Ok(()) => {
                 self.set_session(Some(session(0)));
                 ready(0)
@@ -357,7 +412,7 @@ impl Host {
         let Some(packet) = DataPacket::parse(value) else {
             return refused(BundleError::Length);
         };
-        match self.session() {
+        let target = match self.session() {
             None => return refused(BundleError::NoUpload),
             Some(s) if s.expired && s.client == client.id => {
                 self.set_session(None);
@@ -365,9 +420,12 @@ impl Host {
             }
             Some(s) if s.expired => return refused(BundleError::NoUpload),
             Some(s) if s.client != client.id => return refused(BundleError::Busy),
-            Some(_) => {}
-        }
-        let written = self.bundle_write(packet.offset, packet.bytes).await;
+            Some(s) => s.target,
+        };
+        let written = match target {
+            Target::Bundle(_) => self.bundle_write(packet.offset, packet.bytes).await,
+            Target::Firmware => self.firmware_write(packet.offset, packet.bytes).await,
+        };
         // the session as it is now: the write may have waited for the store
         self.upload.lock(|cell| {
             let mut s = cell.get().filter(|s| s.client == client.id && !s.expired)?;
@@ -419,11 +477,14 @@ impl Host {
         let Some(s) = self.session().filter(|s| !s.expired && now >= s.last + IDLE) else {
             return false;
         };
-        self.bundle_abort().await;
+        match s.target {
+            Target::Bundle(_) => self.bundle_abort().await,
+            Target::Firmware => self.firmware_abort().await,
+        };
         self.set_session(Some(Session { expired: true, ..s }));
         warn!(
             "bundles: upload of {} idle for {} s: dropped ({} of {} B acknowledged)",
-            Disp(&Hex(&s.id.to_be_bytes())),
+            Disp(&s.target),
             UPLOAD_IDLE_SECS,
             s.acked,
             s.len

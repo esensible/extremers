@@ -16,9 +16,10 @@
 //! partition table at boot -- no offsets in code. Flashing the app does not
 //! touch it (see partitions.csv for why).
 //!
-//! The app never writes or erases at boot. It writes a bond record when a
-//! device pairs during the pairing window and removes them all on "Forget
-//! all watches" (BLE.md "Security"). Erasing the partition (WiFi credentials
+//! The app writes at boot only after a firmware update (`KEY_OTA`'s boot
+//! count) and to repair a corrupt `otadata` entry. It writes a bond record
+//! when a device pairs during the pairing window and removes them all on
+//! "Forget all watches" (BLE.md "Security"). Erasing the partition (WiFi credentials
 //! and bonds alike) and writing the WiFi credentials is the `provision`
 //! binary's job (src/bin/provision.rs); `dump` (src/bin/dump.rs) prints what
 //! is stored.
@@ -33,8 +34,16 @@
 //!   `KEY_BOOT`           the package to boot with, u32 LE (a bundle's id;
 //!                        0 = Choose), written by `Host::activate`; absent or
 //!                        not installed: `Registry::boot_package`'s rule
+//!   `KEY_OTA`            a firmware update on trial (`OtaRecord`): written
+//!                        just before the switch to it, its boot count
+//!                        raised at each boot of it, removed once it is
+//!                        confirmed or rolled back (main.rs `ota_boot`)
+//!
+//! The `otadata` partition (which app slot the bootloader boots) has its own
+//! flash handle ([`init_ota`], [`with_ota`]).
 
 use core::ops::Range;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use common::{
     ble_settings::{BondRecord, GattClientRecord},
@@ -50,7 +59,10 @@ use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embedded_storage_async::nor_flash::NorFlash as _;
-use esp_bootloader_esp_idf::partitions;
+use esp_bootloader_esp_idf::{
+    ota::Ota,
+    partitions::{self, AppPartitionSubType},
+};
 use esp_hal::peripherals::FLASH;
 use esp_storage::FlashStorage;
 use sequential_storage::cache::{Cache, Uncached};
@@ -66,6 +78,8 @@ pub const KEY_GATT_HASH: Key = [0x30];
 pub const KEY_GATT_BASE: u8 = 0x40;
 /// The package to boot with (u32 LE; 0 = Choose).
 pub const KEY_BOOT: Key = [0x50];
+/// A firmware update on trial (`OtaRecord`).
+pub const KEY_OTA: Key = [0x60];
 
 /// sequential-storage's scratch buffer. It must hold the largest item of
 /// ANY key plus its key, word-rounded: a page migration triggered by storing
@@ -261,6 +275,7 @@ pub async fn init(flash: FLASH<'static>) -> bool {
             }
             if p.raw_type() == 1 && p.raw_subtype() == OTADATA_SUBTYPE {
                 otadata = Some(p.offset()..p.offset() + p.len());
+                let _ = OTADATA.init(p);
             }
         }
         locate_data_slot(&table, &mut flash);
@@ -300,10 +315,14 @@ pub async fn init(flash: FLASH<'static>) -> bool {
 ///   +0x120000 spare, to the slot's end
 ///
 /// Both are read in place through the flash MMU (src/xip.rs). A firmware
-/// update (OTA, later) writes the new image over the slot and so wipes
-/// both, by choice: bundles are installed again and tracks start afresh,
-/// and afterwards the data lives in the other slot. The inactive slot never
-/// holds a bootable fallback once data is written to it.
+/// update over BLE (`common::firmware`, BLE.md "Firmware update") writes
+/// the new image over the slot and so wipes both, by choice: bundles are
+/// installed again (the studio saves and restores them) and tracks start
+/// afresh, and afterwards the data lives in the other slot, which holds the
+/// image the update came from. That one stays bootable while the new
+/// firmware is on trial (nothing is written to the slot until it is
+/// confirmed: main.rs `ota_boot`), and is the rollback; once data is
+/// written to it, it is not any more.
 #[derive(Clone, Copy)]
 pub struct DataSlot {
     /// The running slot's subtype: 0x10 + n for `ota_n`.
@@ -475,8 +494,16 @@ fn identify(booted: &partitions::PartitionEntry, flash: &mut FlashStorage<'stati
     let _ = RUNNING.init(Identity { sha256, slot, len: image.len(), max_len: 0 });
 }
 
-/// Logs which slot `otadata` selects, with each sector's `ota_seq`. Reads
-/// only.
+static OTADATA_SELECTS: embassy_sync::once_lock::OnceLock<u8> = embassy_sync::once_lock::OnceLock::new();
+
+/// The app slot `otadata` selected at boot (n of `ota_n`; blank selects
+/// `ota_0`); `None` if it could not be read.
+pub fn otadata_selects() -> Option<u8> {
+    OTADATA_SELECTS.try_get().copied()
+}
+
+/// Logs which slot `otadata` selects, with each sector's `ota_seq` and
+/// state. Reads only.
 ///
 /// Each of the two 4 KiB sectors starts with a 32-byte select entry; the
 /// higher valid `ota_seq` wins (seq n selects slot (n - 1) mod 2). Both
@@ -495,19 +522,26 @@ fn log_otadata(p: partitions::PartitionEntry, ota_slots: usize, flash: &mut Flas
         }
     }
     let seq = |e: &[u8; 32]| u32::from_le_bytes([e[0], e[1], e[2], e[3]]);
+    let state = |e: &[u8; 32]| u32::from_le_bytes([e[24], e[25], e[26], e[27]]);
     let selected = esp_bootloader_esp_idf::ota::Ota::new(p.as_flash_region(flash), ota_slots)
         .and_then(|mut ota| ota.current_app_partition());
     match selected {
         // `current_app_partition` reports blank otadata as Factory.
         Ok(partitions::AppPartitionSubType::Factory) => {
+            let _ = OTADATA_SELECTS.init(0);
             info!("storage: otadata blank, selects no slot (the bootloader boots ota_0)")
         }
-        Ok(s) => info!(
-            "storage: otadata selects {:?} (ota_seq {=u32:#x} / {=u32:#x})",
-            defmt::Debug2Format(&s),
-            seq(&entries[0]),
-            seq(&entries[1])
-        ),
+        Ok(s) => {
+            let _ = OTADATA_SELECTS.init(s as u8 - OTA_SUBTYPES.start());
+            info!(
+                "storage: otadata selects {:?} (ota_seq {=u32:#x} / {=u32:#x}, state {=u32:#x} / {=u32:#x})",
+                defmt::Debug2Format(&s),
+                seq(&entries[0]),
+                seq(&entries[1]),
+                state(&entries[0]),
+                state(&entries[1])
+            )
+        }
         Err(e) => {
             warn!(
                 "storage: cannot read otadata: {:?} (the `provision` binary blanks it)",
@@ -728,4 +762,170 @@ pub async fn boot_id() -> Option<u32> {
 
 pub async fn store_boot_id(id: u32) -> bool {
     store(KEY_BOOT, &id.to_le_bytes()).await
+}
+
+// ---- firmware updates ----
+
+/// A firmware update on trial (`KEY_OTA`): the slot it came from and the
+/// one it went to (n of `ota_n`), the image's appended digest, and how often
+/// it has booted without confirming itself.
+#[derive(Clone, Copy, Debug)]
+pub struct OtaRecord {
+    pub tries: u8,
+    pub from: u8,
+    pub to: u8,
+    pub digest: [u8; 32],
+}
+
+impl OtaRecord {
+    const LEN: usize = 3 + 32;
+
+    fn encode(&self) -> [u8; Self::LEN] {
+        let mut b = [0u8; Self::LEN];
+        b[..3].copy_from_slice(&[self.tries, self.from, self.to]);
+        b[3..].copy_from_slice(&self.digest);
+        b
+    }
+
+    fn decode(b: &[u8]) -> Option<Self> {
+        let b: &[u8; Self::LEN] = b.try_into().ok()?;
+        Some(OtaRecord { tries: b[0], from: b[1], to: b[2], digest: b[3..].try_into().ok()? })
+    }
+}
+
+/// The update on trial (`KEY_OTA`); `None` if there is none, or the record
+/// does not decode (logged).
+pub async fn ota_record() -> Option<OtaRecord> {
+    with_value(KEY_OTA, |v| {
+        let v = v?;
+        let r = OtaRecord::decode(v);
+        if r.is_none() {
+            warn!("storage: update record is {=usize} bytes, not {=usize}; ignored", v.len(), OtaRecord::LEN);
+        }
+        r
+    })
+    .await
+}
+
+pub async fn store_ota_record(record: &OtaRecord) -> bool {
+    store(KEY_OTA, &record.encode()).await
+}
+
+/// Removes the update record (removing an absent one succeeds).
+pub async fn clear_ota_record() -> bool {
+    let mut guard = STORE.lock().await;
+    let Some(store) = guard.as_mut() else {
+        return false;
+    };
+    match store.map.remove_item(&mut store.buf[..], &KEY_OTA).await {
+        Ok(()) => true,
+        Err(e) => {
+            warn!("storage: remove {=u8:#04x} failed: {:?}", KEY_OTA[0], defmt::Debug2Format(&e));
+            false
+        }
+    }
+}
+
+/// The `otadata` partition's entry, as [`init`] found it.
+static OTADATA: embassy_sync::once_lock::OnceLock<partitions::PartitionEntry> = embassy_sync::once_lock::OnceLock::new();
+/// The flash handle `otadata` is written through ([`init_ota`]).
+static OTA_FLASH: Mutex<CriticalSectionRawMutex, Option<FlashStorage<'static>>> = Mutex::new(None);
+
+/// Set while the firmware runs on trial after an update (main.rs
+/// `ota_boot`): a panic then resets the chip, so that the boot count sees
+/// it, rather than halting for a debugger as it otherwise does.
+pub static RESET_ON_PANIC: AtomicBool = AtomicBool::new(false);
+
+/// esp-backtrace's halt (feature `custom-halt`), after the panic is logged:
+/// on trial ([`RESET_ON_PANIC`]) a reset, a second after the panic so the
+/// log gets out over RTT; else the halt esp-backtrace has without it.
+#[unsafe(no_mangle)]
+fn custom_halt() -> ! {
+    if RESET_ON_PANIC.load(Ordering::Relaxed) {
+        let start = esp_hal::time::Instant::now();
+        while start.elapsed() < esp_hal::time::Duration::from_millis(1000) {}
+        esp_hal::system::software_reset();
+    }
+    #[allow(clippy::empty_loop)]
+    loop {}
+}
+
+/// App slot `n` (`ota_n`) as the OTA API names it.
+pub fn app_slot(n: u8) -> Option<AppPartitionSubType> {
+    AppPartitionSubType::try_from(OTA_SUBTYPES.start() + n).ok()
+}
+
+/// Whether a 32-byte `otadata` select entry is one the bootloader (and
+/// esp-bootloader-esp-idf) takes: blank, or a known state with the CRC of
+/// its `ota_seq` (`crc32_le(u32::MAX, seq)`, as both compute it).
+fn entry_valid(e: &[u8; 32]) -> bool {
+    let word = |i: usize| u32::from_le_bytes([e[i], e[i + 1], e[i + 2], e[i + 3]]);
+    let (seq, state, crc) = (word(0), word(24), word(28));
+    if seq == u32::MAX && state == u32::MAX {
+        return true;
+    }
+    (state <= 4 || state == u32::MAX) && crc == esp_hal::rom::crc::crc32_le(u32::MAX, &e[..4])
+}
+
+/// Erases each `otadata` sector whose entry is corrupt (neither blank nor
+/// CRC-valid; the bootloader ignores such an entry, but esp-bootloader-
+/// esp-idf refuses the whole of `otadata` for it), logging it: a write cut
+/// off by a reset leaves that. The other entry then selects, as it already
+/// did for the bootloader. `false` if a read or an erase failed.
+fn repair_otadata(entry: &partitions::PartitionEntry, flash: &mut FlashStorage<'static>) -> bool {
+    use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
+    for sector in 0..2u32 {
+        let at = entry.offset() + sector * SECTOR;
+        let mut e = [0u8; 32];
+        if let Err(err) = ReadNorFlash::read(flash, at, &mut e) {
+            warn!("otadata: cannot read sector {=u32}: {:?}", sector, defmt::Debug2Format(&err));
+            return false;
+        }
+        if entry_valid(&e) {
+            continue;
+        }
+        warn!("otadata: sector {=u32} holds a corrupt entry {=[u8]:02x}: erasing it", sector, &e[..]);
+        if let Err(err) = NorFlash::erase(flash, at, at + SECTOR) {
+            warn!("otadata: erasing sector {=u32} failed: {:?}", sector, defmt::Debug2Format(&err));
+            return false;
+        }
+    }
+    true
+}
+
+/// Takes `flash` as the handle `otadata` is written through ([`with_ota`]),
+/// after [`init`] found the partition, and repairs a corrupt entry
+/// (`repair_otadata`). `false` (logged) without an `otadata` partition.
+pub async fn init_ota(mut flash: FlashStorage<'static>) -> bool {
+    let Some(entry) = OTADATA.try_get() else {
+        warn!("otadata: no partition: no firmware updates");
+        return false;
+    };
+    let ok = repair_otadata(entry, &mut flash);
+    *OTA_FLASH.lock().await = Some(flash);
+    ok
+}
+
+/// Runs `f` on `otadata` (esp-bootloader-esp-idf's [`Ota`], two app
+/// slots), its entries checked first and again after (`repair_otadata`), so
+/// it is never left with one corrupt. `None` (logged as `what` failing) if
+/// there is no `otadata` or `f` failed.
+pub async fn with_ota<R>(what: &str, f: impl FnOnce(&mut Ota<'_, 'static>) -> Result<R, partitions::Error>) -> Option<R> {
+    let mut guard = OTA_FLASH.lock().await;
+    let (Some(flash), Some(entry)) = (guard.as_mut(), OTADATA.try_get()) else {
+        warn!("otadata: {=str}: no otadata", what);
+        return None;
+    };
+    if !repair_otadata(entry, flash) {
+        return None;
+    }
+    let done = Ota::new(entry.as_flash_region(flash), 2).and_then(|mut ota| f(&mut ota));
+    repair_otadata(entry, flash);
+    match done {
+        Ok(r) => Some(r),
+        Err(e) => {
+            warn!("otadata: {=str} failed: {:?}", what, defmt::Debug2Format(&e));
+            None
+        }
+    }
 }

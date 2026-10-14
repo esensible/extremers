@@ -3,6 +3,8 @@
 
 use static_cell::{ConstStaticCell, StaticCell};
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, Stack, StackResources, StaticConfigV4};
 use embassy_time::{Duration, Timer};
@@ -16,6 +18,7 @@ use esp_hal::{
     gpio::{Level, Output, OutputConfig},
     ram,
     rng::Rng,
+    rtc_cntl::{Rtc, RwdtStage},
     timer::timg::TimerGroup,
     uart::{Config as UartConfig, RxConfig, Uart, UartRx},
 };
@@ -50,13 +53,15 @@ use common::{
         SOCKET_BUFFER_SIZE,
     },
     engine::{EngineMemory, LIMITS},
-    host::{Host, Registry},
+    firmware::{Firmware, FirmwareSink},
+    host::{FirmwareAction, Host, Registry},
     nmea::AsyncReader,
     package::Package,
     store::{self, Apps, BundleStore, Bundles, Item},
     tasks::{read_gps, serve_http},
     track::{FlashTrack, TrackFlash, TrackLog},
 };
+use esp_bootloader_esp_idf::ota::OtaImageState;
 use esp_storage::FlashStorage;
 
 /// The engines' buffers (common::engine), static: not the heap, not the
@@ -68,6 +73,22 @@ type BleController = ExternalController<BleConnector<'static>, 20>;
 
 /// Access point transmit power ceiling, 0.25 dBm units: 60 = 15 dBm.
 const WIFI_TX_POWER_QDBM: i8 = 60;
+
+/// Boots of an updated firmware that may end without it confirming itself
+/// before the one it came from boots again (`ota_boot`).
+const OTA_TRIES: u8 = 3;
+/// How long an updated firmware runs before it confirms itself.
+const OTA_CONFIRM: Duration = Duration::from_secs(20);
+/// The RTC watchdog's timeout while on trial (fed from the LED loop, every
+/// 100 ms): a firmware that hangs is reset, and counted, as one that panics.
+const OTA_WATCHDOG: esp_hal::time::Duration = esp_hal::time::Duration::from_secs(10);
+/// How long a firmware action waits before the reset, so its answer (and
+/// the log) gets out.
+const RESET_DELAY: Duration = Duration::from_millis(500);
+
+/// Whether the firmware runs on trial after an update (`ota_boot`) and the
+/// RTC watchdog is armed; cleared by `confirm_task`.
+static ON_TRIAL: AtomicBool = AtomicBool::new(false);
 
 // Every log line carries the uptime (probe-rs shows it as seconds with ms).
 // esp-hal's clock, not embassy-time's, so it works before esp_rtos::start.
@@ -109,9 +130,13 @@ async fn main(spawner: Spawner) -> ! {
     let _rf_antenna_select = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
     defmt::info!("rf switch: powered (GPIO3 low), onboard antenna (GPIO14 low)");
 
-    // Two more handles on the flash, for the data slot's regions (xip.rs):
-    // each its own FlashStorage, over flash disjoint from the settings
-    // partition's and from each other's.
+    // Four more handles on the flash: three for the data slot (xip.rs: its
+    // tracks and bundles regions, and the whole slot for a firmware
+    // update's image) and one for `otadata` (storage.rs `with_ota`). Each is
+    // its own FlashStorage, over flash disjoint from the settings
+    // partition's; the tracks and bundles regions are disjoint from each
+    // other, and the firmware's covers both, but is written only once the
+    // store and the track are gone (`Host::firmware_begin`; xip.rs).
     // SAFETY: esp-storage runs every operation in its own critical section,
     // so they never interleave; none assumes it is the only writer of
     // anything outside its own region.
@@ -120,29 +145,50 @@ async fn main(spawner: Spawner) -> ! {
     // made), and the data slot's handles once read a size too small for it
     // when made after the settings had been read (`OutOfBounds`). The
     // repo's esp-storage now keeps the first size detected for all.
-    let (tracks_flash, bundles_flash) = unsafe {
+    let (tracks_flash, bundles_flash, firmware_flash, ota_flash) = unsafe {
         (
+            FlashStorage::new(peripherals.FLASH.clone_unchecked()),
+            FlashStorage::new(peripherals.FLASH.clone_unchecked()),
             FlashStorage::new(peripherals.FLASH.clone_unchecked()),
             FlashStorage::new(peripherals.FLASH.clone_unchecked()),
         )
     };
     defmt::info!(
-        "flash: capacity {=usize:#x} (tracks handle), {=usize:#x} (bundles handle)",
+        "flash: capacity {=usize:#x} (tracks handle), {=usize:#x} (bundles handle), {=usize:#x} (firmware handle), {=usize:#x} (otadata handle)",
         embedded_storage::nor_flash::ReadNorFlash::capacity(&tracks_flash),
-        embedded_storage::nor_flash::ReadNorFlash::capacity(&bundles_flash)
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&bundles_flash),
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&firmware_flash),
+        embedded_storage::nor_flash::ReadNorFlash::capacity(&ota_flash)
     );
     // Settings partition (read only here; see storage.rs), then the access
     // point's credentials from it, or the compiled-in defaults.
     storage::init(peripherals.FLASH).await;
+    storage::init_ota(ota_flash).await;
+    let on_trial = ota_boot().await;
+    let mut watchdog = Rtc::new(peripherals.RTC_TIMER);
+    if on_trial {
+        watchdog.rwdt.set_timeout(RwdtStage::Stage0, OTA_WATCHDOG);
+        watchdog.rwdt.enable();
+        ON_TRIAL.store(true, Ordering::Release);
+        defmt::info!("firmware: RTC watchdog armed ({=u64} s) until confirmed", OTA_WATCHDOG.as_secs());
+    }
     choose_access_point_credentials().await;
-    let (tracks, bundles) = match data_regions(tracks_flash, bundles_flash) {
-        Some((tracks, bundles)) => (Some(tracks), Some(bundles)),
+    let (tracks, bundles, firmware) = match data_regions(tracks_flash, bundles_flash, firmware_flash) {
+        Some((tracks, bundles, firmware)) => (Some(tracks), Some(bundles), Some(firmware)),
         None => {
-            defmt::warn!("data slot unusable: the track in RAM (lost at a reboot), no bundles but Choose");
-            (None, None)
+            defmt::warn!("data slot unusable: the track in RAM (lost at a reboot), no bundles but Choose, no updates");
+            (None, None, None)
         }
     };
-    let track = tracks.and_then(flash_track);
+    // on trial the slot holds the firmware this one came from: the track
+    // (which writes at once) waits for the confirmation
+    let (track, trial_tracks) = if on_trial { (None, tracks) } else { (tracks.and_then(flash_track), None) };
+    let firmware = firmware.map(|f| {
+        static SINK: StaticCell<FirmwareSink<xip::XipFlash>> = StaticCell::new();
+        let sink = SINK.init(FirmwareSink::new(f));
+        defmt::info!("firmware: updates of up to {=u32} B go to the data slot", sink.max_len());
+        sink as &'static mut (dyn Firmware + Send)
+    });
 
     memory::log("before the host");
     let engine_memory = ENGINE_MEMORY.take();
@@ -175,12 +221,17 @@ async fn main(spawner: Spawner) -> ! {
         engine_memory,
         track.map(|t| t as &'static mut (dyn TrackLog + Send)),
         store.map(|s| s as &'static mut (dyn Bundles + Send)),
+        firmware,
     ));
     if let Some(identity) = storage::running_identity() {
         runtime.set_identity(identity);
     }
+    if on_trial {
+        runtime.set_pending();
+    }
     memory::log("host up");
     spawner.spawn(boot_package_task(runtime).unwrap());
+    spawner.spawn(firmware_task(runtime).unwrap());
 
     // BLE (BLE.md) shares the radio with WiFi (esp-radio `coex`); the
     // controller's connection limit matches the host's.
@@ -255,13 +306,179 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(memory::memory_task().unwrap());
     #[cfg(feature = "selftest")]
     spawner.spawn(selftest::selftest_task(runtime).unwrap());
+    if on_trial {
+        spawner.spawn(confirm_task(runtime, trial_tracks).unwrap());
+    }
+    #[cfg(any(feature = "ota-crash-test", feature = "ota-hang-test"))]
+    spawner.spawn(ota_test_task().unwrap());
 
-    // idle loop, blink LED
+    // idle loop, blink LED; feeds the RTC watchdog while on trial, and
+    // disarms it once confirmed
     let mut led = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
     led.set_high();
+    let mut armed = on_trial;
     loop {
         Timer::after(Duration::from_millis(100)).await;
         led.toggle();
+        if armed {
+            if ON_TRIAL.load(Ordering::Acquire) {
+                watchdog.rwdt.feed();
+            } else {
+                watchdog.rwdt.disable();
+                armed = false;
+                defmt::info!("firmware: RTC watchdog disarmed");
+            }
+        }
+    }
+}
+
+/// After an update: `KEY_OTA` names the slot running and its image (else
+/// the bootloader fell back to the other slot, or something else was
+/// flashed: the record goes, and this is a normal boot). Each boot of it
+/// is counted; at [`OTA_TRIES`] the slot it came from boots again
+/// (`otadata` switched back, the record removed, a reset), else it runs on
+/// trial: `true`, and a panic resets ([`storage::RESET_ON_PANIC`]).
+async fn ota_boot() -> bool {
+    let Some(mut record) = storage::ota_record().await else {
+        return false;
+    };
+    let running = storage::running_identity();
+    if running.is_none_or(|r| r.slot != record.to || r.sha256 != record.digest) {
+        defmt::warn!(
+            "firmware: an update from ota_{=u8} to ota_{=u8} did not boot (this is ota_{=u8}, not its image): the bootloader kept this one; record removed",
+            record.from,
+            record.to,
+            running.map_or(0xFF, |r| r.slot)
+        );
+        storage::clear_ota_record().await;
+        return false;
+    }
+    record.tries += 1;
+    if !storage::store_ota_record(&record).await {
+        defmt::warn!("firmware: the update's boot count could not be kept");
+    }
+    if record.tries >= OTA_TRIES {
+        defmt::error!(
+            "firmware: on trial, boot {=u8} of {=u8} without confirming: rolling back to ota_{=u8}",
+            record.tries,
+            OTA_TRIES,
+            record.from
+        );
+        let back = storage::with_ota("rolling back", |ota| match storage::app_slot(record.from) {
+            Some(slot) => ota.set_current_app_partition(slot),
+            None => Err(esp_bootloader_esp_idf::partitions::Error::InvalidArgument),
+        })
+        .await;
+        if back.is_some() {
+            storage::clear_ota_record().await;
+        }
+        Timer::after(RESET_DELAY).await;
+        esp_hal::system::software_reset();
+    }
+    storage::RESET_ON_PANIC.store(true, Ordering::Release);
+    defmt::info!(
+        "firmware: on trial after an update from ota_{=u8}: boot {=u8} of {=u8}; confirmed after {=u64} s; until then the data slot is not written and a panic resets",
+        record.from,
+        record.tries,
+        OTA_TRIES,
+        OTA_CONFIRM.as_secs()
+    );
+    true
+}
+
+/// Confirms an updated firmware after [`OTA_CONFIRM`] on trial: the record
+/// removed, `otadata` marks the slot valid, the watchdog is disarmed and
+/// panics halt again, the track opens in the data slot (`tracks`, its
+/// region) and the host writes there from now on.
+#[embassy_executor::task]
+async fn confirm_task(runtime: &'static Host, tracks: Option<xip::XipFlash>) {
+    Timer::after(OTA_CONFIRM).await;
+    storage::clear_ota_record().await;
+    storage::with_ota("marking the update valid", |ota| ota.set_current_ota_state(OtaImageState::Valid)).await;
+    storage::RESET_ON_PANIC.store(false, Ordering::Release);
+    ON_TRIAL.store(false, Ordering::Release);
+    if let Some(track) = tracks.and_then(flash_track) {
+        runtime.set_track(track).await;
+    }
+    runtime.confirm();
+    defmt::info!("firmware: confirmed after {=u64} s; the data slot is writable", OTA_CONFIRM.as_secs());
+}
+
+/// Does what the host asks for the firmware (`common::host::FirmwareAction`):
+/// boots an update next, or restarts.
+#[embassy_executor::task]
+async fn firmware_task(runtime: &'static Host) -> ! {
+    loop {
+        match runtime.next_firmware_action().await {
+            FirmwareAction::Switch { digest } => {
+                let to = switch_to_update(digest).await;
+                runtime.firmware_switched(to.is_some());
+                Timer::after(RESET_DELAY).await;
+                match to {
+                    Some(to) => defmt::info!("firmware: restarting into the update in ota_{=u8}", to),
+                    None => defmt::warn!("firmware: the switch failed; restarting into this firmware"),
+                }
+            }
+            FirmwareAction::Restart => {
+                Timer::after(RESET_DELAY).await;
+                defmt::info!("firmware: no update; restarting into this firmware");
+            }
+        }
+        esp_hal::system::software_reset();
+    }
+}
+
+/// Makes the image `digest` in the data slot (checked: `Host::firmware_commit`)
+/// the next boot's, on trial: `KEY_OTA` first (from this slot, to the data
+/// slot), then `otadata` selects it, state `New`. The slot switched to;
+/// `None` (logged) if that failed, with nothing switched.
+async fn switch_to_update(digest: [u8; 32]) -> Option<u8> {
+    let running = storage::running_identity()?;
+    let to = 1 - running.slot;
+    let record = storage::OtaRecord { tries: 0, from: running.slot, to, digest };
+    if !storage::store_ota_record(&record).await {
+        return None;
+    }
+    let switched = storage::with_ota("switching to the update", |ota| {
+        let (Some(from), Some(slot)) = (storage::app_slot(running.slot), storage::app_slot(to)) else {
+            return Err(esp_bootloader_esp_idf::partitions::Error::InvalidArgument);
+        };
+        // Blank otadata (as probe-rs leaves it) boots ota_0 but selects no
+        // slot; esp-bootloader-esp-idf 0.6 then gives ota_1 sequence number
+        // 0, which only works by wrapping round. Selecting the running slot
+        // first makes it the plain next number.
+        if ota.current_app_partition()? == esp_bootloader_esp_idf::partitions::AppPartitionSubType::Factory {
+            ota.set_current_app_partition(from)?;
+        }
+        ota.set_current_app_partition(slot)
+    })
+    .await;
+    if switched.is_none() {
+        storage::clear_ota_record().await;
+        return None;
+    }
+    // the bootloader has no rollback (its state is for one that does): kept
+    // all the same, for a bootloader that has
+    storage::with_ota("marking the update new", |ota| ota.set_current_ota_state(OtaImageState::New)).await;
+    defmt::info!("firmware: ota_{=u8} selected for the next boot, on trial", to);
+    Some(to)
+}
+
+/// Features `ota-crash-test` and `ota-hang-test`: 5 s after boot the
+/// firmware panics, or hangs (the executor stuck: the LED loop never feeds
+/// the watchdog again); an update with one never confirms, and is rolled
+/// back after [`OTA_TRIES`] boots.
+#[cfg(any(feature = "ota-crash-test", feature = "ota-hang-test"))]
+#[embassy_executor::task]
+async fn ota_test_task() {
+    Timer::after(Duration::from_secs(5)).await;
+    #[cfg(feature = "ota-crash-test")]
+    panic!("ota-crash-test: a panic 5 s after boot");
+    #[cfg(not(feature = "ota-crash-test"))]
+    {
+        defmt::warn!("ota-hang-test: hanging 5 s after boot");
+        #[allow(clippy::empty_loop)]
+        loop {}
     }
 }
 
@@ -269,11 +486,16 @@ type Tracks = FlashTrack<xip::XipFlash>;
 type Store = BundleStore<xip::XipFlash>;
 
 /// The data slot's two regions (storage.rs, xip.rs), tracks and bundles,
-/// each written through its own `flash` handle and read in place: maps the
-/// slot and checks that reads in place see what the flash holds. `None`
-/// (logged) if any of that fails: the host then keeps the track in RAM,
-/// gone at a reboot, and has no bundles but Choose.
-fn data_regions(tracks: FlashStorage<'static>, bundles: FlashStorage<'static>) -> Option<(xip::XipFlash, xip::XipFlash)> {
+/// and the whole slot (for a firmware update's image), each written through
+/// its own `flash` handle and read in place: maps the slot and checks that
+/// reads in place see what the flash holds. `None` (logged) if any of that
+/// fails: the host then keeps the track in RAM, gone at a reboot, has no
+/// bundles but Choose, and takes no updates.
+fn data_regions(
+    tracks: FlashStorage<'static>,
+    bundles: FlashStorage<'static>,
+    firmware: FlashStorage<'static>,
+) -> Option<(xip::XipFlash, xip::XipFlash, xip::XipFlash)> {
     let Some(slot) = storage::data_slot() else {
         defmt::warn!("data slot: none (see the storage lines above)");
         return None;
@@ -281,14 +503,15 @@ fn data_regions(tracks: FlashStorage<'static>, bundles: FlashStorage<'static>) -
     if !xip::map(&slot) {
         return None;
     }
-    let (Some(mut tracks), Some(bundles)) = (
+    let (Some(mut tracks), Some(bundles), Some(firmware)) = (
         xip::XipFlash::new(tracks, slot.tracks()),
         xip::XipFlash::new(bundles, slot.bundles()),
+        xip::XipFlash::new(firmware, slot.offset..slot.offset + slot.len),
     ) else {
         defmt::warn!("data slot: a region is not within the mapping");
         return None;
     };
-    tracks.self_check(&slot).then_some((tracks, bundles))
+    tracks.self_check(&slot).then_some((tracks, bundles, firmware))
 }
 
 /// The bundle store in the data slot's bundles region (common::store):

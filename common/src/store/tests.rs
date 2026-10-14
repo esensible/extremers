@@ -296,7 +296,7 @@ fn first_fit_and_delete_then_reuse() {
     let (mut store, apps) = open(nor);
     assert_eq!(names(&apps), ["gamma", "delta"]);
     assert_eq!(store.begin(package_id("alpha"), a.len() as u32, &sha(&a), false), Ok(()));
-    assert_eq!(store.uploading().map(|u| u.id), Some(package_id("alpha")));
+    assert_eq!(store.uploading().map(|u| u.target), Some(Target::Bundle(package_id("alpha"))));
 }
 
 #[test]

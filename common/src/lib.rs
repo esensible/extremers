@@ -12,6 +12,7 @@ pub mod ble_settings;
 pub mod bulk;
 pub mod config;
 pub mod engine;
+pub mod firmware;
 pub mod host;
 pub mod http;
 pub mod nmea;

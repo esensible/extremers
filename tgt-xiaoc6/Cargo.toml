@@ -23,8 +23,10 @@ rtt-target = { version = "0.6", features = ["defmt"] }
 esp-hal = { version = "1.2", features = ["defmt", "unstable"] }
 esp-rtos = { version = "0.4", features = ["esp-radio", "embassy", "defmt"] }
 esp-radio = { version = "1.0.0-beta.1", features = ["wifi", "ble", "coex", "defmt", "unstable"] }
-# panics and backtraces go to defmt/RTT like everything else
-esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt"] }
+# panics and backtraces go to defmt/RTT like everything else; custom-halt:
+# after a panic storage.rs `custom_halt` resets while a firmware update is
+# on trial (else it halts, as without it)
+esp-backtrace = { version = "0.20", features = ["panic-handler", "defmt", "custom-halt"] }
 # internal-heap-stats: the high-water mark src/memory.rs logs (min free)
 esp-alloc = { version = "0.11", features = ["internal-heap-stats"] }
 esp-bootloader-esp-idf = { version = "0.6" }
@@ -95,6 +97,12 @@ selftest = ["dep:postcard"]
 # Kindle does, so a browser can bond with no Kindle at hand (src/main.rs,
 # BLE.md "Bundles"). Development only: anyone in range can bond meanwhile.
 dev-pairing = []
+# Testing a firmware update's rollback (src/main.rs `ota_test_task`): the
+# firmware panics (ota-crash-test) or hangs (ota-hang-test) 5 s after boot,
+# so an update to it never confirms and the box goes back to the firmware
+# it came from after 3 boots. Never for a box in use.
+ota-crash-test = []
+ota-hang-test = []
 esp32c6 = [
     "esp-hal/esp32c6",
     "esp-rtos/esp32c6",

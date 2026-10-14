@@ -541,7 +541,7 @@ fn boot_from(nor: Nor, boot: Option<PackageId>) -> Host {
     let mut registry = Registry::new(Some(choose()), &apps);
     registry.set_boot(boot);
     let store: &'static mut (dyn Bundles + Send) = Box::leak(Box::new(store));
-    Host::with_storage(registry, memory, None, Some(store))
+    Host::with_storage(registry, memory, None, Some(store), None)
 }
 
 /// Uploads `archive` to the host's store as `id`, 240 bytes at a time.
@@ -672,7 +672,7 @@ fn uploads_the_registry_would_refuse_are_refused() {
     let nor = Nor::blank(MAX_SECTORS);
     let (store, _) = BundleStore::open(nor, &LIMITS, &mut memory().scratch);
     let store: &'static mut (dyn Bundles + Send) = Box::leak(Box::new(store));
-    let host = Host::with_storage(Registry::new(Some(choose()), &apps), memory(), None, Some(store));
+    let host = Host::with_storage(Registry::new(Some(choose()), &apps), memory(), None, Some(store), None);
     assert_eq!(block_on(host.bundle_begin(RACE, 100, &sha)), Err(crate::store::Error::Install(InstallError::Full)));
     // but a new version of one installed is fine
     block_on(host.bundle_begin(package_id("app3"), 100, &sha)).unwrap();
@@ -835,7 +835,7 @@ fn an_upload_survives_gaps_and_a_new_connection() {
     ask1(&host, C0, begin_of(RACE, race));
     send(&host, C0, &race[..960], 0);
     assert_eq!(ask1(&host, C0, begin_of(RACE2, &r2)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
-    assert_eq!(block_on(host.bundle_uploading()).map(|u| (u.id, u.written)), Some((RACE2, 0)));
+    assert_eq!(block_on(host.bundle_uploading()).map(|u| (u.target, u.written)), Some((crate::store::Target::Bundle(RACE2), 0)));
     assert_eq!(ask1(&host, C0, BundleRequest::Abort), BundleResponse::Aborted);
 }
 
@@ -1023,7 +1023,7 @@ fn bundle_requests_only_over_ble() {
 }
 
 /// `Firmware` answers what the target said is running; a host that said
-/// nothing has none to tell. No host takes a firmware upload yet.
+/// nothing has none to tell, and one without a sink takes no update.
 #[test]
 fn the_running_firmware_over_ble() {
     let host = full();
@@ -1035,7 +1035,193 @@ fn the_running_firmware_over_ble() {
         BundleResponse::Firmware { sha256, slot: 0, pending: false, max_len: 0x1E_0000 }
     );
     let begin = BundleRequest::BeginFirmware { len: 1_729_376, sha256 };
-    assert_eq!(ask1(&host, C0, begin), err(8, BundleError::NotAllowed, 0));
+    assert_eq!(ask1(&host, C0, begin), err(FIRMWARE, BundleError::NotFound, 0));
+}
+
+// ---- firmware updates over BLE (BLE.md "Firmware update") ----
+
+use crate::firmware::{
+    FirmwareSink,
+    tests::{digest, image},
+};
+
+const FIRMWARE: u8 = 8;
+/// The firmware sink's region: 16 sectors (its own, here; on the C6 the
+/// whole data slot, under the store and the track).
+const FIRMWARE_SECTORS: usize = 16;
+
+/// A host booted from a store holding `bundles`, with a firmware sink, the
+/// identity of ota_0, and the sink's flash.
+fn updatable(bundles: &[&[u8]]) -> (Host, Nor) {
+    let nor = Nor::blank(MAX_SECTORS);
+    nor.program(0, &store_image(bundles, MAX_SECTORS * SECTOR));
+    let memory = memory();
+    let (store, apps) = BundleStore::open(nor, &LIMITS, &mut memory.scratch);
+    let store: &'static mut (dyn Bundles + Send) = Box::leak(Box::new(store));
+    let slot = Nor::new(FIRMWARE_SECTORS, |i| i as u8);
+    let sink: &'static mut (dyn Firmware + Send) = Box::leak(Box::new(FirmwareSink::new(slot)));
+    let host = Host::with_storage(Registry::new(Some(choose()), &apps), memory, None, Some(store), Some(sink));
+    host.set_identity(Identity { sha256: [0x5a; 32], slot: 0, len: 1_729_376, max_len: (FIRMWARE_SECTORS * SECTOR) as u32 });
+    (host, slot)
+}
+
+fn begin_firmware(image: &[u8]) -> BundleRequest {
+    BundleRequest::BeginFirmware { len: image.len() as u32, sha256: digest(image) }
+}
+
+/// `Commit`, with the target answering a `Switch` with `ok`: the response
+/// and the action the target was given.
+fn commit_firmware(host: &Host, client: BleClient, ok: bool) -> (BundleResponse, FirmwareAction) {
+    let target = async {
+        let action = host.next_firmware_action().await;
+        if let FirmwareAction::Switch { .. } = action {
+            host.firmware_switched(ok);
+        }
+        action
+    };
+    let (answer, action) = block_on(embassy_futures::join::join(host.ble_event(&bytes(&HostEvent::Bundle(BundleRequest::Commit)), client), target));
+    let r = match answer {
+        Ok(Some(BundleAnswer::Responses(r))) => r[0].clone(),
+        _ => panic!("Commit: not a response"),
+    };
+    (r, action)
+}
+
+/// The update takes the data slot: the bundles leave the registry (the
+/// active one for Choose), the track goes to RAM, bundle uploads and deletes
+/// are refused; the image goes in as a bundle's would, and the commit asks
+/// the target to switch to it, then answers `Rebooting`.
+#[test]
+fn a_firmware_update_over_ble() {
+    let (host, slot) = updatable(&[race_bytes()]);
+    assert_eq!(state(&host).active, RACE);
+    gps(&host, Some((-33.85, 151.25)), None);
+    let img = image(20_000);
+    assert_eq!(ask1(&host, C0, begin_firmware(&img)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    assert_eq!(host.bundle_uploader(), Some(C0.id));
+    // Choose only, no store
+    assert_eq!(state(&host).active, CHOOSE);
+    let list = ask(&host, C0, BundleRequest::List);
+    assert_eq!(entries(&list).iter().map(|e| e.manifest.id).collect::<Vec<_>>(), [CHOOSE]);
+    assert_eq!(list.last(), Some(&BundleResponse::ListEnd { count: 1, free_bytes: 0, largest_free: 0 }));
+    assert_eq!(pick(&host, RACE), Err(Refused::NotInstalled));
+    // a new track, in RAM
+    assert_eq!(block_on(async { host.active.lock().await.track.len() }), 0);
+    // no bundle uploads or deletes meanwhile, from any connection
+    assert_eq!(ask1(&host, C1, begin_of(RACE2, race_bytes())), err(BEGIN, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C0, begin_of(RACE2, race_bytes())), err(BEGIN, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C1, BundleRequest::Delete { id: RACE }), err(4, BundleError::Busy, 0));
+    // the image, acknowledged as a bundle's
+    let acks = send(&host, C0, &img, 0);
+    assert_eq!(acks.last(), Some(&BundleResponse::Ack { offset: img.len() as u32 }));
+    assert_eq!(slot.bytes()[..img.len()], img[..]);
+    let (r, action) = commit_firmware(&host, C0, true);
+    assert_eq!(r, BundleResponse::Rebooting);
+    assert_eq!(action, FirmwareAction::Switch { digest: digest(&img) });
+    assert_eq!(host.bundle_uploader(), None);
+    assert_eq!(block_on(host.firmware_uploading()), None);
+}
+
+/// A gap, a dropped connection resumed from another, a commit too early,
+/// a begin afresh: as a bundle's upload. Either kind refuses the other
+/// while it is live.
+#[test]
+fn a_firmware_upload_resumes_and_excludes_bundles() {
+    let (host, _) = updatable(&[]);
+    let img = image(20_000);
+    // a bundle upload live: no firmware update, from any connection
+    let race = race_bytes();
+    ask1(&host, C0, begin_of(RACE, race));
+    send(&host, C0, &race[..960], 0);
+    assert_eq!(ask1(&host, C0, begin_firmware(&img)), err(FIRMWARE, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C1, begin_firmware(&img)), err(FIRMWARE, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C0, BundleRequest::Abort), BundleResponse::Aborted);
+    // now it may
+    ask1(&host, C0, begin_firmware(&img));
+    assert_eq!(data(&host, C0, &img, 480), Some(err(REQUEST_DATA, BundleError::Sequence, 0)));
+    send(&host, C0, &img[..4800], 0);
+    assert_eq!(ask1(&host, C0, BundleRequest::Commit), err(COMMIT, BundleError::Length, 4800));
+    // connection 0 goes; 1 resumes it
+    assert_eq!(ask1(&host, C1, begin_firmware(&img)), BundleResponse::Ready { offset: 4800, chunk: 240, window: 1920 });
+    assert_eq!(data(&host, C0, &img, 4800), Some(err(REQUEST_DATA, BundleError::Busy, 0)));
+    send(&host, C1, &img[..9600], 4800);
+    // another image: from the start
+    let other = image(12_000);
+    assert_eq!(ask1(&host, C1, begin_firmware(&other)), BundleResponse::Ready { offset: 0, chunk: 240, window: 1920 });
+    send(&host, C1, &other, 0);
+    let (r, _) = commit_firmware(&host, C1, true);
+    assert_eq!(r, BundleResponse::Rebooting);
+}
+
+/// Refused at its commit (a byte changed on the way; not an image), aborted,
+/// dropped for being idle, or not switched to: the target restarts into the
+/// running firmware. Too long for the slot: refused at once, nothing
+/// changed.
+#[test]
+fn a_firmware_update_that_fails_restarts() {
+    let img = image(20_000);
+    let (host, _) = updatable(&[race_bytes()]);
+    let too_long = BundleRequest::BeginFirmware { len: (FIRMWARE_SECTORS * SECTOR) as u32 + 16, sha256: [0; 32] };
+    assert_eq!(ask1(&host, C0, too_long), err(FIRMWARE, BundleError::NoSpace, 0));
+    assert_eq!(state(&host).active, RACE);
+    assert!(host.package(RACE).is_some());
+
+    let mut flipped = img.clone();
+    flipped[1000] ^= 1;
+    ask1(&host, C0, begin_firmware(&img));
+    send(&host, C0, &flipped, 0);
+    assert_eq!(commit_firmware(&host, C0, true), (err(COMMIT, BundleError::Hash, 0), FirmwareAction::Restart));
+
+    // hashed right, but its checksum is wrong: reason 7 (CHECKSUM)
+    let mut bad = img.clone();
+    bad[1000] ^= 1;
+    let n = bad.len() - 32;
+    let d: [u8; 32] = Sha256::digest(&bad[..n]).into();
+    bad[n..].copy_from_slice(&d);
+    ask1(&host, C0, begin_firmware(&bad));
+    send(&host, C0, &bad, 0);
+    let (r, action) = commit_firmware(&host, C0, true);
+    assert!(matches!(r, BundleResponse::Error { request: COMMIT, code: BundleError::Invalid, detail } if detail & 0xFF == 7), "{r:?}");
+    assert_eq!(action, FirmwareAction::Restart);
+
+    // the target could not switch
+    ask1(&host, C0, begin_firmware(&img));
+    send(&host, C0, &img, 0);
+    assert_eq!(commit_firmware(&host, C0, false), (err(COMMIT, BundleError::Flash, 0), FirmwareAction::Switch { digest: digest(&img) }));
+
+    // aborted
+    ask1(&host, C0, begin_firmware(&img));
+    assert_eq!(ask1(&host, C0, BundleRequest::Abort), BundleResponse::Aborted);
+    assert_eq!(block_on(host.next_firmware_action()), FirmwareAction::Restart);
+
+    // idle for a minute
+    ask1(&host, C0, begin_firmware(&img));
+    send(&host, C0, &img[..2400], 0);
+    assert!(block_on(host.bundle_expire(host.bundle_deadline().unwrap())));
+    assert_eq!(block_on(host.next_firmware_action()), FirmwareAction::Restart);
+    assert_eq!(data(&host, C0, &img, 2400), Some(err(REQUEST_DATA, BundleError::Timeout, 0)));
+}
+
+/// On trial after an update the data slot is the old firmware's: no bundle
+/// uploads, deletes or updates until the target confirms; `Firmware` says
+/// so meanwhile. Confirmed, it takes them again.
+#[test]
+fn a_firmware_on_trial_writes_nothing() {
+    let (host, _) = updatable(&[race_bytes()]);
+    host.set_pending();
+    assert!(matches!(ask1(&host, C0, BundleRequest::Firmware), BundleResponse::Firmware { pending: true, .. }));
+    let img = image(20_000);
+    assert_eq!(ask1(&host, C0, begin_firmware(&img)), err(FIRMWARE, BundleError::Busy, 0));
+    let r2 = race_archive("race2", 1, true);
+    assert_eq!(ask1(&host, C0, begin_of(RACE2, &r2)), err(BEGIN, BundleError::Busy, 0));
+    assert_eq!(ask1(&host, C0, BundleRequest::Delete { id: RACE }), err(4, BundleError::Busy, 0));
+    // what it runs, and activating, go on
+    assert_eq!(ask1(&host, C0, BundleRequest::Activate { id: CHOOSE }), BundleResponse::Activated { id: CHOOSE });
+    let track: &'static mut (dyn TrackLog + Send) = Box::leak(Box::new(RamTrack::<16>::new()));
+    block_on(host.set_track(track));
+    host.confirm();
+    assert!(matches!(ask1(&host, C0, BundleRequest::Firmware), BundleResponse::Firmware { pending: false, .. }));
+    assert!(matches!(ask1(&host, C0, begin_of(RACE2, &r2)), BundleResponse::Ready { .. }));
 }
 
 // ---- a list in the state: Tune ----

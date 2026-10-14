@@ -82,12 +82,39 @@ async fn main(_spawner: Spawner) -> ! {
                 None => info!("dump: boot package: none kept (the only app, else Choose)"),
             },
         }
+        match storage::ota_record().await {
+            Some(r) => info!(
+                "dump: firmware update on trial: ota_{=u8} -> ota_{=u8}, {=u8} boots so far, sha256 {=[u8]:02x}",
+                r.from,
+                r.to,
+                r.tries,
+                &r.digest[..]
+            ),
+            None => match storage::value_len(storage::KEY_OTA).await {
+                Some(n) => warn!("dump: firmware update: {=usize}-byte record that does not decode", n),
+                None => info!("dump: firmware update: none on trial"),
+            },
+        }
     }
+    dump_otadata();
     dump_track();
     dump_bundles();
     info!("dump: done");
     loop {
         Timer::after(Duration::from_secs(60)).await;
+    }
+}
+
+/// Which slot `otadata` selects (storage.rs logged its entries): a warning
+/// when it is `ota_1`, which `probe-rs run` (it writes `ota_0`) then never
+/// boots.
+fn dump_otadata() {
+    match storage::otadata_selects() {
+        Some(1) => warn!(
+            "dump: otadata selects ota_1 (a firmware update): `probe-rs run` writes ota_0, which the bootloader then does not boot; to boot ota_0 again blank otadata (settings untouched): probe-rs download --chip esp32c6 --binary-format bin --base-address 0xF000 target/otadata-blank.bin (cargo run -p extreme-image -- otadata-blank writes it; tgt-xiaoc6/README.md)"
+        ),
+        Some(n) => info!("dump: otadata selects ota_{=u8}", n),
+        None => warn!("dump: otadata could not be read (see the storage lines above)"),
     }
 }
 

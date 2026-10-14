@@ -8,7 +8,7 @@
 
 use core::{
     cell::{Cell, RefCell},
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicU8, Ordering},
 };
 
 use embassy_sync::{
@@ -32,7 +32,8 @@ use crate::{
     ble_settings::{BleCommand, BleStatus, BleStatusView},
     config::{MAX_BLE_CONNECTIONS, MAX_WEB_SOCKETS, TRACK_FIXES},
     engine::{EngineMemory, Evaluated, Event, LIMITS, Rejected, VmEngine},
-    fmt::Dbg,
+    firmware::Firmware,
+    fmt::{Dbg, Disp, Hex},
     nmea::GpsUpdate,
     package::Package,
     store::{Bundles, Error as StoreError, Space, Uploading},
@@ -313,6 +314,45 @@ pub struct Host {
     /// The running firmware; `None` until the target says
     /// ([`set_identity`](Self::set_identity)), and on a host that doesn't.
     identity: BlockingMutex<CriticalSectionRawMutex, Cell<Option<Identity>>>,
+    /// Where a firmware update's image goes (the data slot); `None` on a
+    /// host that takes no updates.
+    firmware: Mutex<CriticalSectionRawMutex, Option<&'static mut (dyn Firmware + Send)>>,
+    /// What may be written to the data slot ([`Data`]).
+    data: AtomicU8,
+    /// What the target is to do for the firmware
+    /// ([`next_firmware_action`](Self::next_firmware_action)).
+    firmware_actions: Signal<CriticalSectionRawMutex, FirmwareAction>,
+    /// The target's answer to a [`FirmwareAction::Switch`]: whether the next
+    /// boot runs the new image ([`firmware_switched`](Self::firmware_switched)).
+    firmware_done: Signal<CriticalSectionRawMutex, bool>,
+}
+
+/// What may be written to the data slot (the store and the track live
+/// there, and a firmware update's image goes there).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Data {
+    /// Anything: bundle uploads and deletes, the track, an update.
+    Writable = 0,
+    /// Nothing: the firmware runs on trial after an update
+    /// ([`Host::set_pending`]) and the slot holds the image it came from,
+    /// which the target boots again if this one fails; until
+    /// [`Host::confirm`].
+    Unconfirmed = 1,
+    /// An update's image is being written over it: the store and the track
+    /// are gone until the reboot.
+    Updating = 2,
+}
+
+/// What the target does for the firmware ([`Host::next_firmware_action`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FirmwareAction {
+    /// An image with this digest is in the data slot, checked: boot it next
+    /// (on trial), answer with [`Host::firmware_switched`], then restart.
+    Switch { digest: [u8; 32] },
+    /// An update ended without one (refused, aborted, dropped): restart into
+    /// the running slot, so the store and the track come back.
+    Restart,
 }
 
 /// The running firmware, as the target found it at boot
@@ -351,29 +391,32 @@ impl Host {
     /// ([`Registry::boot_package`]); its engines run in `memory`, with a
     /// track in RAM.
     pub fn new(registry: Registry, memory: &'static mut EngineMemory) -> Self {
-        Self::with(registry, memory, HostTrack::Ram(RamTrack::new()), None)
+        Self::with(registry, memory, HostTrack::Ram(RamTrack::new()), None, None)
     }
 
     /// [`new`](Self::new), with `track` as the engines' `gps`.
     pub fn with_track(registry: Registry, memory: &'static mut EngineMemory, track: &'static mut (dyn TrackLog + Send)) -> Self {
-        Self::with(registry, memory, HostTrack::Given(track), None)
+        Self::with(registry, memory, HostTrack::Given(track), None, None)
     }
 
-    /// [`new`](Self::new), with `track` (if any) as the engines' `gps`, and
+    /// [`new`](Self::new), with `track` (if any) as the engines' `gps`,
     /// `store` (if any): the bundle store the registry's apps were read
     /// from ([`BundleStore::open`](crate::store::BundleStore::open)), which
-    /// installs and deletes go to.
+    /// installs and deletes go to, and `firmware` (if any): where an update's
+    /// image goes ([`firmware_begin`](Self::firmware_begin)), over the same
+    /// flash as the store and the track.
     pub fn with_storage(
         registry: Registry,
         memory: &'static mut EngineMemory,
         track: Option<&'static mut (dyn TrackLog + Send)>,
         store: Option<&'static mut (dyn Bundles + Send)>,
+        firmware: Option<&'static mut (dyn Firmware + Send)>,
     ) -> Self {
         let track = match track {
             Some(track) => HostTrack::Given(track),
             None => HostTrack::Ram(RamTrack::new()),
         };
-        Self::with(registry, memory, track, store)
+        Self::with(registry, memory, track, store, firmware)
     }
 
     fn with(
@@ -381,6 +424,7 @@ impl Host {
         memory: &'static mut EngineMemory,
         track: HostTrack,
         store: Option<&'static mut (dyn Bundles + Send)>,
+        firmware: Option<&'static mut (dyn Firmware + Send)>,
     ) -> Self {
         let boot = registry.boot_package();
         let host = Host {
@@ -402,6 +446,10 @@ impl Host {
             boot_changes: Signal::new(),
             upload: BlockingMutex::new(Cell::new(None)),
             identity: BlockingMutex::new(Cell::new(None)),
+            firmware: Mutex::new(firmware),
+            data: AtomicU8::new(Data::Writable as u8),
+            firmware_actions: Signal::new(),
+            firmware_done: Signal::new(),
         };
         if let Ok(mut active) = host.active.try_lock() {
             host.start(&mut active, boot);
@@ -520,11 +568,15 @@ impl Host {
     /// bundle deleted since boot that something may still be reading, it
     /// waits for the readers ([`lease`](Self::lease)) to go, looking every
     /// 50 ms; [`StoreError::Busy`] if they are still there after 10 s.
-    /// Refused for Choose's id, without a store, and for a new id with
-    /// the registry full.
+    /// Refused for Choose's id, without a store, for a new id with the
+    /// registry full, and ([`StoreError::Busy`]) unless the data slot is
+    /// writable (a firmware on trial, or an update under way).
     pub async fn bundle_begin(&self, id: PackageId, len: u32, sha256: &[u8; 32]) -> Result<(), StoreError> {
         if id == CHOOSE {
             return Err(StoreError::Install(InstallError::Id));
+        }
+        if self.data() != Data::Writable {
+            return Err(StoreError::Busy);
         }
         let full = self.registry.lock(|r| {
             let r = r.borrow();
@@ -590,8 +642,12 @@ impl Host {
     }
 
     /// Deletes the bundle `id` from the store and the registry; if it was
-    /// active, back to the default.
+    /// active, back to the default. [`StoreError::Busy`] unless the data
+    /// slot is writable (as [`bundle_begin`](Self::bundle_begin)).
     pub async fn bundle_delete(&self, id: PackageId) -> Result<(), StoreError> {
+        if self.data() != Data::Writable {
+            return Err(StoreError::Busy);
+        }
         let mut active = self.active.lock().await;
         match self.store.lock().await.as_deref_mut() {
             Some(store) => store.delete(id)?,
@@ -628,11 +684,177 @@ impl Host {
         Some(BundleResponse::Firmware {
             sha256: identity.sha256,
             slot: identity.slot,
-            // on trial after an update until it confirms itself: no
-            // updates yet, so never
-            pending: false,
+            pending: self.pending(),
             max_len: identity.max_len,
         })
+    }
+
+    fn data(&self) -> Data {
+        match self.data.load(Ordering::Acquire) {
+            0 => Data::Writable,
+            1 => Data::Unconfirmed,
+            _ => Data::Updating,
+        }
+    }
+
+    /// The firmware runs on trial, just updated: nothing is written to the
+    /// data slot (it holds the image the update came from) until
+    /// [`confirm`](Self::confirm). Set by the target at boot, before any
+    /// client is served.
+    pub fn set_pending(&self) {
+        self.data.store(Data::Unconfirmed as u8, Ordering::Release);
+    }
+
+    /// Whether the firmware runs on trial ([`set_pending`](Self::set_pending)).
+    pub fn pending(&self) -> bool {
+        self.data() == Data::Unconfirmed
+    }
+
+    /// The firmware on trial is confirmed: the data slot is writable again
+    /// (the target opened the track there first: [`set_track`](Self::set_track)).
+    pub fn confirm(&self) {
+        let _ = self.data.compare_exchange(Data::Unconfirmed as u8, Data::Writable as u8, Ordering::AcqRel, Ordering::Acquire);
+    }
+
+    /// `track` becomes the engines' `gps` from now on (the fixes so far are
+    /// left behind): the target's, in flash, once the data slot may be
+    /// written.
+    pub async fn set_track(&self, track: &'static mut (dyn TrackLog + Send)) {
+        self.active.lock().await.track = HostTrack::Given(track);
+    }
+
+    /// Starts a firmware update: an image of `len` bytes whose appended
+    /// digest is `digest` ([`Firmware::begin`]). The first one takes the
+    /// data slot over for good (until the reboot that follows, whichever
+    /// way the update ends): once no reader holds a [`lease`](Self::lease)
+    /// (waiting as [`bundle_begin`](Self::bundle_begin) does), every bundle
+    /// leaves the registry (the active one gives way to Choose), the track
+    /// goes to RAM and the store is dropped; then the image is written over
+    /// them. Another begin while that holds starts the image afresh.
+    /// [`StoreError::Busy`] while the firmware is on trial, and
+    /// [`StoreError::NotFound`] on a host that takes no updates.
+    pub async fn firmware_begin(&self, len: u32, digest: &[u8; 32]) -> Result<(), StoreError> {
+        match self.data() {
+            Data::Unconfirmed => return Err(StoreError::Busy),
+            Data::Updating => {
+                return match self.firmware.lock().await.as_deref_mut() {
+                    Some(sink) => sink.begin(len, digest),
+                    None => Err(StoreError::NotFound),
+                };
+            }
+            Data::Writable => {}
+        }
+        let deadline = Instant::now() + LEASE_WAIT;
+        while self.leases() > 0 {
+            if Instant::now() >= deadline {
+                warn!("host: firmware update refused: a bundle's reader held on for {} s", LEASE_WAIT.as_secs());
+                return Err(StoreError::Busy);
+            }
+            embassy_time::Timer::after(LEASE_POLL).await;
+        }
+        let mut active = self.active.lock().await;
+        let mut firmware = self.firmware.lock().await;
+        let Some(sink) = firmware.as_deref_mut() else {
+            return Err(StoreError::NotFound);
+        };
+        // nothing in flash is touched before the image is known to fit
+        sink.begin(len, digest)?;
+        let removed = self.registry.lock(|r| {
+            let mut r = r.borrow_mut();
+            let n = r.apps.len();
+            r.apps.clear();
+            n
+        });
+        if active.id() != CHOOSE {
+            let default = self.registry.lock(|r| r.borrow().default_package());
+            self.start(&mut active, default);
+        }
+        self.publish(&mut active);
+        active.track = HostTrack::Ram(RamTrack::new());
+        // a bundle upload in progress goes with it
+        let _ = self.store.lock().await.take();
+        self.data.store(Data::Updating as u8, Ordering::Release);
+        info!(
+            "host: firmware update begun: {} B, sha256 {}; {} bundles out of the registry, the track in RAM, the store dropped until the reboot",
+            len,
+            Disp(&Hex(digest)),
+            removed
+        );
+        Ok(())
+    }
+
+    /// The image's next bytes ([`Firmware::write`]); the bytes written so far.
+    pub async fn firmware_write(&self, offset: u32, bytes: &[u8]) -> Result<u32, StoreError> {
+        match self.firmware.lock().await.as_deref_mut() {
+            Some(sink) if self.data() == Data::Updating => sink.write(offset, bytes),
+            _ => Err(StoreError::NoUpload),
+        }
+    }
+
+    /// Ends the update ([`Firmware::finish`]): the image checked, the
+    /// target is told to boot it ([`FirmwareAction::Switch`]) and answers
+    /// whether it will; its digest then, and the target restarts shortly.
+    /// [`StoreError::Length`] before every byte is in (the upload goes on);
+    /// any other refusal ends it, and the target restarts into the running
+    /// firmware ([`FirmwareAction::Restart`]), as it does when it couldn't
+    /// switch ([`StoreError::Flash`]).
+    pub async fn firmware_commit(&self) -> Result<[u8; 32], StoreError> {
+        let finished = match self.firmware.lock().await.as_deref_mut() {
+            Some(sink) if self.data() == Data::Updating => sink.finish(),
+            _ => return Err(StoreError::NoUpload),
+        };
+        let digest = match finished {
+            Ok(digest) => digest,
+            Err(StoreError::Length) => return Err(StoreError::Length),
+            Err(e) => {
+                warn!("host: firmware image refused: {:?}; restarting", Dbg(&e));
+                self.firmware_actions.signal(FirmwareAction::Restart);
+                return Err(e);
+            }
+        };
+        self.firmware_done.reset();
+        self.firmware_actions.signal(FirmwareAction::Switch { digest });
+        if self.firmware_done.wait().await {
+            info!("host: firmware {} checked; the next boot runs it", Disp(&Hex(&digest)));
+            Ok(digest)
+        } else {
+            error!("host: firmware {} checked, but the switch to it failed; restarting", Disp(&Hex(&digest)));
+            Err(StoreError::Flash)
+        }
+    }
+
+    /// Drops the update in progress (the target restarts into the running
+    /// firmware: [`FirmwareAction::Restart`]); whether there was one.
+    pub async fn firmware_abort(&self) -> bool {
+        let aborted = match self.firmware.lock().await.as_deref_mut() {
+            Some(sink) if self.data() == Data::Updating => sink.abort(),
+            _ => false,
+        };
+        if self.data() == Data::Updating {
+            info!("host: firmware update dropped; restarting");
+            self.firmware_actions.signal(FirmwareAction::Restart);
+        }
+        aborted
+    }
+
+    /// The firmware update in progress, if any.
+    pub async fn firmware_uploading(&self) -> Option<Uploading> {
+        if self.data() != Data::Updating {
+            return None;
+        }
+        self.firmware.lock().await.as_deref().and_then(|s| s.uploading())
+    }
+
+    /// What the target is to do for the firmware next; only the latest
+    /// matters.
+    pub async fn next_firmware_action(&self) -> FirmwareAction {
+        self.firmware_actions.wait().await
+    }
+
+    /// The target's answer to [`FirmwareAction::Switch`]: whether the next
+    /// boot runs the new image.
+    pub fn firmware_switched(&self, ok: bool) {
+        self.firmware_done.signal(ok);
     }
 
     // ---- inputs ----
