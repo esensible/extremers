@@ -165,6 +165,9 @@ async fn main(spawner: Spawner) -> ! {
     storage::init(peripherals.FLASH).await;
     storage::init_ota(ota_flash).await;
     let on_trial = ota_boot().await;
+    if !on_trial {
+        storage::select_running().await;
+    }
     let mut watchdog = Rtc::new(peripherals.RTC_TIMER);
     if on_trial {
         watchdog.rwdt.set_timeout(RwdtStage::Stage0, OTA_WATCHDOG);
@@ -334,7 +337,8 @@ async fn main(spawner: Spawner) -> ! {
 
 /// After an update: `KEY_OTA` names the slot running and its image (else
 /// the bootloader fell back to the other slot, or something else was
-/// flashed: the record goes, and this is a normal boot). Each boot of it
+/// flashed: the record goes, and this is a normal boot, at which
+/// `storage::select_running` points `otadata` back at this slot). Each boot of it
 /// is counted; at [`OTA_TRIES`] the slot it came from boots again
 /// (`otadata` switched back, the record removed, a reset), else it runs on
 /// trial: `true`, and a panic resets ([`storage::RESET_ON_PANIC`]).

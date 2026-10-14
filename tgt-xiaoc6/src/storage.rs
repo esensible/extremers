@@ -17,7 +17,9 @@
 //! touch it (see partitions.csv for why).
 //!
 //! The app writes at boot only after a firmware update (`KEY_OTA`'s boot
-//! count) and to repair a corrupt `otadata` entry. It writes a bond record
+//! count), to repair a corrupt `otadata` entry, and to make `otadata` select
+//! the slot running when the bootloader fell back ([`select_running`]). It
+//! writes a bond record
 //! when a device pairs during the pairing window and removes them all on
 //! "Forget all watches" (BLE.md "Security"). Erasing the partition (WiFi credentials
 //! and bonds alike) and writing the WiFi credentials is the `provision`
@@ -60,7 +62,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embedded_storage_async::nor_flash::NorFlash as _;
 use esp_bootloader_esp_idf::{
-    ota::Ota,
+    ota::{Ota, OtaImageState},
     partitions::{self, AppPartitionSubType},
 };
 use esp_hal::peripherals::FLASH;
@@ -927,5 +929,51 @@ pub async fn with_ota<R>(what: &str, f: impl FnOnce(&mut Ota<'_, 'static>) -> Re
             warn!("otadata: {=str} failed: {:?}", what, defmt::Debug2Format(&e));
             None
         }
+    }
+}
+
+/// Makes `otadata` select the slot running, state `Valid`, when it selects
+/// the other one; main.rs calls it at a boot with no update on trial. The
+/// bootloader boots the selected slot only if its image checks out, else
+/// falls back to the other: after `probe-rs run` into `ota_0` while
+/// `otadata` selected `ota_1` (the data slot, no image at its start), or an
+/// update whose image failed the bootloader's check. Left alone, `otadata`
+/// keeps naming a slot that does not boot, the next update's switch is
+/// computed from it, and `dump` reads it wrong. Blank `otadata` selects
+/// `ota_0` (what the bootloader boots then). Logged only when it writes.
+pub async fn select_running() {
+    let Some(running) = data_slot().map(|s| s.booted_subtype - OTA_SUBTYPES.start()) else {
+        return;
+    };
+    let healed = with_ota("selecting the running slot", |ota| {
+        let selected = ota.current_app_partition()?;
+        let selects = match selected {
+            AppPartitionSubType::Factory => 0,
+            s => s as u8 - OTA_SUBTYPES.start(),
+        };
+        if selects == running {
+            return Ok(None);
+        }
+        let (Some(first), Some(slot)) = (app_slot(0), app_slot(running)) else {
+            return Err(partitions::Error::InvalidArgument);
+        };
+        // From blank, esp-bootloader-esp-idf 0.6 gives ota_1 sequence
+        // number 0 (it works only by wrapping round): ota_0 first makes it
+        // the plain next number (as main.rs `switch_to_update`).
+        if selected == AppPartitionSubType::Factory {
+            ota.set_current_app_partition(first)?;
+        }
+        ota.set_current_app_partition(slot)?;
+        ota.set_current_ota_state(OtaImageState::Valid)?;
+        Ok(Some(selects))
+    })
+    .await;
+    if let Some(Some(selected)) = healed {
+        warn!(
+            "storage: otadata selected ota_{=u8} but ota_{=u8} runs (the bootloader fell back): now selects ota_{=u8}",
+            selected,
+            running,
+            running
+        );
     }
 }
