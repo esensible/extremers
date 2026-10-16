@@ -114,7 +114,14 @@ test('expr language configuration and theme', () => {
   const rules = new Set(studioTheme.rules.map((r) => r.token));
   for (const t of ['keyword', 'builtin', 'builtin.sailing', 'predicate', 'identifier', 'field', 'operator', 'delimiter', 'string', 'comment', 'number', 'invalid']) assert.ok(rules.has(t), t);
   for (const r of studioTheme.rules) assert.match(r.foreground, /^[0-9A-F]{6}$/);
-  assert.equal(studioTheme.base, 'vs');
+  assert.equal(studioTheme.base, 'vs-dark');
+  // the page's dark tokens: the editor sits on the ground, its cursor is the accent
+  assert.equal(studioTheme.colors['editor.background'], '#111418');
+  assert.equal(studioTheme.colors['editorCursor.foreground'], '#F2A33A');
+  // every token colour reads at 4.5:1 or more on the editor's background
+  const lum = (hex) => { const c = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const bg = lum('111418');
+  for (const r of studioTheme.rules) assert.ok((lum(r.foreground) + 0.05) / (bg + 0.05) >= 4.5, `${r.token || '(default)'} #${r.foreground}`);
 });
 
 // ------------------------------------------------------------------- JSX ----

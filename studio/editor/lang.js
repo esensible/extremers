@@ -12,7 +12,7 @@
 
 /** Monaco's language id for engine.expr, and the studio's theme. */
 export const EXPR = 'expr';
-export const THEME = 'studio-light';
+export const THEME = 'studio-dark';
 
 /** Words the parser treats specially (syntax.rs; `if`/`else` per SPEC §2.1). */
 export const KEYWORDS = ['let', 'in', 'nil', 'true', 'false', 'and', 'or', 'not', 'if', 'else'];
@@ -152,47 +152,67 @@ export function withJsx(language) {
 }
 
 /**
- * The studio's light theme (the page has no dark mode: `color-scheme: light`).
- * Colours from index.html's tokens: ink #15191E, ink-2 #34404D, muted
- * #5A626B, accent #C2410C / #9A3412, info #1E5BB8 / #1E4F9C, danger #A3201A,
- * warn #8A5300, line #D5DAD3, raised #FAFBF8, info-bg #E3ECF9.
+ * The studio's dark theme. Colours from index.html's tokens: ground #111418,
+ * chrome #14181D, hover #222831, selected #262C35 / #2A313B, lines #262C34 /
+ * #2B313A, text #E4E7EB / #C3C9D1, muted #8E98A4, faint #4A525D, accent
+ * #F2A33A, good #7FDBA9, warn #E9B949, bad #F59A8F, info #6CB4EE; keywords
+ * #C792EA as in the approved design. Every token colour reads at 4.5:1 or
+ * more on the ground.
  */
 export const studioTheme = {
-  base: 'vs',
+  base: 'vs-dark',
   inherit: true,
   rules: [
-    { token: 'keyword', foreground: '1E4F9C', fontStyle: 'bold' },
-    { token: 'builtin', foreground: 'C2410C' },
-    { token: 'builtin.sailing', foreground: '9A3412', fontStyle: 'bold' },
-    { token: 'predicate', foreground: '8A5300', fontStyle: 'bold' },
-    { token: 'identifier', foreground: '15191E' },
-    { token: 'field', foreground: '34404D' },
-    { token: 'operator', foreground: '5A626B' },
-    { token: 'delimiter', foreground: '5A626B' },
-    { token: 'string', foreground: '2E6B30' },
-    { token: 'string.escape', foreground: '2E6B30', fontStyle: 'bold' },
-    { token: 'string.invalid', foreground: 'A3201A', fontStyle: 'italic' },
-    { token: 'comment', foreground: '6E767E', fontStyle: 'italic' },
-    { token: 'number', foreground: '1E5BB8' },
-    { token: 'invalid', foreground: 'A3201A', fontStyle: 'underline' },
-    { token: 'tag.jsx', foreground: '1E4F9C' },
-    { token: 'delimiter.jsx', foreground: '5A626B' },
-    { token: 'attribute.name', foreground: '9A3412' },
-    { token: 'attribute.value', foreground: '2E6B30' },
-    { token: 'jsx.text', foreground: '15191E' },
+    { token: '', foreground: 'C3C9D1' },
+    { token: 'keyword', foreground: 'C792EA' },
+    { token: 'builtin', foreground: '6CB4EE' },
+    { token: 'builtin.sailing', foreground: '6CB4EE', fontStyle: 'bold' },
+    { token: 'predicate', foreground: 'E9B949', fontStyle: 'bold' },
+    { token: 'identifier', foreground: 'E4E7EB' },
+    { token: 'field', foreground: 'C3C9D1' },
+    { token: 'operator', foreground: '8E98A4' },
+    { token: 'delimiter', foreground: '8E98A4' },
+    { token: 'string', foreground: '7FDBA9' },
+    { token: 'string.escape', foreground: '7FDBA9', fontStyle: 'bold' },
+    { token: 'string.invalid', foreground: 'F59A8F', fontStyle: 'italic' },
+    { token: 'comment', foreground: '8A94A0', fontStyle: 'italic' },
+    { token: 'number', foreground: 'F2A33A' },
+    { token: 'invalid', foreground: 'F59A8F', fontStyle: 'underline' },
+    { token: 'tag.jsx', foreground: '6CB4EE' },
+    { token: 'delimiter.jsx', foreground: '8E98A4' },
+    { token: 'attribute.name', foreground: 'C792EA' },
+    { token: 'attribute.value', foreground: '7FDBA9' },
+    { token: 'jsx.text', foreground: 'E4E7EB' },
   ],
   colors: {
-    'editor.background': '#FFFFFF',
-    'editor.foreground': '#15191E',
-    'editor.lineHighlightBackground': '#F4F6F2',
+    'editor.background': '#111418',
+    'editor.foreground': '#C3C9D1',
+    'editor.lineHighlightBackground': '#161A20',
     'editor.lineHighlightBorder': '#00000000',
-    'editorLineNumber.foreground': '#8A9199',
-    'editorLineNumber.activeForeground': '#34404D',
-    'editor.selectionBackground': '#C9DAF3',
-    'editor.inactiveSelectionBackground': '#E3ECF9',
-    'editorIndentGuide.background1': '#E4E8E2',
-    'editorGutter.background': '#FFFFFF',
-    'editorCursor.foreground': '#C2410C',
+    'editorLineNumber.foreground': '#4A525D',
+    'editorLineNumber.activeForeground': '#8E98A4',
+    'editor.selectionBackground': '#2F4A66',
+    'editor.inactiveSelectionBackground': '#262C35',
+    'editor.selectionHighlightBackground': '#2A313B',
+    'editorIndentGuide.background1': '#262C34',
+    'editorIndentGuide.activeBackground1': '#353C47',
+    'editorGutter.background': '#111418',
+    'editorCursor.foreground': '#F2A33A',
+    'editorWidget.background': '#1B2027',
+    'editorWidget.border': '#353C47',
+    'editorHoverWidget.background': '#1B2027',
+    'editorHoverWidget.border': '#353C47',
+    'editorSuggestWidget.background': '#1B2027',
+    'editorSuggestWidget.border': '#353C47',
+    'editorSuggestWidget.selectedBackground': '#2A313B',
+    'scrollbarSlider.background': '#2F364080',
+    'scrollbarSlider.hoverBackground': '#353C47',
+    'scrollbarSlider.activeBackground': '#4A525D',
+    'editorBracketMatch.background': '#2A313B',
+    'editorBracketMatch.border': '#4A525D',
+    'editorError.foreground': '#F59A8F',
+    'editorWarning.foreground': '#E9B949',
+    'editorInfo.foreground': '#6CB4EE',
   },
 };
 

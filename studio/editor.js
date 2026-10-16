@@ -29,7 +29,7 @@ import { esc, editorId } from './ui.js';
 
 const VS = new URL('./lib/monaco/vs', import.meta.url).href;
 const SCHEMA_URL = (name) => new URL(`./editor/schemas/${name}.json`, import.meta.url).href;
-const FONT = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+const FONT = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
 
 // ------------------------------------------------------------ loading ----
 
@@ -109,10 +109,11 @@ function setUpMonaco(monaco) {
 /**
  * The editor in mountEl (a positioned element; the Monaco host fills it), with
  * tabs in opts.tabsEl. Callbacks: onSave(path) on Cmd/Ctrl-S, onBlur(path),
- * onCloseTab(path) when a tab's ✕ is clicked (default: close it), onCursor().
+ * onCloseTab(path) when a tab's ✕ is clicked (default: close it), onCursor();
+ * tabLabel(path): a tab's text (default: the file's name; its title is the path).
  */
 export function createEditor(mountEl, opts = {}) {
-  const { tabsEl = null, onSave = () => {}, onBlur = () => {}, onCloseTab = null, onCursor = () => {} } = opts;
+  const { tabsEl = null, onSave = () => {}, onBlur = () => {}, onCloseTab = null, onCursor = () => {}, tabLabel = (p) => p.split('/').pop() } = opts;
   const files = new Map(); // path → { model, saved, saving, readOnly, view, subs: Set<cb>, sub }
   const order = []; // open paths, in tab order
   const activeSubs = new Set();
@@ -184,7 +185,7 @@ export function createEditor(mountEl, opts = {}) {
   function renderTabs() {
     if (!tabsEl) return;
     tabsEl.innerHTML = order.map((p) => {
-      const name = p.split('/').pop();
+      const name = tabLabel(p);
       const f = files.get(p);
       const dot = isDirty(p) || f?.saving ? '<span class="dirty" aria-label="unsaved">●</span>' : '';
       return `<button type="button" role="tab" class="tab" id="editor-tab-${esc(p)}" data-path="${esc(p)}" aria-selected="${p === active}" title="${esc(p)}">${esc(name)}${dot}<span class="x" data-close="${esc(p)}" role="button" aria-label="Close ${esc(p)}">✕</span></button>`;
