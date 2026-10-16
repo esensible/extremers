@@ -426,28 +426,52 @@ on trial after an update from ota_M: boot 1 of 3; …` and, 20 s later,
 
 ### Throughput
 
-A central writes about one `data` chunk per connection event, so the
-connection interval sets an upload's rate: Chrome on a Mac uploaded Race at
-9.7 KB/s in 240-byte chunks, one write every 25 ms or so. While a
-connection owns a live upload the box therefore asks for a **15 ms**
-interval (exactly; latency 0; the link's supervision timeout, held within
-2–6 s), from `Begin` (or a resume) on; once the upload is over (committed,
-aborted, refused at its commit, idle for 60 s, or resumed by another
-connection) it asks for what the link had before, rounded up to a multiple
-of 15 ms, to 15 ms more. 15 ms is the shortest Apple's accessory
-guidelines let a peripheral ask a Mac or an iPhone for (minimum a multiple
-of 15 ms; maximum at least 15 ms above it unless both are 15 ms; timeout
-2–6 s and more than three maximum intervals); a request outside them may
-be refused. A link already at 15 ms or less is left alone. The central
-decides; the box only asks. Firmware: `common/src/ble.rs`
-`upload_interval`.
+About one `data` chunk goes per connection event either way, so the
+connection interval sets a transfer's rate: Chrome on a Mac uploaded Race at
+9.7 KB/s in 240-byte chunks, one write every 25 ms or so, and a `Get` went
+at 8.6–10 KB/s (30–45 ms intervals). While a connection owns a live upload,
+and while it sends a `Get`, the box therefore asks for a **15 ms** interval
+(exactly; latency 0; the link's supervision timeout, held within 2–6 s),
+from `Begin` (or a resume) on, or before a download's first chunk; once the
+transfer is over (committed, aborted, refused at its commit, idle for 60 s,
+resumed by another connection, or sent) it asks for the link's own
+interval again, rounded up to a multiple of 15 ms, to 15 ms more. 15 ms is
+the shortest Apple's accessory guidelines let a peripheral ask a Mac or an
+iPhone for (minimum a multiple of 15 ms; maximum at least 15 ms above it
+unless both are 15 ms; timeout 2–6 s and more than three maximum
+intervals); a request outside them may be refused. A link the central
+itself runs at 15 ms or less is left alone. The central decides; the box
+only asks. Firmware: `common/src/ble.rs` `pace`, `Pacer`.
+
+Transfers back to back (an update's saves and restores): every one asks
+for 15 ms, also when it begins while the last one's restore is still on
+its way (the link then still reads 15 ms, and the restore would land under
+it: a Mac picks the top of 30–45 ms). The controller runs one
+connection-parameter procedure at a time and refuses a request while one
+is in progress (Command Disallowed, Different Transaction Collision): the
+box sends it again as soon as the link's parameters change, or after
+0.5 s. A request that went but did not take within 1.5 s (the central's
+own procedure collided with it: the host logs `error updating connection
+parameters … LL Procedure Collision`) is sent again, three times in all.
+The interval restored is the link's own from before the first of them,
+not where the last restore landed, so it does not creep up (30, 45, 60,
+75 ms) with every transfer.
 
 The box logs every connection's interval as it connects (`ble: connection
 C from … (…; interval 30 ms)`), the request (`ble: connection C: bundle
-upload begun: asking for interval 15-15 ms (now 30 ms)`, and `… bundle
-upload over: asking for interval 30-45 ms (now 15 ms)`), and what the
-central agreed (`ble: connection C: interval 15 ms, latency 0, supervision
-timeout … ms`).
+upload begun: asking for interval 15-15 ms (now 30 ms)`, `… bundle download
+begun: …`, `… bundle upload over: asking for interval 30-45 ms (now
+15 ms)`, a refused one's `… asked for interval 15-15 ms again, sent`), what
+the central agreed (`ble: connection C: interval 15 ms, latency 0,
+supervision timeout … ms`), and with each download its rate, the interval
+at its end and how often the packet pool ran dry.
+
+Measured 2026-10-16 (Chrome on a Mac, the C6 in hand): a `Get` of Race,
+Mark and Tune2 went at 8.6–9.1 KB/s before (box 9.5–10.0 KB/s at 45 ms)
+and 11.7–21.7 KB/s after (box 14.5–24.1 KB/s at 15 ms, the packet pool
+never dry); installing the three back to back, the second and third used
+to run at 45 ms (8.2 and 5.1 KB/s) and now each get 15 ms (13.0–13.5 KB/s
+that run; radio conditions vary run to run).
 
 Expected, not yet measured: one 240-byte chunk per 15 ms event is 16 KB/s,
 less the odd wait for an `Ack` (rare: the window is two `Ack`s deep), so

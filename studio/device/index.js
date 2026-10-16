@@ -142,14 +142,19 @@ export function createDevice({
     };
   }
 
-  /** Runs one device operation: the busy guard, the error record, the change notices. */
-  async function run(name, fn) {
+  /**
+   * Runs one device operation: the busy guard, the error record, the change
+   * notices. fresh: the operation's progress starts empty (an update, whose
+   * stages follow its progress, must not show the last transfer's 'done').
+   */
+  async function run(name, fn, { fresh = false } = {}) {
     if (op) {
       const e = new Error(`busy: device ${op} is running`);
       e.hint = 'one device operation at a time: wait for it to finish (api.device.status() shows its progress), then try again';
       throw e;
     }
     op = name;
+    if (fresh) progress = null;
     changed();
     try {
       const r = await fn();
@@ -217,7 +222,17 @@ export function createDevice({
   // firmware) still restores the bundles, then rejects with the refusal.
 
   async function ota(what, onProgress) {
-    const report = (p) => { setProgress(p); try { onProgress?.(p); } catch { /* ignore */ } };
+    // Every report carries where the update started (from: the slot and sha
+    // the box ran before the image went, fixed for the whole update) and its
+    // target once known (to: the image's sha, and its slot once the box runs
+    // it), so the tracker's header does not follow status().firmware onto
+    // the new slot.
+    const route = { from: null, to: null };
+    const report = (p) => {
+      const q = { ...p, ...(route.from ? { from: route.from } : {}), ...(route.to ? { to: route.to } : {}) };
+      setProgress(q);
+      try { onProgress?.(q); } catch { /* ignore */ }
+    };
     const fail = (message, hint) => Object.assign(new Error(message), { hint });
     if (what instanceof Uint8Array || what instanceof ArrayBuffer) what = { bytes: what };
     if (!isPlain(what) || (!what.bytes && what.resume !== true)) throw fail('expected { bytes } (a firmware image) or { resume: true }', 'api.device.updateFirmware({ base64 }) to update, api.device.updateFirmware({}) to finish one that was interrupted');
@@ -237,6 +252,10 @@ export function createDevice({
       if (!rec) throw fail('no interrupted firmware update for this box: nothing to resume', 'api.device.updateFirmware({ base64 }) starts one');
       L('info', `firmware update: resuming from its backup (phase ${rec.phase}, ${rec.bundles.length} bundles, saved ${new Date(rec.at).toISOString()})`);
       before = { sha256: rec.fromSha, slot: rec.fromSlot };
+      route.from = { ...before };
+      route.to = { sha256: rec.toSha };
+      // the progress of whatever ran before is not this update's
+      report({ phase: { saved: 'firmware', firmware: 'reboot' }[rec.phase] ?? 'restore', sent: 0, total: 0 });
     } else {
       if (rec) {
         throw fail(`a firmware update of this box was interrupted (phase ${rec.phase}): its ${rec.bundles.length} saved bundles are not back on the box yet`,
@@ -249,6 +268,10 @@ export function createDevice({
       const image = await checkImage(bytes, before.maxLen || null);
       if (before.pending) throw fail(`busy: the box runs a firmware still on trial (${before.sha256.slice(0, 8)}…; it confirms itself 20 s after it boots)`, 'wait for it (api.device.firmware().pending false), then api.device.updateFirmware() again');
       L('info', `firmware update: ota_${before.slot} runs ${before.sha256}; image ${image.len} B, sha256 ${image.sha256}`);
+      route.from = { sha256: before.sha256, slot: before.slot };
+      route.to = { sha256: image.sha256 };
+      // the progress of whatever ran before is not this update's
+      report({ phase: 'save', sent: 0, total: 0 });
       const l = await list();
       const keep = l.bundles.filter((b) => !b.builtin);
       const saved = [];
@@ -342,6 +365,9 @@ export function createDevice({
     }
     const rebootMs = sendImage ? Math.round(now() - t0) : null;
     const updated = after.sha256 === rec.toSha;
+    // the target's slot, once the box runs it (a box that kept its old
+    // firmware did not reach the target: no slot to show for it)
+    if (updated) route.to = { sha256: rec.toSha, slot: after.slot };
     const note = refusal || updated
       ? undefined
       : after.sha256 === rec.fromSha
@@ -451,7 +477,7 @@ export function createDevice({
      * ota() below. → { updated, note?, from, to, sha256, len, saved,
      * restored, notRestored?, activated, resumed, ms, kbps, rebootMs, … }
      */
-    updateFirmware: (what, { onProgress } = {}) => run('ota', () => ota(what, onProgress)),
+    updateFirmware: (what, { onProgress } = {}) => run('ota', () => ota(what, onProgress), { fresh: true }),
 
     /** Whether a firmware update's backup waits to be restored on the box in hand (looked up again). → { deviceId, phase, at, bundles } | null */
     refreshBackup,

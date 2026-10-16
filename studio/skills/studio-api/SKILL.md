@@ -289,7 +289,11 @@ fake of the box; it has not yet run against the hardware itself.
   answers `ok: false`, after the bundles are back. **The GPS track is
   lost**: it is not saved. Progress (`api.device.status().progress.phase`):
   `save`, `firmware`, `reboot` (`pending: true` while on trial), `restore`,
-  `done`. About 1.7 MB at ~30 kB/s plus ~25 s of reboot: give it 2–3
+  `done`; `save` and `restore` carry `bundle`, `index` and `of`, and their
+  `sent`/`total` are that bundle's. Every update progress carries `from` (`{
+  sha256, slot }` the box ran before the image went: fixed for the whole
+  update) and, once known, `to` (`{ sha256 }` of the image, with `slot`
+  once the box runs it). About 1.7 MB at ~30 kB/s plus ~25 s of reboot: give it 2–3
   minutes and poll `status()` meanwhile.
 - **Resume.** If the flow stops once the bundles are saved (a reload, the
   box not back in time, a lost link), the backup stays and
@@ -418,7 +422,9 @@ ids (read them with `document.getElementById`; a closed panel or menu is
   both previews; a failure stops it and opens Problems. `#box-chip`
   (`aria-expanded`) opens the Box panel; its text `#device-state` is the
   link (`nacra · connected`, `nacra · disconnected`, `nacra · busy:
-  install 42%`, `no box chosen`; with more than one box remembered the id's
+  install 42%`, a firmware update's stage `nacra · updating · saving apps
+  2/3` / `firmware 62%` / `restarting` / `on trial` / `restoring 1/3`,
+  `no box chosen`; with more than one box remembered the id's
   last 4 characters follow the name: `nacra ·CA5Q · disconnected`), then
   `#box-chip-note` (`running race`, `Connect`, `Choose the box`) and
   `#box-chip-warn` (shown while a firmware update waits to be resumed).
@@ -493,7 +499,10 @@ ids (read them with `document.getElementById`; a closed panel or menu is
   **Update firmware…** label but enabled; disabled while the box is busy),
   `#device-update-hint`, the inline confirm `#device-update-confirm`
   (`#device-update-text`, `#device-update-yes`, `#device-update-no`). While
-  an update runs, `#device-update` takes the panel's place: `#device-stages`,
+  an update runs, `#device-update` takes the panel's place:
+  `#device-update-from` (where it started, the target once known, the
+  image: `from ota_0 · sha 80052d5a… → ota_1 · sha 1a2b3c4d… · xiaoc6.bin,
+  1.69 MB`), `#device-stages`,
   one `li.stage` per stage (`data-stage` save / firmware / reboot / restore,
   `data-state` done / active / waiting).
 - **Help** (`#reading`): the guides (`#skill-list`) and `<article

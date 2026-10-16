@@ -14,6 +14,7 @@ import { packageId, describeError, describeInvalid, errorHint, REASONS, LIMITS, 
 import { checkImage } from '../device/firmware.js';
 import { makeFakeBluetooth, makeBundle, makeImage } from './fake-bluetooth.mjs';
 import { VENDOR } from './engine-world.mjs';
+import { deviceHead, updateStages, updateHeadText, fmtBytes } from '../ui.js';
 
 const FAST = { connectTimeoutMs: 1000, advertTimeoutMs: 200, reconnectDelayMs: 5, pairRetryMs: 5, stallMs: 60, requestTimeoutMs: 2000, reconnectWaitMs: 2000 };
 const sha = (b) => createHash('sha256').update(b).digest('hex');
@@ -659,6 +660,54 @@ test('updateFirmware: saves the bundles, sends the image, the box reboots onto t
   const s = dev.status();
   assert.deepEqual([s.state, s.progress.phase, s.restorePending, s.restorePhase], ['connected', 'done', false, null]);
   assert.deepEqual(s.firmware, { sha256: digest, slot: 1, pending: false, maxLen: c6.maxLen });
+});
+
+test('updateFirmware: the chip and the tracker follow the update (its stage, its own progress), and its header keeps where it started', async () => {
+  const { dev, c6 } = setup({}, UPDATE);
+  threeBundles(c6);
+  c6.update.pendingMs = 800;
+  // an earlier transfer's progress (done) is not the update's
+  await dev.connect();
+  await dev.get('race');
+  assert.equal(dev.status().progress.phase, 'done');
+  const image = makeImage({ size: 20000 });
+  const digest = sha(image.subarray(0, image.length - 32));
+  const chips = [];
+  const heads = [];
+  const stages = [];
+  const off = dev.onChange((s) => {
+    if (s.state !== 'busy' || s.op !== 'ota') return;
+    const text = deviceHead(s).text;
+    if (chips.at(-1) !== text) chips.push(text);
+    const head = updateHeadText(s.progress, { name: 'xiaoc6.bin', len: image.length });
+    if (heads.at(-1) !== head) heads.push(head);
+    const st = updateStages(s).map((x) => x.state[0]).join('');
+    if (stages.at(-1) !== st) stages.push(st);
+  });
+  const r = await dev.updateFirmware({ bytes: image });
+  off();
+  assert.deepEqual(r.from, { sha256: 'f1'.repeat(32), slot: 0 });
+  // the chip: the update's stage and its own count or percentage, never a
+  // saved or restored bundle's percentage
+  const at = (re) => chips.findIndex((t) => re.test(t));
+  for (const t of chips) assert.match(t, /^nacra · updating( · (saving apps( [1-3]\/3)?|firmware \d+%|restarting|on trial|restoring [1-3]\/3|activating race|done))?$/, t);
+  for (const t of ['saving apps', 'saving apps 1/3', 'saving apps 2/3', 'saving apps 3/3', 'firmware 0%', 'firmware 100%', 'restarting', 'on trial', 'restoring 1/3', 'restoring 3/3', 'activating race']) {
+    assert.ok(chips.includes(`nacra · updating · ${t}`), `the chip said "${t}": ${chips.join(' | ')}`);
+  }
+  assert.ok(at(/saving apps 3\/3/) < at(/firmware/) && at(/firmware 100%/) < at(/restarting/) && at(/on trial/) < at(/restoring 1\/3/), chips.join(' | '));
+  assert.ok(chips.every((t) => !/ota \d+%/.test(t)));
+  // the tracker starts at its first stage (not at the earlier get's done) and goes through the four
+  assert.equal(stages[0], 'awww');
+  assert.deepEqual(stages, ['awww', 'daww', 'ddaw', 'ddda', 'dddd']);
+  // the header: from ota_0 all along, the target's sha, then its slot once the box runs it
+  const from = `from ota_0 · sha ${'f1'.repeat(4)}…`;
+  assert.deepEqual(heads, [
+    `xiaoc6.bin, ${fmtBytes(image.length)}`, // until the box says what it runs
+    `${from} → sha ${digest.slice(0, 8)}… · xiaoc6.bin, ${fmtBytes(image.length)}`,
+    `${from} → ota_1 · sha ${digest.slice(0, 8)}… · xiaoc6.bin, ${fmtBytes(image.length)}`,
+  ]);
+  assert.deepEqual(dev.status().progress.from, { sha256: 'f1'.repeat(32), slot: 0 });
+  assert.deepEqual(dev.status().progress.to, { sha256: digest, slot: 1 });
 });
 
 test('updateFirmware: a box with only Choose: nothing saved, nothing restored, nothing activated', async () => {

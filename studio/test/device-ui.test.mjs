@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText, deviceStorage, appPill, deviceChipNote, updateStages, UPDATE_STAGES, fmtLeft } from '../ui.js';
+import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText, deviceStorage, appPill, deviceChipNote, updateStages, UPDATE_STAGES, fmtLeft, updateChipStage, updateHeadText } from '../ui.js';
 import { studioDir } from './engine-world.mjs';
 import { takeDropped, takeChosen, firmwareOffer } from '../files-in.js';
 import { fromBase64 } from '../zip.js';
@@ -144,6 +144,32 @@ test('updateStages: the firmware update\'s four stages follow the progress phase
   assert.equal(fmtLeft(37.4), 'about 37 s left');
   assert.equal(fmtLeft(600), 'about 10 min left');
   assert.equal(fmtLeft(NaN), '');
+});
+
+test('a firmware update in the chip: its stage and its own count or percentage, not the progress of the bundle inside it', () => {
+  const s = (progress) => ({ bluetooth: true, deviceName: 'nacra', remembered: true, state: 'busy', op: 'ota', progress });
+  const chip = (p) => deviceHead(s(p)).text;
+  assert.equal(chip(null), 'nacra · updating');
+  assert.equal(chip({ phase: 'save', sent: 0, total: 0 }), 'nacra · updating · saving apps');
+  // race 85% saved, the second of three: the update is at 2/3, not 85%
+  assert.equal(chip({ phase: 'save', bundle: 'race', index: 2, of: 3, sent: 7650, total: 9000, kbps: 9 }), 'nacra · updating · saving apps 2/3');
+  assert.equal(chip({ phase: 'firmware', sent: 1_150_000, total: 1_855_980, kbps: 18 }), 'nacra · updating · firmware 61%');
+  assert.equal(chip({ phase: 'reboot', sent: 1, total: 1 }), 'nacra · updating · restarting');
+  assert.equal(chip({ phase: 'reboot', sent: 1, total: 1, pending: true }), 'nacra · updating · on trial');
+  assert.equal(chip({ phase: 'restore', bundle: 'race', index: 1, of: 3, sent: 4000, total: 9000 }), 'nacra · updating · restoring 1/3');
+  assert.equal(chip({ phase: 'restore', bundle: 'race', activate: true, sent: 0, total: 0 }), 'nacra · updating · activating race');
+  assert.equal(updateChipStage({ phase: 'done', sent: 1, total: 1 }), 'done');
+  assert.equal(deviceHead(s({ phase: 'save', index: 2, of: 3, sent: 1, total: 2 })).tone, 'busy');
+  assert.equal(deviceChipNote(s({ phase: 'save' }), null), '', 'the stage is in the chip\'s text; no second word');
+});
+
+test('updateHeadText: where the update started (fixed), its target once known, the image', () => {
+  const from = { sha256: '80052d5a'.repeat(8), slot: 0 };
+  const file = { name: 'xiaoc6.bin', len: 1_771_520 };
+  assert.equal(updateHeadText(null, file), 'xiaoc6.bin, 1.69 MB');
+  assert.equal(updateHeadText({ phase: 'save', from, to: { sha256: '1a2b3c4d'.repeat(8) } }, file), 'from ota_0 · sha 80052d5a… → sha 1a2b3c4d… · xiaoc6.bin, 1.69 MB');
+  assert.equal(updateHeadText({ phase: 'restore', from, to: { sha256: '1a2b3c4d'.repeat(8), slot: 1 } }, file), 'from ota_0 · sha 80052d5a… → ota_1 · sha 1a2b3c4d… · xiaoc6.bin, 1.69 MB');
+  assert.equal(updateHeadText({ phase: 'reboot', from }, null), 'from ota_0 · sha 80052d5a… · resuming an update that stopped');
 });
 
 test('deviceTableAfter: a list replaces the table; install/activate/delete mark it stale (drawn, and kept through a confirm); disconnect clears it', () => {

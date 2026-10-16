@@ -16,7 +16,7 @@ import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
 import { fromBase64 } from './zip.js';
-import { esc, fileGroups, tabLabel, screensOf, trackFiles, projectParts, fmtBytes, fmtAgo, fmtDeviceTime, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceChipNote, deviceProgressText, deviceRowsHtml, deviceStorage, deviceTableAfter, deviceFirmwareText, deviceRestoreText, updateStages } from './ui.js';
+import { esc, fileGroups, tabLabel, screensOf, trackFiles, projectParts, fmtBytes, fmtAgo, fmtDeviceTime, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceChipNote, deviceProgressText, deviceRowsHtml, deviceStorage, deviceTableAfter, deviceFirmwareText, deviceRestoreText, updateStages, updateHeadText } from './ui.js';
 import { takeDropped, takeChosen, firmwareOffer, projectZipSource } from './files-in.js';
 import { createEditor } from './editor.js';
 import { isJsonPath, prettyJson } from './json.js';
@@ -833,8 +833,9 @@ function renderChooser(s, h) {
 function renderStages(stages) {
   const who = devStatus?.deviceName ?? 'the box';
   $('device-update-title').textContent = `Updating ${who}'s firmware`;
-  const fw = devStatus?.firmware;
-  $('device-update-from').textContent = [fw ? `from ota_${fw.slot} · sha ${String(fw.sha256).slice(0, 8)}…` : null, fwRunning ? `${fwRunning.name}, ${fmtBytes(fwRunning.len)}` : 'resuming an update that stopped'].filter(Boolean).join(' · ');
+  // where the update started and where it goes, from its progress (not
+  // status().firmware, which follows the box onto the new slot)
+  $('device-update-from').textContent = updateHeadText(devStatus?.progress, fwRunning);
   $('device-stages').innerHTML = stages.map((x) => `<li class="stage" data-stage="${x.key}" data-state="${x.state}"><div class="rail"><span class="mark">${x.state === 'done' ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>' : ''}</span><span class="line"></span></div><div class="body"><div class="sect-head"><b>${esc(x.label)}</b>${x.pct !== undefined ? `<span class="pct">${x.pct}%</span>` : ''}<span class="sr">${x.state === 'done' ? 'done' : x.state === 'active' ? 'in progress' : 'waiting'}</span></div>${x.pct !== undefined ? `<div class="progress" role="progressbar" aria-valuenow="${x.pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Firmware sent"><span style="width:${x.pct}%"></span></div>` : ''}${x.detail ? `<span class="detail${x.key === 'firmware' ? ' mono' : ''}">${esc(x.detail)}</span>` : ''}</div></li>`).join('');
 }
 

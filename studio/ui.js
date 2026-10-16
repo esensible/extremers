@@ -407,7 +407,8 @@ export function deviceStatusText(s) {
 /**
  * The header's device group from api.device.status():
  *   text        'nacra · connected' | 'nacra · disconnected' | 'nacra · connecting…' |
- *               'nacra · busy: install 42%' | 'no box chosen' | …; with more than
+ *               'nacra · busy: install 42%' | 'nacra · updating · firmware 62%'
+ *               (a firmware update: updateChipStage) | 'no box chosen' | …; with more than
  *               one box remembered (status().candidates > 1) the name carries the
  *               last 4 characters of the box's id: 'nacra ·CA5Q · disconnected'
  *   tone        'ok' | 'busy' | 'idle' | 'err' (the text's colour)
@@ -434,7 +435,11 @@ export function deviceHead(s) {
   const remembered = s.remembered === true || !!s.deviceName;
   const busy = s.state === 'busy';
   let text; let tone;
-  if (busy) {
+  if (busy && s.op === 'ota') {
+    // the update's own stage, not the progress of the transfer inside it
+    const stage = updateChipStage(s.progress);
+    text = `${who} · updating${stage ? ` · ${stage}` : ''}`; tone = 'busy';
+  } else if (busy) {
     const pct = s.progress?.total && s.op !== 'connect' && s.op !== 'choose' ? ` ${Math.floor((s.progress.sent / s.progress.total) * 100)}%` : '';
     text = `${who} · busy: ${s.op}${pct}`; tone = 'busy';
   } else if (s.state === 'connected') { text = `${who} · connected`; tone = 'ok'; }
@@ -448,6 +453,42 @@ export function deviceHead(s) {
     disconnect: s.state === 'connected' || s.state === 'connecting',
     disabled: busy,
   };
+}
+
+/**
+ * A firmware update's stage for the box chip, from the update's progress
+ * (the same object the tracker, updateStages, reads): 'saving apps 2/3' |
+ * 'firmware 62%' | 'restarting' | 'on trial' | 'restoring 1/3' |
+ * 'activating race' | 'done' | '' (not started). The apps are counted, not
+ * the bytes of the one being saved or restored: those are the tracker's.
+ */
+export function updateChipStage(p) {
+  if (!p) return '';
+  const count = p.of ? ` ${p.index}/${p.of}` : '';
+  switch (p.phase) {
+    case 'save': return `saving apps${p.index ? count : ''}`;
+    case 'firmware': return `firmware ${p.total ? Math.floor((p.sent / p.total) * 100) : 0}%`;
+    case 'reboot': return p.pending ? 'on trial' : 'restarting';
+    case 'restore': return p.activate ? `activating ${p.bundle}` : `restoring${p.index ? count : ''}`;
+    case 'done': return 'done';
+    default: return '';
+  }
+}
+
+/**
+ * A firmware update's header line: where it started (progress.from, the
+ * slot and sha the box ran before the image was sent; it does not follow
+ * the box onto the new slot), the target once known (progress.to: the
+ * image's sha, its slot once the box runs it) and the image (file: { name,
+ * len } of the file picked on this page; null: a resumed update).
+ * → 'from ota_0 · sha 80052d5a… → ota_1 · sha 1a2b3c4d… · xiaoc6.bin, 1.69 MB'
+ */
+export function updateHeadText(p, file = null) {
+  const sha = (x) => `sha ${String(x.sha256).slice(0, 8)}…`;
+  const from = p?.from ? `from ota_${p.from.slot} · ${sha(p.from)}` : null;
+  const to = p?.to ? `${Number.isInteger(p.to.slot) ? `ota_${p.to.slot} · ` : ''}${sha(p.to)}` : null;
+  const route = from && to ? `${from} → ${to}` : from ?? (to ? `to ${to}` : null);
+  return [route, file ? `${file.name}, ${fmtBytes(file.len)}` : 'resuming an update that stopped'].filter(Boolean).join(' · ');
 }
 
 /** The colours of the apps on the box (their swatch and their part of the storage bar), in turn. */

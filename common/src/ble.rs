@@ -86,10 +86,29 @@ const HOST_BONDS: usize = MAX_BLE_BONDS + CONNECTIONS_MAX;
 /// connection slot for nothing (Apple devices usually leave at once).
 const STALE_GRACE: Duration = Duration::from_secs(10);
 
-/// The connection interval asked for while a bundle upload runs: the
+/// The connection interval asked for while a bundle upload or download
+/// runs ([`pace`]): the
 /// shortest Apple's accessory guidelines let a peripheral ask a Mac or an
 /// iPhone for (BLE.md "Throughput").
 const UPLOAD_INTERVAL: Duration = Duration::from_millis(15);
+/// A connection-parameter request the controller refused (one procedure
+/// at a time) is sent again when the link's parameters change (the
+/// procedure in its way ended), or after this if they do not (the central
+/// rejected that procedure; no update follows).
+const PACE_RETRY: Duration = Duration::from_millis(500);
+/// A request that went out but whose interval the link does not reach in
+/// this long did not take: the procedure failed (the central's own
+/// procedure collided with it, or it rejected it), which the host only
+/// logs ("error updating connection parameters"), and an L2CAP request the
+/// central rejects leaves no trace at all. It is sent again, up to
+/// [`PACE_TRIES`] times in all. A procedure takes a few connection events:
+/// about 0.1-0.7 s at 45 ms (the box logs of 2026-10-16).
+const PACE_LAND: Duration = Duration::from_millis(1500);
+/// How many times one request (a transfer's 15 ms, or its restore) is sent
+/// before the link is left as the central has it.
+const PACE_TRIES: u32 = 3;
+/// How often a download about to be sent tries a refused request again.
+const PACE_POLL: Duration = Duration::from_millis(20);
 
 /// A central whose Pairing Request was refused is disconnected after this,
 /// so the Pairing Failed queued for it goes out before the link drops.
@@ -177,7 +196,7 @@ struct RaceService {
 
 /// What the transport needs of the target's controller: trouble's
 /// [`Controller`], and LE Read Local Supported Features, which asking for
-/// a connection interval sends ([`upload_interval`]).
+/// a connection interval sends ([`pace_link`]).
 pub trait BleController: Controller + ControllerCmdSync<LeReadLocalSupportedFeatures> {}
 
 impl<C: Controller + ControllerCmdSync<LeReadLocalSupportedFeatures>> BleController for C {}
@@ -748,8 +767,8 @@ async fn serve_gatt<C, S>(
     let (bundle, data) = (&server.race.bundle, &server.race.data);
     // set when the peer turned out to hold a bond this box does not
     let mut stale_deadline: Option<Instant> = None;
-    // while this connection's upload is live: its parameters before
-    let mut fast: Option<ConnParams> = None;
+    // what this connection asked of the interval for its bundle transfers
+    let mut pacer = Pacer::new();
 
     // subscribe before reading the current state, so no change is missed
     let mut updates = match runtime.subscribe() {
@@ -776,11 +795,14 @@ async fn serve_gatt<C, S>(
     let mut warned_mtu = false;
 
     loop {
-        fast = upload_interval(me, stack, runtime, conn, fast).await;
-        // the stale peer's grace, or the upload going idle: looked at again
-        // when it comes
-        let upload_idle = fast.and(runtime.bundle_deadline());
-        let wake = stale_deadline.into_iter().chain(upload_idle).min();
+        // a download is paced where it is sent (below): here only this
+        // connection's upload runs
+        let uploading = runtime.bundle_uploader() == Some(me as u8);
+        pacer.run(me, stack, conn, uploading.then_some(Bulk::Upload)).await;
+        // the stale peer's grace, the upload going idle, or the pacer's
+        // retry: looked at again when it comes
+        let upload_idle = if uploading { runtime.bundle_deadline() } else { None };
+        let wake = stale_deadline.into_iter().chain(upload_idle).chain(pacer.wake()).min();
         let timer = async {
             match wake {
                 Some(t) => Timer::at(t).await,
@@ -835,7 +857,7 @@ async fn serve_gatt<C, S>(
             }
             Either4::Fourth(()) => {
                 if !stale_deadline.is_some_and(|t| Instant::now() >= t) {
-                    // the upload's idle deadline: `upload_interval` decides
+                    // the upload's idle deadline: `pace_link` decides
                     continue;
                 }
                 warn!(
@@ -863,13 +885,16 @@ async fn serve_gatt<C, S>(
                 conn_interval,
                 peripheral_latency,
                 supervision_timeout,
-            } => info!(
-                "ble: connection {}: interval {} ms, latency {}, supervision timeout {} ms",
-                me,
-                Disp(&Millis(conn_interval)),
-                peripheral_latency,
-                supervision_timeout.as_millis()
-            ),
+            } => {
+                info!(
+                    "ble: connection {}: interval {} ms, latency {}, supervision timeout {} ms",
+                    me,
+                    Disp(&Millis(conn_interval)),
+                    peripheral_latency,
+                    supervision_timeout.as_millis()
+                );
+                pacer.updated(conn_interval);
+            }
             // A bonded central resumed encryption with its key.
             GattConnectionEvent::Encrypted { bond: Some(bond), .. } => {
                 link.trusted.set(shared.holds(&bond));
@@ -1211,7 +1236,12 @@ async fn serve_gatt<C, S>(
                             notify_bundle(me, server, conn, response).await;
                         }
                     }
-                    Some(BundleAnswer::Download(download)) => send_download(me, server, conn, download).await,
+                    Some(BundleAnswer::Download(download)) => {
+                        // sent here, in one go: the fast interval first; the
+                        // loop's next `pacer.run` (no transfer) restores it
+                        pacer.before_download(me, stack, conn).await;
+                        send_download(me, server, conn, download).await
+                    }
                     None => {}
                 }
             }
@@ -1220,48 +1250,327 @@ async fn serve_gatt<C, S>(
     }
 }
 
-/// Keeps the link at [`UPLOAD_INTERVAL`] while connection `me` owns a live
-/// bundle upload, and asks for what it had before once the upload ends
-/// (committed, aborted, idle, or taken over by another connection); `fast`
-/// is the link's parameters from before the upload, `None` while none is
-/// running. A central writes about one `data` chunk per connection event,
-/// so the interval sets the upload's rate (BLE.md "Throughput").
-async fn upload_interval<C: BleController>(
+/// A bundle transfer on a connection, which runs at [`UPLOAD_INTERVAL`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bulk {
+    /// The central writes the bundle on `data` (the connection owns the
+    /// store's upload).
+    Upload,
+    /// The box notifies a `Get`'s archive on `data`.
+    Download,
+}
+
+impl Bulk {
+    fn name(self) -> &'static str {
+        match self {
+            Bulk::Upload => "upload",
+            Bulk::Download => "download",
+        }
+    }
+}
+
+/// What a connection has asked of the central's connection interval for
+/// bundle transfers ([`pace`]). A request is only a request: the central
+/// applies it some connection events later (or not at all), so the link's
+/// parameters alone cannot say whether one of ours is still on its way.
+/// And a request can be refused before it goes: the controller runs one
+/// connection-parameter procedure at a time and answers Command Disallowed
+/// while one is in progress (an upload that begins right after the last
+/// one's restore went out), so `sent` says whether the request this state
+/// stands for went out; one that did not is sent again ([`pace`]'s
+/// `retry`).
+#[derive(Clone, Copy, Debug)]
+enum Pace {
+    /// Nothing of ours outstanding: the link runs at what the central chose.
+    Idle,
+    /// A transfer runs at [`UPLOAD_INTERVAL`] (asked for, or the link was
+    /// that fast already); `before` is the link's own parameters, asked for
+    /// again when it ends.
+    Fast { bulk: Bulk, before: ConnParams, sent: bool },
+    /// The transfer ended and `before` was asked for again; until the link
+    /// is slower than [`UPLOAD_INTERVAL`] that request may still be on its
+    /// way, so the link's interval says nothing about what is coming.
+    Restoring { bulk: Bulk, before: ConnParams, sent: bool },
+    /// The restore landed: the central put the link at `landed` for our
+    /// request to go back to `before`. Nothing of ours is outstanding, but
+    /// while the link stays at `landed` its own parameters are still
+    /// `before`: a restore asks for a range and the central picks (a Mac
+    /// takes the top, 30 ms → 45), so taking `landed` as the link's own would
+    /// creep up a step with every transfer (30, 45, 60, 75 ms).
+    Restored { before: ConnParams, landed: Duration },
+}
+
+impl Pace {
+    /// The link's parameters changed to `interval`: a restore that landed
+    /// (or a slower interval the central chose itself) leaves nothing of
+    /// ours outstanding. The 15 ms an earlier transfer asked for, landing
+    /// late, does not.
+    fn updated(self, interval: Duration) -> Pace {
+        match self {
+            Pace::Restoring { before, .. } if interval > UPLOAD_INTERVAL => Pace::Restored { before, landed: interval },
+            pace => pace,
+        }
+    }
+
+    /// The request this state stands for did not go out.
+    fn refused(self) -> Pace {
+        match self {
+            Pace::Fast { bulk, before, .. } => Pace::Fast { bulk, before, sent: false },
+            Pace::Restoring { bulk, before, .. } => Pace::Restoring { bulk, before, sent: false },
+            pace => pace,
+        }
+    }
+
+    /// Whether a request of ours waits to be sent again.
+    fn unsent(&self) -> bool {
+        matches!(self, Pace::Fast { sent: false, .. } | Pace::Restoring { sent: false, .. })
+    }
+
+    /// Whether the link at `interval` is where this state's request asked
+    /// it to be (nothing asked: it is).
+    fn landed(&self, interval: Duration) -> bool {
+        match self {
+            Pace::Fast { .. } => interval <= UPLOAD_INTERVAL,
+            Pace::Restoring { .. } => interval > UPLOAD_INTERVAL,
+            Pace::Idle | Pace::Restored { .. } => true,
+        }
+    }
+}
+
+/// The pacing decision for a connection whose link runs at `now`: `pace` is
+/// what it asked for so far, `bulk` the transfer running on it now (if
+/// any), `retry` whether a request that was refused may be sent again (the
+/// procedure in its way has ended, or a while has passed). → the new pace,
+/// and the request to send. Every transfer asks for [`UPLOAD_INTERVAL`]
+/// unless the central itself already runs the link that fast with nothing
+/// of ours outstanding; in particular one that begins while the previous
+/// transfer's restore may still be pending asks again, or that restore
+/// would land under it and slow it down. The parameters asked for at the
+/// end are always the link's own from before the first of back-to-back
+/// transfers, never a transfer's 15 ms.
+fn pace(pace: Pace, bulk: Option<Bulk>, now: &ConnParams, retry: bool) -> (Pace, Option<RequestedConnParams>) {
+    match (pace, bulk) {
+        (Pace::Idle | Pace::Restored { .. }, Some(bulk)) => {
+            // the link's own parameters: still those a landed restore went
+            // back to, unless the central has moved the link since
+            let before = match pace {
+                Pace::Restored { before, landed } if now.conn_interval == landed => before,
+                _ => *now,
+            };
+            let fast = Pace::Fast { bulk, before, sent: true };
+            // the central's own choice: fast enough, and nothing to restore
+            if now.conn_interval <= UPLOAD_INTERVAL {
+                (fast, None)
+            } else {
+                (fast, Some(upload_params(now)))
+            }
+        }
+        (Pace::Restoring { before, .. }, Some(bulk)) => {
+            (Pace::Fast { bulk, before, sent: true }, Some(upload_params(&before)))
+        }
+        (Pace::Fast { before, sent: false, .. }, Some(bulk)) if retry => {
+            (Pace::Fast { bulk, before, sent: true }, Some(upload_params(&before)))
+        }
+        (Pace::Fast { before, sent, .. }, Some(bulk)) => (Pace::Fast { bulk, before, sent }, None),
+        (Pace::Fast { bulk, before, .. }, None) if before.conn_interval > UPLOAD_INTERVAL => {
+            (Pace::Restoring { bulk, before, sent: true }, Some(restore_params(&before)))
+        }
+        (Pace::Fast { .. }, None) => (Pace::Idle, None),
+        (Pace::Restoring { bulk, before, sent: false }, None) if retry => {
+            (Pace::Restoring { bulk, before, sent: true }, Some(restore_params(&before)))
+        }
+        (unchanged, None) => (unchanged, None),
+    }
+}
+
+/// Keeps the link at [`UPLOAD_INTERVAL`] while connection `me` runs a bundle
+/// transfer (`bulk`: its upload, live in the store, or a `Get` it is about
+/// to send), and asks for the parameters it had before once the transfer
+/// ends (committed, aborted, idle, taken over by another connection, or
+/// sent) ([`pace`]). About one `data` chunk goes per connection event either
+/// way, so the interval sets the transfer's rate (BLE.md "Throughput").
+/// → the new pace, and whether a request went (`Some(true)`), was refused
+/// (`Some(false)`), or none was due (`None`).
+async fn pace_link<C: BleController>(
     me: usize,
     stack: &Stack<'_, C, DefaultPacketPool>,
-    runtime: &Host,
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
-    fast: Option<ConnParams>,
-) -> Option<ConnParams> {
-    let uploading = runtime.bundle_uploader() == Some(me as u8);
-    let (request, before) = match (uploading, fast) {
-        (true, None) => {
-            let before = conn.raw().params();
-            if before.conn_interval <= UPLOAD_INTERVAL {
-                // fast enough already; nothing to restore either
-                return Some(before);
-            }
-            (upload_params(&before), before)
-        }
-        (false, Some(before)) if before.conn_interval > UPLOAD_INTERVAL => {
-            (restore_params(&before), before)
-        }
-        (false, Some(_)) => return None,
-        _ => return fast,
+    current: Pace,
+    bulk: Option<Bulk>,
+    retry: bool,
+) -> (Pace, Option<bool>) {
+    let now = conn.raw().params();
+    let (next, request) = pace(current, bulk, &now, retry);
+    let Some(request) = request else {
+        return (next, None);
     };
-    info!(
-        "ble: connection {}: bundle upload {}: asking for interval {}-{} ms (now {} ms)",
-        me,
-        if uploading { "begun" } else { "over" },
-        Disp(&Millis(request.min_connection_interval)),
-        Disp(&Millis(request.max_connection_interval)),
-        Disp(&Millis(before.conn_interval))
-    );
-    if let Err(e) = conn.raw().update_connection_params(stack, &request).await {
-        // the upload goes on at the interval it has
-        warn!("ble: connection {}: connection parameters not requested: {:?}", me, Dbg(&e));
+    let (what, how) = match next {
+        Pace::Fast { bulk, .. } => (bulk, "begun"),
+        Pace::Restoring { bulk, .. } => (bulk, "over"),
+        // never with a request
+        Pace::Idle | Pace::Restored { .. } => return (next, None),
+    };
+    // the same request, refused before (logged then)
+    let again = current.unsent() && core::mem::discriminant(&current) == core::mem::discriminant(&next);
+    if !again {
+        info!(
+            "ble: connection {}: bundle {} {}: asking for interval {}-{} ms (now {} ms)",
+            me,
+            what.name(),
+            how,
+            Disp(&Millis(request.min_connection_interval)),
+            Disp(&Millis(request.max_connection_interval)),
+            Disp(&Millis(now.conn_interval))
+        );
     }
-    uploading.then_some(before)
+    match conn.raw().update_connection_params(stack, &request).await {
+        Ok(()) => {
+            if again {
+                info!(
+                    "ble: connection {}: bundle {} {}: asked for interval {}-{} ms again, sent (now {} ms)",
+                    me,
+                    what.name(),
+                    how,
+                    Disp(&Millis(request.min_connection_interval)),
+                    Disp(&Millis(request.max_connection_interval)),
+                    Disp(&Millis(now.conn_interval))
+                );
+            }
+            (next, Some(true))
+        }
+        Err(e) => {
+            // sent again once the procedure in its way ends ([`PACE_RETRY`]
+            // at the latest); meanwhile the transfer goes on at the
+            // interval it has
+            if again {
+                debug!("ble: connection {}: connection parameters still not requested: {:?}", me, Dbg(&e));
+            } else {
+                warn!(
+                    "ble: connection {}: connection parameters not requested: {:?}; asking again when the link's parameters change, or in {} ms",
+                    me,
+                    Dbg(&e),
+                    PACE_RETRY.as_millis()
+                );
+            }
+            (next.refused(), Some(false))
+        }
+    }
+}
+
+/// A connection's pacing ([`Pace`]) and the timing of its retries: a
+/// request the controller refused goes again when the link's parameters
+/// change or after [`PACE_RETRY`]; one that went but did not land within
+/// [`PACE_LAND`] goes again, [`PACE_TRIES`] times in all.
+struct Pacer {
+    pace: Pace,
+    /// when a refused request may be sent again
+    retry_at: Option<Instant>,
+    /// when a request that went should have landed by
+    land_by: Option<Instant>,
+    /// requests that went for the present state
+    tries: u32,
+}
+
+impl Pacer {
+    fn new() -> Self {
+        Pacer { pace: Pace::Idle, retry_at: None, land_by: None, tries: 0 }
+    }
+
+    /// When the connection's loop must look again ([`Pacer::run`]).
+    fn wake(&self) -> Option<Instant> {
+        self.retry_at.into_iter().chain(self.land_by).min()
+    }
+
+    /// The link's parameters changed to `interval`.
+    fn updated(&mut self, interval: Duration) {
+        self.pace = self.pace.updated(interval);
+        if self.pace.landed(interval) {
+            self.land_by = None;
+        }
+        // the procedure in a refused request's way ended
+        if self.pace.unsent() {
+            self.retry_at = Some(Instant::now());
+        }
+    }
+
+    /// Paces the link of connection `me` for `bulk`, the transfer running on
+    /// it now ([`pace_link`]), retrying what was refused or did not land
+    /// when it is time.
+    async fn run<C: BleController>(
+        &mut self,
+        me: usize,
+        stack: &Stack<'_, C, DefaultPacketPool>,
+        conn: &GattConnection<'_, '_, DefaultPacketPool>,
+        bulk: Option<Bulk>,
+    ) {
+        let now = Instant::now();
+        // a request that went but did not take
+        if self.land_by.is_some_and(|t| now >= t) {
+            self.land_by = None;
+            if !self.pace.landed(conn.raw().params().conn_interval) {
+                if self.tries < PACE_TRIES {
+                    warn!(
+                        "ble: connection {}: the interval asked for did not take within {} ms (the central refused it, or its own procedure collided with it); asking again",
+                        me,
+                        PACE_LAND.as_millis()
+                    );
+                    self.pace = self.pace.refused();
+                    self.retry_at = Some(now);
+                } else {
+                    warn!(
+                        "ble: connection {}: the interval asked for did not take after {} tries; the link stays as the central has it",
+                        me, self.tries
+                    );
+                }
+            }
+        }
+        let retry = self.retry_at.is_some_and(|t| now >= t);
+        let was = self.pace;
+        let (pace, attempt) = pace_link(me, stack, conn, was, bulk, retry).await;
+        self.pace = pace;
+        if core::mem::discriminant(&was) != core::mem::discriminant(&pace) {
+            // a new request (begun, over): its own tries
+            self.tries = 0;
+        }
+        match attempt {
+            Some(true) => {
+                self.tries += 1;
+                self.land_by = Some(Instant::now() + PACE_LAND);
+                self.retry_at = None;
+            }
+            // refused (again): when the parameters change, or in PACE_RETRY
+            Some(false) => self.retry_at = Some(Instant::now() + PACE_RETRY),
+            None => {}
+        }
+        if !self.pace.unsent() {
+            self.retry_at = None;
+        }
+        if matches!(self.pace, Pace::Idle | Pace::Restored { .. }) {
+            self.land_by = None;
+        }
+    }
+
+    /// Paces the link for a download about to be sent in one go (nothing
+    /// is retried while it goes): asks for the fast interval and waits, up
+    /// to [`PACE_LAND`], for the link to reach it, sending a refused request
+    /// again meanwhile (the last transfer's restore still in progress,
+    /// which ends within a few connection events).
+    async fn before_download<C: BleController>(
+        &mut self,
+        me: usize,
+        stack: &Stack<'_, C, DefaultPacketPool>,
+        conn: &GattConnection<'_, '_, DefaultPacketPool>,
+    ) {
+        self.run(me, stack, conn, Some(Bulk::Download)).await;
+        let until = Instant::now() + PACE_LAND;
+        while Instant::now() < until && !self.pace.landed(conn.raw().params().conn_interval) {
+            Timer::after(PACE_POLL).await;
+            if self.pace.unsent() {
+                self.retry_at = Some(Instant::now());
+                self.run(me, stack, conn, Some(Bulk::Download)).await;
+            }
+        }
+    }
 }
 
 /// The supervision timeout a request carries: the link's own, within the
@@ -1430,18 +1739,20 @@ async fn save_gatt_client<C: Controller, S: BondStore>(
 }
 
 /// Notifies `value` on `characteristic`, trying again while the packet pool
-/// is empty (a download outruns it); whether it went (or the client is not
-/// subscribed, which notifies nothing).
+/// is empty (a download outruns it), each wait counted in `waits`; whether
+/// it went (or the client is not subscribed, which notifies nothing).
 async fn notify_raw<T: trouble_host::types::gatt_traits::AsGatt + ?Sized>(
     characteristic: &Characteristic<T>,
     conn: &GattConnection<'_, '_, DefaultPacketPool>,
     value: &[u8],
+    waits: &mut u32,
 ) -> Result<(), trouble_host::Error> {
     let mut tries = 0;
     loop {
         match characteristic.notify_raw(conn, value, false).await {
             Err(trouble_host::Error::OutOfMemory) if tries < NOTIFY_TRIES => {
                 tries += 1;
+                *waits += 1;
                 Timer::after(NOTIFY_RETRY).await;
             }
             done => return done,
@@ -1478,7 +1789,7 @@ async fn notify_bundle(
         );
         return;
     }
-    match notify_raw(bundle, conn, value).await {
+    match notify_raw(bundle, conn, value, &mut 0).await {
         Ok(()) => debug!("ble: connection {}: bundles: {:?}", me, Dbg(response)),
         Err(e) => warn!("ble: connection {}: bundles: {:?} not sent: {:?}", me, Dbg(response), Dbg(&e)),
     }
@@ -1500,6 +1811,8 @@ async fn send_download(
     notify_bundle(me, server, conn, &download.sending()).await;
     let start = Instant::now();
     let mut sent = 0usize;
+    // notifications that found the packet pool empty and waited
+    let mut waits = 0u32;
     for packet in download.packets() {
         let mut value = [0u8; DATA_MAX];
         let Some(n) = packet.write(&mut value) else {
@@ -1507,7 +1820,7 @@ async fn send_download(
             error!("ble: connection {}: bundles: a {} B chunk does not fit `data`", me, packet.bytes.len());
             return;
         };
-        if let Err(e) = notify_raw(data, conn, &value[..n]).await {
+        if let Err(e) = notify_raw(data, conn, &value[..n], &mut waits).await {
             warn!(
                 "ble: connection {}: bundles: download stopped after {} of {} B: {:?}",
                 me,
@@ -1522,14 +1835,16 @@ async fn send_download(
     notify_bundle(me, server, conn, &download.sent()).await;
     let ms = start.elapsed().as_millis();
     info!(
-        "ble: connection {}: bundles: sent {} B of bundle {} from {} in {} ms ({} B/s), chunks of {}",
+        "ble: connection {}: bundles: sent {} B of bundle {} from {} in {} ms ({} B/s), chunks of {}, interval {} ms at the end, {} waits for the packet pool",
         me,
         sent,
         Disp(&Hex(&download.id.to_be_bytes())),
         download.from,
         ms,
         bulk::throughput(sent, ms),
-        download.chunk
+        download.chunk,
+        Disp(&Millis(conn.raw().params().conn_interval)),
+        waits
     );
 }
 
@@ -1930,6 +2245,206 @@ mod tests {
         }
         assert_eq!(restore_params(&link(30_000, 0, 720)).min_connection_interval, Duration::from_millis(30));
         assert_eq!(restore_params(&link(22_500, 0, 720)).min_connection_interval, Duration::from_millis(30));
+    }
+
+    /// A link as the central runs it: an interval, no latency, 2 s.
+    fn at(ms: u64) -> ConnParams {
+        ConnParams {
+            conn_interval: Duration::from_millis(ms),
+            peripheral_latency: 0,
+            supervision_timeout: Duration::from_secs(2),
+        }
+    }
+
+    /// [`super::pace`] with every request sent (none refused, so nothing to
+    /// retry).
+    fn pace(p: Pace, bulk: Option<Bulk>, now: &ConnParams) -> (Pace, Option<RequestedConnParams>) {
+        super::pace(p, bulk, now, false)
+    }
+
+    /// The interval a request asks for, as (min, max) ms; `None`: no request.
+    fn asks(request: &Option<RequestedConnParams>) -> Option<(u64, u64)> {
+        request.as_ref().map(|r| (r.min_connection_interval.as_millis(), r.max_connection_interval.as_millis()))
+    }
+
+    /// Two uploads back to back, as a restore runs them (the box log of
+    /// 2026-10-16): the second begins after the first's restore went out but
+    /// before the central applied it, while the link still runs at 15 ms.
+    /// It must ask for 15 ms again (it used to see 15 ms, take it as fast
+    /// enough, ask nothing, and run at the 45 ms the restore landed on), and
+    /// the end restores the link's own 30 ms, not a transfer's 15 ms.
+    #[test]
+    fn back_to_back_uploads_each_ask_for_the_fast_interval() {
+        let up = Some(Bulk::Upload);
+        // race begins at 30 ms
+        let (p, r) = pace(Pace::Idle, up, &at(30));
+        assert_eq!(asks(&r), Some((15, 15)));
+        // the central applies it; the upload goes on
+        let p = p.updated(Duration::from_millis(15));
+        let (p, r) = pace(p, up, &at(15));
+        assert_eq!(asks(&r), None);
+        // race committed: the link's own 30 ms is asked for again
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+        assert!(matches!(p, Pace::Restoring { .. }));
+        // mark begins before the restore lands: the link still says 15 ms
+        let (p, r) = pace(p, up, &at(15));
+        assert_eq!(asks(&r), Some((15, 15)), "the second upload asks for 15 ms again");
+        // the restore lands under it (45 ms), then the second 15 ms request
+        let p = p.updated(Duration::from_millis(45));
+        assert!(matches!(p, Pace::Fast { .. }), "a transfer is running: still fast");
+        let (p, r) = pace(p, up, &at(45));
+        assert_eq!(asks(&r), None, "asked once per transfer");
+        let p = p.updated(Duration::from_millis(15));
+        // mark committed: back to the 30 ms from before race, not 15 or 45
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+        // the restore lands: nothing of ours outstanding
+        let p = p.updated(Duration::from_millis(30));
+        assert!(matches!(p, Pace::Restored { .. }));
+        // tune2, later, at the 30 ms the link is back at
+        let (_, r) = pace(p, up, &at(30));
+        assert_eq!(asks(&r), Some((15, 15)));
+    }
+
+    /// The restore is pending and the earlier 15 ms request lands late: the
+    /// link reads 15 ms with the restore still on its way, and the next
+    /// transfer must ask again.
+    #[test]
+    fn a_late_fast_update_does_not_end_the_restore() {
+        let (p, _) = pace(Pace::Idle, Some(Bulk::Upload), &at(30));
+        // a short upload, over before its 15 ms landed
+        let (p, r) = pace(p, None, &at(30));
+        assert_eq!(asks(&r), Some((30, 45)));
+        let p = p.updated(Duration::from_millis(15));
+        assert!(matches!(p, Pace::Restoring { .. }));
+        let (_, r) = pace(p, Some(Bulk::Upload), &at(15));
+        assert_eq!(asks(&r), Some((15, 15)));
+    }
+
+    /// A download (a `Get`) gets the same treatment: 15 ms before it is
+    /// sent, the link's own interval after; a download right after an upload
+    /// asks again, and the end restores what the link had before both.
+    #[test]
+    fn downloads_ask_for_the_fast_interval_and_restore_after() {
+        let down = Some(Bulk::Download);
+        let (p, r) = pace(Pace::Idle, down, &at(30));
+        assert_eq!(asks(&r), Some((15, 15)));
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+        // saving three apps: the next Get comes before the restore lands
+        let (p, r) = pace(p, down, &at(15));
+        assert_eq!(asks(&r), Some((15, 15)));
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+        // an upload, then a download, back to back
+        let (p, _) = pace(p.updated(Duration::from_millis(45)), Some(Bulk::Upload), &at(45));
+        let (p, r) = pace(p, down, &at(15));
+        assert_eq!(asks(&r), None, "already fast for the upload");
+        assert!(matches!(p, Pace::Fast { bulk: Bulk::Download, .. }));
+        let (_, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)), "the link's own 30 ms (45 was where our restore landed)");
+    }
+
+    /// Transfers one after another, each restore landing at the top of its
+    /// range as a Mac picks (the box log of 2026-10-16: 30, 45, 60, 75 ms
+    /// after three downloads): every restore asks for the link's own 30 ms
+    /// again. A central that moves the link itself is followed.
+    #[test]
+    fn restores_do_not_creep_up() {
+        let mut p = Pace::Idle;
+        let mut link = 30;
+        for _ in 0..4 {
+            let (q, r) = pace(p, Some(Bulk::Download), &at(link));
+            assert_eq!(asks(&r), Some((15, 15)));
+            let (q, r) = pace(q.updated(Duration::from_millis(15)), None, &at(15));
+            assert_eq!(asks(&r), Some((30, 45)), "the link's own interval every time");
+            // the central takes the top of the range
+            link = 45;
+            p = q.updated(Duration::from_millis(link));
+        }
+        // the central moves the link to 90 ms by itself: that is its own now
+        let (q, _) = pace(p, Some(Bulk::Upload), &at(90));
+        let (_, r) = pace(q, None, &at(15));
+        assert_eq!(asks(&r), Some((90, 105)));
+    }
+
+    /// The box log of 2026-10-16 with the requests above: mark's upload
+    /// asked for 15 ms 90 ms after race's restore went out, and the
+    /// controller refused (Command Disallowed: one connection-parameter
+    /// procedure at a time), so mark ran at the 45 ms the restore landed on.
+    /// A refused request waits for its retry (the restore landing, or a
+    /// while), then goes; a refused restore likewise.
+    #[test]
+    fn a_refused_request_is_sent_again() {
+        let up = Some(Bulk::Upload);
+        let (p, _) = pace(Pace::Idle, up, &at(30));
+        let (p, _) = pace(p.updated(Duration::from_millis(15)), None, &at(15));
+        // mark begins; its request is refused
+        let (p, r) = pace(p, up, &at(15));
+        assert_eq!(asks(&r), Some((15, 15)));
+        let p = p.refused();
+        assert!(p.unsent());
+        // its writes come in: nothing asked until the retry
+        let (p, r) = pace(p, up, &at(15));
+        assert_eq!(asks(&r), None);
+        assert!(p.unsent());
+        // the restore lands (the procedure in the way ended): asked again
+        let p = p.updated(Duration::from_millis(45));
+        let (p, r) = super::pace(p, up, &at(45), true);
+        assert_eq!(asks(&r), Some((15, 15)));
+        assert!(!p.unsent());
+        // the end restores the link's own 30 ms; refused, then sent
+        let (p, r) = pace(p.updated(Duration::from_millis(15)), None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+        let p = p.refused();
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), None, "not before its retry");
+        let (p, r) = super::pace(p, None, &at(15), true);
+        assert_eq!(asks(&r), Some((30, 45)));
+        assert!(matches!(p, Pace::Restoring { sent: true, .. }));
+        // a transfer that begins while a refused restore waits: 15 ms, from
+        // the link's own 30 ms
+        let (p, r) = pace(p.refused(), Some(Bulk::Download), &at(15));
+        assert_eq!(asks(&r), Some((15, 15)));
+        let (_, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), Some((30, 45)));
+    }
+
+    /// The same run, the next moment: mark's request went once the restore
+    /// landed, then the procedure failed (LL Procedure Collision: the
+    /// central's own procedure at the same time), which the host only logs.
+    /// The link stays at 45 ms: the request did not land, and going again
+    /// is what the pacer does when its time is up.
+    #[test]
+    fn a_request_that_does_not_land_is_sent_again() {
+        let up = Some(Bulk::Upload);
+        let (p, _) = pace(Pace::Idle, up, &at(30));
+        assert!(!p.landed(Duration::from_millis(30)));
+        assert!(p.landed(Duration::from_millis(15)));
+        let (p, _) = pace(p, None, &at(15));
+        assert!(!p.landed(Duration::from_millis(15)), "a restore lands above 15 ms");
+        assert!(p.landed(Duration::from_millis(45)));
+        // mark: asked for, sent; the link stays at 45 ms
+        let (p, r) = pace(p.updated(Duration::from_millis(45)), up, &at(45));
+        assert_eq!(asks(&r), Some((15, 15)));
+        assert!(!p.unsent() && !p.landed(Duration::from_millis(45)));
+        // not landed in time: sent again
+        let (p, r) = super::pace(p.refused(), up, &at(45), true);
+        assert_eq!(asks(&r), Some((15, 15)));
+        assert!(p.landed(Duration::from_millis(15)));
+        assert!(Pace::Idle.landed(Duration::from_millis(45)));
+    }
+
+    /// A central that runs the link at 15 ms (or faster) by itself: nothing
+    /// asked, nothing restored.
+    #[test]
+    fn a_fast_central_is_left_alone() {
+        let (p, r) = pace(Pace::Idle, Some(Bulk::Download), &at(15));
+        assert_eq!(asks(&r), None);
+        let (p, r) = pace(p, None, &at(15));
+        assert_eq!(asks(&r), None);
+        assert!(matches!(p, Pace::Idle));
     }
 
     /// A bundle request fits `event`; a chunk at the host's largest ATT
