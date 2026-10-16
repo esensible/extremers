@@ -272,8 +272,10 @@ A reflash or reset opens it again. Anyone in range can pair meanwhile.
 `../BLE.md` "The studio's client" and "Pairing without a Kindle" have the rest (stale keys on the computer, a Mac
 that stops finding the box).
 
-The firmware builds against a patched trouble-host clone at
-`/Users/sensible-1/src/trouble` (root `Cargo.toml`, `[patch.crates-io]`); a
-dev container needs it at that path, or the patch overridden on the command
-line (`cargo --config 'patch.crates-io.trouble-host.path="…/host"' --config
+The firmware builds against our trouble-host fork, github.com/esensible/trouble
+branch `bundle-ble-fixes`, pinned by commit in the root `Cargo.toml`
+(`[patch.crates-io]`, which says what it carries); cargo fetches it, so any
+checkout builds the same code. To try a local trouble change before pushing
+it, override the patch on the command line
+(`cargo --config 'patch.crates-io.trouble-host.path="…/host"' --config
 'patch.crates-io.trouble-host-macros.path="…/host-macros"' …`).

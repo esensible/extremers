@@ -3393,6 +3393,7 @@ dependencies = [
 [[package]]
 name = "trouble-host"
 version = "0.7.0"
+source = "git+https://github.com/esensible/trouble?rev=d3430d3a5afd807d9afb0329ec81be83498ffe6d#d3430d3a5afd807d9afb0329ec81be83498ffe6d"
 dependencies = [
  "aes",
  "bt-hci",
@@ -3416,6 +3417,7 @@ dependencies = [
 [[package]]
 name = "trouble-host-macros"
 version = "0.5.0"
+source = "git+https://github.com/esensible/trouble?rev=d3430d3a5afd807d9afb0329ec81be83498ffe6d#d3430d3a5afd807d9afb0329ec81be83498ffe6d"
 dependencies = [
  "convert_case",
  "darling 0.20.11",

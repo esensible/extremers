@@ -64,7 +64,7 @@ edge-dhcp = { version = "0.8", default-features = false, features = ["io"] }
 
 #
 # BLE (trouble-host 0.7 pairs with esp-radio 1.0.0-beta.1 via bt-hci 0.9).
-# Patched to a local clone below, see [patch.crates-io].
+# Patched to our fork below, see [patch.crates-io].
 #
 trouble-host = { version = "0.7", default-features = false, features = ["derive", "gatt", "peripheral", "default-packet-pool"] }
 edge-captive = { version = "0.8", default-features = false, features = ["io"] }
@@ -94,24 +94,22 @@ codegen-units = 1
 # to show each defmt log line's source location.
 debug = 2
 
-# Bonding (BLE.md "Security"): trouble-host 0.7.0 on crates.io cannot keep a
-# bond with an Apple device working. Re-pairing a bonded peer that connects
-# from a resolvable private address (every iPhone and Apple Watch) fails the
-# DHKey check every time, because the bonded identity address instead of the
-# on-air address goes into f5/f6; a peer holding a bond we lost (provision,
-# "Forget all watches") is disconnected instead of getting an LTK negative
-# reply; an encryption event for a link that already dropped stops the host
-# runner. Upstream PR embassy-rs/trouble#660 fixes most of this, plus local
-# commits (on-air address for pairing, LESC keypair generated once), in the
-# local clone hilux/wireless-can also builds against (branch
-# hilux-keypair-once, not pushed):
-# `git -C /Users/sensible-1/src/trouble log origin/main..` lists them. Same bt-hci 0.9 as esp-radio 1.0.0-beta.1, and the same package
-# version, so the patch applies. By absolute host path like hilux's; a dev
-# container needs the clone at that path (or a `--config` patch override).
-# Drop this when a trouble-host release has those fixes.
+# trouble-host: our fork, github.com/esensible/trouble branch
+# bundle-ble-fixes, pinned by commit. It is embassy-rs/trouble main of
+# 2026-07-30 (relabelled 0.7.0, bt-hci 0.9 like esp-radio 1.0.0-beta.1) plus
+# fixes no release has (none are in 0.8.0): pairing with the on-air peer
+# address, so Apple devices can re-pair (BLE.md "Security"); an LTK negative
+# reply and a LongTermKeyMissing event for a bond we lost; the host runner
+# surviving routine security events; the LESC keypair generated once;
+# should_indicate reading the indicate bit; GATT caching (GattCaching); L2CAP
+# wakers per connection and on channel close; peer_credits; and
+# Stack::set_pairing_allowed (pairing refused outside the pairing window).
+# `git log upstream/main..bundle-ble-fixes` in a clone lists them. To change
+# trouble: commit and push to the fork, then move `rev` here (Cargo.lock
+# follows). Drop this when a trouble-host release has those fixes.
 [patch.crates-io]
-trouble-host = { path = "/Users/sensible-1/src/trouble/host" }
-trouble-host-macros = { path = "/Users/sensible-1/src/trouble/host-macros" }
+trouble-host = { git = "https://github.com/esensible/trouble", rev = "d3430d3a5afd807d9afb0329ec81be83498ffe6d" }
+trouble-host-macros = { git = "https://github.com/esensible/trouble", rev = "d3430d3a5afd807d9afb0329ec81be83498ffe6d" }
 # esp-storage 0.10.0 with its flash-MMU mapping API public (vendor/esp-storage,
 # src/mmu.rs says what changed), for the C6's execute-in-place reads of the
 # data slot (tgt-xiaoc6/src/xip.rs). Vendored in the repo, so it builds
