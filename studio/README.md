@@ -8,7 +8,12 @@ bundle and install it on the C6 over Web Bluetooth.
 The page is plain ES modules with no build step, the pattern of
 `dingo-cli/web`: one `window.api` that a person's clicks and an agent's calls
 share (`api.describe()` first), skills served by the page, and a DOM an agent
-can read (stable ids, a textual `#status`, no modals or native pickers).
+can read (stable ids, a textual `#status`, inline confirms, no modals). Local
+files come in through two file inputs, `#device-firmware-file` (a firmware
+`.bin`) and `#project-import-file` (a project `.zip`), or by drag-and-drop on
+the Device panel and the files list; a drop and a choice take one path
+(`files-in.js`). An agent driving Chrome sets an input's files with its
+file-upload tool rather than clicking it (that opens the OS picker).
 
 Licence: MIT (`LICENSE`).
 
@@ -60,7 +65,7 @@ allocated as they arrive, 480 KB when full).
 
 | File | What |
 |---|---|
-| `index.html` | the page: header (`#project-select`, `#status`, `#device-choose`), files (`#files`), editor tabs (`#editor-tab-<path>`; `#editor-<path>` is the shown file's editor only), bottom panels (`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`), previews (`#preview-kindle`, `#preview-watch`) |
+| `index.html` | the page: header (`#project-select`, `#status`, `#device-choose`), the project bar (import: `#project-import-url`, `#project-import`, the file input `#project-import-file`), files (`#files`), editor tabs (`#editor-tab-<path>`; `#editor-<path>` is the shown file's editor only), bottom panels (`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`), previews (`#preview-kindle`, `#preview-watch`) |
 | `app.js` | the human UI; every button calls `window.api`; `window.__selftest()` / `?selftest=1` |
 | `api.js` | `window.api`: the `FUNCTIONS` registry, `describe()` generated from it, `makeFn`, `withUnknownGuard` (from `dingo-cli/web/api.js`) |
 | `editor.js` | the centre pane: Monaco, one model per open file, the tabs, markers (see "The editor") |
@@ -68,6 +73,7 @@ allocated as they arrive, 480 KB when full).
 | `editor/schemas/*.json` | JSON Schemas the editor validates `engine/*.schema.json` and `engine/samples.json` against |
 | `lib/monaco/` | monaco-editor's AMD build, the parts the editor uses (`lib/monaco/vendor.mjs` makes it; version in `lib/VERSIONS.json`) |
 | `ui.js` | DOM-free page logic (file tree, line/column, status text), tested in Node |
+| `files-in.js` | a local file into the page: `takeDropped(zone, take)` and `takeChosen(input, take)` (an `<input type="file">`, reset after each choice) hand the file to one function; `firmwareOffer` (the Device panel's inline confirm) and `projectZipSource` (`project.import`'s source) |
 | `store.js` | projects and files in IndexedDB, multi-record changes in one transaction |
 | `zip.js` | project export/import: a stored-entry ZIP writer, a reader that also inflates (`DecompressionStream`) |
 | `templates.js` | `blank` (a minimal engine) and `race` (from `vendor/examples/race/`), each with its `studio.json` |
@@ -212,7 +218,9 @@ Bluetooth, by its bundle service (BLE.md "Bundles"). Three layers:
 | `device/firmware.js` | `checkImage(bytes, maxLen)`: a firmware image checked before it is sent (magic, chip id, 16-byte lines, room, its appended digest) |
 
 **A firmware update** (`api.device.updateFirmware({ base64 })`, or a `.bin`
-dropped on the Device panel and confirmed inline) writes the image over the
+chosen in `#device-firmware-file` (**Choose firmware image…**; disabled while
+the box is busy) or dropped on the Device panel, then confirmed inline in
+`#device-update-confirm`) writes the image over the
 box's other app slot, which also holds its bundles and its GPS track. So the
 controller, in one `run('ota')`: asks which firmware runs (`Firmware`),
 checks the image, lists the box and downloads (`Get`) every bundle that is

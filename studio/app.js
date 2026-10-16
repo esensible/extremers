@@ -10,8 +10,9 @@
 import { createApi, createLogger, withUnknownGuard } from './api.js';
 import { openStore } from './store.js';
 import { createEngineLoader } from './engine/wasm.js';
-import { toBase64, fromBase64 } from './zip.js';
-import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText } from './ui.js';
+import { fromBase64 } from './zip.js';
+import { esc, fileRows, fmtBytes, languageOf, statusLine, buildLogHtml, deviceStatusText, deviceHead, deviceProgressText, deviceRowsHtml, deviceTableAfter, deviceFirmwareText, deviceRestoreText } from './ui.js';
+import { takeDropped, takeChosen, firmwareOffer, projectZipSource } from './files-in.js';
 import { createEditor } from './editor.js';
 import { isJsonPath, prettyJson } from './json.js';
 import { mountPanels } from './panels.js';
@@ -145,20 +146,19 @@ async function importFrom(source) {
 }
 $('project-import').onclick = () => {
   const url = $('project-import-url').value.trim();
-  if (!url) { setStatus('Import: enter a URL, or drop a .zip on the files list', true); return; }
+  if (!url) { setStatus('Import: enter a URL, choose a .zip (Import ZIP…), or drop one on the files list', true); return; }
   importFrom({ url });
 };
-const pane = $('files-pane');
-pane.addEventListener('dragover', (e) => { e.preventDefault(); pane.classList.add('drag'); });
-pane.addEventListener('dragleave', () => pane.classList.remove('drag'));
-pane.addEventListener('drop', async (e) => {
-  e.preventDefault(); pane.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (!f) return;
-  if (!/\.zip$/i.test(f.name)) { setStatus(`Import: ${f.name} is not a .zip`, true); return; }
-  if (!$('project-import-name').value.trim()) $('project-import-name').value = f.name.replace(/\.zip$/i, '');
-  importFrom({ zipBase64: toBase64(new Uint8Array(await f.arrayBuffer())) });
-});
+// A project ZIP comes in one way, whether dropped on #files-pane or chosen
+// in #project-import-file (files-in.js).
+async function importZipFile(f) {
+  const z = await projectZipSource(f);
+  if (!z.ok) { setStatus(z.error, true); return; }
+  if (!$('project-import-name').value.trim()) $('project-import-name').value = z.name;
+  importFrom(z.source);
+}
+takeDropped($('files-pane'), importZipFile);
+takeChosen($('project-import-file'), importZipFile);
 
 // Delete: an inline two-step confirm (no native dialog: it blocks automation).
 let delTimer;
@@ -465,7 +465,7 @@ function renderDevice(s) {
   const restore = deviceRestoreText(s);
   $('device-restore').hidden = !restore || s?.state === 'busy';
   $('device-restore-text').textContent = restore;
-  $('device-update-yes').disabled = $('device-restore-resume').disabled = $('device-firmware-ask').disabled = s?.state === 'busy';
+  $('device-update-yes').disabled = $('device-restore-resume').disabled = $('device-firmware-ask').disabled = $('device-firmware-file').disabled = s?.state === 'busy';
   renderDeviceHead(s);
 }
 
@@ -519,8 +519,9 @@ $('device-install').onclick = async () => {
   if (r.ok) await window.api.device.list();
 };
 
-// A firmware update: a person drops the image (.bin) on the Device panel (no
-// native picker, as #files-pane), confirms inline within 15 s, and
+// A firmware update: a person drops the image (.bin) on the Device panel or
+// chooses it in #device-firmware-file (one path: offerFirmware), confirms
+// inline within 15 s, and
 // api.device.updateFirmware does the rest (saves the bundles, updates,
 // restores them). A stopped one shows #device-restore; Resume finishes it.
 $('device-firmware-ask').onclick = () => window.api.device.firmware();
@@ -531,22 +532,18 @@ $('device-restore-resume').onclick = async () => {
 let fwPending = null; // { name, len, base64 } waiting for its inline confirm
 let fwTimer;
 function cancelFirmware() { clearTimeout(fwTimer); fwPending = null; $('device-update-confirm').hidden = true; }
-const devPanel = $('device');
-devPanel.addEventListener('dragover', (e) => { e.preventDefault(); devPanel.classList.add('drag'); });
-devPanel.addEventListener('dragleave', () => devPanel.classList.remove('drag'));
-devPanel.addEventListener('drop', async (e) => {
-  e.preventDefault(); devPanel.classList.remove('drag');
-  const f = e.dataTransfer?.files?.[0];
-  if (!f) return;
-  if (!/\.bin$/i.test(f.name)) { setStatus(`Firmware: ${f.name} is not a firmware image (.bin, as cargo run -p extreme-image writes)`, true); return; }
-  const bytes = new Uint8Array(await f.arrayBuffer());
-  cancelFirmware();
-  fwPending = { name: f.name, len: bytes.length, base64: toBase64(bytes) };
+async function offerFirmware(f) {
   const listed = deviceTable.list && !deviceTable.stale ? deviceTable.list.bundles.filter((b) => !b.builtin).length : null;
-  $('device-update-text').textContent = deviceUpdateConfirmText(fwPending, listed);
+  const o = await firmwareOffer(f, listed);
+  if (!o.ok) { setStatus(o.error, true); return; }
+  cancelFirmware();
+  fwPending = o.pending;
+  $('device-update-text').textContent = o.text;
   $('device-update-confirm').hidden = false;
   fwTimer = setTimeout(cancelFirmware, 15000);
-});
+}
+takeDropped($('device'), offerFirmware);
+takeChosen($('device-firmware-file'), offerFirmware);
 $('device-update-no').onclick = cancelFirmware;
 $('device-update-yes').onclick = async () => {
   const p = fwPending;

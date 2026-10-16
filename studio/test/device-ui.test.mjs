@@ -7,6 +7,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deviceStatusText, deviceProgressText, deviceRowsHtml, statusLine, deviceHead, deviceIdTag, deviceTableAfter, deviceFirmwareText, deviceUpdateConfirmText, deviceRestoreText } from '../ui.js';
 import { studioDir } from './engine-world.mjs';
+import { takeDropped, takeChosen, firmwareOffer } from '../files-in.js';
+import { fromBase64 } from '../zip.js';
+import { fakeElement, fileLike, choose, drop } from './fake-files.mjs';
 
 const LIST = {
   ok: true, count: 2, free: 1_500_000, largestFree: 1_400_000,
@@ -162,9 +165,19 @@ test('the page: #device-choose enabled, the header\'s device group, the #device 
   }
   assert.match(html, /id="device-update-confirm" data-testid="device-update-confirm" hidden/);
   assert.match(html, /id="device-restore" class="confirm dev-line" data-testid="device-restore" role="alert" hidden/);
-  assert.doesNotMatch(html, /type="file"/, 'no native file picker');
+  // the two file inputs: in the page, enabled, behind a .btn label (visually hidden, never display:none)
+  for (const [id, accept] of [['device-firmware-file', '.bin,application/octet-stream'], ['project-import-file', '.zip,application/zip']]) {
+    assert.match(html, new RegExp(`<label class="btn file-pick">[^<]+<input type="file" id="${id}" data-testid="${id}" accept="${accept}"(?![^>]*(disabled|hidden))[^>]*></label>`), id);
+  }
+  assert.equal((html.match(/type="file"/g) ?? []).length, 2, 'two file inputs, no others');
+  assert.match(html, /\.file-pick input\[type=file\] \{ position: absolute; width: 1px; height: 1px;[^}]*clip-path: inset\(50%\)/);
+  assert.doesNotMatch(html, /\.file-pick[^{]*\{[^}]*display: ?none/, 'the input stays reachable');
   const page = readFileSync(join(studioDir, 'app.js'), 'utf8');
-  assert.match(page, /devPanel\.addEventListener\('drop'/);
+  // a drop and a choice take one function each: the firmware's and the project ZIP's
+  assert.match(page, /takeDropped\(\$\('device'\), offerFirmware\);\ntakeChosen\(\$\('device-firmware-file'\), offerFirmware\);/);
+  assert.match(page, /takeDropped\(\$\('files-pane'\), importZipFile\);\ntakeChosen\(\$\('project-import-file'\), importZipFile\);/);
+  assert.equal((page.match(/addEventListener\('(drop|change)'/g) ?? []).length, 0, 'no other drop or change handler for files');
+  assert.match(page, /\$\('device-firmware-file'\)\.disabled = s\?\.state === 'busy'/, 'disabled while the box is busy, as Update is');
   assert.match(page, /fwTimer = setTimeout\(cancelFirmware, 15000\)/);
   assert.match(page, /window\.api\.device\.updateFirmware\(\{\}\)/);
   const app = readFileSync(join(studioDir, 'app.js'), 'utf8');
@@ -173,4 +186,49 @@ test('the page: #device-choose enabled, the header\'s device group, the #device 
   // every element app.js writes by id exists in the page or in what ui.js draws into it
   const drawn = readFileSync(join(studioDir, 'ui.js'), 'utf8');
   for (const [, id] of app.matchAll(/\$\('([\w-]+)'\)/g)) assert.ok(html.includes(`id="${id}"`) || drawn.includes(`id="${id}"`), `#${id} exists`);
+  for (const id of ['device-firmware-file', 'project-import-file']) assert.match(app, new RegExp(`\\$\\('${id}'\\)`), `app.js uses #${id}`);
+});
+
+test('a firmware image chosen in #device-firmware-file reaches the same inline confirm as one dropped on #device; the input is reset', async () => {
+  // what app.js's offerFirmware does with the file, here with 3 bundles listed
+  const offers = [];
+  const offerFirmware = (f) => offers.push(firmwareOffer(f, 3));
+  const panel = fakeElement();
+  const input = fakeElement({ files: [], value: '' });
+  takeDropped(panel, offerFirmware);
+  takeChosen(input, offerFirmware);
+
+  const bytes = Uint8Array.from({ length: 2048 }, (_, i) => i & 0xff);
+  const img = fileLike('xiaoc6.bin', bytes);
+  panel.dispatchEvent(new Event('dragover', { cancelable: true }));
+  assert.ok(panel.classList.contains('drag'));
+  const e = drop(panel, img);
+  assert.ok(e.defaultPrevented, 'the browser does not open the dropped file');
+  assert.ok(!panel.classList.contains('drag'));
+  choose(input, img);
+  assert.equal(input.value, '', 'reset: the same file can be chosen again');
+  assert.equal(offers.length, 2);
+  const [dropped, chosen] = await Promise.all(offers);
+  assert.deepEqual(chosen, dropped, 'one path');
+  assert.equal(chosen.text, "Update the box's firmware with xiaoc6.bin (2.0 KB)? This saves the 3 bundles on the box in this browser, updates the firmware, then restores them; the GPS track is lost.");
+  assert.deepEqual([chosen.pending.name, chosen.pending.len], ['xiaoc6.bin', 2048]);
+  assert.deepEqual(fromBase64(chosen.pending.base64), bytes, 'the bytes updateFirmware gets');
+
+  // choosing the same file again (value was reset) offers it again
+  choose(input, img);
+  assert.equal(offers.length, 3);
+  assert.deepEqual(await offers[2], dropped);
+
+  // not a .bin: the same refusal both ways
+  const elf = fileLike('extremers', bytes);
+  drop(panel, elf); choose(input, elf);
+  const [r1, r2] = await Promise.all(offers.slice(3));
+  assert.deepEqual(r1, { ok: false, error: 'Firmware: extremers is not a firmware image (.bin, as cargo run -p extreme-image writes)' });
+  assert.deepEqual(r2, r1);
+
+  // nothing dropped or chosen (a cancelled picker): nothing offered, the input still reset
+  drop(panel, null); choose(input, null);
+  assert.equal(offers.length, 5);
+  assert.equal(input.value, '');
+  assert.match((await firmwareOffer(img)).text, /saves every bundle on the box/, 'not listed');
 });

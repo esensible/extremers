@@ -19,6 +19,8 @@ import { racePath } from '../templates.js';
 import { prettyJson } from '../json.js';
 import { createEngineLoader } from '../engine/wasm.js';
 import { createFakeIndexedDB } from './fake-indexeddb.mjs';
+import { takeDropped, takeChosen, projectZipSource } from '../files-in.js';
+import { fakeElement, fileLike, choose, drop } from './fake-files.mjs';
 
 const studioDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const enc = new TextEncoder();
@@ -495,6 +497,32 @@ test('export → import round trip (text + binary); export is deterministic; nam
   const unsafe = toBase64(zipStore([{ name: '../evil.txt', bytes: enc.encode('x') }]));
   fail(await api.project.import({ zipBase64: unsafe }, { name: 'z' }), /not a project path/);
   assert.deepEqual(okr(await api.project.list()).projects.map((p) => p.name).sort(), ['copy', 'src'], 'failed imports leave nothing');
+});
+
+test('a project ZIP chosen in #project-import-file or dropped on #files-pane reaches project.import the same way (files-in.js)', async () => {
+  const { api } = await world();
+  okr(await api.project.create('src', { template: 'blank' }));
+  const zip = fromBase64(okr(await api.project.export()).zipBase64);
+  // what app.js's importZipFile does with the file (the name field empty: the file's name)
+  const imports = [];
+  const importZipFile = (f) => imports.push(projectZipSource(f).then((z) => (z.ok ? api.project.import(z.source, { name: z.name }) : z)));
+  const pane = fakeElement();
+  const input = fakeElement({ files: [], value: '' });
+  takeDropped(pane, importZipFile);
+  takeChosen(input, importZipFile);
+
+  choose(input, fileLike('chosen.zip', zip));
+  assert.equal(input.value, '', 'reset: the same file can be chosen again');
+  assert.equal(okr(await imports[0]).name, 'chosen');
+  assert.ok(drop(pane, fileLike('dropped.ZIP', zip)).defaultPrevented);
+  assert.equal(okr(await imports[1]).name, 'dropped');
+  assert.deepEqual(okr(await api.project.list()).projects.map((p) => p.name).sort(), ['chosen', 'dropped', 'src']);
+  assert.equal(okr(await api.status()).project, 'dropped', 'an import opens the project');
+  okr(await api.files.read('engine/engine.expr'));
+
+  choose(input, fileLike('notes.txt', enc.encode('x')));
+  assert.deepEqual(await imports[2], { ok: false, error: 'Import: notes.txt is not a .zip' });
+  assert.equal(imports.length, 3);
 });
 
 test('import: one shared top-level folder is stripped; name from the URL; deflated entries', async () => {

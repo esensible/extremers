@@ -308,6 +308,8 @@ fake of the box; it has not yet run against the hardware itself.
   file plus `studio-project.json`. Same files → same bytes.
 - `api.project.import({ zipBase64 }, { name })` or `({ url }, { name })`:
   refuses an existing name; a single top-level folder in the ZIP is stripped.
+  On the page a ZIP comes from `#project-import-file` or a drop on the files
+  list (below).
 - Paths are relative, `/`-separated: `engine/engine.expr`,
   `engine/state.schema.json`, `kindle/src/index.jsx`, `watch/src/index.jsx`.
 
@@ -364,11 +366,22 @@ fake of the box; it has not yet run against the hardware itself.
   chooser (`navigator.bluetooth.getDevices()`),
   `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
   Enabled (then relaunch Chrome). Without it `connect()` says so.
-- **Update the firmware from the page.** A person drops the image
-  (`xiaoc6.bin`) on the Device panel and confirms inline within 15 s
-  (`#device-update-yes`); there is no file picker. From script give the image
-  as base64 instead (`api.device.updateFirmware({ base64 })`), and only when
-  asked to update: it wipes the GPS track.
+- **Update the firmware from the page.** The image (`xiaoc6.bin`) goes in
+  through the Device panel's file input `#device-firmware-file` (behind
+  **Choose firmware image…**) or is dropped on the panel; both take the same
+  path to the inline confirm, pressed within 15 s (`#device-update-yes`; an
+  agent may press it, but only when asked to update: it wipes the GPS
+  track). A person clicks **Choose firmware image…** and picks the file in
+  the OS picker. An agent never clicks it (that opens the OS picker, which
+  it cannot drive): it sets the input's files with its browser's
+  file-upload tool, targeting `#device-firmware-file`, which fires the
+  same `change` a person's choice does. From script the image can go as
+  base64 instead (`api.device.updateFirmware({ base64 })`), same caution.
+- **Import a project ZIP from this computer.** The same way: the file input
+  `#project-import-file` (behind **Import ZIP…**, next to `#project-import`)
+  or a drop on the files list; an agent sets its files with the file-upload
+  tool, never clicks it. The name is `#project-import-name`'s, else the
+  file's without `.zip`. From script: `api.project.import({ zipBase64 })`.
 - Deleting a project or a file from the page asks inline; from `window.api`
   it does not ask: only delete what you were asked to.
 
@@ -405,13 +418,20 @@ inline confirm `#device-confirm-yes` / `#device-confirm-no`; under it
 `#device-space`, and `#device-stale` once the box changed since the list),
 `#device-log`; the firmware: `#device-firmware` (`Firmware: ota_0 · sha
 12ab34cd…`, `· on trial` while pending; from the last `device.firmware`)
-with `#device-firmware-ask`, `#device-update-hint`, the drop's inline
-confirm `#device-update-confirm` (`#device-update-text`,
-`#device-update-yes`, `#device-update-no`), and `#device-restore` (shown
-while `restorePending`: `#device-restore-text`, `#device-restore-resume`).
-Previews `#preview-kindle`, `#preview-watch`. No modals, no `alert`, no
-native pickers: Chrome's Bluetooth chooser, from `#device-choose`, is the
-one native dialog.
+with `#device-firmware-ask`, the file input `#device-firmware-file`
+(`<input type="file" accept=".bin,application/octet-stream">`, visually
+hidden inside the **Choose firmware image…** label but enabled; disabled
+while the box is busy), `#device-update-hint`, the inline confirm
+`#device-update-confirm` (`#device-update-text`, `#device-update-yes`,
+`#device-update-no`), and `#device-restore` (shown while `restorePending`:
+`#device-restore-text`, `#device-restore-resume`). The project bar:
+`#project-import-url`, `#project-import-name`, `#project-import`, and the
+file input `#project-import-file` (`accept=".zip,application/zip"`, inside
+the **Import ZIP…** label). Previews `#preview-kindle`, `#preview-watch`.
+No modals, no `alert`. Two native dialogs: Chrome's Bluetooth chooser, from
+`#device-choose` (a person's click only), and the OS file picker behind the
+two file inputs (a person's; an agent sets the inputs' files with its
+file-upload tool instead). Drag-and-drop works as well.
 
 ## Words
 
