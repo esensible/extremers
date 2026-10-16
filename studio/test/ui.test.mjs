@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { esc, editorId, fileRows, lineCol, offsetAt, fmtBytes, languageOf, statusLine } from '../ui.js';
+import { esc, editorId, fileRows, lineCol, offsetAt, fmtBytes, languageOf, statusLine, fileGroups, fileLabel, tabLabel, screensOf, projectParts, compactJson, trackFiles } from '../ui.js';
 import { crc32, zipStore, unzip, toBase64, fromBase64 } from '../zip.js';
 import { createEngineLoader, MISSING_HINT } from '../engine/wasm.js';
 
@@ -23,6 +23,40 @@ test('fileRows: folders first at each level, depth-indented', () => {
     'engine/', '  a.json', '  engine.expr', 'kindle/', '  src/', '    api.js', 'watch/', '  src/', '    index.jsx', 'README.md',
   ]);
   assert.equal(rows.find((r) => r.name === 'api.js').path, 'kindle/src/api.js');
+});
+
+test('fileGroups: by part of the app, with the names a person reads; the engine, Kindle and watch always there', () => {
+  const files = ['watch/src/index.jsx', 'engine/engine.expr', 'README.md', 'engine/view.schema.json', 'engine/state.schema.json', 'engine/samples.json', 'engine/event.schema.json', 'kindle/src/confirm.jsx', 'kindle/src/index.jsx', 'kindle/src/assets/a.svg', 'studio.json', 'engine/notes.md'].map((path) => ({ path, size: 1 }));
+  const g = fileGroups(files);
+  assert.deepEqual(g.map((x) => x.label), ['Engine', 'Kindle screen', 'Watch screen', 'Other files', 'Project settings']);
+  assert.deepEqual(g[0].files.map((f) => f.label), ['engine.expr', 'State schema', 'View schema', 'Event schema', 'Test runs', 'notes.md']);
+  assert.deepEqual(g[0].files.map((f) => f.path).slice(0, 2), ['engine/engine.expr', 'engine/state.schema.json'], 'the real path stays on each');
+  assert.deepEqual(g[1].files.map((f) => f.label), ['index.jsx', 'assets/a.svg', 'confirm.jsx']);
+  assert.deepEqual(g[2].files.map((f) => f.label), ['index.jsx']);
+  assert.deepEqual(g[3].files.map((f) => f.label), ['README.md']);
+  assert.deepEqual(g[4].files.map((f) => f.label), ['studio.json']);
+  assert.deepEqual(fileGroups([]).map((x) => x.key), ['engine', 'kindle', 'watch'], 'an empty project still shows where things go');
+  assert.equal(fileLabel('kindle/package.json').label, 'package.json');
+  assert.equal(tabLabel('kindle/src/index.jsx'), 'Kindle · index.jsx');
+  assert.equal(tabLabel('watch/src/a/b.jsx'), 'Watch · a/b.jsx');
+  assert.equal(tabLabel('engine/state.schema.json'), 'State schema');
+  assert.equal(tabLabel('engine/engine.expr'), 'engine.expr');
+  assert.deepEqual(screensOf(files), ['kindle', 'watch']);
+  assert.deepEqual(screensOf([{ path: 'engine/engine.expr' }, { path: 'watch/src/index.js' }]), ['watch']);
+  assert.deepEqual(screensOf([{ path: 'engine/engine.expr' }]), []);
+  // the tracks "Replay a track…" offers: NMEA anywhere, JSON outside the engine and the screens
+  const t = ['tracks/start.nmea', 'engine/samples.json', 'studio.json', 'tracks/b.jsonl', 'kindle/src/data.json', 'a.json', 'engine/old.NMEA'].map((path) => ({ path }));
+  assert.deepEqual(trackFiles(t), ['a.json', 'engine/old.NMEA', 'tracks/b.jsonl', 'tracks/start.nmea']);
+});
+
+test('projectParts and compactJson', () => {
+  assert.equal(projectParts({ name: 'mark', files: 23, settings: { name: 'mark', version: 1, file: 'studio.json' } }), 'v1 · 23 files');
+  assert.equal(projectParts({ name: 'tune2', files: 1, settings: { name: 'race', version: 3, file: 'studio.json' } }), 'race v3 · 1 file');
+  assert.equal(projectParts({ name: 'x', files: 4, settings: { error: 'bad JSON' } }), '4 files');
+  assert.equal(compactJson({ marks: 0, velocity: { speed: 6.2, heading: 90 }, 'two words': null, list: [1, 2] }), '{marks: 0, velocity: {speed: 6.2, heading: 90}, "two words": null, list: [1, 2]}');
+  assert.equal(compactJson(undefined), '—');
+  assert.equal(compactJson('a'), '"a"');
+  assert.equal(compactJson(Array.from({ length: 12 }, (_, i) => i), 3), '[0, 1, 2, … 9 more]');
 });
 
 test('lineCol / offsetAt are inverse, 1-based, clamped', () => {

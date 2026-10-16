@@ -6,352 +6,620 @@
 <title>Extremers Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-  /* Tokens from dingo-cli/web/index.html. */
+  /* A dark workspace. The tokens are the approved design's; editor/lang.js's
+     Monaco theme uses the same values. */
   :root {
-    --ground: #EEF0EC; --surface: #FFFFFF; --raised: #FAFBF8;
-    --ink: #15191E; --ink-2: #34404D; --muted: #5A626B;
-    --line: #D5DAD3; --line-2: #E4E8E2; --control: #C9CFC7;
-    --accent: #C2410C; --accent-hover: #9A3412;
-    --info: #1E5BB8; --info-ink: #1E4F9C; --info-bg: #E3ECF9;
-    --danger: #A3201A; --danger-bg: #FDF5F4; --danger-line: #E3B3AE;
-    --warn: #8A5300; --warn-bg: #FFF8EC; --warn-line: #E9C38A;
-    --code-bg: #FFFFFF; --code-fg: #15191E;
-    --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --f-head: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
-    --f-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    color-scheme: light;
+    --ground: #111418; --chrome: #14181D; --panel: #161A20; --field: #1B2027; --hover: #222831;
+    --selected: #262C35; --selected-2: #2A313B; --sunk: #0C0E11;
+    --line: #262C34; --line-2: #2B313A; --line-3: #2F3640; --line-4: #353C47;
+    --text: #E4E7EB; --text-2: #C3C9D1; --muted: #8E98A4; --faint: #4A525D;
+    --accent: #F2A33A; --accent-hover: #F7BE6A; --on-accent: #1A1206;
+    --good: #4CC38A; --good-bg: #1F3A2C; --good-text: #7FDBA9; --good-line: #2F5A44;
+    --warn: #E9B949; --warn-bg: #2E2614; --bad: #F59A8F; --bad-bg: #3A201D; --bad-line: #6B3A34; --info: #6CB4EE;
+    --f-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --f-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.4 var(--f-body); display: flex; flex-direction: column; }
+  body { margin: 0; background: var(--ground); color: var(--text); font: 13px/1.45 var(--f-ui); display: flex; flex-direction: column; overflow: hidden; }
   [hidden] { display: none !important; }
-  .mono, code, textarea { font-family: var(--f-mono); }
-  .eb { font: 600 12px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .hint { color: var(--muted); font-size: 13px; }
-  .c-danger { color: var(--danger); }
+  a { color: var(--accent); } a:hover { color: var(--accent-hover); }
+  code, .mono { font-family: var(--f-mono); }
+  .muted { color: var(--muted); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot[data-tone="ok"] { background: var(--good); } .dot[data-tone="busy"] { background: var(--warn); }
+  .dot[data-tone="err"] { background: var(--bad); } .dot[data-tone="idle"] { background: var(--faint); }
 
-  .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 8px; font: 600 14px var(--f-body); border: 1px solid var(--control); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
-  .btn:hover { border-color: var(--muted); }
-  .btn.pri { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
-  .btn.pri:hover { background: var(--accent-hover); }
-  .btn.danger { color: var(--danger); border-color: var(--danger-line); }
-  .btn.danger.solid { background: var(--danger); color: #FFFFFF; }
-  .btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
-  .btn:disabled { opacity: .45; cursor: default; }
-  select, input[type=text], input:not([type]) { font: 500 14px var(--f-body); min-height: 32px; border-radius: 8px; border: 1px solid var(--control); padding: 0 8px; background: var(--surface); color: var(--ink); min-width: 0; }
-  :focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
-  /* A file input inside a .btn label (files-in.js): visually hidden but in the
-     DOM, enabled and focusable, so an automation tool can set its files. */
+  /* buttons */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line-3); background: var(--hover); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--selected-2); }
+  .btn.pri { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .btn.pri:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn.ghost { background: transparent; color: var(--text-2); }
+  .btn.ghost:hover { background: var(--hover); }
+  .btn.danger { color: var(--bad); }
+  .btn.danger.solid { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); font-weight: 600; }
+  .btn.sm { height: 28px; padding: 0 10px; }
+  .btn:disabled, .icon-btn:disabled { opacity: .45; cursor: default; }
+  .icon-btn { width: 30px; height: 30px; display: inline-grid; place-items: center; border-radius: 6px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .icon-btn.boxed { border-color: var(--line-2); }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .link:hover { color: var(--accent-hover); }
+  input, select { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line-2); border-radius: 5px; height: 30px; padding: 0 8px; min-width: 0; }
+  input::placeholder { color: var(--muted); opacity: 1; }
+  input[type=checkbox], input[type=radio] { height: 16px; width: 16px; accent-color: var(--accent); margin: 0; }
+  .confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-2); }
+  /* A file input inside a .file-pick label (files-in.js): visually hidden but
+     in the DOM, enabled and focusable, so an automation tool can set its files. */
   .file-pick { position: relative; }
   .file-pick input[type=file] { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-  .file-pick:has(input:focus-visible) { outline: 2px solid var(--info); outline-offset: 1px; }
+  .file-pick:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .file-pick:has(input:disabled) { opacity: .45; cursor: default; }
 
-  /* header */
-  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--raised); }
-  .brand { font: 700 22px var(--f-head); }
-  .top label { display: flex; align-items: center; gap: 6px; }
-  #status { flex: 1 1 260px; font-size: 14px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
-  #status.err { color: var(--danger); }
-  .dev-head { display: flex; align-items: center; gap: 6px; }
-  .dev-state { font: 500 13px var(--f-mono); color: var(--muted); white-space: nowrap; }
-  .dev-state[data-tone="ok"] { color: #1F7A3A; }
-  .dev-state[data-tone="busy"] { color: var(--info-ink); }
-  .dev-state[data-tone="err"] { color: var(--danger); }
-  .projbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
-  .projbar .grp { display: flex; align-items: center; gap: 6px; padding-right: 10px; border-right: 1px solid var(--line-2); }
-  .projbar .grp:last-child { border-right: 0; }
-  .confirm { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--danger-line); background: var(--danger-bg); border-radius: 8px; }
+  /* the top bar */
+  .top { height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--chrome); position: relative; z-index: 30; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: .02em; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; background: var(--field); border: 1px solid var(--line-2); border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; max-width: 320px; }
+  .chip:hover { background: var(--hover); }
+  .chip[aria-expanded="true"] { background: var(--selected-2); border-color: var(--accent); }
+  .chip .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #project-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status-line { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  #status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status.err { color: var(--bad); }
+  #run { min-width: 96px; }
+  #device-state { font-weight: 600; white-space: nowrap; }
+  #box-chip-warn { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--chrome); }
 
-  /* the IDE */
-  .ide { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; }
-  @media (max-width: 1000px) { .ide { grid-template-columns: 200px minmax(0, 1fr); } .previews { display: none; } }
-  @media (max-width: 640px) { .ide { grid-template-columns: minmax(0, 1fr); } #files-pane { max-height: 200px; } }
-  .pane { min-height: 0; overflow: auto; background: var(--surface); }
-  #files-pane { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
-  #files-pane.drag { outline: 2px dashed var(--info); outline-offset: -4px; }
-  .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
-  #files { flex: 1; padding: 4px 0; }
-  .row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 10px; border: 0; background: none; text-align: left; font: 14px var(--f-mono); color: var(--ink); cursor: pointer; }
-  .row:hover { background: var(--raised); }
-  .row.dir { color: var(--muted); cursor: default; }
-  .row[aria-selected="true"] { background: var(--info-bg); color: var(--info-ink); }
-  .row .sz { margin-left: auto; font-size: 11px; color: var(--muted); }
-  .file-tools { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line-2); }
-  .file-tools .r { display: flex; gap: 6px; }
-  .file-tools input { flex: 1; font-family: var(--f-mono); font-size: 13px; }
+  /* the workspace */
+  .work { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr) 460px; }
+  @media (max-width: 1180px) { .work { grid-template-columns: 200px minmax(0, 1fr) 420px; } }
+  @media (max-width: 900px) { body { overflow: auto; } .work { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; } .center { height: 70vh; } }
 
-  .center { display: grid; grid-template-rows: auto minmax(0, 1fr) auto minmax(140px, 32%); min-height: 0; min-width: 0; }
-  #editor-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--raised); }
-  .tab { display: flex; align-items: center; gap: 4px; padding: 0 4px 0 12px; border: 0; border-right: 1px solid var(--line-2); background: none; font: 13px var(--f-mono); color: var(--muted); cursor: pointer; white-space: nowrap; min-height: 34px; }
-  .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
-  .tab .x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 6px; font-size: 13px; }
+  /* files */
+  #files-pane { border-right: 1px solid var(--line); background: var(--chrome); padding: 12px 8px; display: flex; flex-direction: column; gap: 16px; overflow: auto; min-height: 0; }
+  #files-pane.drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+  #files { display: flex; flex-direction: column; gap: 16px; }
+  .fgroup { display: flex; flex-direction: column; gap: 1px; }
+  .fgroup-head { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 6px; }
+  .fgroup-state { font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+  .fgroup-state[data-tone="ok"] { color: var(--good); } .fgroup-state[data-tone="err"] { color: var(--bad); }
+  .frow { position: relative; display: flex; align-items: center; border-radius: 5px; }
+  .frow:hover, .frow:focus-within { background: var(--hover); }
+  .frow.sel { background: var(--selected); }
+  .file { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 0; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; border-radius: 5px; }
+  .frow.sel .file { color: var(--text); }
+  .file .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file .sz { font: 11px var(--f-mono); color: var(--muted); flex: none; }
+  .frow .icon-btn { width: 24px; height: 24px; opacity: 0; margin-right: 2px; }
+  .frow:hover .icon-btn, .frow:focus-within .icon-btn, .frow .icon-btn[aria-expanded="true"] { opacity: 1; }
+  .frow .menu { position: absolute; right: 0; top: 100%; z-index: 5; }
+  .fmore { padding: 5px 8px; border: 0; background: none; color: var(--muted); font: inherit; text-align: left; cursor: pointer; border-radius: 5px; }
+  .fmore:hover { background: var(--hover); color: var(--text-2); }
+  .finline { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; background: var(--field); border: 1px solid var(--line-2); border-radius: 6px; }
+  .finline input { width: 100%; font-family: var(--f-mono); font-size: 12px; }
+  .finline .r { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .new-file { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; background: transparent; border: 1px dashed var(--line-3); border-radius: 6px; color: var(--muted); font: inherit; cursor: pointer; }
+  .new-file:hover { color: var(--text-2); border-color: var(--line-4); }
+  .nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+
+  /* menus and popovers */
+  .menu { min-width: 200px; background: var(--hover); border: 1px solid var(--line-4); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+  .menu [role=menuitem], .menu .mi { display: flex; align-items: center; gap: 10px; text-align: left; height: 32px; padding: 0 10px; background: transparent; border: 0; border-radius: 5px; color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  .menu [role=menuitem]:hover, .menu [role=menuitem]:focus-visible, .menu .mi:hover { background: var(--selected-2); }
+  .menu .danger { color: var(--bad); }
+  .popover { position: absolute; top: 52px; left: 100px; width: 420px; max-width: calc(100vw - 32px); background: var(--field); border: 1px solid var(--line-4); border-radius: 10px; box-shadow: 0 18px 48px rgba(0,0,0,.5); z-index: 40; display: flex; flex-direction: column; overflow: hidden; }
+  .popover .sect { border-top: 1px solid var(--line-2); padding: 6px; display: flex; flex-direction: column; }
+  .popover .sect > .label { padding: 6px 10px 4px; }
+  .popover .mi { display: flex; align-items: center; gap: 10px; text-align: left; height: 34px; padding: 0 10px; background: transparent; border: 0; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; }
+  .popover .mi:hover, .popover .mi:focus-visible { background: var(--hover); }
+  .popover .mi.danger { color: var(--bad); }
+  .popover .mi.indent { padding-left: 34px; }
+  .search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; background: var(--ground); border: 1px solid var(--line-2); border-radius: 6px; }
+  .search input { flex: 1 1 auto; background: transparent; border: 0; height: 32px; padding: 0; }
+  .search input:focus-visible { outline: none; }
+  .search:focus-within { border-color: var(--accent); }
+  #project-list { list-style: none; margin: 0; padding: 0 6px 6px; display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+  .proj { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 34px; border-radius: 6px; border: 0; background: transparent; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+  .proj:hover, .proj:focus-visible { background: var(--hover); }
+  .proj[aria-current="true"] { background: var(--selected); color: var(--text); padding-left: 10px; }
+  .proj .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj[aria-current="true"] .nm { font-weight: 600; }
+  .proj .sub { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pinline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 10px; }
+  .pinline input { flex: 1 1 140px; }
+  .dialog-form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .dialog-form h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .field { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; }
+  .field input { height: 34px; background: var(--ground); font-size: 13px; }
+  .choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px; background: var(--ground); border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; }
+  .choice:has(input:checked) { background: var(--hover); border-color: var(--accent); }
+  .choice input { margin-top: 2px; }
+  .choice b { font-weight: 600; display: block; color: var(--text); }
+  .choice span span { color: var(--muted); font-size: 12px; }
+  fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+  legend { padding: 0 0 6px; color: var(--muted); font-size: 12px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+  /* the editor */
+  .center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 38px minmax(0, 1fr) 200px; background: var(--ground); }
+  #editor-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--chrome); scrollbar-width: thin; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 14px; border: 0; border-top: 2px solid transparent; border-right: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
+  .tab:hover { color: var(--text-2); }
+  .tab[aria-selected="true"] { background: var(--ground); border-top-color: var(--accent); color: var(--text); }
+  .tab .x { border-radius: 4px; padding: 1px 6px; color: var(--muted); font-size: 11px; }
+  .tab .x:hover { background: var(--hover); color: var(--text); }
   .tab .dirty { color: var(--accent); }
-  #editors { position: relative; min-height: 0; background: var(--code-bg); }
+  #editors { position: relative; min-height: 0; background: var(--ground); }
   /* Monaco (editor.js) fills #editors; its host carries the shown file's id, #editor-<path>. */
   #editors .monaco-host { position: absolute; inset: 0; }
   #editors .empty { position: absolute; inset: 0; padding: 24px; color: var(--muted); }
-  #cursor { display: flex; gap: 14px; padding: 4px 12px; font: 12px var(--f-mono); color: var(--muted); border-top: 1px solid var(--line-2); background: var(--raised); }
-  .bottom { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--line); background: var(--surface); }
-  .bottom-tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line-2); background: var(--raised); }
-  .bottom-tabs button { border: 0; background: none; padding: 6px 10px; font: 600 13px var(--f-body); color: var(--muted); cursor: pointer; }
-  .bottom-tabs button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
-  .panel { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 13px; }
-  #log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 0; }
-  #skill-view { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-  #skill-view-title { margin: 0 0 6px; }
-  .build-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+
+  /* problems, test runs, log */
+  .bottom { min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--chrome); }
+  .bottom-tabs { display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px; flex: none; }
+  .bottom-tabs [role=tab] { height: 26px; padding: 0 10px; background: transparent; border: 0; border-radius: 5px; color: var(--muted); font: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .bottom-tabs [role=tab]:hover { color: var(--text-2); }
+  .bottom-tabs [role=tab][aria-selected="true"] { background: var(--hover); color: var(--text); }
+  .count { color: var(--muted); } .count[data-tone="ok"] { color: var(--good); } .count[data-tone="err"] { color: var(--bad); } .count[data-tone="warn"] { color: var(--warn); }
+  #program-summary { margin-left: auto; font: 11px var(--f-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .panel { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 16px 12px; }
+  #engine-state { margin: 2px 0 6px; color: var(--muted); }
+  #engine-state.ok { color: var(--muted); } #engine-state.bad { color: var(--bad); }
+  .diag { display: flex; flex-wrap: wrap; gap: 2px 12px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 5px 4px; font: 12px var(--f-mono); color: var(--text-2); cursor: pointer; border-radius: 4px; }
+  .diag:hover, .diag:focus-visible { background: var(--hover); }
+  .diag .rule { font-weight: 500; } .diag.error .rule { color: var(--bad); } .diag.warning .rule { color: var(--warn); }
+  .diag .where { color: var(--info); } .diag .help { flex-basis: 100%; color: var(--muted); padding-left: 2ch; }
+  .run-problem { padding: 6px 4px; color: var(--bad); font-size: 12px; border-bottom: 1px solid var(--line); }
+  .run-problem .help { color: var(--muted); display: block; }
+  .runs { font: 12px/1.6 var(--f-mono); color: var(--text-2); } .runs .bad { color: var(--bad); } .runs .ok { color: var(--good); }
+  .finding { color: var(--warn); font: 12px var(--f-mono); }
+  .log-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 16px; margin: 6px 0 12px; }
+  .log-grid h3, .log-sect h3 { margin: 8px 0 4px; }
+  #log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 0; color: var(--text-2); }
   .build-target { margin: 0 0 10px; }
-  .build-target h3 { margin: 0 0 4px; font: 700 15px var(--f-head); display: flex; gap: 8px; align-items: baseline; }
-  .build-target .ok { color: #1F7A3A; } .build-target .bad { color: var(--danger); }
-  .build-target table { border-collapse: collapse; font: 12px var(--f-mono); }
+  .build-target h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+  .build-target .ok { color: var(--good); } .build-target .bad { color: var(--bad); }
+  .build-target table { border-collapse: collapse; font: 12px var(--f-mono); color: var(--text-2); }
   .build-target td { padding: 1px 12px 1px 0; vertical-align: top; }
   .build-target ul { margin: 2px 0; padding-left: 18px; }
   .build-diag { font: 12px var(--f-mono); }
-  .build-diag.error { color: var(--danger); } .build-diag.warning { color: var(--warn); }
-  /* Diagnostics and the sim (S3) */
-  .diag { display: flex; flex-wrap: wrap; gap: 2px 10px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 4px 2px; font: 12px var(--f-mono); color: var(--ink); cursor: pointer; }
-  .diag:hover { background: var(--raised); }
-  .diag .rule { font-weight: 600; } .diag.error .rule { color: var(--danger); } .diag.warning .rule { color: var(--warn); }
-  .diag .where { color: var(--info-ink); } .diag .help { flex-basis: 100%; color: var(--muted); padding-left: 2ch; }
-  #engine-state.ok { color: #1F7A3A; } #engine-state.bad { color: var(--danger); }
-  .runs { font: 12px var(--f-mono); margin-top: 6px; } .runs .bad { color: var(--danger); }
-  .sim-bar { flex-wrap: wrap; }
-  .sim-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; }
-  @media (max-width: 900px) { .sim-grid { grid-template-columns: minmax(0, 1fr); } }
-  .sim-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
-  .sim-row input { font-family: var(--f-mono); font-size: 12px; }
-  .sim-json { margin: 2px 0 8px; font: 12px/1.4 var(--f-mono); white-space: pre-wrap; background: var(--raised); border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 8px; max-height: 260px; overflow: auto; }
-  #sim-timeline { font: 12px var(--f-mono); max-height: 240px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; }
-  .tl { display: grid; grid-template-columns: 4ch 12ch 6ch minmax(0, 1fr) 2ch; gap: 6px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 2px 6px; font: inherit; color: var(--ink); cursor: pointer; }
-  .tl:hover, .tl[aria-selected="true"] { background: var(--info-bg); }
-  .tl .bad { color: var(--danger); } .tl .pub { color: var(--accent); }
-  .finding { color: var(--warn); font: 12px var(--f-mono); }
-  /* the #device panel (S7) */
-  .dev-bar { flex-wrap: wrap; }
-  .dev-line { margin: 2px 0 6px; overflow-wrap: anywhere; }
-  .dev-howto { margin: 2px 0 8px; color: var(--ink-2); }
-  .dev-howto summary { cursor: pointer; font-weight: 600; }
-  .dev-howto ol { margin: 4px 0; padding-left: 22px; }
-  .dev-howto li { margin: 2px 0; }
-  .dev-howto p { margin: 4px 0; color: var(--muted); }
-  .dev-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  .dev-table th, .dev-table td { border-bottom: 1px solid var(--line-2); padding: 3px 8px 3px 0; text-align: left; font-variant-numeric: tabular-nums; vertical-align: middle; }
-  .dev-table .acts { display: flex; flex-wrap: wrap; gap: 4px; }
-  .dev-table .btn { min-height: 26px; padding: 0 8px; font-size: 13px; }
-  .dev-log { font: 12px/1.45 var(--f-mono); white-space: pre-wrap; margin: 6px 0 0; max-height: 220px; overflow: auto; border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--raised); }
-  .dev-log:empty { display: none; }
-  .dev-fw { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .dev-fw .btn { min-height: 26px; padding: 0 8px; font-size: 13px; }
-  #device.drag { outline: 2px dashed var(--info); outline-offset: -4px; }
+  .build-diag.error { color: var(--bad); } .build-diag.warning { color: var(--warn); }
 
-  /* The pane keeps its scrollbar's gutter whether it scrolls or not: with a
-     classic scrollbar, one coming and going changed the Kindle viewport's
-     width, so its fitted height, so whether the pane scrolled — the previews
-     jumped up and down every frame (preview/panel.js). The logs and status
-     lines have fixed heights, so updates don't change the pane's height. */
-  .previews { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; padding: 10px; scrollbar-gutter: stable; }
-  .previews h2 { margin: 0; font: 700 16px var(--f-head); }
-  .pv { display: flex; flex-direction: column; gap: 6px; }
-  .pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .pv-head h2 { margin-right: auto; }
-  .pv-head .btn { min-height: 28px; padding: 0 8px; font-size: 13px; }
-  .pv-head select, .pv-head input { min-height: 28px; font-size: 13px; }
-  .pv-viewport { position: relative; width: 100%; min-height: 120px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
+  /* the Run column. It keeps its scrollbar's gutter whether it scrolls or
+     not: with a classic scrollbar, one coming and going changed the Kindle
+     viewport's width, so its fitted height, so whether the column scrolled —
+     the previews jumped up and down every frame (preview/panel.js). The
+     previews' status lines and logs (the Log tab) have fixed heights. */
+  .previews { border-left: 1px solid var(--line); background: var(--chrome); display: flex; flex-direction: column; overflow: auto; min-height: 0; scrollbar-gutter: stable; }
+  .run-sect { border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .run-sect:first-child { border-top: 0; }
+  .sect-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .simbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  #sim-status { font-family: var(--f-mono); color: var(--text); }
+  #sim-status.off { font-family: var(--f-ui); color: var(--muted); }
+  .seg { display: inline-flex; background: var(--field); border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; margin-left: auto; }
+  .seg button { height: 28px; padding: 0 10px; background: transparent; border: 0; color: var(--muted); font: inherit; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--selected-2); color: var(--text); }
+  .manual { display: flex; gap: 6px; flex-wrap: wrap; flex-basis: 100%; justify-content: flex-end; }
+  .screens { display: flex; gap: 14px; padding: 16px 12px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .pv { margin: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  #preview-kindle { flex: 1 1 180px; max-width: 260px; align-items: stretch; }
+  .pv-paper { border: 8px solid #2A2F36; border-radius: 10px; background: #E8E6E0; overflow: hidden; }
+  .pv-viewport { position: relative; width: 100%; min-height: 120px; overflow: hidden; background: #E8E6E0; color: #1C1C1C; }
   #preview-kindle-frame { border: 0; display: block; background: #FFFFFF; }
-  .pv-bezel { position: relative; align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 5px #2A2A28; }
+  .pv-placeholder { padding: 14px 12px; font-size: 12px; color: #3A3A38; font-family: Georgia, serif; text-align: center; }
+  .pv-bezel { position: relative; align-self: center; background: #000000; border-radius: 22% / 18%; padding: 12px; box-shadow: 0 0 0 7px #2A2F36; margin: 7px; }
   #preview-watch-screen { width: 198px; height: 242px; background: #000000; color: #FFFFFF; overflow: hidden; }
+  .pv-bezel[data-size="41mm"] #preview-watch-screen { width: 176px; height: 215px; }
+  .pv-bezel[data-size="49mm"] #preview-watch-screen { width: 205px; height: 251px; }
+  .pv-watch-hint { padding: 16px 10px; font-size: 12px; color: #B8BEC6; text-align: center; }
   /* laid over the screen (absolute): showing or hiding it moves nothing */
-  .pv-waiting { position: absolute; z-index: 1; left: 8px; right: 8px; top: 8px; padding: 6px 8px; border: 1px solid var(--warn-line); border-radius: 6px; background: var(--warn-bg); color: var(--ink); font-size: 13px; line-height: 1.4; }
+  .pv-waiting { position: absolute; z-index: 1; left: 8px; right: 8px; top: 8px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; background: var(--warn-bg); color: var(--text); font: 12px/1.4 var(--f-ui); }
   .pv-waiting[hidden] { display: none; }
-  .pv-status { font-size: 12px; line-height: 1.4; height: calc(3 * 1.4em); overflow: hidden; overflow-wrap: anywhere; flex: none; }
-  .pv-status.err { color: var(--danger); }
-  .pv-log { height: 96px; flex: none; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 4px; background: var(--raised); }
-  .pv-line { overflow-wrap: anywhere; border-bottom: 1px dotted var(--line-2); }
-  .pv-line.error { color: var(--danger); } .pv-line.warn { color: var(--warn); }
+  .pv figcaption { display: flex; gap: 8px; align-items: center; justify-content: center; color: var(--muted); flex-wrap: wrap; }
+  .pv figcaption select { height: 24px; font-size: 12px; color: var(--text-2); padding: 0 4px; }
+  .pv figcaption input { height: 24px; width: 86px; font-size: 12px; font-family: var(--f-mono); }
+  .pv-status { font: 11px/1.4 var(--f-mono); color: var(--muted); height: calc(2 * 1.4em); overflow: hidden; overflow-wrap: anywhere; flex: none; }
+  .pv-status.err { color: var(--bad); }
+  .pv-log { height: 96px; flex: none; overflow: auto; font: 11px/1.4 var(--f-mono); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; background: var(--ground); color: var(--text-2); }
+  .pv-line { overflow-wrap: anywhere; border-bottom: 1px dotted var(--line); }
+  .pv-line.error { color: var(--bad); } .pv-line.warn { color: var(--warn); }
+  .gps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .gps label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; }
+  .gps input { font-family: var(--f-mono); font-size: 12px; }
+  .replay { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .replay select { height: 28px; font-size: 12px; }
+  #sim-replay-path { flex: 1 1 160px; font-family: var(--f-mono); }
+  .sim-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .sim-row input { font-family: var(--f-mono); font-size: 12px; width: 110px; }
+  .eval { margin: 0; padding: 10px; background: var(--ground); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.6 var(--f-mono); color: var(--text-2); display: grid; grid-template-columns: 6ch minmax(0, 1fr); gap: 0 8px; }
+  .eval dt { color: var(--muted); } .eval dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  #sim-eval-summary { font: 11px var(--f-mono); color: var(--muted); }
+  #sim-timeline { font: 12px var(--f-mono); max-height: 200px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--ground); }
+  #sim-timeline:empty { display: none; }
+  .tl { display: grid; grid-template-columns: 4ch 13ch minmax(0, 1fr) 2ch; gap: 6px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 3px 8px; font: inherit; color: var(--text-2); cursor: pointer; }
+  .tl:hover, .tl[aria-selected="true"] { background: var(--hover); }
+  .tl .bad { color: var(--bad); } .tl .pub { color: var(--accent); }
+  .tl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* the side panels: the box, help */
+  .scrim { position: fixed; inset: 48px 0 28px 0; background: rgba(8, 10, 12, .6); z-index: 20; }
+  .sidepanel { position: fixed; top: 48px; right: 0; bottom: 28px; width: min(560px, 100vw); background: var(--panel); border-left: 1px solid var(--line-2); z-index: 25; display: flex; flex-direction: column; overflow: auto; box-shadow: -18px 0 48px rgba(0,0,0,.35); }
+  .sidepanel.drag { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .sp-sect { padding: 20px 24px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+  .sp-sect:last-child { border-bottom: 0; }
+  .sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sp-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .card { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--field); border: 1px solid var(--line-2); border-radius: 8px; flex-wrap: wrap; }
+  .card .grow { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .card .dot { width: 10px; height: 10px; }
+  #device-status-title { font-weight: 600; }
+  #device-status { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .howto { color: var(--text-2); font-size: 12px; }
+  .howto summary { cursor: pointer; color: var(--text); }
+  .howto ol { margin: 6px 0; padding-left: 20px; } .howto li { margin: 3px 0; }
+  .howto p { margin: 4px 0; color: var(--muted); }
+  .banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--field); color: var(--text-2); line-height: 1.5; flex-wrap: wrap; }
+  .banner.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .banner.danger { border-color: var(--bad-line); background: var(--bad-bg); }
+  .banner .grow { flex: 1 1 240px; }
+  .row-split { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .row-split .grow { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .strong { font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
+  #device-progress { font: 12px var(--f-mono); color: var(--muted); }
+  #device-progress:empty { display: none; }
+  .bar { height: 6px; background: var(--hover); border-radius: 3px; overflow: hidden; display: flex; }
+  .bar span { display: block; height: 100%; }
+  .apps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .app { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--field); border: 1px solid var(--line-2); border-radius: 8px; flex-wrap: wrap; }
+  .app .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .app-main { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .app-name { font-weight: 600; } .app-name .muted { font-weight: 400; }
+  .app-sub { font-size: 12px; color: var(--muted); }
+  .app-acts { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .app .row-menu { position: absolute; right: 8px; top: calc(100% - 4px); z-index: 5; width: 220px; }
+  .pill { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .pill.good { background: var(--good-bg); color: var(--good-text); }
+  .note { margin: 0; color: var(--muted); font-size: 12px; }
+  .warn-line { margin: 0; color: var(--warn); font-size: 12px; }
+  #device-firmware { font-weight: 600; }
+  #device-download:empty { display: none; }
+  #device-download { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .stages { list-style: none; margin: 0; padding: 20px 24px; display: flex; flex-direction: column; }
+  .stage { display: flex; gap: 14px; }
+  .stage .rail { display: flex; flex-direction: column; align-items: center; }
+  .stage .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #3A424D; display: grid; place-items: center; flex: none; }
+  .stage .line { flex: 1 1 auto; width: 2px; min-height: 18px; background: var(--line-2); }
+  .stage:last-child .line { display: none; }
+  .stage[data-state="done"] .mark { border: 0; background: var(--good-bg); color: var(--good-text); }
+  .stage[data-state="done"] .line { background: var(--good-line); }
+  .stage[data-state="active"] .mark { border-color: var(--accent); }
+  .stage[data-state="active"] .mark::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .stage .body { flex: 1 1 auto; padding-bottom: 18px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .stage .body b { font-weight: 600; }
+  .stage[data-state="waiting"] .body b { color: var(--text-2); }
+  .stage .detail { color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+  .stage .pct { font-family: var(--f-mono); }
+  .progress { height: 8px; background: var(--hover); border-radius: 4px; overflow: hidden; }
+  .progress span { display: block; height: 100%; background: var(--accent); }
+  #skill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  #skill-view-title { margin: 0; }
+  #skill-view { font: 12px/1.5 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: var(--text-2); }
+  #skill-view:empty { display: none; }
+  .help-list { margin: 0; padding-left: 18px; color: var(--text-2); line-height: 1.6; }
+
+  /* the status bar */
+  .statusbar { height: 28px; flex: 0 0 28px; display: flex; align-items: center; gap: 16px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--chrome); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; }
+  #cursor { display: flex; gap: 16px; min-width: 0; overflow: hidden; }
+  #footer-box { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
   <header class="top">
-    <span class="brand">Studio</span>
-    <label class="eb" for="project-select">Project <select id="project-select" data-testid="project-select"><option value="">— none —</option></select></label>
-    <span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span>
-    <span class="dev-head" id="device-head" data-testid="device-head">
-      <span class="dev-state" id="device-state" data-testid="device-state" role="status" aria-live="polite" data-tone="idle">no box chosen</span>
-      <button type="button" class="btn" id="device-head-connect" data-testid="device-head-connect" hidden>Connect</button>
-      <button type="button" class="btn" id="device-head-disconnect" data-testid="device-head-disconnect" hidden>Disconnect</button>
-      <button type="button" class="btn" id="device-choose" data-testid="device-choose" title="Chrome asks which device this page may talk to: pick 'nacra'. A first time, open the box's pairing window first (Kindle: Choose → Settings → Pair watch) and accept macOS's pairing prompt after. Once per browser origin; then the box connects without prompts (the Device panel says how)">Choose the box…</button>
-    </span>
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F2A33A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v15"></path><path d="M12 4l7 11H12"></path><path d="M4 19c2.5 1.5 5 1.5 8 0s5.5-1.5 8 0"></path></svg>
+      <span>Studio</span>
+    </div>
+    <button type="button" class="chip" id="project-button" data-testid="project-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="project-menu">
+      <span class="muted">Project</span><span id="project-name">—</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8E98A4" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+    <div class="status-line"><span class="dot" id="status-dot" data-tone="idle"></span><span id="status" role="status" aria-live="polite" data-testid="status">Loading…</span></div>
+    <button type="button" class="btn pri" id="run" data-testid="run" title="Check the engine, build the Kindle and watch screens, start the simulator and show both screens">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#1A1206" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg><span id="run-label">Run</span>
+    </button>
+    <button type="button" class="chip" id="box-chip" data-testid="box-chip" aria-haspopup="dialog" aria-expanded="false" aria-controls="device">
+      <span class="dot" id="box-dot" data-tone="idle"></span>
+      <span id="device-state" data-testid="device-state" role="status" aria-live="polite" data-tone="idle">no box chosen</span>
+      <span class="muted" id="box-chip-note"></span>
+      <span id="box-chip-warn" title="A firmware update stopped before the apps were back: open the box panel to resume it" hidden></span>
+    </button>
+    <button type="button" class="icon-btn boxed" id="help-button" data-testid="help-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="reading" aria-label="Help and guides" style="width:32px;height:32px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5"></path><path d="M12 17h.01"></path></svg>
+    </button>
+
+    <!-- The project menu (#project-button) -->
+    <div class="popover" id="project-menu" data-testid="project-menu" role="dialog" aria-label="Projects" hidden>
+      <div style="padding:12px">
+        <label class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8E98A4" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg><span class="sr">Find a project</span><input id="project-search" placeholder="Find a project" autocomplete="off"></label>
+      </div>
+      <ul id="project-list" data-testid="project-list" aria-label="Projects in this browser"></ul>
+      <div class="sect">
+        <button type="button" class="mi" id="project-new-open" data-testid="project-new-open"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New project…</button>
+        <label class="mi file-pick" id="project-import-pick"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Import a project ZIP…<input type="file" id="project-import-file" data-testid="project-import-file" accept=".zip,application/zip" aria-label="Import a project ZIP from this computer"></label>
+        <button type="button" class="mi indent" id="project-import-url-open" aria-expanded="false" aria-controls="project-import-row">Import from a URL…</button>
+        <div class="pinline" id="project-import-row" hidden>
+          <input id="project-import-url" placeholder="https://…/project.zip" aria-label="Import a project ZIP from a URL">
+          <input id="project-import-name" placeholder="as name (optional)" aria-label="Name for the imported project">
+          <button type="button" class="btn sm" id="project-import">Import</button>
+        </div>
+      </div>
+      <div class="sect" id="project-current" hidden>
+        <span class="label" id="project-current-name"></span>
+        <button type="button" class="mi indent" id="project-rename-open">Rename…</button>
+        <div class="pinline" id="project-rename-row" hidden>
+          <input id="project-rename-name" placeholder="new name" aria-label="Rename the open project to">
+          <button type="button" class="btn sm pri" id="project-rename">Rename</button>
+          <button type="button" class="btn sm ghost" id="project-rename-cancel">Cancel</button>
+        </div>
+        <button type="button" class="mi indent" id="project-export">Export as ZIP</button>
+        <button type="button" class="mi indent danger" id="project-delete">Delete…</button>
+        <div class="pinline confirm" id="project-delete-confirm" hidden><span id="project-delete-text"></span>
+          <button type="button" class="btn sm danger solid" id="project-delete-yes">Delete</button>
+          <button type="button" class="btn sm ghost" id="project-delete-no">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- New project (from the project menu) -->
+    <div class="popover" id="project-new-dialog" data-testid="project-new-dialog" role="dialog" aria-labelledby="project-new-title" hidden style="width:380px">
+      <form class="dialog-form" id="project-new-form">
+        <h2 id="project-new-title">New project</h2>
+        <label class="field">Name<input id="project-new-name" autocomplete="off" required></label>
+        <fieldset>
+          <legend>Start from</legend>
+          <label class="choice"><input type="radio" name="project-template" id="project-new-template-race" value="race" checked><span><b>The Race app</b><span>Start line, countdown and Kindle and watch screens to adapt</span></span></label>
+          <label class="choice"><input type="radio" name="project-template" id="project-new-template-blank" value="blank"><span><b>Blank</b><span>An empty engine and placeholder screens</span></span></label>
+        </fieldset>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="project-new-cancel">Cancel</button>
+          <button type="submit" class="btn pri" id="project-create">Create</button>
+        </div>
+      </form>
+    </div>
   </header>
 
-  <div class="projbar" id="project-actions">
-    <div class="grp">
-      <input id="project-new-name" placeholder="new project name" aria-label="New project name" size="16">
-      <select id="project-new-template" aria-label="Template"><option value="race">race</option><option value="blank">blank</option></select>
-      <button type="button" class="btn pri" id="project-create">Create</button>
-    </div>
-    <div class="grp">
-      <input id="project-rename-name" placeholder="rename to" aria-label="Rename the open project to" size="12">
-      <button type="button" class="btn" id="project-rename">Rename</button>
-    </div>
-    <div class="grp">
-      <button type="button" class="btn" id="project-export">Export ZIP</button>
-      <input id="project-import-url" placeholder="import from URL (or drop a .zip on the files)" aria-label="Import a project ZIP from a URL" size="26">
-      <input id="project-import-name" placeholder="as name (optional)" aria-label="Name for the imported project" size="12">
-      <button type="button" class="btn" id="project-import">Import</button>
-      <label class="btn file-pick">Import ZIP…<input type="file" id="project-import-file" data-testid="project-import-file" accept=".zip,application/zip" aria-label="Import a project ZIP from this computer"></label>
-    </div>
-    <div class="grp">
-      <button type="button" class="btn danger" id="project-delete">Delete project…</button>
-      <span class="confirm" id="project-delete-confirm" hidden><span id="project-delete-text"></span>
-        <button type="button" class="btn danger solid" id="project-delete-yes">Delete</button>
-        <button type="button" class="btn" id="project-delete-no">Cancel</button></span>
-    </div>
-  </div>
-
-  <main class="ide">
-    <aside class="pane" id="files-pane" aria-label="Files">
-      <div class="pane-head"><span class="eb">Files</span><span class="hint" id="files-count"></span></div>
-      <div id="files" role="tree" aria-label="Project files" data-testid="files"></div>
-      <div class="file-tools">
-        <div class="r"><input id="file-new-path" placeholder="new file path" aria-label="New file path"><button type="button" class="btn" id="file-new">New</button></div>
-        <div class="r"><input id="file-path" placeholder="selected file" aria-label="Selected file path (edit to rename)"><button type="button" class="btn" id="file-rename">Rename</button></div>
-        <div class="r"><button type="button" class="btn danger" id="file-delete">Delete file…</button>
-          <span class="confirm" id="file-delete-confirm" hidden><button type="button" class="btn danger solid" id="file-delete-yes">Delete</button><button type="button" class="btn" id="file-delete-no">Cancel</button></span></div>
+  <div class="work">
+    <nav id="files-pane" aria-label="Project files">
+      <div id="files" data-testid="files"></div>
+      <div class="nav-foot">
+        <div class="finline" id="file-new-row" hidden>
+          <input id="file-new-path" placeholder="kindle/src/about.jsx" aria-label="New file's path">
+          <div class="r"><button type="button" class="btn sm ghost" id="file-new-cancel">Cancel</button><button type="button" class="btn sm pri" id="file-new-create">Create</button></div>
+        </div>
+        <button type="button" class="new-file" id="file-new" data-testid="file-new"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New file</button>
       </div>
-    </aside>
+    </nav>
 
-    <section class="center" aria-label="Editor">
+    <main class="center" aria-label="Editor">
       <div id="editor-tabs" role="tablist" aria-label="Open files"></div>
       <div id="editors"><div class="empty" id="editors-empty">Open a file on the left.</div></div>
-      <div id="cursor" data-testid="cursor"><span id="cursor-pos">—</span><span id="cursor-lang"></span><span id="cursor-save"></span></div>
-      <div class="bottom">
-        <div class="bottom-tabs" role="tablist" aria-label="Panels">
-          <button type="button" role="tab" id="tab-diagnostics" data-panel="diagnostics" aria-selected="true">Diagnostics</button>
-          <button type="button" role="tab" id="tab-sim" data-panel="sim" aria-selected="false">Sim</button>
-          <button type="button" role="tab" id="tab-build-log" data-panel="build-log" aria-selected="false">Build log</button>
-          <button type="button" role="tab" id="tab-device" data-panel="device" aria-selected="false">Device</button>
-          <button type="button" role="tab" id="tab-log" data-panel="log-panel" aria-selected="false">Log</button>
-          <button type="button" role="tab" id="tab-reading" data-panel="reading" aria-selected="false">Reading</button>
+      <section class="bottom" aria-label="Output">
+        <div class="bottom-tabs" role="tablist" aria-label="Output">
+          <button type="button" role="tab" id="tab-problems" data-panel="diagnostics" aria-controls="diagnostics" aria-selected="true">Problems <span class="count" id="problems-count"></span></button>
+          <button type="button" role="tab" id="tab-runs" data-panel="runs-panel" aria-controls="runs-panel" aria-selected="false">Test runs <span class="count" id="runs-count"></span></button>
+          <button type="button" role="tab" id="tab-log" data-panel="log-panel" aria-controls="log-panel" aria-selected="false">Log</button>
+          <span id="program-summary" data-testid="program-summary"></span>
         </div>
-        <div class="panel" id="diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-testid="diagnostics">
-          <div class="build-bar">
-            <button type="button" class="btn pri" id="engine-check" data-testid="engine-check">Check</button>
-            <span class="hint" id="engine-state" data-testid="engine-state" aria-live="polite">not checked yet: Check runs api.engine.check() (compile + smoke runs + samples)</span>
-          </div>
+        <div class="panel" id="diagnostics" role="tabpanel" aria-labelledby="tab-problems" data-testid="diagnostics">
+          <p id="engine-state" data-testid="engine-state" aria-live="polite">Not checked yet: Run checks the engine, and so does every edit of its files.</p>
+          <div id="run-problem" data-testid="run-problem"></div>
           <div id="diag-rows" data-testid="diag-rows"></div>
-          <div id="check-runs" data-testid="check-runs"></div>
+          <div id="build-problems" data-testid="build-problems"></div>
         </div>
-        <div class="panel" id="sim" role="tabpanel" aria-labelledby="tab-sim" data-testid="sim" hidden>
-          <div class="build-bar sim-bar">
-            <select id="sim-clock" aria-label="Clock" title="live: the device clock runs with wall time, as on the box (wakes fire by themselves); virtual: it moves only on +1 s / +10 s / To next wake, for a scripted run"><option value="live" selected>live clock</option><option value="virtual">virtual clock</option></select>
-            <button type="button" class="btn pri" id="sim-start" data-testid="sim-start">Start</button>
-            <button type="button" class="btn" id="sim-reset" data-testid="sim-reset">Reset</button>
-            <button type="button" class="btn" id="sim-stop" data-testid="sim-stop" title="Stop a live clock or a replay">Stop</button>
-            <button type="button" class="btn" id="sim-adv-1s" data-testid="sim-adv-1s">+1 s</button>
-            <button type="button" class="btn" id="sim-adv-10s" data-testid="sim-adv-10s">+10 s</button>
-            <button type="button" class="btn" id="sim-adv-wake" data-testid="sim-adv-wake">To next wake</button>
-            <span class="hint" id="sim-status" data-testid="sim-status" aria-live="polite">not running</span>
-          </div>
-          <div class="sim-grid">
-            <div>
-              <div class="eb">Events</div>
-              <div id="sim-events" data-testid="sim-events"><p class="hint">Start the sim: one button per event of event.schema.json.</p></div>
-              <div class="eb">GPS fix</div>
-              <div class="sim-row">
-                <input id="sim-gps-lat" aria-label="Latitude" placeholder="lat" size="9" value="-33.85">
-                <input id="sim-gps-lon" aria-label="Longitude" placeholder="lon" size="9" value="151.252">
-                <input id="sim-gps-speed" aria-label="Speed, knots" placeholder="kn" size="4" value="4">
-                <input id="sim-gps-heading" aria-label="Heading, degrees true" placeholder="hdg" size="4" value="90">
-                <button type="button" class="btn" id="sim-gps-send" data-testid="sim-gps-send">Send fix</button>
-              </div>
-              <div id="sim-findings" data-testid="sim-findings"></div>
-              <div class="eb">Timeline</div>
-              <div id="sim-timeline" data-testid="sim-timeline"></div>
-            </div>
-            <div>
-              <div class="eb" id="sim-view-title">View</div>
-              <pre id="sim-view" class="sim-json" data-testid="sim-view">—</pre>
-              <div class="eb">State</div>
-              <pre id="sim-state" class="sim-json" data-testid="sim-state">—</pre>
-            </div>
-          </div>
+        <div class="panel" id="runs-panel" role="tabpanel" aria-labelledby="tab-runs" data-testid="runs-panel" hidden>
+          <div id="check-runs" data-testid="check-runs"><p class="hint">The engine's test runs (the two smoke runs and engine/samples.json) show here after a check.</p></div>
+          <div id="sim-findings" data-testid="sim-findings"></div>
         </div>
-        <div class="panel" id="build-log" role="tabpanel" aria-labelledby="tab-build-log" data-testid="build-log" hidden>
-          <div class="build-bar">
-            <select id="build-target" aria-label="Build target"><option value="both">Kindle + watch</option><option value="kindle">Kindle</option><option value="watch">watch</option></select>
-            <button type="button" class="btn pri" id="build-run" data-testid="build-run">Build</button>
-            <span class="hint" id="build-state" aria-live="polite"></span>
+        <div class="panel" id="log-panel" role="tabpanel" aria-labelledby="tab-log" data-testid="log-panel" hidden>
+          <div class="log-sect">
+            <h3 class="label">Last build <span class="hint" id="build-state" aria-live="polite"></span></h3>
+            <div id="build-result" data-testid="build-result"><p class="hint">Run builds the Kindle and watch screens in the browser. The first build loads the toolchain: a few seconds.</p></div>
           </div>
-          <div id="build-result"><p class="hint">Bundles the project's kindle/src and watch/src in the browser (api.ui.build). The first build loads the toolchain: a few seconds.</p></div>
-        </div>
-        <div class="panel" id="device" role="tabpanel" aria-labelledby="tab-device" data-testid="device" hidden>
-          <div class="build-bar dev-bar">
-            <button type="button" class="btn" id="device-connect" data-testid="device-connect">Connect</button>
-            <button type="button" class="btn" id="device-disconnect" data-testid="device-disconnect">Disconnect</button>
-            <button type="button" class="btn" id="device-list" data-testid="device-list">List</button>
-            <button type="button" class="btn pri" id="device-install" data-testid="device-install">Install current project</button>
-            <label class="hint"><input type="checkbox" id="device-install-activate" data-testid="device-install-activate" checked> activate after</label>
+          <div class="log-grid">
+            <div><h3 class="label">Kindle screen</h3><div class="pv-status" id="preview-kindle-status" data-testid="preview-kindle-status" aria-live="polite"></div><div class="pv-log" id="preview-kindle-log" data-testid="preview-kindle-log"></div></div>
+            <div><h3 class="label">Watch screen</h3><div class="pv-status" id="preview-watch-status" data-testid="preview-watch-status" aria-live="polite"></div><div class="pv-log" id="preview-watch-log" data-testid="preview-watch-log"></div></div>
           </div>
-          <div id="device-status" class="dev-line" data-testid="device-status" aria-live="polite">—</div>
-          <details id="device-howto" class="dev-howto" data-testid="device-howto" open>
-            <summary>Connecting this computer to the box</summary>
-            <ol>
-              <li>On the Kindle: <b>Choose → Settings → Pair watch</b>. That opens the box's pairing window for 2 minutes. It is named for the watch but pairs any device, one device per window. (Skip this if this Mac is already paired with the box.)</li>
-              <li>Click <b>Choose the box…</b> (top right). Chrome's popup ("localhost:5190 wants to pair") only asks which device this page may talk to: pick <code>nacra</code>.</li>
-              <li>macOS then asks to pair with <code>nacra</code>: accept. This is the Bluetooth pairing itself.</li>
-              <li>From then on this page remembers the box: <b>Connect</b> connects without prompts, also after a reload.</li>
-            </ol>
-            <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. Chrome remembers each box chosen separately (all named <code>nacra</code>); Connect takes the one chosen last, else the one that advertises. For a different box than before, click <b>Choose another box…</b> and pick <code>nacra</code>.</p>
-          </details>
-          <div id="device-restore" class="confirm dev-line" data-testid="device-restore" role="alert" hidden><span id="device-restore-text" data-testid="device-restore-text"></span>
-            <button type="button" class="btn danger solid" id="device-restore-resume" data-testid="device-restore-resume">Resume</button></div>
-          <div class="dev-line dev-fw"><span id="device-firmware" data-testid="device-firmware">Firmware: not asked yet (Firmware asks the box)</span>
-            <button type="button" class="btn" id="device-firmware-ask" data-testid="device-firmware-ask">Firmware</button>
-            <label class="btn file-pick">Choose firmware image…<input type="file" id="device-firmware-file" data-testid="device-firmware-file" accept=".bin,application/octet-stream" aria-label="Choose a firmware image (.bin) to update the box with"></label></div>
-          <p class="hint dev-line" id="device-update-hint" data-testid="device-update-hint">To update the box's firmware, choose its image (<code>target/xiaoc6.bin</code>) with <b>Choose firmware image…</b> or drop it on this panel: the studio saves the bundles, updates, then restores them.</p>
-          <div class="confirm dev-line" id="device-update-confirm" data-testid="device-update-confirm" hidden><span id="device-update-text" data-testid="device-update-text"></span>
-            <button type="button" class="btn danger solid" id="device-update-yes" data-testid="device-update-yes">Update</button>
-            <button type="button" class="btn" id="device-update-no" data-testid="device-update-no">Cancel</button></div>
-          <div id="device-progress" class="dev-line hint" data-testid="device-progress" aria-live="polite"></div>
-          <div id="device-bundles" data-testid="device-bundles"><p class="hint">List shows the bundles on the box.</p></div>
-          <div id="device-download" class="dev-line"></div>
-          <pre id="device-log" class="dev-log" data-testid="device-log"></pre>
+          <div class="log-sect"><h3 class="label">Studio</h3><pre id="log" data-testid="log"></pre></div>
         </div>
-        <div class="panel" id="log-panel" role="tabpanel" aria-labelledby="tab-log" hidden><pre id="log" data-testid="log"></pre></div>
-        <div class="panel" id="reading" role="tabpanel" aria-labelledby="tab-reading" hidden>
-          <p class="hint" id="skill-view-title" data-testid="skill-view-title">api.skill(name, { show: true }) or api.describe({ show: true }) shows its whole text here, for a browser harness to read in one page-text call.</p>
-          <article id="skill-view" data-testid="skill-view" aria-labelledby="skill-view-title"></article>
+      </section>
+    </main>
+
+    <aside class="previews" id="run-pane" aria-label="Run">
+      <div class="simbar">
+        <span class="label">Simulator</span>
+        <span id="sim-status" class="off" data-testid="sim-status" aria-live="polite">not running</span>
+        <div class="seg" role="group" aria-label="Clock">
+          <button type="button" id="sim-clock-live" data-testid="sim-clock-live" aria-pressed="true" title="The device clock runs with wall time, as on the box: wakes fire by themselves">Live</button>
+          <button type="button" id="sim-clock-manual" data-testid="sim-clock-manual" aria-pressed="false" title="The clock moves only when you move it (+1 s, +10 s, to the next wake), for a scripted run">Manual clock</button>
+        </div>
+        <button type="button" class="icon-btn boxed" id="sim-start" data-testid="sim-start" aria-label="Restart the simulator" title="Restart the simulator from a fresh state">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"></path><path d="M4 4v5h5"></path></svg>
+        </button>
+        <button type="button" class="icon-btn boxed" id="sim-reset" data-testid="sim-reset" aria-label="Stop the simulator" title="Stop the simulator and drop its state">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+        </button>
+        <div class="manual" id="sim-manual" hidden>
+          <button type="button" class="btn sm ghost" id="sim-adv-1s" data-testid="sim-adv-1s">+1 s</button>
+          <button type="button" class="btn sm ghost" id="sim-adv-10s" data-testid="sim-adv-10s">+10 s</button>
+          <button type="button" class="btn sm ghost" id="sim-adv-wake" data-testid="sim-adv-wake">To the next wake</button>
         </div>
       </div>
-    </section>
 
-    <aside class="pane previews" aria-label="Previews">
-      <section id="preview-kindle" class="pv" data-testid="preview-kindle" aria-label="Kindle preview">
-        <div class="pv-head"><h2>Kindle</h2>
-          <select id="preview-kindle-size" aria-label="Kindle size, CSS px"><option value="600x800">600×800</option><option value="758x1024">758×1024</option></select>
-          <input id="preview-kindle-custom" placeholder="WxH" aria-label="Custom Kindle size, CSS px (WxH)" size="7">
-          <button type="button" class="btn pri" id="preview-kindle-open" data-testid="preview-kindle-open">Open</button>
-          <button type="button" class="btn" id="preview-kindle-close" data-testid="preview-kindle-close" disabled>Close</button>
-        </div>
-        <div class="pv-viewport" id="preview-kindle-viewport"><div id="preview-kindle-screen" data-testid="preview-kindle-screen"><p class="hint" style="padding:12px">Build (Build log tab), start the sim with the build's name, then Open: the built page runs here on the sim host.</p></div><div class="pv-waiting" id="preview-kindle-waiting" data-testid="preview-kindle-waiting" role="status" hidden></div></div>
-        <div class="pv-status hint" id="preview-kindle-status" data-testid="preview-kindle-status" aria-live="polite"></div>
-        <div class="pv-log" id="preview-kindle-log" data-testid="preview-kindle-log"></div>
+      <div class="screens">
+        <figure id="preview-kindle" class="pv" data-testid="preview-kindle" aria-label="Kindle screen">
+          <div class="pv-paper"><div class="pv-viewport" id="preview-kindle-viewport"><div id="preview-kindle-screen" data-testid="preview-kindle-screen"><p class="pv-placeholder">Run shows the Kindle screen here.</p></div><div class="pv-waiting" id="preview-kindle-waiting" data-testid="preview-kindle-waiting" role="status" hidden></div></div></div>
+          <figcaption>Kindle
+            <label><span class="sr">Kindle size</span><select id="preview-kindle-size" aria-label="Kindle size, CSS px"><option value="600x800">600×800</option><option value="758x1024">758×1024</option><option value="custom">Custom…</option></select></label>
+            <input id="preview-kindle-custom" placeholder="WxH" aria-label="Custom Kindle size, CSS px (WxH)" hidden>
+          </figcaption>
+        </figure>
+        <figure id="preview-watch" class="pv" data-testid="preview-watch" aria-label="Watch screen">
+          <div class="pv-bezel" id="preview-watch-bezel"><div id="preview-watch-screen" data-testid="preview-watch-screen"><p class="pv-watch-hint">Run shows the watch here.</p></div><div class="pv-waiting" id="preview-watch-waiting" data-testid="preview-watch-waiting" role="status" hidden></div></div>
+          <figcaption>Watch
+            <label><span class="sr">Watch size</span><select id="preview-watch-size" aria-label="Watch case"><option value="41mm">41 mm</option><option value="45mm" selected>45 mm</option><option value="49mm">49 mm</option></select></label>
+          </figcaption>
+        </figure>
+      </div>
+
+      <section class="run-sect" id="sim-events-sect" aria-labelledby="sim-events-label" hidden>
+        <h2 class="label" id="sim-events-label">Events</h2>
+        <div id="sim-events" data-testid="sim-events"></div>
       </section>
-      <section id="preview-watch" class="pv" data-testid="preview-watch" aria-label="Watch preview">
-        <div class="pv-head"><h2>Watch</h2>
-          <select id="preview-watch-size" aria-label="Watch case"><option value="41mm">41 mm</option><option value="45mm" selected>45 mm</option><option value="49mm">49 mm</option></select>
-          <button type="button" class="btn pri" id="preview-watch-open" data-testid="preview-watch-open">Open</button>
-          <button type="button" class="btn" id="preview-watch-close" data-testid="preview-watch-close" disabled>Close</button>
+
+      <section class="run-sect" aria-labelledby="sim-gps-label">
+        <div class="sect-head"><h2 class="label" id="sim-gps-label">GPS</h2>
+          <button type="button" class="btn sm ghost" id="sim-replay-open" data-testid="sim-replay-open" aria-expanded="false" aria-controls="sim-replay-row">Replay a track…</button></div>
+        <div class="replay" id="sim-replay-row" data-testid="sim-replay-row" hidden>
+          <label class="sr" for="sim-replay-path">Track</label>
+          <select id="sim-replay-path" data-testid="sim-replay-path"></select>
+          <label class="sr" for="sim-replay-speed">Speed on the live clock</label>
+          <select id="sim-replay-speed" data-testid="sim-replay-speed" title="On the live clock the fixes come at their own intervals, this many times faster; on the manual clock the whole track runs at once"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="60">60×</option></select>
+          <button type="button" class="btn sm" id="sim-replay" data-testid="sim-replay">Replay</button>
+          <button type="button" class="btn sm ghost" id="sim-replay-stop" data-testid="sim-replay-stop" hidden>Stop</button>
+          <p class="hint" id="sim-replay-hint" data-testid="sim-replay-hint" style="flex-basis:100%;margin:0"></p>
         </div>
-        <div class="pv-bezel" id="preview-watch-bezel"><div id="preview-watch-screen" data-testid="preview-watch-screen"></div><div class="pv-waiting" id="preview-watch-waiting" data-testid="preview-watch-waiting" role="status" hidden></div></div>
-        <div class="pv-status hint" id="preview-watch-status" data-testid="preview-watch-status" aria-live="polite"></div>
-        <div class="pv-log" id="preview-watch-log" data-testid="preview-watch-log"></div>
+        <div class="gps">
+          <label>Lat<input id="sim-gps-lat" value="-33.85" inputmode="decimal"></label>
+          <label>Lon<input id="sim-gps-lon" value="151.252" inputmode="decimal"></label>
+          <label>Speed kn<input id="sim-gps-speed" value="4" inputmode="decimal"></label>
+          <label>Heading °<input id="sim-gps-heading" value="90" inputmode="decimal"></label>
+        </div>
+        <button type="button" class="btn" id="sim-gps-send" data-testid="sim-gps-send">Send fix</button>
+      </section>
+
+      <section class="run-sect" aria-labelledby="sim-view-title" style="flex:1 1 auto">
+        <div class="sect-head"><h2 class="label" id="sim-view-title">Last evaluation</h2><span id="sim-eval-summary"></span></div>
+        <dl class="eval">
+          <dt>state</dt><dd id="sim-state" data-testid="sim-state">—</dd>
+          <dt>view</dt><dd id="sim-view" data-testid="sim-view">—</dd>
+          <dt>wake</dt><dd id="sim-wake" data-testid="sim-wake">—</dd>
+        </dl>
+        <div class="sect-head"><h3 class="label">Evaluations</h3><span class="hint">newest first · click one to see it</span></div>
+        <div id="sim-timeline" data-testid="sim-timeline"></div>
       </section>
     </aside>
-  </main>
+  </div>
+
+  <footer class="statusbar">
+    <div id="cursor" data-testid="cursor"><span id="cursor-pos">—</span><span id="cursor-lang"></span><span id="cursor-save"></span></div>
+    <span id="footer-box" data-testid="footer-box"></span>
+  </footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- The box panel (#box-chip) -->
+  <aside class="sidepanel" id="device" data-testid="device" aria-label="Box" hidden>
+    <div id="device-update" data-testid="device-update" hidden>
+      <section class="sp-sect">
+        <div class="sp-head"><h2 id="device-update-title">Updating the box's firmware</h2>
+          <button type="button" class="icon-btn" data-close-panel aria-label="Close the box panel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+        <p class="sub" id="device-update-from" style="margin:0"></p>
+      </section>
+      <ol class="stages" id="device-stages" data-testid="device-stages" aria-label="Firmware update stages"></ol>
+      <div class="banner" style="margin:0 24px 20px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6CB4EE" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex:0 0 16px;margin-top:2px"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5h.01"></path></svg>
+        <p class="grow" style="margin:0">Keep the box close. If the link drops or this tab closes, reopen the studio: it picks up where it stopped, and the apps are safe in this browser until they're back on the box.</p>
+      </div>
+    </div>
+
+    <div id="device-main">
+      <section class="sp-sect">
+        <div class="sp-head"><h2>Box</h2>
+          <button type="button" class="icon-btn" id="device-close" data-close-panel aria-label="Close the box panel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+        <div class="card">
+          <span class="dot" id="device-dot" data-tone="idle"></span>
+          <div class="grow"><span id="device-status-title">No box chosen</span><span id="device-status" data-testid="device-status" aria-live="polite">—</span></div>
+          <button type="button" class="btn pri" id="device-connect" data-testid="device-connect" hidden>Connect</button>
+          <button type="button" class="btn ghost" id="device-disconnect" data-testid="device-disconnect" hidden>Disconnect</button>
+          <button type="button" class="btn pri" id="device-choose" data-testid="device-choose" title="Chrome asks which device this page may talk to: pick 'nacra'. A first time, open the box's pairing window first (Kindle: Choose → Settings → Pair watch) and accept macOS's pairing prompt after. Once per browser origin; then the box connects without prompts">Choose the box…</button>
+        </div>
+        <details id="device-howto" class="howto" data-testid="device-howto" open>
+          <summary>Connecting this computer to the box</summary>
+          <ol>
+            <li>On the Kindle: <b>Choose → Settings → Pair watch</b>. That opens the box's pairing window for 2 minutes. It is named for the watch but pairs any device, one device per window. (Skip this if this Mac is already paired with the box.)</li>
+            <li>Click <b>Choose the box…</b> (above). Chrome's popup ("localhost:5190 wants to pair") only asks which device this page may talk to: pick <code>nacra</code>.</li>
+            <li>macOS then asks to pair with <code>nacra</code>: accept. This is the Bluetooth pairing itself.</li>
+            <li>From then on this page remembers the box: <b>Connect</b> connects without prompts, also after a reload.</li>
+          </ol>
+          <p>Each browser origin (http://localhost:5190 here) must choose the box once, even if this Mac is already paired with it. Chrome remembers each box chosen separately (all named <code>nacra</code>); Connect takes the one chosen last, else the one that advertises. For a different box than before, click <b>Choose another box…</b> and pick <code>nacra</code>.</p>
+        </details>
+        <div id="device-restore" class="banner warn" data-testid="device-restore" role="alert" hidden><span class="grow" id="device-restore-text" data-testid="device-restore-text"></span>
+          <button type="button" class="btn pri" id="device-restore-resume" data-testid="device-restore-resume">Resume</button></div>
+      </section>
+
+      <section class="sp-sect" aria-labelledby="device-project-label">
+        <h3 class="label" id="device-project-label">This project</h3>
+        <div class="row-split">
+          <div class="grow"><span class="strong" id="device-project-name">—</span><span class="sub" id="device-project-line"></span></div>
+          <label class="check"><input type="checkbox" id="device-install-activate" data-testid="device-install-activate" checked>Make it active</label>
+          <button type="button" class="btn pri" id="device-install" data-testid="device-install" style="height:36px">Send to box</button>
+        </div>
+        <div id="device-progress" data-testid="device-progress" aria-live="polite"></div>
+      </section>
+
+      <section class="sp-sect" aria-labelledby="device-apps-label">
+        <div class="sp-head"><h3 class="label" id="device-apps-label">Apps on the box</h3>
+          <button type="button" class="btn sm ghost" id="device-list" data-testid="device-list">Refresh</button></div>
+        <div class="bar" id="device-bar" role="img" aria-label="Storage on the box" hidden></div>
+        <div id="device-bundles" data-testid="device-bundles"><p class="hint">Connect to see the apps on the box.</p></div>
+        <div id="device-download"></div>
+      </section>
+
+      <section class="sp-sect" aria-labelledby="device-fw-label">
+        <h3 class="label" id="device-fw-label">Firmware</h3>
+        <div class="row-split">
+          <div class="grow"><span id="device-firmware" data-testid="device-firmware">Firmware: not asked yet (Ask the box)</span></div>
+          <button type="button" class="btn sm ghost" id="device-firmware-ask" data-testid="device-firmware-ask">Ask the box</button>
+          <label class="btn file-pick" style="height:36px">Update firmware…<input type="file" id="device-firmware-file" data-testid="device-firmware-file" accept=".bin,application/octet-stream" aria-label="Choose a firmware image (.bin) to update the box with"></label>
+        </div>
+        <p class="note" id="device-update-hint" data-testid="device-update-hint" style="line-height:1.5">Choose a <code>.bin</code> image (<code>target/xiaoc6.bin</code>) or drop one on this panel. The studio keeps a copy of the box's apps, updates the firmware, then puts the apps back. The GPS track is cleared.</p>
+        <div class="banner danger" id="device-update-confirm" data-testid="device-update-confirm" hidden><span class="grow" id="device-update-text" data-testid="device-update-text"></span>
+          <span class="confirm"><button type="button" class="btn danger solid" id="device-update-yes" data-testid="device-update-yes">Update</button>
+          <button type="button" class="btn ghost" id="device-update-no" data-testid="device-update-no">Cancel</button></span></div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Help (#help-button) -->
+  <aside class="sidepanel" id="reading" data-testid="reading" aria-label="Help" hidden>
+    <section class="sp-sect">
+      <div class="sp-head"><h2>Help</h2>
+        <button type="button" class="icon-btn" id="reading-close" data-close-panel aria-label="Close help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+      <ul class="help-list">
+        <li><b>Run</b> checks the engine, builds the Kindle and watch screens, starts the simulator and shows both screens. A problem stops it and opens <b>Problems</b> at the first one.</li>
+        <li>The files on the left are grouped by what they make: the engine, the Kindle screen, the watch screen. Hover a file for its path and its ⋯ menu.</li>
+        <li>The box chip at the top connects to the box, sends this project to it, manages its apps and updates its firmware.</li>
+        <li>The project menu (top left) creates, opens, imports, exports, renames and deletes projects. They live in this browser.</li>
+      </ul>
+    </section>
+    <section class="sp-sect">
+      <h3 class="label">Guides</h3>
+      <div id="skill-list" data-testid="skill-list"></div>
+      <p class="hint" id="skill-view-title" data-testid="skill-view-title">Pick a guide to read it here. An agent's api.skill(name, { show: true }) or api.describe({ show: true }) shows its whole text here too.</p>
+      <article id="skill-view" data-testid="skill-view" aria-labelledby="skill-view-title"></article>
+    </section>
+  </aside>
 
   <!-- the watch preview: vendor/watch-host/browser/shadow.js imports the bare 'yoga-layout' -->
   <script type="importmap">{ "imports": { "yoga-layout": "./vendor/watch-host/yoga-layout/src/index.js" } }</script>

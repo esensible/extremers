@@ -137,7 +137,7 @@ test('the Kindle fit in a short window: scaled to the height too, centred in the
 test('"simulator not running": the notice shows while waitingForSim, written once, and the status line says the socket is connecting', () => {
   const el = fakeEl();
   el.hidden = true; el.counts.prop = 0; // index.html: hidden at first
-  assert.equal(WAITING_FOR_SIM_TEXT, 'Simulator not running — start it (Sim → Start) to see the app.');
+  assert.equal(WAITING_FOR_SIM_TEXT, 'Simulator not running — press Run (or restart the simulator) to see the app.');
   assert.equal(renderWaiting(el, true), 2);
   assert.deepEqual([el.hidden, el.textContent], [false, WAITING_FOR_SIM_TEXT]);
   for (let k = 0; k < 20; k++) assert.equal(renderWaiting(el, true), 0, 'nothing new: no write');
@@ -186,10 +186,19 @@ test('throttle: at most one call per window, the last of a burst at its end; tim
   assert.equal(calls, 3);
 });
 
-test('the page keeps the previews pane still: the scrollbar gutter, fixed-height logs and status lines', () => {
+test('the page keeps the previews still: the Run column\'s scrollbar gutter, fixed-height logs and status lines', () => {
   const html = readFileSync(join(studioDir, 'index.html'), 'utf8');
   const rule = (sel) => (html.match(new RegExp(`\\n\\s*${sel.replace('.', '\\.')} \\{([^}]*)\\}`)) ?? [])[1] ?? '';
   assert.match(rule('.previews'), /scrollbar-gutter: stable/);
+  // both screens sit in the Run column (the .previews pane preview/index.js fits the Kindle in)
+  const col = html.indexOf('<aside class="previews" id="run-pane"');
+  assert.ok(col > 0 && html.indexOf('id="preview-kindle-viewport"') > col && html.indexOf('id="preview-watch-bezel"') > col, 'the screens are in the Run column');
+  // their status lines and logs are in the Log tab, fixed heights there too
+  const log = html.indexOf('id="log-panel"');
+  for (const id of ['preview-kindle-status', 'preview-kindle-log', 'preview-watch-status', 'preview-watch-log']) {
+    const at = html.indexOf(`id="${id}"`);
+    assert.ok(at > log && at < col, `#${id} is in the Log tab`);
+  }
   assert.match(rule('.pv-log'), /(^|[ ;])height: \d+px/);
   assert.doesNotMatch(rule('.pv-log'), /max-height/);
   assert.doesNotMatch(html, /\.pv-log:empty/, 'an empty log keeps its height');
@@ -199,4 +208,16 @@ test('the page keeps the previews pane still: the scrollbar gutter, fixed-height
   const src = readFileSync(join(studioDir, 'preview', 'index.js'), 'utf8');
   const redraws = src.slice(src.indexOf('function renderKindle()'), src.indexOf('const kindleSize'));
   assert.doesNotMatch(redraws, /\.textContent =|\.style\.|innerHTML|appendChild|createElement/);
+  // the Kindle's paper border is on a wrapper: the viewport's own height (applyKindleFit) is the page's alone
+  assert.match(html, /<div class="pv-paper"><div class="pv-viewport" id="preview-kindle-viewport">/);
+  assert.doesNotMatch(rule('.pv-viewport'), /border:/);
+});
+
+test('the Kindle size: a listed size, or "Custom…" with its WxH field', () => {
+  const html = readFileSync(join(studioDir, 'index.html'), 'utf8');
+  assert.match(html, /<select id="preview-kindle-size"[^>]*><option value="600x800">600×800<\/option><option value="758x1024">758×1024<\/option><option value="custom">Custom…<\/option><\/select>/);
+  assert.match(html, /<input id="preview-kindle-custom"[^>]* hidden>/);
+  const src = readFileSync(join(studioDir, 'preview', 'index.js'), 'utf8');
+  assert.match(src, /sel\?\.value === 'custom' \? \(custom \|\| '600x800'\)/);
+  assert.match(src, /setProp\(custom, 'hidden', listed\)/, 'an agent\'s open at another size shows in the field');
 });

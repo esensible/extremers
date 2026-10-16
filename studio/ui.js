@@ -34,6 +34,102 @@ export function fileRows(files) {
   return rows;
 }
 
+/**
+ * The files nav: a project's files grouped by the part of the app they make,
+ * each with the name a person reads (the path stays the row's title):
+ *   [{ key: 'engine'|'kindle'|'watch'|'other'|'settings', label, files: [{ ...file, label }] }]
+ * Groups with no files are left out, except the engine, the Kindle screen and
+ * the watch screen, which are always there (a person adds files to them).
+ * Engine: engine.expr, the schemas by name, samples.json as 'Test runs', then
+ * the rest; a screen: its src/index.jsx first, then by name; studio.json is
+ * 'Project settings'.
+ */
+export const FILE_GROUPS = [
+  { key: 'engine', label: 'Engine' },
+  { key: 'kindle', label: 'Kindle screen' },
+  { key: 'watch', label: 'Watch screen' },
+  { key: 'other', label: 'Other files' },
+  { key: 'settings', label: 'Project settings' },
+];
+const ENGINE_NAMES = {
+  'engine/engine.expr': ['engine.expr', 0],
+  'engine/state.schema.json': ['State schema', 1],
+  'engine/view.schema.json': ['View schema', 2],
+  'engine/event.schema.json': ['Event schema', 3],
+  'engine/samples.json': ['Test runs', 4],
+};
+
+/** One file's group and the name the nav shows: { group, label, rank }. */
+export function fileLabel(path) {
+  if (path === 'studio.json') return { group: 'settings', label: 'studio.json', rank: 0 };
+  if (ENGINE_NAMES[path]) return { group: 'engine', label: ENGINE_NAMES[path][0], rank: ENGINE_NAMES[path][1] };
+  if (path.startsWith('engine/')) return { group: 'engine', label: path.slice(7), rank: 10 };
+  for (const g of ['kindle', 'watch']) {
+    if (path === `${g}/src/index.jsx` || path === `${g}/src/index.js`) return { group: g, label: path.slice(g.length + 5), rank: 0 };
+    if (path.startsWith(`${g}/src/`)) return { group: g, label: path.slice(g.length + 5), rank: 10 };
+    if (path.startsWith(`${g}/`)) return { group: g, label: path.slice(g.length + 1), rank: 20 };
+  }
+  return { group: 'other', label: path, rank: 10 };
+}
+
+export function fileGroups(files) {
+  const by = new Map(FILE_GROUPS.map((g) => [g.key, []]));
+  for (const f of files) { const l = fileLabel(f.path); by.get(l.group).push({ ...f, label: l.label, rank: l.rank }); }
+  const always = new Set(['engine', 'kindle', 'watch']);
+  return FILE_GROUPS
+    .map((g) => ({ ...g, files: by.get(g.key).sort((a, b) => a.rank - b.rank || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0)) }))
+    .filter((g) => g.files.length || always.has(g.key));
+}
+
+/** A tab's label: the file's nav name, prefixed by its screen ('Kindle · index.jsx'). */
+export function tabLabel(path) {
+  const l = fileLabel(path);
+  if (l.group === 'kindle') return `Kindle · ${l.label}`;
+  if (l.group === 'watch') return `Watch · ${l.label}`;
+  return l.label;
+}
+
+/**
+ * The project's GPS tracks, for "Replay a track…" (api.sim.replay): `.nmea`
+ * files anywhere, and `.json`/`.jsonl` files outside the engine and the
+ * screens (those are schemas, samples and code) and other than studio.json.
+ */
+export function trackFiles(files) {
+  return files.map((f) => f.path).filter((p) => /\.nmea$/i.test(p) || (/\.jsonl?$/i.test(p) && p !== 'studio.json' && !/^(engine|kindle|watch)\//.test(p))).sort();
+}
+
+/** Which screens a project has (an entry file in kindle/src or watch/src): ['kindle', 'watch'] or fewer. */
+export function screensOf(files) {
+  return ['kindle', 'watch'].filter((t) => files.some((f) => f.path === `${t}/src/index.jsx` || f.path === `${t}/src/index.js`));
+}
+
+/**
+ * A project.list entry's second line in the project menu: the bundle it
+ * makes (studio.json's name, when it is not the project's, and version) and
+ * its files: 'v1 · 23 files', 'race v3 · 23 files'.
+ */
+export function projectParts(p) {
+  const s = p.settings && !p.settings.error ? p.settings : null;
+  const bundle = s ? `${s.name && s.name !== p.name ? `${s.name} ` : ''}v${s.version ?? 1}` : null;
+  const files = `${p.files ?? 0} file${p.files === 1 ? '' : 's'}`;
+  return bundle ? `${bundle} · ${files}` : files;
+}
+
+/**
+ * A value as one short line for the Run column: JSON with spaces, keys bare
+ * when they are identifiers, long lists cut ({marks: 0, mark: {lat: -33.8}}).
+ */
+export function compactJson(v, maxItems = 8) {
+  if (v === undefined) return '—';
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) {
+    const items = v.slice(0, maxItems).map((x) => compactJson(x, maxItems));
+    if (v.length > maxItems) items.push(`… ${v.length - maxItems} more`);
+    return `[${items.join(', ')}]`;
+  }
+  return `{${Object.entries(v).map(([k, x]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k)}: ${compactJson(x, maxItems)}`).join(', ')}}`;
+}
+
 /** 1-based { line, col } of a character offset in text (col counts UTF-16 units, as the textarea does). */
 export function lineCol(text, offset) {
   const o = Math.max(0, Math.min(offset, text.length));
@@ -266,7 +362,7 @@ export function deviceProgressText(p) {
 
 /** status().firmware as the panel's firmware line: 'ota_0 · sha 12ab34cd…' (', on trial' while pending). */
 export function deviceFirmwareText(fw) {
-  if (!fw) return 'Firmware: not asked yet (Firmware asks the box)';
+  if (!fw) return 'Firmware: not asked yet (Ask the box)';
   return `Firmware: ota_${fw.slot} · sha ${String(fw.sha256).slice(0, 8)}…${fw.pending ? ' · on trial' : ''}`;
 }
 
@@ -301,7 +397,7 @@ export function deviceStatusText(s) {
     case 'busy': t = `${who}: ${s.op}${s.progress && s.op !== 'connect' && s.op !== 'choose' ? ` — ${deviceProgressText(s.progress)}` : '…'}`; break;
     default: t = s.deviceName ? `Disconnected from ${who}`
       : s.remembered ? 'Not connected: this page remembers the box; Connect connects without prompts'
-        : "Not connected: this page has not chosen the box yet. Start on the Kindle (Choose → Settings → Pair watch), then click 'Choose the box…' at the top right (in full below)";
+        : "Not connected: this page has not chosen the box yet. Start on the Kindle (Choose → Settings → Pair watch), then click 'Choose the box…' (how, in full, below)";
   }
   if (s.chunk) t += ` · chunk ${s.chunk} B${s.window ? `, window ${s.window} B` : ''}`;
   if (s.lastError && s.state !== 'connected' && s.state !== 'busy') t += ` — ${s.lastError}${s.hint ? ` (${s.hint})` : ''}`;
@@ -354,29 +450,131 @@ export function deviceHead(s) {
   };
 }
 
+/** The colours of the apps on the box (their swatch and their part of the storage bar), in turn. */
+export const APP_COLOURS = ['var(--accent)', 'var(--info)', 'var(--muted)', 'var(--good)', 'var(--warn)'];
+
+/** An app's flags as its pill: 'Active · starts at boot' | 'Active' | 'Starts at boot' | ''. */
+export function appPill(b) {
+  if (b.active && b.boot) return 'Active · starts at boot';
+  if (b.active) return 'Active';
+  if (b.boot) return 'Starts at boot';
+  return '';
+}
+
 /**
- * The bundles of api.device.list() as a table. Each row: data-id, data-name;
- * its buttons [data-act=activate|delete|get] (ids device-<act>-<id>); a row
- * whose action waits for its inline confirm (confirm: { id, act }) shows
- * device-confirm-yes / device-confirm-no instead.
+ * The box's storage from api.device.list(): used (every bundle, Choose too),
+ * total (used + free) and the apps' parts for the bar.
+ * → { used, total, text, parts: [{ id, name, pct, colour }] }
  */
-export function deviceRowsHtml(list, confirm = null, stale = false) {
-  if (!list) return '<p class="hint">List shows the bundles on the box.</p>';
-  const rows = list.bundles.map((b) => {
-    const flags = [b.active && 'active', b.boot && 'boots', b.builtin && 'built in'].filter(Boolean).join(', ');
+export function deviceStorage(list) {
+  const used = list.bundles.reduce((n, b) => n + (b.len ?? 0), 0);
+  const total = used + (list.free ?? 0);
+  const apps = list.bundles.filter((b) => !b.builtin);
+  return {
+    used, total,
+    text: `${fmtBytes(used)} of ${fmtBytes(total)} used · the largest app that fits: ${fmtBytes(list.largestFree)}`,
+    parts: apps.map((b, i) => ({ id: b.id, name: b.name, pct: total ? Math.max(0.5, (b.len / total) * 100) : 0, colour: APP_COLOURS[i % APP_COLOURS.length] })),
+  };
+}
+
+/**
+ * The apps of api.device.list() as the Box panel's rows (Choose, built in,
+ * is the note under them). Each row `li.app`: data-id, data-name; "Make
+ * active" (#device-activate-<id>, not on the active one) and the ⋯ button
+ * (#device-more-<id>) with its menu (#device-menu-<id>, hidden unless
+ * opts.menu is this id): "Download the bundle" (#device-get-<id>) and
+ * "Remove from the box…" (#device-delete-<id>). A row whose action waits for
+ * its inline confirm (confirm: { id, act }) shows #device-confirm-yes /
+ * #device-confirm-no instead. Under the rows: #device-space (the storage),
+ * the Choose note (#device-activate-0 when Choose is not active), and
+ * #device-stale once the box changed since the list.
+ * opts.project: the open project's bundle name (its row says "this project").
+ */
+export function deviceRowsHtml(list, confirm = null, stale = false, { menu = null, project = null } = {}) {
+  if (!list) return '<p class="hint" id="device-unlisted">Connect to see the apps on the box.</p>';
+  const st = deviceStorage(list);
+  const colour = new Map(st.parts.map((p) => [p.id, p.colour]));
+  const apps = list.bundles.filter((b) => !b.builtin);
+  const rows = apps.map((b) => {
     const asking = confirm && confirm.id === b.id;
-    const verb = { activate: 'Activate', delete: 'Delete' }[confirm?.act];
-    const acts = asking
-      ? `<span class="confirm">${esc(verb)} ${esc(b.name)}${confirm.act === 'activate' ? ' (the box restarts on it)' : ''}? <button type="button" class="btn danger solid" id="device-confirm-yes" data-act="confirm-${esc(confirm.act)}" data-id="${b.id}">${esc(verb)}</button><button type="button" class="btn" id="device-confirm-no" data-act="cancel">Cancel</button></span>`
-      : [
-        b.active ? '' : `<button type="button" class="btn" id="device-activate-${b.id}" data-act="activate" data-id="${b.id}">Activate</button>`,
-        b.builtin ? '' : `<button type="button" class="btn danger" id="device-delete-${b.id}" data-act="delete" data-id="${b.id}">Delete…</button>`,
-        `<button type="button" class="btn" id="device-get-${b.id}" data-act="get" data-id="${b.id}">Get</button>`,
-      ].join('');
-    return `<tr data-id="${b.id}" data-name="${esc(b.name)}"><td>${esc(b.name)}</td><td class="mono">${b.id}</td><td>${b.version}</td><td>${fmtBytes(b.len)}</td><td class="mono" title="ui.web ${esc(b.ui.web)}, ui.watch ${esc(b.ui.watch)}">${esc(b.contentHash)}</td><td>${esc(flags)}</td><td class="acts">${acts}</td></tr>`;
+    const name = esc(b.name);
+    let acts;
+    if (asking && confirm.act === 'delete') acts = `<span class="confirm" role="group" aria-label="Remove ${name}">Remove ${name} from the box? <button type="button" class="btn danger solid" id="device-confirm-yes" data-act="confirm-delete" data-id="${b.id}">Remove</button><button type="button" class="btn ghost" id="device-confirm-no" data-act="cancel">Cancel</button></span>`;
+    else if (asking && confirm.act === 'activate') acts = `<span class="confirm" role="group" aria-label="Make ${name} active">The box restarts on ${name}. <button type="button" class="btn pri" id="device-confirm-yes" data-act="confirm-activate" data-id="${b.id}">Make active</button><button type="button" class="btn ghost" id="device-confirm-no" data-act="cancel">Cancel</button></span>`;
+    else {
+      const pill = appPill(b);
+      acts = `${pill ? `<span class="pill good">${esc(pill)}</span>` : ''}${b.active ? '' : `<button type="button" class="btn ghost sm" id="device-activate-${b.id}" data-act="activate" data-id="${b.id}">Make active</button>`}`;
+    }
+    const open = menu === b.id;
+    const more = `<button type="button" class="icon-btn" id="device-more-${b.id}" data-act="more" data-id="${b.id}" aria-haspopup="menu" aria-expanded="${open}" aria-controls="device-menu-${b.id}" aria-label="More actions for ${name}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg></button>`;
+    const items = `<div class="menu row-menu" role="menu" id="device-menu-${b.id}" aria-label="Actions for ${name}"${open ? '' : ' hidden'}><button type="button" role="menuitem" id="device-get-${b.id}" data-act="get" data-id="${b.id}">Download the bundle</button><button type="button" role="menuitem" class="danger" id="device-delete-${b.id}" data-act="delete" data-id="${b.id}">Remove from the box…</button></div>`;
+    const sub = [fmtBytes(b.len), project && b.name === project ? 'this project' : null].filter(Boolean).join(' · ');
+    return `<li class="app" data-id="${b.id}" data-name="${name}"><span class="swatch" style="background:${colour.get(b.id)}"></span><div class="app-main"><span class="app-name">${name} <span class="muted">v${b.version}</span></span><span class="app-sub" title="id ${b.id} · content ${esc(b.contentHash)} · ui.web ${esc(b.ui.web)}, ui.watch ${esc(b.ui.watch)}">${esc(sub)}</span></div><span class="app-acts">${acts}</span>${more}${items}</li>`;
   }).join('');
-  return `<table class="dev-table"><thead><tr><th>name</th><th>id</th><th>v</th><th>bytes</th><th>content hash</th><th>flags</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-<p class="hint" id="device-space">${fmtBytes(list.free)} free; the largest bundle that fits: ${fmtBytes(list.largestFree)}</p>${stale ? '\n<p class="hint c-danger" id="device-stale">The box changed since this list: List again.</p>' : ''}`;
+  const choose = list.bundles.find((b) => b.builtin);
+  const chooseNote = choose
+    ? `<p class="note" id="device-choose-note">Choose (the app menu) is built into the firmware and always there.${choose.active ? ' It is active.' : confirm?.id === choose.id && confirm.act === 'activate'
+      ? ` <span class="confirm">The box restarts on Choose. <button type="button" class="btn pri" id="device-confirm-yes" data-act="confirm-activate" data-id="${choose.id}">Make active</button><button type="button" class="btn ghost" id="device-confirm-no" data-act="cancel">Cancel</button></span>`
+      : ` <button type="button" class="link" id="device-activate-${choose.id}" data-act="activate" data-id="${choose.id}">Make Choose active</button>`}</p>`
+    : '';
+  return `${apps.length ? `<ul class="apps">${rows}</ul>` : '<p class="hint">No apps on the box yet: Send to box puts this project there.</p>'}
+<p class="hint" id="device-space">${esc(st.text)}</p>${chooseNote}${stale ? '\n<p class="warn-line" id="device-stale">The box changed since this list. <button type="button" class="link" data-act="relist">Refresh</button></p>' : ''}`;
+}
+
+/**
+ * The box chip's second word, after #device-state: what the box does or what
+ * to do next. → 'running race' | 'Choose the box' | 'Connect' | ''.
+ */
+export function deviceChipNote(s, list) {
+  if (!s || !s.bluetooth) return '';
+  const h = deviceHead(s);
+  if (s.state === 'connected') { const a = list?.bundles?.find((b) => b.active); return a ? `running ${a.name}` : ''; }
+  if (h.connect) return 'Connect';
+  if (h.choose.prominent && s.state !== 'connecting' && s.state !== 'busy') return 'Choose the box';
+  return '';
+}
+
+/** Seconds as 'about 37 s left' / 'about 3 min left' ('' when not known). */
+export function fmtLeft(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return '';
+  if (sec < 90) return `about ${Math.max(1, Math.round(sec))} s left`;
+  return `about ${Math.round(sec / 60)} min left`;
+}
+
+/**
+ * A firmware update's four stages for the Box panel's tracker, from
+ * api.device.status() while it runs (state busy, op 'ota'); null otherwise.
+ * → [{ key, label, state: 'done'|'active'|'waiting', detail, pct? }]
+ * The stages follow progress.phase: save → firmware → reboot → restore.
+ */
+export const UPDATE_STAGES = [
+  { key: 'save', label: 'Apps kept in this browser' },
+  { key: 'firmware', label: 'Sending the firmware' },
+  { key: 'reboot', label: 'Restart and trial' },
+  { key: 'restore', label: 'Put the apps back' },
+];
+export function updateStages(s) {
+  if (!s || s.state !== 'busy' || s.op !== 'ota') return null;
+  const p = s.progress;
+  const order = UPDATE_STAGES.map((x) => x.key);
+  let at = order.indexOf(p?.phase);
+  if (p?.phase === 'done') at = order.length;
+  if (at < 0) at = 0;
+  return UPDATE_STAGES.map((x, i) => {
+    const state = i < at ? 'done' : i === at ? 'active' : 'waiting';
+    let detail = '';
+    let pct;
+    if (x.key === 'save') detail = state === 'done' ? 'Saved in this browser' : state === 'active' ? deviceProgressText(p) || 'listing the apps on the box' : 'Every app on the box is downloaded and saved here first';
+    if (x.key === 'firmware') {
+      if (state === 'active' && p?.total) {
+        pct = Math.floor((p.sent / p.total) * 100);
+        detail = [`${fmtBytes(p.sent)} of ${fmtBytes(p.total)}`, p.kbps ? `${p.kbps} KB/s` : null, p.kbps ? fmtLeft((p.total - p.sent) / (p.kbps * 1000)) : null].filter(Boolean).join(' · ');
+      } else detail = state === 'done' ? 'Sent and committed' : '';
+    }
+    if (x.key === 'reboot') detail = state === 'active' ? deviceProgressText(p) : 'The box restarts into the new firmware and keeps it after 20 s of running cleanly. If it fails three times it goes back to the old one by itself.';
+    if (x.key === 'restore') detail = state === 'active' ? deviceProgressText(p) : 'The saved apps go back on the box, and the one it started with is made active again';
+    return { ...x, state, detail, ...(pct !== undefined ? { pct } : {}) };
+  });
 }
 
 /**

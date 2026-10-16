@@ -196,10 +196,14 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
     renderStatus({ statusEl: $('preview-kindle-status'), closeEl: $('preview-kindle-close') }, kindleStatusText(s, worker.status()), { open: s.open, errors: s.errors.length });
     renderWaiting($('preview-kindle-waiting'), s.waitingForSim);
     if (s.size) {
+      // a size of the list shows there; any other is the "Custom…" option's, in its field
       const key = `${s.size.width}x${s.size.height}`;
       const sel = $('preview-kindle-size');
       const custom = $('preview-kindle-custom');
-      if (sel && [...sel.options].some((o) => o.value === key)) { setProp(sel, 'value', key); setProp(custom, 'value', ''); } else setProp(custom, 'value', key);
+      const listed = !!sel && [...sel.options].some((o) => o.value === key);
+      setProp(sel, 'value', listed ? key : 'custom');
+      setProp(custom, 'value', listed ? '' : key);
+      setProp(custom, 'hidden', listed);
     }
   }
   function renderWatch() {
@@ -211,9 +215,11 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
     if (s.size) setProp($('preview-watch-size'), 'value', s.size.name); // an agent's open shows here too
   }
 
+  // The Kindle's size: one of the list, or "Custom…" with its WxH field.
   const kindleSize = () => {
+    const sel = $('preview-kindle-size');
     const custom = $('preview-kindle-custom')?.value.trim();
-    return custom || $('preview-kindle-size').value;
+    return sel?.value === 'custom' ? (custom || '600x800') : (sel?.value ?? '600x800');
   };
   const wire = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
   wire('preview-kindle-open', () => callApi.preview.open({ target: 'kindle', size: kindleSize() }));
@@ -221,7 +227,15 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
   wire('preview-watch-open', () => callApi.preview.open({ target: 'watch', size: $('preview-watch-size').value }));
   wire('preview-watch-close', () => callApi.preview.close('watch'));
   const kSel = $('preview-kindle-size');
-  if (kSel) kSel.onchange = () => { if (kindle.status().open) callApi.preview.open({ target: 'kindle', size: kindleSize() }); };
+  const kCustom = $('preview-kindle-custom');
+  if (kSel) {
+    kSel.onchange = () => {
+      if (kSel.value === 'custom') { if (kCustom) { kCustom.hidden = false; kCustom.focus(); } return; }
+      if (kCustom) kCustom.hidden = true;
+      if (kindle.status().open) callApi.preview.open({ target: 'kindle', size: kindleSize() });
+    };
+  }
+  if (kCustom) kCustom.onchange = () => { if (kCustom.value.trim() && kindle.status().open) callApi.preview.open({ target: 'kindle', size: kindleSize() }); };
   const wSel = $('preview-watch-size');
   if (wSel) wSel.onchange = () => { if (watch.status().open) callApi.preview.open({ target: 'watch', size: wSel.value }); };
 
@@ -231,5 +245,5 @@ export function mountPreviews({ api, callApi, getLastBuild, doc = document }) {
 
   worker().then(() => renderKindle());
   renderKindle(); renderWatch();
-  return { controller, kindle, watch, worker, sizes: { kindle: Object.keys(KINDLE_SIZES), watch: Object.keys(WATCH_SIZES) }, parseKindleSize, parseWatchSize, TARGETS };
+  return { controller, kindle, watch, worker, kindleSize, watchSize: () => $('preview-watch-size')?.value ?? '45mm', sizes: { kindle: Object.keys(KINDLE_SIZES), watch: Object.keys(WATCH_SIZES) }, parseKindleSize, parseWatchSize, TARGETS };
 }

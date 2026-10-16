@@ -108,7 +108,7 @@ export function renderStatus({ statusEl, closeEl }, text, { open, errors }) {
 }
 
 /** What a preview pane says while it is open and no sim runs (status().waitingForSim). */
-export const WAITING_FOR_SIM_TEXT = 'Simulator not running — start it (Sim → Start) to see the app.';
+export const WAITING_FOR_SIM_TEXT = 'Simulator not running — press Run (or restart the simulator) to see the app.';
 
 /**
  * The pane's "simulator not running" notice (#preview-kindle-waiting,

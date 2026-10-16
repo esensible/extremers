@@ -287,7 +287,7 @@ export class KindlePreview {
       case 'socket-connect':
         if (this.sim.running()) { this.accept(); break; }
         this.socketWaiting++;
-        this.log('the page is connecting; the sim is not running, so its socket waits: it connects when a sim starts (Sim → Start, api.sim.start())');
+        this.log('the page is connecting; the sim is not running, so its socket waits: it connects when a sim starts (Run, or api.sim.start())');
         this.onChange();
         break;
       case 'socket-open': {
