@@ -131,9 +131,10 @@ again (or pack with that name). A project without the file uses its own name.
 - The sim's `gps` input holds the newest 20,480 fixes, as the C6's track
   does (`sim.state().track`, `trackCapacity`).
 - `api.sim.history({ offset, limit })` pages the last 2,000 evaluations;
-  the #sim panel shows the timeline, the view and the state, with the clock
-  (live by default) and buttons for each event, a GPS fix, and (virtual
-  clock) +1 s, +10 s and the next wake.
+  the page's Run column shows them (newest first), the last evaluation's
+  state, view and wake, the clock (Live by default; **Manual clock** is the
+  virtual one, with +1 s, +10 s and the next wake), a button for each event
+  and the GPS fix.
 
 ## The workflow
 
@@ -201,7 +202,7 @@ again (or pack with that name). A project without the file uses its own name.
   tool output at about 1 kB would need some 95 calls for the skills through
   `api.skill(name, { offset })`. Instead, `await api.skill('expr-engine', {
   show: true })` puts the whole skill, as text, in the page's
-  `<article id="skill-view">` (the **Reading** tab, which it selects) and
+  `<article id="skill-view">` (in the **Help** panel, which it opens) and
   answers only `{ ok, shown: true, name, chars }`. Then read the page's text
   once (the harness's page-text tool, or
   `document.getElementById('skill-view').innerText`). `await
@@ -308,28 +309,30 @@ fake of the box; it has not yet run against the hardware itself.
   file plus `studio-project.json`. Same files → same bytes.
 - `api.project.import({ zipBase64 }, { name })` or `({ url }, { name })`:
   refuses an existing name; a single top-level folder in the ZIP is stripped.
-  On the page a ZIP comes from `#project-import-file` or a drop on the files
-  list (below).
+  On the page a ZIP comes from `#project-import-file` (in the project menu)
+  or a drop on the files (below).
 - Paths are relative, `/`-separated: `engine/engine.expr`,
   `engine/state.schema.json`, `kindle/src/index.jsx`, `watch/src/index.jsx`.
 
 ## What only a person can do
 
 - **Connect a computer to the box.** What the person does, in order (the
-  Device panel's `#device-howto` says the same):
+  Box panel's `#device-howto` says the same; the box chip at the top right,
+  `#box-chip`, opens the panel and says "Choose the box" or "Connect" while
+  there is no link):
   1. On the Kindle, **Choose → Settings → Pair watch**: it opens the box's
      pairing window for 2 minutes. The button is named for the watch but
      pairs any device, one device per window. (Not needed when this Mac is
      already paired with the box.)
-  2. Click **Choose the box…** (`#device-choose`, top right). Chrome's popup
-     says "localhost:5190 wants to pair": that is only Chrome asking which
-     device this page may talk to. Pick `nacra`.
+  2. Open the Box panel and click **Choose the box…** (`#device-choose`).
+     Chrome's popup says "localhost:5190 wants to pair": that is only
+     Chrome asking which device this page may talk to. Pick `nacra`.
   3. macOS then asks to pair with `nacra`: accept. That is the Bluetooth
      pairing itself.
   4. From then on the page remembers the box: `api.device.connect()` (or
-     the header's **Connect**) connects without prompts, also after a
-     reload *(getDevices() and connect without the chooser verified
-     2026-10-13 with the development page)*.
+     the Box panel's **Connect**, `#device-connect`) connects without
+     prompts, also after a reload *(getDevices() and connect without the
+     chooser verified 2026-10-13 with the development page)*.
 
   Chrome opens its chooser only from a person's click; `api.device.connect()`
   never opens it, and answers `no remembered 'nacra'` until 2. is done
@@ -367,71 +370,143 @@ fake of the box; it has not yet run against the hardware itself.
   `chrome://flags/#enable-web-bluetooth-new-permissions-backend` must be
   Enabled (then relaunch Chrome). Without it `connect()` says so.
 - **Update the firmware from the page.** The image (`xiaoc6.bin`) goes in
-  through the Device panel's file input `#device-firmware-file` (behind
-  **Choose firmware image…**) or is dropped on the panel; both take the same
-  path to the inline confirm, pressed within 15 s (`#device-update-yes`; an
-  agent may press it, but only when asked to update: it wipes the GPS
-  track). A person clicks **Choose firmware image…** and picks the file in
-  the OS picker. An agent never clicks it (that opens the OS picker, which
-  it cannot drive): it sets the input's files with its browser's
-  file-upload tool, targeting `#device-firmware-file`, which fires the
-  same `change` a person's choice does. From script the image can go as
-  base64 instead (`api.device.updateFirmware({ base64 })`), same caution.
+  through the Box panel's file input `#device-firmware-file` (behind
+  **Update firmware…**, in its Firmware section) or is dropped on the
+  panel; both take the same path to the inline confirm, pressed within
+  15 s (`#device-update-yes`; an agent may press it, but only when asked to
+  update: it wipes the GPS track). A person clicks **Update firmware…** and
+  picks the file in the OS picker. An agent never clicks it (that opens the
+  OS picker, which it cannot drive): it sets the input's files with its
+  browser's file-upload tool, targeting `#device-firmware-file`, which
+  fires the same `change` a person's choice does (the input is in the
+  page, enabled, even while the panel is closed). From script the image can
+  go as base64 instead (`api.device.updateFirmware({ base64 })`), same
+  caution. While it runs the panel shows its four stages (`#device-stages`).
 - **Import a project ZIP from this computer.** The same way: the file input
-  `#project-import-file` (behind **Import ZIP…**, next to `#project-import`)
-  or a drop on the files list; an agent sets its files with the file-upload
+  `#project-import-file` (behind **Import a project ZIP…** in the project
+  menu) or a drop on the files; an agent sets its files with the file-upload
   tool, never clicks it. The name is `#project-import-name`'s, else the
   file's without `.zip`. From script: `api.project.import({ zipBase64 })`.
-- Deleting a project or a file from the page asks inline; from `window.api`
-  it does not ask: only delete what you were asked to.
+- Deleting a project, a file or an app on the box from the page asks
+  inline; from `window.api` it does not ask: only delete what you were
+  asked to.
 
 ## The page, for reading it
 
-Stable ids: `#project-select`, `#status` (the last result as text,
-`aria-live`); the header's box: `#device-state` (`nacra · connected`,
-`nacra · disconnected`, `nacra · busy: install 42%`, `no box chosen`; with
-more than one box remembered the id's last 4 characters follow the name:
-`nacra ·CA5Q · disconnected`),
-`#device-head-connect` / `#device-head-disconnect` (shown when they apply)
-and `#device-choose`, the chooser: **Choose the box…** until Chrome
-remembers the box for this page, then a quiet **Choose another box…**; `#files` (one button per file,
-`data-path`); editor tabs `#editor-tab-<path>`, one per open file, and the
-editor `#editor-<path>`: Monaco shows one file at a time, so only the file
-shown has an `#editor-<path>` (find open files by their tabs; use
-`document.getElementById`, the path is verbatim); bottom panels
-`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`, `#reading` (its
-`<article id="skill-view">` holds what `skill`/`describe` `{ show: true }`
-rendered, `#skill-view-title` names it). In `#diagnostics`:
-`#engine-check`, `#engine-state` (the compile state as text) and one
-`button.diag` per diagnostic with `data-rule`, `data-path` and `data-span`
-(`line:col-endLine:endCol`). In `#sim`: `#sim-start`, `#sim-reset`,
-`#sim-stop`, `#sim-adv-1s`, `#sim-adv-10s`, `#sim-adv-wake`, `#sim-status`,
-`#sim-event-<name>` per event, `#sim-gps-send`, `#sim-timeline` (one
-`button.tl` per evaluation, `data-n`), `#sim-view`, `#sim-state`,
-`#sim-findings`. In `#device`: `#device-connect`, `#device-disconnect`,
-`#device-list`, `#device-install` with `#device-install-activate`,
-`#device-status` (the link as text), `#device-howto` (how to connect, as above;
-open until the page remembers a box), `#device-progress`, `#device-bundles`
-(a table: one row per bundle with `data-id` and `data-name`, buttons
-`#device-activate-<id>`, `#device-delete-<id>`, `#device-get-<id>`; an
-inline confirm `#device-confirm-yes` / `#device-confirm-no`; under it
-`#device-space`, and `#device-stale` once the box changed since the list),
-`#device-log`; the firmware: `#device-firmware` (`Firmware: ota_0 · sha
-12ab34cd…`, `· on trial` while pending; from the last `device.firmware`)
-with `#device-firmware-ask`, the file input `#device-firmware-file`
-(`<input type="file" accept=".bin,application/octet-stream">`, visually
-hidden inside the **Choose firmware image…** label but enabled; disabled
-while the box is busy), `#device-update-hint`, the inline confirm
-`#device-update-confirm` (`#device-update-text`, `#device-update-yes`,
-`#device-update-no`), and `#device-restore` (shown while `restorePending`:
-`#device-restore-text`, `#device-restore-resume`). The project bar:
-`#project-import-url`, `#project-import-name`, `#project-import`, and the
-file input `#project-import-file` (`accept=".zip,application/zip"`, inside
-the **Import ZIP…** label). Previews `#preview-kindle`, `#preview-watch`.
-No modals, no `alert`. Two native dialogs: Chrome's Bluetooth chooser, from
-`#device-choose` (a person's click only), and the OS file picker behind the
-two file inputs (a person's; an agent sets the inputs' files with its
-file-upload tool instead). Drag-and-drop works as well.
+A dark workspace: a top bar, the files on the left, the editor with
+Problems / Test runs / Log under it, the Run column on the right, a status
+bar at the bottom; the Box panel and Help open over the right side. Stable
+ids (read them with `document.getElementById`; a closed panel or menu is
+`hidden` but its elements are in the page):
+
+- **Top bar.** `#project-button` (the project's name in `#project-name`;
+  `aria-expanded`) opens the project menu `#project-menu`: `#project-search`,
+  `#project-list` (one `button.proj` per project, `data-project`, the open
+  one `aria-current="true"`), `#project-new-open` (the New project dialog
+  `#project-new-dialog`: `#project-new-name`, the radios
+  `#project-new-template-race` / `#project-new-template-blank`,
+  `#project-create`), the file input `#project-import-file`
+  (`accept=".zip,application/zip"`, inside the **Import a project ZIP…**
+  label), **Import from a URL…** (`#project-import-url`,
+  `#project-import-name`, `#project-import`), and for the open project
+  `#project-rename-open` (then `#project-rename-name`, `#project-rename`),
+  `#project-export`, `#project-delete` (an inline confirm
+  `#project-delete-confirm`: `#project-delete-text`, `#project-delete-yes`,
+  `#project-delete-no`). `#status` is the last result as text (`aria-live`;
+  during **Run**, which part is running). `#run` runs everything: the
+  engine check, the build of the screens the project has, the simulator,
+  both previews; a failure stops it and opens Problems. `#box-chip`
+  (`aria-expanded`) opens the Box panel; its text `#device-state` is the
+  link (`nacra · connected`, `nacra · disconnected`, `nacra · busy:
+  install 42%`, `no box chosen`; with more than one box remembered the id's
+  last 4 characters follow the name: `nacra ·CA5Q · disconnected`), then
+  `#box-chip-note` (`running race`, `Connect`, `Choose the box`) and
+  `#box-chip-warn` (shown while a firmware update waits to be resumed).
+  `#help-button` opens Help.
+- **Files** (`#files`, in `#files-pane`, which also takes a dropped project
+  ZIP): grouped Engine / Kindle screen / Watch screen / Other files /
+  Project settings, each group's state in `#files-state-<engine|kindle|watch>`
+  (`checked`, `2 problems`, `built`, `failed`). One `button.file` per file,
+  `id="file-<path>"`, `data-path`, its title the path (the schemas show as
+  State schema, View schema, Event schema; `engine/samples.json` as Test
+  runs); its ⋯ menu (`[data-file-menu]`) has Rename… and Delete…, both
+  inline. `#file-new` opens `#file-new-path`.
+- **Editor**: tabs `#editor-tab-<path>`, one per open file, and the editor
+  `#editor-<path>`: Monaco shows one file at a time, so only the file shown
+  has an `#editor-<path>` (find open files by their tabs; the path is
+  verbatim).
+- **Under the editor**, tabs `#tab-problems`, `#tab-runs`, `#tab-log`:
+  `#diagnostics` (Problems: `#engine-state`, the engine's state as text;
+  `#run-problem`, why a Run stopped; one `button.diag` per engine diagnostic
+  in `#diag-rows`, with `data-rule`, `data-path` and `data-span`
+  (`line:col-endLine:endCol`); the build's in `#build-problems`), counted
+  in `#problems-count`; `#runs-panel` (Test runs: `#check-runs`, one row per
+  run with `data-run`, and `#sim-findings`), counted in `#runs-count`;
+  `#log-panel` (`#build-result`, the last build per target, `#build-<target>`
+  with `data-ok`; the previews' `#preview-kindle-status`,
+  `#preview-kindle-log`, `#preview-watch-status`, `#preview-watch-log`; the
+  studio's `#log`). `#program-summary`: the program's size and
+  instructions.
+- **Run column** (`#run-pane`): `#sim-status` (the device time, or `not
+  running`; the full state as its title), the clock `#sim-clock-live` /
+  `#sim-clock-manual` (`aria-pressed`; Manual stops a live clock, keeping
+  the state; Live restarts on the live clock), `#sim-start` (restart),
+  `#sim-reset` (stop and drop the state), and under Manual `#sim-adv-1s`,
+  `#sim-adv-10s`, `#sim-adv-wake`. The screens `#preview-kindle` (the
+  frame `#preview-kindle-frame` in `#preview-kindle-viewport`; size
+  `#preview-kindle-size`, with **Custom…** and `#preview-kindle-custom`)
+  and `#preview-watch` (`#preview-watch-screen`, size `#preview-watch-size`),
+  each with its "Simulator not running" notice `#preview-kindle-waiting` /
+  `#preview-watch-waiting`. `#sim-event-<name>` per event (`#sim-events`),
+  the GPS fix `#sim-gps-lat`, `#sim-gps-lon`, `#sim-gps-speed`,
+  `#sim-gps-heading`, `#sim-gps-send`; **Replay a track…**
+  (`#sim-replay-open`: the project's `.nmea` files and its `.json`/`.jsonl`
+  files outside `engine/`, `kindle/`, `watch/` in `#sim-replay-path`, the
+  live clock's speed `#sim-replay-speed`, `#sim-replay` (`api.sim.replay`),
+  `#sim-replay-stop` while a live replay runs (`api.sim.stop`), and
+  `#sim-replay-hint`, which says what is missing); the last evaluation `#sim-state`,
+  `#sim-view`, `#sim-wake` (one line each) with `#sim-eval-summary`, and
+  `#sim-timeline` (one `button.tl` per evaluation, `data-n`, newest first;
+  click one to show it instead).
+- **Box panel** (`#device`, an aside; a dropped `.bin` lands here): the
+  link `#device-status-title` and `#device-status` (as text),
+  `#device-connect`, `#device-disconnect`, and `#device-choose`, the
+  chooser: **Choose the box…** until Chrome remembers the box for this
+  page, then a quiet **Choose another box…**; `#device-howto` (how to
+  connect, as above; open until the page remembers a box);
+  `#device-restore` (shown while `restorePending`: `#device-restore-text`,
+  `#device-restore-resume`). This project: `#device-project-name`,
+  `#device-project-line`, `#device-install-activate` (**Make it active**),
+  `#device-install` (**Send to box**), `#device-progress`. Apps on the box:
+  `#device-list` (Refresh), `#device-bundles`: one `li.app` per app with
+  `data-id` and `data-name` (Choose, built in, is the note under them,
+  `#device-choose-note`), **Make active** `#device-activate-<id>`, the ⋯
+  button `#device-more-<id>` and its menu `#device-menu-<id>` (in the page
+  even while closed) with **Download the bundle** `#device-get-<id>` and
+  **Remove from the box…** `#device-delete-<id>`; an inline confirm
+  `#device-confirm-yes` / `#device-confirm-no`; under them `#device-space`,
+  and `#device-stale` once the box changed since the list. Firmware:
+  `#device-firmware` (`Firmware: ota_0 · sha 12ab34cd…`, `· on trial` while
+  pending; from the last `device.firmware`), `#device-firmware-ask` (Ask the
+  box), the file input `#device-firmware-file` (`<input type="file"
+  accept=".bin,application/octet-stream">`, visually hidden inside the
+  **Update firmware…** label but enabled; disabled while the box is busy),
+  `#device-update-hint`, the inline confirm `#device-update-confirm`
+  (`#device-update-text`, `#device-update-yes`, `#device-update-no`). While
+  an update runs, `#device-update` takes the panel's place: `#device-stages`,
+  one `li.stage` per stage (`data-stage` save / firmware / reboot / restore,
+  `data-state` done / active / waiting).
+- **Help** (`#reading`): the guides (`#skill-list`) and `<article
+  id="skill-view">`, which holds what `skill`/`describe` `{ show: true }`
+  rendered (the panel opens for it), `#skill-view-title` naming it.
+- **Status bar**: `#cursor` (`#cursor-pos`, `#cursor-lang`, `#cursor-save`)
+  and `#footer-box`.
+
+No modals, no `alert`; Escape or a click outside closes a menu or panel.
+Two native dialogs: Chrome's Bluetooth chooser, from `#device-choose` (a
+person's click only), and the OS file picker behind the two file inputs (a
+person's; an agent sets the inputs' files with its file-upload tool
+instead). Drag-and-drop works as well.
 
 ## Words
 

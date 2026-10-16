@@ -11,11 +11,31 @@ share (`api.describe()` first), skills served by the page, and a DOM an agent
 can read (stable ids, a textual `#status`, inline confirms, no modals). Local
 files come in through two file inputs, `#device-firmware-file` (a firmware
 `.bin`) and `#project-import-file` (a project `.zip`), or by drag-and-drop on
-the Device panel and the files list; a drop and a choice take one path
+the Box panel and the files; a drop and a choice take one path
 (`files-in.js`). An agent driving Chrome sets an input's files with its
 file-upload tool rather than clicking it (that opens the OS picker).
 
 Licence: MIT (`LICENSE`).
+
+## The page
+
+A dark workspace, built for a person (the ids an agent reads are listed in
+the `studio-api` skill, "The page, for reading it"; `test/page.test.mjs`
+checks they exist):
+
+| Where | What |
+|---|---|
+| top bar | the **Project** menu (`#project-button`: find, open, new — the Race app or blank —, import a ZIP or from a URL; for the open project rename, export as ZIP, delete, inline confirms), the status line (`#status`), **Run** (`#run`), the box chip (`#box-chip`), help (`#help-button`) |
+| **Run** | one button for the whole sequence, each part an api call: `engine.check` → `ui.build` (the screens the project has) → `sim.start` (Live or Manual clock) → `preview.open` for each screen. The status line says which part runs; a failure stops it and opens Problems at the first problem. Run again restarts all of it |
+| left | the files grouped by what they make: Engine (engine.expr, State/View/Event schema, Test runs = `engine/samples.json`), Kindle screen, Watch screen, Other files, Project settings (`studio.json`); each group's state (checked, built); a file's ⋯ menu (or right click): Rename…, Delete…; **New file**; a dropped project ZIP imports |
+| centre | the editor (Monaco, the dark theme `editor/lang.js` defines from the same tokens) with its tabs; under it **Problems** (engine diagnostics, build diagnostics, why a Run stopped: click one for its span), **Test runs** (the smoke and sample runs, the sim's findings), **Log** (the last build, the previews' status and logs, the studio's log) |
+| right: Run column | the simulator (its time, Live / Manual clock, +1 s / +10 s / the next wake under Manual, restart, stop), the Kindle and watch screens side by side with their sizes, the engine's events, GPS (a fix; **Replay a track…**: a project `.nmea`/`.json` track through `sim.replay`, sped up on the live clock, Stop), the last evaluation (state, view, wake) and the evaluations, newest first |
+| Box panel (`#device`) | from the box chip: the link (Choose the box…, Connect, Disconnect, how to connect), **This project** (Send to box, Make it active), **Apps on the box** (storage, Make active, ⋯: Download the bundle, Remove from the box…), **Firmware** (Ask the box, Update firmware…); a firmware update replaces it with its four stages; a stopped one shows Resume here and a dot on the chip |
+| Help panel (`#reading`) | the guides (the skills), and what `skill`/`describe` `{ show: true }` put in `#skill-view` |
+
+Escape or a click outside closes a menu or panel; the openers carry
+`aria-expanded`. No native dialogs besides Chrome's Bluetooth chooser (a
+person's click on `#device-choose`) and the OS file picker.
 
 ## Status
 
@@ -65,15 +85,16 @@ allocated as they arrive, 480 KB when full).
 
 | File | What |
 |---|---|
-| `index.html` | the page: header (`#project-select`, `#status`, `#device-choose`), the project bar (import: `#project-import-url`, `#project-import`, the file input `#project-import-file`), files (`#files`), editor tabs (`#editor-tab-<path>`; `#editor-<path>` is the shown file's editor only), bottom panels (`#diagnostics`, `#sim`, `#build-log`, `#device`, `#log`), previews (`#preview-kindle`, `#preview-watch`) |
-| `app.js` | the human UI; every button calls `window.api`; `window.__selftest()` / `?selftest=1` |
+| `index.html` | the page and its CSS (the dark tokens on `:root`): the top bar with the project menu, files (`#files`), editor tabs (`#editor-tab-<path>`; `#editor-<path>` is the shown file's editor only), Problems / Test runs / Log (`#diagnostics`, `#runs-panel`, `#log-panel`), the Run column (`#run-pane`: the sim, `#preview-kindle`, `#preview-watch`), the Box panel (`#device`), Help (`#reading`) — "The page", above |
+| `app.js` | the human UI; every button calls `window.api`; Run; the menus and side panels; `window.__selftest()` / `?selftest=1` |
+| `panels.js` | Problems, Test runs and the Run column's simulator (clock, events, GPS, replay, the last evaluation) |
 | `api.js` | `window.api`: the `FUNCTIONS` registry, `describe()` generated from it, `makeFn`, `withUnknownGuard` (from `dingo-cli/web/api.js`) |
 | `editor.js` | the centre pane: Monaco, one model per open file, the tabs, markers (see "The editor") |
 | `editor/lang.js` | the editor's DOM-free half: the expr grammar and theme, JSX, language and schema per path, diagnostics → markers |
 | `editor/schemas/*.json` | JSON Schemas the editor validates `engine/*.schema.json` and `engine/samples.json` against |
 | `lib/monaco/` | monaco-editor's AMD build, the parts the editor uses (`lib/monaco/vendor.mjs` makes it; version in `lib/VERSIONS.json`) |
 | `ui.js` | DOM-free page logic (file tree, line/column, status text), tested in Node |
-| `files-in.js` | a local file into the page: `takeDropped(zone, take)` and `takeChosen(input, take)` (an `<input type="file">`, reset after each choice) hand the file to one function; `firmwareOffer` (the Device panel's inline confirm) and `projectZipSource` (`project.import`'s source) |
+| `files-in.js` | a local file into the page: `takeDropped(zone, take)` and `takeChosen(input, take)` (an `<input type="file">`, reset after each choice) hand the file to one function; `firmwareOffer` (the Box panel's inline confirm) and `projectZipSource` (`project.import`'s source) |
 | `store.js` | projects and files in IndexedDB, multi-record changes in one transaction |
 | `zip.js` | project export/import: a stored-entry ZIP writer, a reader that also inflates (`DecompressionStream`) |
 | `templates.js` | `blank` (a minimal engine) and `race` (from `vendor/examples/race/`), each with its `studio.json` |
@@ -218,8 +239,8 @@ Bluetooth, by its bundle service (BLE.md "Bundles"). Three layers:
 | `device/firmware.js` | `checkImage(bytes, maxLen)`: a firmware image checked before it is sent (magic, chip id, 16-byte lines, room, its appended digest) |
 
 **A firmware update** (`api.device.updateFirmware({ base64 })`, or a `.bin`
-chosen in `#device-firmware-file` (**Choose firmware image…**; disabled while
-the box is busy) or dropped on the Device panel, then confirmed inline in
+chosen in `#device-firmware-file` (**Update firmware…** in the Box panel; disabled while
+the box is busy) or dropped on the Box panel, then confirmed inline in
 `#device-update-confirm`) writes the image over the
 box's other app slot, which also holds its bundles and its GPS track. So the
 controller, in one `run('ota')`: asks which firmware runs (`Firmware`),
@@ -236,7 +257,7 @@ hold yet, activates the one it booted with, and deletes the backup. The
 track is not saved. A refusal at the commit (Hash, Invalid, Flash: the box
 restarts into its firmware) still restores the bundles, then answers the
 refusal. Anything that stops the flow once the backup exists leaves it:
-`api.device.status().restorePending` (and the Device panel's
+`api.device.status().restorePending` (and the Box panel's
 `#device-restore` banner with **Resume**), and `api.device.updateFirmware({})`
 finishes it (the image again if it was never committed). A new update is
 refused while one is pending, so a second save can never overwrite the
@@ -268,7 +289,7 @@ the wait timers are cleared; a drop resumes instead of failing; the pairing
 attempts are 6, 2 s apart (a person has to confirm the prompt). The link
 follows `dingo-cli/web/ble.js` `createBridge`.
 
-What a person does, once, in order (the Device panel says the same):
+What a person does, once, in order (the Box panel says the same):
 (1) for the first connection of a computer, on the Kindle Choose → Settings →
 Pair watch opens the box's 2-minute pairing window (named for the watch, it
 pairs any device, one per window; or `dev-pairing` firmware, 120 s after
@@ -282,7 +303,7 @@ both, the one not here possibly first). The page keeps the id of the box it
 last chose or connected to (`localStorage` `studio.device.id`) and connects to
 that one; with several granted and none of them remembered or in range it
 watches all of them for an advertisement and takes the first (the log names
-it by the last 4 characters of its id, as does the header: `nacra ·CA5Q ·
+it by the last 4 characters of its id, as does the box chip: `nacra ·CA5Q ·
 disconnected`). Nothing advertising answers `none of the 2 remembered boxes
 named 'nacra' advertised in 12 s`; for a different box than before, click
 **Choose another box…**.
